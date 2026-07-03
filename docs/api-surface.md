@@ -7,7 +7,8 @@ import { t, compile, toJsonSchema } from "typesea";
 ```
 
 Subpath imports are intentionally unsupported. The npm `exports` map exposes
-only `"."`, backed by `dist/index.js` and `dist/index.d.ts`.
+only `"."`, backed by `dist/index.js` and `dist/index.d.ts`. The package is
+ESM-only; `import` and `default` conditions resolve to the same module file.
 
 ## Stability Groups
 

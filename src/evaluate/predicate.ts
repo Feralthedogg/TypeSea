@@ -33,23 +33,14 @@ import {
 } from "./state.js";
 
 /**
- * @brief is schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief is schema.
  */
 export function isSchema(schema: Schema, value: unknown): boolean {
   return isSchemaWithState(schema, value, makeValidationState());
 }
 
 /**
- * @brief is schema with state function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @returns Result for is schema with state; ownership of newly created aggregates is transferred to the caller.
+ * @brief is schema with state.
  */
 export function isSchemaWithState(
   schema: Schema,
@@ -69,12 +60,7 @@ export function isSchemaWithState(
 }
 
 /**
- * @brief is schema inner function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @returns Result for is schema inner; ownership of newly created aggregates is transferred to the caller.
+ * @brief is schema inner.
  */
 function isSchemaInner(
   schema: Schema,
@@ -129,11 +115,7 @@ function isSchemaInner(
 }
 
 /**
- * @brief is string schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is string schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief is string schema.
  */
 function isStringSchema(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.String }>,
@@ -177,11 +159,7 @@ function isStringSchema(
 }
 
 /**
- * @brief is number schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is number schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief is number schema.
  */
 function isNumberSchema(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.Number }>,
@@ -218,12 +196,7 @@ function isNumberSchema(
 }
 
 /**
- * @brief is array schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param item Borrowed input slot named item; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @returns Result for is array schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief is array schema.
  */
 function isArraySchema(
   item: Schema,
@@ -247,12 +220,7 @@ function isArraySchema(
 }
 
 /**
- * @brief is tuple schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param items Borrowed input slot named items; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @returns Result for is tuple schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief is tuple schema.
  */
 function isTupleSchema(
   items: readonly Schema[],
@@ -277,12 +245,7 @@ function isTupleSchema(
 }
 
 /**
- * @brief is record schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param item Borrowed input slot named item; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @returns Result for is record schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief is record schema.
  */
 function isRecordSchema(
   item: Schema,
@@ -307,12 +270,7 @@ function isRecordSchema(
 }
 
 /**
- * @brief is object schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @returns Result for is object schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief is object schema.
  */
 function isObjectSchema(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>,
@@ -344,10 +302,10 @@ function isObjectSchema(
     }
   }
   if (schema.mode === ObjectModeTag.Strict) {
-    const keys = Object.keys(record);
+    const keys = Reflect.ownKeys(record);
     for (let index = 0; index < keys.length; index += 1) {
       const key = keys[index];
-      if (key === undefined || !hasObjectKey(schema.keyLookup, key)) {
+      if (typeof key !== "string" || !hasObjectKey(schema.keyLookup, key)) {
         return false;
       }
     }
@@ -356,10 +314,8 @@ function isObjectSchema(
 }
 
 /**
- * @brief read array index data property function contract.
+ * @brief read array index data property.
  * @details Reads array index descriptors without invoking accessor code.
- * @param value Borrowed input slot named value; validation happens before descriptor values are trusted.
- * @param index Borrowed input slot named index; validation happens before descriptor values are trusted.
  * @returns Data descriptor for elements, undefined for holes, and null for accessors.
  */
 function readArrayIndexDataProperty(
@@ -380,12 +336,7 @@ function readArrayIndexDataProperty(
 }
 
 /**
- * @brief is union schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @returns Result for is union schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief is union schema.
  */
 export function isUnionSchema(
   options: readonly Schema[],
@@ -402,13 +353,7 @@ export function isUnionSchema(
 }
 
 /**
- * @brief is discriminated union schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @param cases Borrowed input slot named cases; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @returns Result for is discriminated union schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief is discriminated union schema.
  */
 function isDiscriminatedUnionSchema(
   key: string,

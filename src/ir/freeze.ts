@@ -9,10 +9,7 @@ import { isPlainRegExp } from "./regexp.js";
 import type { Graph, GraphNode, RegexNode } from "./types.js";
 
 /**
- * @brief freeze graph function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param graph Borrowed input slot named graph; validation or normalization happens before stored state changes.
- * @returns Result for freeze graph; ownership of newly created aggregates is transferred to the caller.
+ * @brief freeze graph.
  */
 export function freezeGraph(graph: Graph): Graph {
   for (let index = 0; index < graph.nodes.length; index += 1) {
@@ -26,10 +23,7 @@ export function freezeGraph(graph: Graph): Graph {
 }
 
 /**
- * @brief freeze graph node function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief freeze graph node.
  */
 function freezeGraphNode(node: GraphNode): void {
   Object.freeze(node.deps);
@@ -50,9 +44,6 @@ function freezeGraphNode(node: GraphNode): void {
     case NodeTag.Or:
       Object.freeze(node.values);
       break;
-    case NodeTag.Issue:
-      Object.freeze(node.path);
-      break;
     default:
       break;
   }
@@ -60,10 +51,7 @@ function freezeGraphNode(node: GraphNode): void {
 }
 
 /**
- * @brief freeze regex node function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief freeze regex node.
  */
 function freezeRegexNode(node: RegexNode): void {
   const regex = node.regex;
@@ -88,10 +76,7 @@ function freezeRegexNode(node: RegexNode): void {
 }
 
 /**
- * @brief clone graph reg exp function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param regex Borrowed input slot named regex; validation or normalization happens before stored state changes.
- * @returns Result for clone graph reg exp; ownership of newly created aggregates is transferred to the caller.
+ * @brief clone graph reg exp.
  */
 function cloneGraphRegExp(regex: RegExp): RegExp {
   const cloned = new RegExp(regex.source, regex.flags);

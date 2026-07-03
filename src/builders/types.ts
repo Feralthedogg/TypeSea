@@ -10,33 +10,25 @@ import type {
 } from "../guard/index.js";
 
 /**
- * @brief tuple shape type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief tuple shape.
  */
 export type TupleShape = readonly Guard<unknown, Presence>[];
 
 /**
- * @brief infer tuple type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief infer tuple.
  */
 export type InferTuple<TShape extends TupleShape> = {
   readonly [TKey in keyof TShape]: Infer<TShape[TKey]>;
 };
 
 /**
- * @brief union input type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief union input.
  */
 export type UnionInput =
   readonly [Guard<unknown, Presence>, ...Guard<unknown, Presence>[]];
 
 /**
- * @brief discriminated union cases type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief discriminated union cases.
  */
 export type DiscriminatedUnionCases<
   TKey extends string,

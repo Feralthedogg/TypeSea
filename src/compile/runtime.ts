@@ -13,30 +13,22 @@ import type { Issue, PathSegment } from "../issue/index.js";
 import type { LiteralValue, Schema } from "../schema/index.js";
 
 /**
- * @brief boolean predicate type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief boolean predicate.
  */
 export type BooleanPredicate = (value: unknown) => boolean;
 
 /**
- * @brief issue collector root type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief issue collector root.
  */
 export type IssueCollectorRoot = (value: unknown) => readonly Issue[];
 
 /**
- * @brief dynamic check type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief dynamic check.
  */
 export type DynamicCheck = (schemaIndex: number, value: unknown) => boolean;
 
 /**
- * @brief dynamic issue check type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief dynamic issue check.
  */
 export type DynamicIssueCheck = (
   schemaIndex: number,
@@ -46,9 +38,7 @@ export type DynamicIssueCheck = (
 ) => void;
 
 /**
- * @brief strict keys check type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief strict keys check.
  */
 export type StrictKeysCheck = (
   value: unknown,
@@ -56,31 +46,15 @@ export type StrictKeysCheck = (
 ) => boolean;
 
 /**
- * @brief runtime bundle interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief runtime bundle.
  */
 export interface RuntimeBundle {
-
-  /**
-   * @brief is field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly is: BooleanPredicate;
-
-  /**
-   * @brief check field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly check: IssueCollectorRoot;
 }
 
 /**
- * @brief is factory type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief is factory.
  */
 export type IsFactory = (
   literals: readonly LiteralValue[],
@@ -93,10 +67,7 @@ export type IsFactory = (
 ) => RuntimeBundle;
 
 /**
- * @brief make dynamic check function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schemas Borrowed input slot named schemas; validation or normalization happens before stored state changes.
- * @returns Result for make dynamic check; ownership of newly created aggregates is transferred to the caller.
+ * @brief make dynamic check.
  */
 export function makeDynamicCheck(schemas: readonly Schema[]): DynamicCheck {
   return (schemaIndex: number, value: unknown): boolean => {
@@ -106,10 +77,7 @@ export function makeDynamicCheck(schemas: readonly Schema[]): DynamicCheck {
 }
 
 /**
- * @brief make dynamic issue check function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schemas Borrowed input slot named schemas; validation or normalization happens before stored state changes.
- * @returns Result for make dynamic issue check; ownership of newly created aggregates is transferred to the caller.
+ * @brief make dynamic issue check.
  */
 export function makeDynamicIssueCheck(
   schemas: readonly Schema[]
@@ -145,11 +113,7 @@ export function makeDynamicIssueCheck(
 }
 
 /**
- * @brief strict keys function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param keys Borrowed input slot named keys; validation or normalization happens before stored state changes.
- * @returns Result for strict keys; ownership of newly created aggregates is transferred to the caller.
+ * @brief strict keys.
  */
 export function strictKeys(
   value: unknown,
@@ -158,11 +122,10 @@ export function strictKeys(
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }
-  const record = value as Readonly<Record<string, unknown>>;
-  const present = Object.keys(record);
+  const present = Reflect.ownKeys(value);
   for (let index = 0; index < present.length; index += 1) {
     const key = present[index];
-    if (key === undefined || !keys.includes(key)) {
+    if (typeof key !== "string" || !keys.includes(key)) {
       return false;
     }
   }

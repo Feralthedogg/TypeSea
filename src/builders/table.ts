@@ -40,9 +40,7 @@ import {
 } from "./scalar.js";
 
 /**
- * @brief t constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief t.
  */
 export const t = Object.freeze({
   unknown: unknownGuard,

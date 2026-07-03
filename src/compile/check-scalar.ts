@@ -23,14 +23,7 @@ import { stringLiteral } from "./names.js";
 import type { EmitContext } from "./types.js";
 
 /**
- * @brief emit string check function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for emit string check; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit string check.
  */
 export function emitStringCheck(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.String }>,
@@ -85,13 +78,7 @@ export function emitStringCheck(
 }
 
 /**
- * @brief emit number check function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @returns Result for emit number check; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit number check.
  */
 export function emitNumberCheck(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.Number }>,
@@ -148,14 +135,7 @@ export function emitNumberCheck(
 }
 
 /**
- * @brief emit literal check function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param checked Borrowed input slot named checked; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for emit literal check; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit literal check.
  */
 export function emitLiteralCheck(
   value: LiteralValue,

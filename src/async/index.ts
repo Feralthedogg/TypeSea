@@ -11,53 +11,39 @@ import { err, ok } from "../result/index.js";
 import { freezeSchema, isSchemaValue, type Schema } from "../schema/index.js";
 
 /**
- * @brief async decode runner type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief async decode runner.
  */
 type AsyncDecodeRunner<TValue> = (value: unknown) => Promise<CheckResult<TValue>>;
 
 /**
- * @brief async predicate type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief async predicate.
  */
 type AsyncPredicate<TValue> = (value: TValue) => boolean | Promise<boolean>;
 
 /**
- * @brief async mapper type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief async mapper.
  */
 type AsyncMapper<TValue, TNext> = (value: TValue) => TNext | Promise<TNext>;
 
 /**
- * @brief async decoder run symbol constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief async decoder run symbol.
  */
 const AsyncDecoderRunSymbol = Symbol("TypeSea.asyncDecoder.run");
 
 /**
- * @brief constructed async decoders constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief constructed async decoders.
  */
 const constructedAsyncDecoders = new WeakSet<object>();
 
 /**
- * @brief async decode source type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief async decode source.
  */
 export type AsyncDecodeSource =
   | DecodeSource
   | AsyncDecoder<unknown>;
 
 /**
- * @brief infer async decoder type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief infer async decoder.
  */
 export type InferAsyncDecoder<TSource> =
   TSource extends AsyncDecoder<infer TValue>
@@ -65,87 +51,56 @@ export type InferAsyncDecoder<TSource> =
     : InferDecoder<TSource>;
 
 /**
- * @brief async decoder interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief async decoder.
  */
 export interface AsyncDecoder<TValue> {
 
   /**
-   * @brief decode async routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for decode async; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief decode async.
+         */
   decodeAsync(value: unknown): Promise<CheckResult<TValue>>;
 
   /**
-   * @brief refine async routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param predicate Borrowed input slot named predicate; validation or normalization happens before stored state changes.
-   * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
-   * @returns Result for refine async; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief refine async.
+           */
   refineAsync(
     predicate: AsyncPredicate<TValue>,
     name: string
   ): BaseAsyncDecoder<TValue>;
 
   /**
-   * @brief transform async routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param mapper Borrowed input slot named mapper; validation or normalization happens before stored state changes.
-   * @returns Result for transform async; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief transform async.
+         */
   transformAsync<TNext>(
     mapper: AsyncMapper<TValue, TNext>
   ): BaseAsyncDecoder<TNext>;
 
   /**
-   * @brief pipe async routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param next Borrowed input slot named next; validation or normalization happens before stored state changes.
-   * @returns Result for pipe async; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief pipe async.
+         */
   pipeAsync<TNext extends AsyncDecodeSource>(
     next: TNext
   ): BaseAsyncDecoder<InferAsyncDecoder<TNext>>;
 }
 
 /**
- * @brief constructed async decoder interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief constructed async decoder.
  */
 interface ConstructedAsyncDecoder<TValue> extends AsyncDecoder<TValue> {
-
-  /**
-   * @brief async decoder run symbol field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly [AsyncDecoderRunSymbol]: AsyncDecodeRunner<TValue>;
 }
 
 /**
- * @brief base async decoder class contract.
+ * @brief base async decoder.
  * @details Owns its state directly; methods expose receiver checks and explicit result flow.
  * @invariant Construction leaves the instance in a fully usable state before it escapes.
  */
 export class BaseAsyncDecoder<TValue> implements AsyncDecoder<TValue> {
-
-  /**
-   * @brief async decoder run symbol field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   private declare readonly [AsyncDecoderRunSymbol]: AsyncDecodeRunner<TValue>;
 
   /**
-   * @brief constructor constructor contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param run Borrowed input slot named run; validation or normalization happens before stored state changes.
-   * @post The receiver is initialized according to the class invariant before it can be observed.
+   * @brief constructor.
+       * @post The receiver is initialized according to the class invariant before it can be observed.
    */
   public constructor(run: AsyncDecodeRunner<TValue>) {
     if (typeof run !== "function") {
@@ -157,23 +112,15 @@ export class BaseAsyncDecoder<TValue> implements AsyncDecoder<TValue> {
   }
 
   /**
-   * @brief decode async routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param this Borrowed input slot named this; validation or normalization happens before stored state changes.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for decode async; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief decode async.
+           */
   public decodeAsync(this: unknown, value: unknown): Promise<CheckResult<TValue>> {
     return readAsyncDecoderRunner<TValue>(this, "async decoder receiver")(value);
   }
 
   /**
-   * @brief refine async routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param predicate Borrowed input slot named predicate; validation or normalization happens before stored state changes.
-   * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
-   * @returns Result for refine async; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief refine async.
+           */
   public refineAsync(
     predicate: AsyncPredicate<TValue>,
     name: string
@@ -201,11 +148,8 @@ export class BaseAsyncDecoder<TValue> implements AsyncDecoder<TValue> {
   }
 
   /**
-   * @brief transform async routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param mapper Borrowed input slot named mapper; validation or normalization happens before stored state changes.
-   * @returns Result for transform async; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief transform async.
+         */
   public transformAsync<TNext>(
     mapper: AsyncMapper<TValue, TNext>
   ): BaseAsyncDecoder<TNext> {
@@ -225,11 +169,8 @@ export class BaseAsyncDecoder<TValue> implements AsyncDecoder<TValue> {
   }
 
   /**
-   * @brief pipe async routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param next Borrowed input slot named next; validation or normalization happens before stored state changes.
-   * @returns Result for pipe async; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief pipe async.
+         */
   public pipeAsync<TNext extends AsyncDecodeSource>(
     next: TNext
   ): BaseAsyncDecoder<InferAsyncDecoder<TNext>> {
@@ -251,42 +192,28 @@ export class BaseAsyncDecoder<TValue> implements AsyncDecoder<TValue> {
 }
 
 /**
- * @brief async decoder function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @returns Result for async decoder; ownership of newly created aggregates is transferred to the caller.
+ * @brief async decoder.
  */
 export function asyncDecoder<TValue, TPresence extends Presence>(
   source: Guard<TValue, TPresence>
 ): BaseAsyncDecoder<RuntimeValue<TValue, TPresence>>;
 
 /**
- * @brief async decoder function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @returns Result for async decoder; ownership of newly created aggregates is transferred to the caller.
+ * @brief async decoder.
  */
 export function asyncDecoder<TValue>(
   source: Decoder<TValue> | AsyncDecoder<TValue>
 ): BaseAsyncDecoder<TValue>;
 
 /**
- * @brief async decoder function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @returns Result for async decoder; ownership of newly created aggregates is transferred to the caller.
+ * @brief async decoder.
  */
 export function asyncDecoder(source: AsyncDecodeSource): BaseAsyncDecoder<unknown> {
   return makeAsyncDecoder(source);
 }
 
 /**
- * @brief async refine function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param predicate Borrowed input slot named predicate; validation or normalization happens before stored state changes.
- * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
- * @returns Result for async refine; ownership of newly created aggregates is transferred to the caller.
+ * @brief async refine.
  */
 export function asyncRefine<TValue, TPresence extends Presence>(
   source: Guard<TValue, TPresence>,
@@ -295,12 +222,7 @@ export function asyncRefine<TValue, TPresence extends Presence>(
 ): BaseAsyncDecoder<RuntimeValue<TValue, TPresence>>;
 
 /**
- * @brief async refine function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param predicate Borrowed input slot named predicate; validation or normalization happens before stored state changes.
- * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
- * @returns Result for async refine; ownership of newly created aggregates is transferred to the caller.
+ * @brief async refine.
  */
 export function asyncRefine<TValue>(
   source: Decoder<TValue> | AsyncDecoder<TValue>,
@@ -309,12 +231,7 @@ export function asyncRefine<TValue>(
 ): BaseAsyncDecoder<TValue>;
 
 /**
- * @brief async refine function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param predicate Borrowed input slot named predicate; validation or normalization happens before stored state changes.
- * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
- * @returns Result for async refine; ownership of newly created aggregates is transferred to the caller.
+ * @brief async refine.
  */
 export function asyncRefine(
   source: AsyncDecodeSource,
@@ -325,11 +242,7 @@ export function asyncRefine(
 }
 
 /**
- * @brief async transform function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param mapper Borrowed input slot named mapper; validation or normalization happens before stored state changes.
- * @returns Result for async transform; ownership of newly created aggregates is transferred to the caller.
+ * @brief async transform.
  */
 export function asyncTransform<TValue, TPresence extends Presence, TNext>(
   source: Guard<TValue, TPresence>,
@@ -337,11 +250,7 @@ export function asyncTransform<TValue, TPresence extends Presence, TNext>(
 ): BaseAsyncDecoder<TNext>;
 
 /**
- * @brief async transform function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param mapper Borrowed input slot named mapper; validation or normalization happens before stored state changes.
- * @returns Result for async transform; ownership of newly created aggregates is transferred to the caller.
+ * @brief async transform.
  */
 export function asyncTransform<TValue, TNext>(
   source: Decoder<TValue> | AsyncDecoder<TValue>,
@@ -349,11 +258,7 @@ export function asyncTransform<TValue, TNext>(
 ): BaseAsyncDecoder<TNext>;
 
 /**
- * @brief async transform function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param mapper Borrowed input slot named mapper; validation or normalization happens before stored state changes.
- * @returns Result for async transform; ownership of newly created aggregates is transferred to the caller.
+ * @brief async transform.
  */
 export function asyncTransform(
   source: AsyncDecodeSource,
@@ -363,11 +268,7 @@ export function asyncTransform(
 }
 
 /**
- * @brief async pipe function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param next Borrowed input slot named next; validation or normalization happens before stored state changes.
- * @returns Result for async pipe; ownership of newly created aggregates is transferred to the caller.
+ * @brief async pipe.
  */
 export function asyncPipe<TNext extends AsyncDecodeSource>(
   source: AsyncDecodeSource,
@@ -377,10 +278,7 @@ export function asyncPipe<TNext extends AsyncDecodeSource>(
 }
 
 /**
- * @brief is async decoder value function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is async decoder value; ownership of newly created aggregates is transferred to the caller.
+ * @brief is async decoder value.
  */
 export function isAsyncDecoderValue(
   value: unknown
@@ -389,10 +287,7 @@ export function isAsyncDecoderValue(
 }
 
 /**
- * @brief make async decoder function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @returns Result for make async decoder; ownership of newly created aggregates is transferred to the caller.
+ * @brief make async decoder.
  */
 function makeAsyncDecoder(source: AsyncDecodeSource): BaseAsyncDecoder<unknown> {
   const run = readAsyncDecodeSourceRunner<unknown>(source, "async decoder source");
@@ -400,11 +295,7 @@ function makeAsyncDecoder(source: AsyncDecodeSource): BaseAsyncDecoder<unknown> 
 }
 
 /**
- * @brief read async decode source runner function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @returns Result for read async decode source runner; ownership of newly created aggregates is transferred to the caller.
+ * @brief read async decode source runner.
  */
 function readAsyncDecodeSourceRunner<TValue>(
   source: unknown,
@@ -423,11 +314,7 @@ function readAsyncDecodeSourceRunner<TValue>(
 }
 
 /**
- * @brief read async decoder runner function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @returns Result for read async decoder runner; ownership of newly created aggregates is transferred to the caller.
+ * @brief read async decoder runner.
  */
 function readAsyncDecoderRunner<TValue>(
   value: unknown,
@@ -440,10 +327,7 @@ function readAsyncDecoderRunner<TValue>(
 }
 
 /**
- * @brief is constructed async decoder function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is constructed async decoder; ownership of newly created aggregates is transferred to the caller.
+ * @brief is constructed async decoder.
  */
 function isConstructedAsyncDecoder(
   value: unknown
@@ -452,11 +336,7 @@ function isConstructedAsyncDecoder(
 }
 
 /**
- * @brief read guard schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @returns Result for read guard schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read guard schema.
  */
 function readGuardSchema(value: unknown, label: string): Schema {
   if (!isRecord(value)) {
@@ -470,11 +350,7 @@ function readGuardSchema(value: unknown, label: string): Schema {
 }
 
 /**
- * @brief fail refinement function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for fail refinement; ownership of newly created aggregates is transferred to the caller.
+ * @brief fail refinement.
  */
 function failRefinement<TValue>(
   name: string,
@@ -486,10 +362,7 @@ function failRefinement<TValue>(
 }
 
 /**
- * @brief actual type function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for actual type; ownership of newly created aggregates is transferred to the caller.
+ * @brief actual type.
  */
 function actualType(value: unknown): string {
   if (value === null) {
@@ -511,23 +384,14 @@ function actualType(value: unknown): string {
 }
 
 /**
- * @brief is strict true function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is strict true; ownership of newly created aggregates is transferred to the caller.
+ * @brief is strict true.
  */
 function isStrictTrue(value: unknown): boolean {
   return value === true;
 }
 
 /**
- * @brief define readonly property function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param target Borrowed input slot named target; validation or normalization happens before stored state changes.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param enumerable Borrowed input slot named enumerable; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief define readonly property.
  */
 function defineReadonlyProperty(
   target: object,
@@ -544,10 +408,7 @@ function defineReadonlyProperty(
 }
 
 /**
- * @brief is record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is record; ownership of newly created aggregates is transferred to the caller.
+ * @brief is record.
  */
 function isRecord(value: unknown): value is Readonly<Record<PropertyKey, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

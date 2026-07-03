@@ -168,39 +168,6 @@ describe("Sea-of-Nodes graph semantics", () => {
       entry: 0,
       result: 1
     })).toThrow(TypeError);
-    expect(() => looseOptimizeGraph({
-      nodes: [
-        {
-          id: 0,
-          tag: NodeTag.Start,
-          deps: []
-        },
-        {
-          id: 1,
-          tag: NodeTag.Const,
-          deps: [],
-          value: true
-        },
-        {
-          id: 2,
-          tag: NodeTag.Issue,
-          deps: [1],
-          condition: 1,
-          path: [1.5],
-          code: "expected_string"
-        },
-        {
-          id: 3,
-          tag: NodeTag.Return,
-          deps: [0, 1],
-          control: 0,
-          value: 1
-        }
-      ],
-      entry: 0,
-      result: 3
-    })).toThrow(TypeError);
-
     const poisonedRegex = /^x+$/u;
     Object.defineProperty(poisonedRegex, "exec", {
       configurable: true,
@@ -520,8 +487,6 @@ function evaluateGraphNode(state: EvalState, node: GraphNode): unknown {
       return node.value;
     case NodeTag.GetProp:
       return readProperty(evaluateNode(state, node.object), node.key);
-    case NodeTag.Length:
-      return readLength(evaluateNode(state, node.value));
     case NodeTag.IsString:
       return typeof evaluateNode(state, node.value) === "string";
     case NodeTag.IsNumber:
@@ -582,8 +547,6 @@ function evaluateGraphNode(state: EvalState, node: GraphNode): unknown {
     case NodeTag.Return:
       evaluateNode(state, node.control);
       return evaluateNode(state, node.value);
-    case NodeTag.Issue:
-      return evaluateNode(state, node.condition);
   }
 }
 
@@ -598,13 +561,6 @@ function isPlainObject(value: unknown): value is Readonly<Record<string, unknown
 function readProperty(value: unknown, key: string): unknown {
   if ((typeof value === "object" && value !== null) || typeof value === "function") {
     return (value as Readonly<Record<string, unknown>>)[key];
-  }
-  return undefined;
-}
-
-function readLength(value: unknown): number | undefined {
-  if (typeof value === "string" || Array.isArray(value)) {
-    return value.length;
   }
   return undefined;
 }
@@ -646,10 +602,10 @@ function hasOnlyKnownKeys(value: unknown, keys: readonly string[]): boolean {
   if (!isPlainObject(value)) {
     return false;
   }
-  const present = Object.keys(value);
+  const present = Reflect.ownKeys(value);
   for (let index = 0; index < present.length; index += 1) {
     const key = present[index];
-    if (key === undefined || !keys.includes(key)) {
+    if (typeof key !== "string" || !keys.includes(key)) {
       return false;
     }
   }

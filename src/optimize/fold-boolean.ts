@@ -17,12 +17,7 @@ import {
 } from "./fold-common.js";
 
 /**
- * @brief fold and function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold and; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold and.
  */
 export function foldAnd(
   node: BooleanFoldNode,
@@ -62,12 +57,7 @@ export function foldAnd(
 }
 
 /**
- * @brief fold or function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold or; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold or.
  */
 export function foldOr(
   node: BooleanFoldNode,

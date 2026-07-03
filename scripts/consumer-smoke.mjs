@@ -116,6 +116,18 @@ async function checkInstalledPackageMetadata() {
       return err(`installed typesea package contains ${field}`);
     }
   }
+  if (packageJson["version"] === "0.0.0") {
+    return err("installed typesea package version is not release-ready");
+  }
+  if (packageJson["type"] !== "module") {
+    return err("installed typesea package must be ESM-only");
+  }
+  if (typeof packageJson["author"] !== "string") {
+    return err("installed typesea package author is missing");
+  }
+  if (!isRecord(packageJson["repository"])) {
+    return err("installed typesea package repository is missing");
+  }
   return ok(undefined);
 }
 

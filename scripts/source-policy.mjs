@@ -4,6 +4,17 @@ import { join } from "node:path";
 const roots = ["src", "test", "bench", "scripts", "eslint.config.mjs"];
 const forbiddenWords = ["a" + "ny", "tr" + "y", "ca" + "tch"];
 const forbidden = new RegExp(`\\b(?:${forbiddenWords.join("|")})\\b`, "u");
+const forbiddenSnippets = [
+  "function " + "contract",
+  "routine " + "contract",
+  "type alias " + "contract",
+  "interface " + "contract",
+  "constant " + "contract",
+  "field " + "contract",
+  "Borrowed input slot " + "named",
+  "Documents one concrete " + "slot",
+  "Defines a closed compile-time " + "contract"
+];
 const violations = [];
 
 for (let index = 0; index < roots.length; index += 1) {
@@ -58,10 +69,28 @@ async function scanFile(path) {
   const lines = source.split("\n");
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex];
-    if (line !== undefined && forbidden.test(line)) {
+    if (line === undefined) {
+      continue;
+    }
+    if (forbidden.test(line)) {
       violations.push(`${path}:${String(lineIndex + 1)} banned token`);
+      continue;
+    }
+    const snippet = findForbiddenSnippet(line);
+    if (snippet !== undefined) {
+      violations.push(`${path}:${String(lineIndex + 1)} boilerplate comment: ${snippet}`);
     }
   }
+}
+
+function findForbiddenSnippet(line) {
+  for (let index = 0; index < forbiddenSnippets.length; index += 1) {
+    const snippet = forbiddenSnippets[index];
+    if (snippet !== undefined && line.includes(snippet)) {
+      return snippet;
+    }
+  }
+  return undefined;
 }
 
 function isCheckedSourceFile(name) {

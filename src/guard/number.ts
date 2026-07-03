@@ -14,7 +14,7 @@ import {
 import type { Presence } from "./types.js";
 
 /**
- * @brief number guard class contract.
+ * @brief number guard.
  * @details Owns its state directly; methods expose receiver checks and explicit result flow.
  * @invariant Construction leaves the instance in a fully usable state before it escapes.
  */
@@ -23,10 +23,8 @@ export class NumberGuard<
 > extends BaseGuard<number, TPresence> {
 
   /**
-   * @brief constructor constructor contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
-   * @post The receiver is initialized according to the class invariant before it can be observed.
+   * @brief constructor.
+       * @post The receiver is initialized according to the class invariant before it can be observed.
    */
   public constructor(schema: NumberSchema) {
     super(readNumberConstructorSchema(schema));
@@ -34,10 +32,8 @@ export class NumberGuard<
   }
 
   /**
-   * @brief int routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @returns Result for int; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief int.
+       */
   public int(): NumberGuard<TPresence> {
     const schema = readNumberMethodSchema(this, "number int receiver");
     return new NumberGuard<TPresence>({
@@ -52,11 +48,8 @@ export class NumberGuard<
   }
 
   /**
-   * @brief gte routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for gte; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief gte.
+         */
   public gte(value: number): NumberGuard<TPresence> {
     const schema = readNumberMethodSchema(this, "number gte receiver");
     const bound = checkFiniteNumberBound(value, "gte");
@@ -73,11 +66,8 @@ export class NumberGuard<
   }
 
   /**
-   * @brief lte routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for lte; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief lte.
+         */
   public lte(value: number): NumberGuard<TPresence> {
     const schema = readNumberMethodSchema(this, "number lte receiver");
     const bound = checkFiniteNumberBound(value, "lte");

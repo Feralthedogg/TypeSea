@@ -50,7 +50,11 @@ Required invariants:
 - Consumer TypeScript declarations typecheck under strict settings.
 - `npm pack --dry-run` includes only intended package files.
 - `package.json` has no runtime, peer, optional, or bundled dependencies.
+- `package.json` version, repository, author, ESM-only exports, and changelog
+  entries are current before publishing.
+- CI runs `npm run check` on Node 20.19, 22, and 24.
 - CI runs the same `npm run release:check` gate used locally.
+- Publish workflow uses npm provenance.
 
 The package is zero runtime dependency by policy. Benchmark comparison packages
 are dev dependencies only and must never appear in runtime, peer, optional, or

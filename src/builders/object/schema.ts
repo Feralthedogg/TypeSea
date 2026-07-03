@@ -24,33 +24,15 @@ import { isSchemaValue } from "../../schema/index.js";
 import type { ObjectShape } from "./types.js";
 
 /**
- * @brief normalized object entry schema interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief normalized object entry schema.
  */
 interface NormalizedObjectEntrySchema {
-
-  /**
-   * @brief schema field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly schema: Schema;
-
-  /**
-   * @brief presence field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly presence: PresenceTag;
 }
 
 /**
- * @brief object schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param shape Borrowed input slot named shape; validation or normalization happens before stored state changes.
- * @param mode Borrowed input slot named mode; validation or normalization happens before stored state changes.
- * @returns Result for object schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief object schema.
  */
 export function objectSchema(
   shape: ObjectShape,
@@ -80,11 +62,7 @@ export function objectSchema(
 }
 
 /**
- * @brief object schema from entries function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param sourceEntries Borrowed input slot named sourceEntries; validation or normalization happens before stored state changes.
- * @param mode Borrowed input slot named mode; validation or normalization happens before stored state changes.
- * @returns Result for object schema from entries; ownership of newly created aggregates is transferred to the caller.
+ * @brief object schema from entries.
  */
 export function objectSchemaFromEntries(
   sourceEntries: readonly ObjectEntry[],
@@ -115,10 +93,7 @@ export function objectSchemaFromEntries(
 }
 
 /**
- * @brief read object constructor schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @returns Result for read object constructor schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read object constructor schema.
  */
 export function readObjectConstructorSchema(schema: unknown): ObjectSchema {
   if (!isSchemaValue(schema) || schema.tag !== SchemaTag.Object) {
@@ -128,11 +103,7 @@ export function readObjectConstructorSchema(schema: unknown): ObjectSchema {
 }
 
 /**
- * @brief read object method schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @returns Result for read object method schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read object method schema.
  */
 export function readObjectMethodSchema(guard: unknown, label: string): ObjectSchema {
   const schema = readGuardSchema(guard, label);
@@ -143,11 +114,7 @@ export function readObjectMethodSchema(guard: unknown, label: string): ObjectSch
 }
 
 /**
- * @brief merge object schemas function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param base Borrowed input slot named base; validation or normalization happens before stored state changes.
- * @param extension Borrowed input slot named extension; validation or normalization happens before stored state changes.
- * @returns Result for merge object schemas; ownership of newly created aggregates is transferred to the caller.
+ * @brief merge object schemas.
  */
 export function mergeObjectSchemas(
   base: ObjectSchema,
@@ -170,11 +137,7 @@ export function mergeObjectSchemas(
 }
 
 /**
- * @brief pick object schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param keys Borrowed input slot named keys; validation or normalization happens before stored state changes.
- * @returns Result for pick object schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief pick object schema.
  */
 export function pickObjectSchema(
   schema: ObjectSchema,
@@ -195,11 +158,7 @@ export function pickObjectSchema(
 }
 
 /**
- * @brief omit object schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param keys Borrowed input slot named keys; validation or normalization happens before stored state changes.
- * @returns Result for omit object schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief omit object schema.
  */
 export function omitObjectSchema(
   schema: ObjectSchema,
@@ -216,10 +175,7 @@ export function omitObjectSchema(
 }
 
 /**
- * @brief partial object schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @returns Result for partial object schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief partial object schema.
  */
 export function partialObjectSchema(schema: ObjectSchema): ObjectSchema {
   const entries = new Array<ObjectEntry>(schema.entries.length);
@@ -237,12 +193,7 @@ export function partialObjectSchema(schema: ObjectSchema): ObjectSchema {
 }
 
 /**
- * @brief read object key selection function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param keys Borrowed input slot named keys; validation or normalization happens before stored state changes.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @returns Result for read object key selection; ownership of newly created aggregates is transferred to the caller.
+ * @brief read object key selection.
  */
 export function readObjectKeySelection(
   keys: unknown,
@@ -270,11 +221,7 @@ export function readObjectKeySelection(
 }
 
 /**
- * @brief find object entry function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param entries Borrowed input slot named entries; validation or normalization happens before stored state changes.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @returns Result for find object entry; ownership of newly created aggregates is transferred to the caller.
+ * @brief find object entry.
  */
 function findObjectEntry(
   entries: readonly ObjectEntry[],
@@ -290,20 +237,14 @@ function findObjectEntry(
 }
 
 /**
- * @brief make object key lookup function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @returns Result for make object key lookup; ownership of newly created aggregates is transferred to the caller.
+ * @brief make object key lookup.
  */
 function makeObjectKeyLookup(): Record<string, true> {
   return Object.create(null) as Record<string, true>;
 }
 
 /**
- * @brief define object key function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param target Borrowed input slot named target; validation or normalization happens before stored state changes.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief define object key.
  */
 function defineObjectKey(target: Record<string, true>, key: string): void {
   Object.defineProperty(target, key, {
@@ -315,21 +256,14 @@ function defineObjectKey(target: Record<string, true>, key: string): void {
 }
 
 /**
- * @brief has object key function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param keyLookup Borrowed input slot named keyLookup; validation or normalization happens before stored state changes.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @returns Result for has object key; ownership of newly created aggregates is transferred to the caller.
+ * @brief has object key.
  */
 function hasObjectKey(keyLookup: ObjectKeyLookup, key: string): boolean {
   return keyLookup[key] === true;
 }
 
 /**
- * @brief normalize object entry schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @returns Result for normalize object entry schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief normalize object entry schema.
  */
 function normalizeObjectEntrySchema(schema: Schema): NormalizedObjectEntrySchema {
   switch (schema.tag) {
@@ -386,12 +320,7 @@ function normalizeObjectEntrySchema(schema: Schema): NormalizedObjectEntrySchema
 }
 
 /**
- * @brief normalize wrapped object entry schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param inner Borrowed input slot named inner; validation or normalization happens before stored state changes.
- * @param wrap Borrowed input slot named wrap; validation or normalization happens before stored state changes.
- * @param original Borrowed input slot named original; validation or normalization happens before stored state changes.
- * @returns Result for normalize wrapped object entry schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief normalize wrapped object entry schema.
  */
 function normalizeWrappedObjectEntrySchema(
   inner: Schema,

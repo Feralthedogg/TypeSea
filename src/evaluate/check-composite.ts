@@ -28,9 +28,7 @@ import {
 import type { ValidationState } from "./state.js";
 
 /**
- * @brief issue collector type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief issue collector.
  */
 export type IssueCollector = (
   schema: Schema,
@@ -41,15 +39,7 @@ export type IssueCollector = (
 ) => void;
 
 /**
- * @brief collect array issues function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param item Borrowed input slot named item; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @param collectChild Borrowed input slot named collectChild; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief collect array issues.
  */
 export function collectArrayIssues(
   item: Schema,
@@ -82,15 +72,7 @@ export function collectArrayIssues(
 }
 
 /**
- * @brief collect tuple issues function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param items Borrowed input slot named items; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @param collectChild Borrowed input slot named collectChild; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief collect tuple issues.
  */
 export function collectTupleIssues(
   items: readonly Schema[],
@@ -137,10 +119,8 @@ export function collectTupleIssues(
 }
 
 /**
- * @brief read array index data property function contract.
+ * @brief read array index data property.
  * @details Reads an array element through its descriptor so validation does not execute getters.
- * @param value Borrowed input slot named value; validation happens before descriptor values are trusted.
- * @param index Borrowed input slot named index; validation happens before descriptor values are trusted.
  * @returns Data descriptor for elements, undefined for holes, and null for accessors.
  */
 function readArrayIndexDataProperty(
@@ -161,15 +141,7 @@ function readArrayIndexDataProperty(
 }
 
 /**
- * @brief collect record issues function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param item Borrowed input slot named item; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @param collectChild Borrowed input slot named collectChild; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief collect record issues.
  */
 export function collectRecordIssues(
   item: Schema,
@@ -201,15 +173,7 @@ export function collectRecordIssues(
 }
 
 /**
- * @brief collect object issues function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @param collectChild Borrowed input slot named collectChild; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief collect object issues.
  */
 export function collectObjectIssues(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>,
@@ -252,11 +216,12 @@ export function collectObjectIssues(
     path.pop();
   }
   if (schema.mode === ObjectModeTag.Strict) {
-    const keys = Object.keys(record);
+    const keys = Reflect.ownKeys(record);
     for (let index = 0; index < keys.length; index += 1) {
       const key = keys[index];
-      if (key !== undefined && !hasObjectKey(schema.keyLookup, key)) {
-        path.push(key);
+      if (key !== undefined &&
+        (typeof key !== "string" || !hasObjectKey(schema.keyLookup, key))) {
+        path.push(typeof key === "string" ? key : String(key));
         pushIssue(path, issues, "unrecognized_key", "known key", "extra key");
         path.pop();
       }
@@ -265,16 +230,7 @@ export function collectObjectIssues(
 }
 
 /**
- * @brief collect discriminated union issues function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @param cases Borrowed input slot named cases; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @param collectChild Borrowed input slot named collectChild; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief collect discriminated union issues.
  */
 export function collectDiscriminatedUnionIssues(
   key: string,
@@ -326,17 +282,7 @@ export function collectDiscriminatedUnionIssues(
 }
 
 /**
- * @brief collect refine issues function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param inner Borrowed input slot named inner; validation or normalization happens before stored state changes.
- * @param predicate Borrowed input slot named predicate; validation or normalization happens before stored state changes.
- * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @param collectChild Borrowed input slot named collectChild; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief collect refine issues.
  */
 export function collectRefineIssues(
   inner: Schema,

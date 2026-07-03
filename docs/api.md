@@ -18,7 +18,8 @@ import {
 ```
 
 The package exposes one root entry point. Subpath imports are intentionally not
-part of the public API.
+part of the public API. TypeSea is ESM-only and does not publish a CommonJS
+condition.
 
 ## Guard Contract
 

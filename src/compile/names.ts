@@ -9,10 +9,7 @@
 const MAX_GENERATED_FUNCTION_NAME_LENGTH = 96;
 
 /**
- * @brief safe function name function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for safe function name; ownership of newly created aggregates is transferred to the caller.
+ * @brief safe function name.
  */
 export function safeFunctionName(value: string): string {
   const replaced = value.replace(/[^$_a-zA-Z0-9]/gu, "_");
@@ -29,19 +26,14 @@ export function safeFunctionName(value: string): string {
 }
 
 /**
- * @brief string literal function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for string literal; ownership of newly created aggregates is transferred to the caller.
+ * @brief string literal.
  */
 export function stringLiteral(value: string): string {
   return JSON.stringify(value);
 }
 
 /**
- * @brief reserved function names constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief reserved function names.
  */
 const reservedFunctionNames = new Set<string>([
   "arguments",

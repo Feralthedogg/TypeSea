@@ -10,11 +10,7 @@ import { isRecord } from "./props.js";
 import { isConstructedGuard } from "./registry.js";
 
 /**
- * @brief read guard schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @returns Result for read guard schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read guard schema.
  */
 export function readGuardSchema(
   guard: unknown,
@@ -34,11 +30,7 @@ export function readGuardSchema(
 }
 
 /**
- * @brief read string method schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @returns Result for read string method schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read string method schema.
  */
 export function readStringMethodSchema(guard: unknown, label: string): StringSchema {
   if (isConstructedGuard(guard)) {
@@ -56,11 +48,7 @@ export function readStringMethodSchema(guard: unknown, label: string): StringSch
 }
 
 /**
- * @brief read number method schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @returns Result for read number method schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read number method schema.
  */
 export function readNumberMethodSchema(guard: unknown, label: string): NumberSchema {
   if (isConstructedGuard(guard)) {
@@ -78,10 +66,7 @@ export function readNumberMethodSchema(guard: unknown, label: string): NumberSch
 }
 
 /**
- * @brief read constructor schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @returns Result for read constructor schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read constructor schema.
  */
 export function readConstructorSchema(schema: unknown): Schema {
   if (!isSchemaValue(schema)) {
@@ -91,10 +76,7 @@ export function readConstructorSchema(schema: unknown): Schema {
 }
 
 /**
- * @brief read string constructor schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @returns Result for read string constructor schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read string constructor schema.
  */
 export function readStringConstructorSchema(schema: unknown): StringSchema {
   if (!isSchemaValue(schema) || schema.tag !== SchemaTag.String) {
@@ -104,10 +86,7 @@ export function readStringConstructorSchema(schema: unknown): StringSchema {
 }
 
 /**
- * @brief read number constructor schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @returns Result for read number constructor schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read number constructor schema.
  */
 export function readNumberConstructorSchema(schema: unknown): NumberSchema {
   if (!isSchemaValue(schema) || schema.tag !== SchemaTag.Number) {
@@ -117,11 +96,7 @@ export function readNumberConstructorSchema(schema: unknown): NumberSchema {
 }
 
 /**
- * @brief check refinement input function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param predicate Borrowed input slot named predicate; validation or normalization happens before stored state changes.
- * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief check refinement input.
  */
 export function checkRefinementInput(
   predicate: unknown,
@@ -136,11 +111,7 @@ export function checkRefinementInput(
 }
 
 /**
- * @brief check string length bound function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @returns Result for check string length bound; ownership of newly created aggregates is transferred to the caller.
+ * @brief check string length bound.
  */
 export function checkStringLengthBound(value: number, label: string): number {
   if (!Number.isInteger(value) || value < 0) {
@@ -150,11 +121,7 @@ export function checkStringLengthBound(value: number, label: string): number {
 }
 
 /**
- * @brief check finite number bound function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @returns Result for check finite number bound; ownership of newly created aggregates is transferred to the caller.
+ * @brief check finite number bound.
  */
 export function checkFiniteNumberBound(value: number, label: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {

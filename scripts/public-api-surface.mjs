@@ -318,6 +318,9 @@ function checkPackageExports(packageJson) {
   if (root["import"] !== "./dist/index.js") {
     return err("package root import export must point to ./dist/index.js");
   }
+  if (root["default"] !== "./dist/index.js") {
+    return err("package root default export must point to ./dist/index.js");
+  }
   if (packageJson["types"] !== "./dist/index.d.ts") {
     return err("package types field must point to ./dist/index.d.ts");
   }

@@ -39,10 +39,8 @@ export class ObjectGuard<
 > extends BaseGuard<InferObject<TShape>> {
 
   /**
-   * @brief constructor constructor contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
-   * @post The receiver is initialized according to the class invariant before it can be observed.
+   * @brief constructor.
+       * @post The receiver is initialized according to the class invariant before it can be observed.
    */
   public constructor(schema: ObjectSchema) {
     super(readObjectConstructorSchema(schema));
@@ -50,11 +48,8 @@ export class ObjectGuard<
   }
 
   /**
-   * @brief extend routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param extension Borrowed input slot named extension; validation or normalization happens before stored state changes.
-   * @returns Result for extend; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief extend.
+         */
   public extend<const TExtension extends ObjectShape>(
     extension: TExtension
   ): ObjectGuard<MergeObjectShapes<TShape, TExtension>, TMode> {
@@ -62,11 +57,8 @@ export class ObjectGuard<
   }
 
   /**
-   * @brief pick routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param keys Borrowed input slot named keys; validation or normalization happens before stored state changes.
-   * @returns Result for pick; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief pick.
+         */
   public pick<const TKeys extends readonly StringKeyOf<TShape>[]>(
     keys: TKeys
   ): ObjectGuard<PickObjectShape<TShape, TKeys[number]>, TMode> {
@@ -74,11 +66,8 @@ export class ObjectGuard<
   }
 
   /**
-   * @brief omit routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param keys Borrowed input slot named keys; validation or normalization happens before stored state changes.
-   * @returns Result for omit; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief omit.
+         */
   public omit<const TKeys extends readonly StringKeyOf<TShape>[]>(
     keys: TKeys
   ): ObjectGuard<OmitObjectShape<TShape, TKeys[number]>, TMode> {
@@ -86,20 +75,15 @@ export class ObjectGuard<
   }
 
   /**
-   * @brief partial routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @returns Result for partial; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief partial.
+       */
   public partial(): ObjectGuard<PartialObjectShape<TShape>, TMode> {
     return partialObjectGuard(this);
   }
 }
 
 /**
- * @brief object function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param shape Borrowed input slot named shape; validation or normalization happens before stored state changes.
- * @returns Result for object; ownership of newly created aggregates is transferred to the caller.
+ * @brief object.
  */
 export function object<const TShape extends ObjectShape>(
   shape: TShape
@@ -110,10 +94,7 @@ export function object<const TShape extends ObjectShape>(
 }
 
 /**
- * @brief strict object function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param shape Borrowed input slot named shape; validation or normalization happens before stored state changes.
- * @returns Result for strict object; ownership of newly created aggregates is transferred to the caller.
+ * @brief strict object.
  */
 export function strictObject<const TShape extends ObjectShape>(
   shape: TShape
@@ -124,11 +105,7 @@ export function strictObject<const TShape extends ObjectShape>(
 }
 
 /**
- * @brief extend function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param extension Borrowed input slot named extension; validation or normalization happens before stored state changes.
- * @returns Result for extend; ownership of newly created aggregates is transferred to the caller.
+ * @brief extend.
  */
 export function extend<
   const TShape extends ObjectShape,
@@ -142,11 +119,7 @@ export function extend<
 }
 
 /**
- * @brief pick function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param keys Borrowed input slot named keys; validation or normalization happens before stored state changes.
- * @returns Result for pick; ownership of newly created aggregates is transferred to the caller.
+ * @brief pick.
  */
 export function pick<
   const TShape extends ObjectShape,
@@ -160,11 +133,7 @@ export function pick<
 }
 
 /**
- * @brief omit function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param keys Borrowed input slot named keys; validation or normalization happens before stored state changes.
- * @returns Result for omit; ownership of newly created aggregates is transferred to the caller.
+ * @brief omit.
  */
 export function omit<
   const TShape extends ObjectShape,
@@ -178,10 +147,7 @@ export function omit<
 }
 
 /**
- * @brief partial function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @returns Result for partial; ownership of newly created aggregates is transferred to the caller.
+ * @brief partial.
  */
 export function partial<
   const TShape extends ObjectShape,
@@ -193,11 +159,7 @@ export function partial<
 }
 
 /**
- * @brief extend object guard function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param extension Borrowed input slot named extension; validation or normalization happens before stored state changes.
- * @returns Result for extend object guard; ownership of newly created aggregates is transferred to the caller.
+ * @brief extend object guard.
  */
 function extendObjectGuard<
   TShape extends ObjectShape,
@@ -214,11 +176,7 @@ function extendObjectGuard<
 }
 
 /**
- * @brief pick object guard function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param keys Borrowed input slot named keys; validation or normalization happens before stored state changes.
- * @returns Result for pick object guard; ownership of newly created aggregates is transferred to the caller.
+ * @brief pick object guard.
  */
 function pickObjectGuard<
   TShape extends ObjectShape,
@@ -236,11 +194,7 @@ function pickObjectGuard<
 }
 
 /**
- * @brief omit object guard function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param keys Borrowed input slot named keys; validation or normalization happens before stored state changes.
- * @returns Result for omit object guard; ownership of newly created aggregates is transferred to the caller.
+ * @brief omit object guard.
  */
 function omitObjectGuard<
   TShape extends ObjectShape,
@@ -258,10 +212,7 @@ function omitObjectGuard<
 }
 
 /**
- * @brief partial object guard function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @returns Result for partial object guard; ownership of newly created aggregates is transferred to the caller.
+ * @brief partial object guard.
  */
 function partialObjectGuard<
   TShape extends ObjectShape,

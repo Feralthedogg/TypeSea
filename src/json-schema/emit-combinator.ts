@@ -15,13 +15,7 @@ import type {
 } from "./types.js";
 
 /**
- * @brief emit union function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param emitChild Borrowed input slot named emitChild; validation or normalization happens before stored state changes.
- * @returns Result for emit union; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit union.
  */
 export function emitUnion(
   options: readonly Schema[],
@@ -57,14 +51,7 @@ export function emitUnion(
 }
 
 /**
- * @brief emit intersection function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param left Borrowed input slot named left; validation or normalization happens before stored state changes.
- * @param right Borrowed input slot named right; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param emitChild Borrowed input slot named emitChild; validation or normalization happens before stored state changes.
- * @returns Result for emit intersection; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit intersection.
  */
 export function emitIntersection(
   left: Schema,
@@ -99,13 +86,7 @@ export function emitIntersection(
 }
 
 /**
- * @brief emit discriminated union function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param cases Borrowed input slot named cases; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param emitChild Borrowed input slot named emitChild; validation or normalization happens before stored state changes.
- * @returns Result for emit discriminated union; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit discriminated union.
  */
 export function emitDiscriminatedUnion(
   cases: Extract<Schema, {
@@ -127,13 +108,7 @@ export function emitDiscriminatedUnion(
 }
 
 /**
- * @brief emit nullable function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param inner Borrowed input slot named inner; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param emitChild Borrowed input slot named emitChild; validation or normalization happens before stored state changes.
- * @returns Result for emit nullable; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit nullable.
  */
 export function emitNullable(
   inner: Schema,

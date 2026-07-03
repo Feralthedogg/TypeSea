@@ -14,21 +14,14 @@ import type {
 } from "./types.js";
 
 /**
- * @brief freeze schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @returns Result for freeze schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief freeze schema.
  */
 export function freezeSchema(schema: Schema): Schema {
   return freezeSchemaInner(schema, new WeakSet<object>());
 }
 
 /**
- * @brief freeze schema inner function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param frozen Borrowed input slot named frozen; validation or normalization happens before stored state changes.
- * @returns Result for freeze schema inner; ownership of newly created aggregates is transferred to the caller.
+ * @brief freeze schema inner.
  */
 function freezeSchemaInner(schema: Schema, frozen: WeakSet<object>): Schema {
   if (frozen.has(schema)) {
@@ -89,11 +82,7 @@ function freezeSchemaInner(schema: Schema, frozen: WeakSet<object>): Schema {
 }
 
 /**
- * @brief freeze array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param values Borrowed input slot named values; validation or normalization happens before stored state changes.
- * @param frozen Borrowed input slot named frozen; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief freeze array.
  */
 function freezeArray(
   values: readonly object[],
@@ -110,11 +99,7 @@ function freezeArray(
 }
 
 /**
- * @brief freeze string checks function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param values Borrowed input slot named values; validation or normalization happens before stored state changes.
- * @param frozen Borrowed input slot named frozen; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief freeze string checks.
  */
 function freezeStringChecks(
   values: readonly StringCheck[],
@@ -135,10 +120,7 @@ function freezeStringChecks(
 }
 
 /**
- * @brief freeze regex check function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param check Borrowed input slot named check; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief freeze regex check.
  */
 function freezeRegexCheck(check: StringRegexCheck): void {
   const regex = check.regex;
@@ -162,11 +144,7 @@ function freezeRegexCheck(check: StringRegexCheck): void {
 }
 
 /**
- * @brief freeze schema array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param values Borrowed input slot named values; validation or normalization happens before stored state changes.
- * @param frozen Borrowed input slot named frozen; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief freeze schema array.
  */
 function freezeSchemaArray(
   values: readonly Schema[],
@@ -182,11 +160,7 @@ function freezeSchemaArray(
 }
 
 /**
- * @brief freeze object entries function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param entries Borrowed input slot named entries; validation or normalization happens before stored state changes.
- * @param frozen Borrowed input slot named frozen; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief freeze object entries.
  */
 function freezeObjectEntries(
   entries: readonly ObjectEntry[],
@@ -203,11 +177,7 @@ function freezeObjectEntries(
 }
 
 /**
- * @brief freeze discriminated union cases function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param cases Borrowed input slot named cases; validation or normalization happens before stored state changes.
- * @param frozen Borrowed input slot named frozen; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief freeze discriminated union cases.
  */
 function freezeDiscriminatedUnionCases(
   cases: readonly DiscriminatedUnionCase[],

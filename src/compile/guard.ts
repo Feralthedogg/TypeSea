@@ -33,14 +33,12 @@ import type {
 } from "./types.js";
 
 /**
- * @brief constructed compiled guards constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief constructed compiled guards.
  */
 const constructedCompiledGuards = new WeakSet<object>();
 
 /**
- * @brief compiled base guard class contract.
+ * @brief compiled base guard.
  * @details Owns its state directly; methods expose receiver checks and explicit result flow.
  * @invariant Construction leaves the instance in a fully usable state before it escapes.
  */
@@ -48,36 +46,13 @@ export class CompiledBaseGuard<
   TValue,
   TPresence extends Presence = "required"
 > extends BaseGuard<TValue, TPresence> implements CompiledGuard<TValue, TPresence> {
-
-  /**
-   * @brief source field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   public declare readonly source: string;
-
-  /**
-   * @brief test field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   private declare readonly test: BooleanPredicate;
-
-  /**
-   * @brief collect field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   private declare readonly collect: IssueCollectorRoot;
 
   /**
-   * @brief constructor constructor contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
-   * @param test Borrowed input slot named test; validation or normalization happens before stored state changes.
-   * @param collect Borrowed input slot named collect; validation or normalization happens before stored state changes.
-   * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
-   * @post The receiver is initialized according to the class invariant before it can be observed.
+   * @brief constructor.
+             * @post The receiver is initialized according to the class invariant before it can be observed.
    */
   public constructor(
     schema: Schema,
@@ -103,12 +78,8 @@ export class CompiledBaseGuard<
   }
 
   /**
-   * @brief is routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param this Borrowed input slot named this; validation or normalization happens before stored state changes.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for is; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief is.
+           */
   public override is(
     this: unknown,
     value: unknown
@@ -117,12 +88,8 @@ export class CompiledBaseGuard<
   }
 
   /**
-   * @brief check routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param this Borrowed input slot named this; validation or normalization happens before stored state changes.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for check; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief check.
+           */
   public override check(
     this: unknown,
     value: unknown
@@ -131,12 +98,8 @@ export class CompiledBaseGuard<
   }
 
   /**
-   * @brief assert routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param this Borrowed input slot named this; validation or normalization happens before stored state changes.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @post No result value is produced; effects are limited to the documented receiver or output buffer.
-   */
+   * @brief assert.
+           */
   public override assert(
     this: unknown,
     value: unknown
@@ -149,11 +112,7 @@ export class CompiledBaseGuard<
 }
 
 /**
- * @brief compile function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for compile; ownership of newly created aggregates is transferred to the caller.
+ * @brief compile.
  */
 export function compile<TValue, TPresence extends Presence>(
   guard: Guard<TValue, TPresence>,
@@ -193,10 +152,7 @@ export function compile<TValue, TPresence extends Presence>(
 }
 
 /**
- * @brief read compile schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @returns Result for read compile schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read compile schema.
  */
 function readCompileSchema(guard: unknown): Schema {
   if (!isRecord(guard)) {
@@ -210,21 +166,14 @@ function readCompileSchema(guard: unknown): Schema {
 }
 
 /**
- * @brief is strict true function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is strict true; ownership of newly created aggregates is transferred to the caller.
+ * @brief is strict true.
  */
 function isStrictTrue(value: unknown): boolean {
   return value === true;
 }
 
 /**
- * @brief run compiled check function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for run compiled check; ownership of newly created aggregates is transferred to the caller.
+ * @brief run compiled check.
  */
 function runCompiledCheck<TValue>(
   guard: unknown,
@@ -238,10 +187,7 @@ function runCompiledCheck<TValue>(
 }
 
 /**
- * @brief read compiled test function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @returns Result for read compiled test; ownership of newly created aggregates is transferred to the caller.
+ * @brief read compiled test.
  */
 function readCompiledTest(guard: unknown): BooleanPredicate {
   if (isConstructedCompiledGuard(guard)) {
@@ -258,10 +204,7 @@ function readCompiledTest(guard: unknown): BooleanPredicate {
 }
 
 /**
- * @brief read compiled collect function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @returns Result for read compiled collect; ownership of newly created aggregates is transferred to the caller.
+ * @brief read compiled collect.
  */
 function readCompiledCollect(guard: unknown): IssueCollectorRoot {
   if (isConstructedCompiledGuard(guard)) {
@@ -278,13 +221,7 @@ function readCompiledCollect(guard: unknown): IssueCollectorRoot {
 }
 
 /**
- * @brief define readonly property function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param target Borrowed input slot named target; validation or normalization happens before stored state changes.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param enumerable Borrowed input slot named enumerable; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief define readonly property.
  */
 function defineReadonlyProperty(
   target: object,
@@ -301,10 +238,7 @@ function defineReadonlyProperty(
 }
 
 /**
- * @brief read compile name function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for read compile name; ownership of newly created aggregates is transferred to the caller.
+ * @brief read compile name.
  */
 function readCompileName(options: unknown): string {
   if (options === undefined) {
@@ -324,20 +258,14 @@ function readCompileName(options: unknown): string {
 }
 
 /**
- * @brief is record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is record; ownership of newly created aggregates is transferred to the caller.
+ * @brief is record.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
- * @brief is constructed compiled guard function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is constructed compiled guard; ownership of newly created aggregates is transferred to the caller.
+ * @brief is constructed compiled guard.
  */
 function isConstructedCompiledGuard(
   value: unknown

@@ -14,25 +14,19 @@ import type {
 import type { ObjectModeTag } from "../../kind/index.js";
 
 /**
- * @brief object shape type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief object shape.
  */
 export type ObjectShape = Readonly<Record<string, Guard<unknown, Presence>>>;
 
 /**
- * @brief object guard mode type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief object guard mode.
  */
 export type ObjectGuardMode =
   | typeof ObjectModeTag.Passthrough
   | typeof ObjectModeTag.Strict;
 
 /**
- * @brief optional keys type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief optional keys.
  */
 export type OptionalKeys<TShape extends ObjectShape> = {
   [TKey in keyof TShape]-?: GuardPresence<TShape[TKey]> extends "optional"
@@ -41,9 +35,7 @@ export type OptionalKeys<TShape extends ObjectShape> = {
 }[keyof TShape];
 
 /**
- * @brief required keys type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief required keys.
  */
 export type RequiredKeys<TShape extends ObjectShape> = {
   [TKey in keyof TShape]-?: GuardPresence<TShape[TKey]> extends "optional"
@@ -52,9 +44,7 @@ export type RequiredKeys<TShape extends ObjectShape> = {
 }[keyof TShape];
 
 /**
- * @brief infer object type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief infer object.
  */
 export type InferObject<TShape extends ObjectShape> = Simplify<
   {
@@ -65,18 +55,14 @@ export type InferObject<TShape extends ObjectShape> = Simplify<
 >;
 
 /**
- * @brief simplify type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief simplify.
  */
 export type Simplify<TValue> = {
   readonly [TKey in keyof TValue]: TValue[TKey];
 } & {};
 
 /**
- * @brief merge object shapes type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief merge object shapes.
  */
 export type MergeObjectShapes<
   TBase extends ObjectShape,
@@ -84,18 +70,14 @@ export type MergeObjectShapes<
 > = Simplify<Omit<TBase, keyof TExtension> & TExtension>;
 
 /**
- * @brief partial object shape type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief partial object shape.
  */
 export type PartialObjectShape<TShape extends ObjectShape> = {
   readonly [TKey in keyof TShape]: BaseGuard<GuardValue<TShape[TKey]>, "optional">;
 };
 
 /**
- * @brief pick object shape type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief pick object shape.
  */
 export type PickObjectShape<
   TShape extends ObjectShape,
@@ -103,9 +85,7 @@ export type PickObjectShape<
 > = Pick<TShape, Extract<keyof TShape, TKey>>;
 
 /**
- * @brief omit object shape type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief omit object shape.
  */
 export type OmitObjectShape<
   TShape extends ObjectShape,
@@ -113,8 +93,6 @@ export type OmitObjectShape<
 > = Omit<TShape, Extract<keyof TShape, TKey>>;
 
 /**
- * @brief string key of type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief string key of.
  */
 export type StringKeyOf<TValue> = Extract<keyof TValue, string>;

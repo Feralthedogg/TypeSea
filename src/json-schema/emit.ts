@@ -31,12 +31,7 @@ import type {
 } from "./types.js";
 
 /**
- * @brief emit schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @returns Result for emit schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit schema.
  */
 export function emitSchema(
   schema: Schema,

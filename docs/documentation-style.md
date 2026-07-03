@@ -39,7 +39,9 @@ contracts that matter for the engine.
 ## Declaration Comments
 
 Every exported declaration and internal engine declaration should have a block
-comment directly above it.
+comment directly above it. Do not add per-field comments that merely repeat the
+property name or readonly modifier; field comments are reserved for hidden
+ownership, allocation, or invariant details.
 
 Use this shape:
 
@@ -69,6 +71,8 @@ Rules:
 - `@invariant` records state that must remain true after construction.
 - `@post` records mutation, freezing, allocation, or visibility effects.
 - `@throws` appears only on intentional throwing APIs such as assertion helpers.
+- Repeated template suffixes and generated parameter prose are forbidden because
+  they hide the actual invariant.
 
 ## C Flavor
 

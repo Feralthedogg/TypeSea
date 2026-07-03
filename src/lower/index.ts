@@ -9,10 +9,7 @@ import { GraphBuilder, type Graph, type NodeId } from "../ir/index.js";
 import { UUID_PATTERN, type Schema } from "../schema/index.js";
 
 /**
- * @brief lower schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @returns Result for lower schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief lower schema.
  */
 export function lowerSchema(schema: Schema): Graph {
   const builder = new GraphBuilder();
@@ -24,12 +21,7 @@ export function lowerSchema(schema: Schema): Graph {
 }
 
 /**
- * @brief lower predicate function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param builder Borrowed input slot named builder; validation or normalization happens before stored state changes.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for lower predicate; ownership of newly created aggregates is transferred to the caller.
+ * @brief lower predicate.
  */
 function lowerPredicate(
   builder: GraphBuilder,
@@ -92,12 +84,7 @@ function lowerPredicate(
 }
 
 /**
- * @brief lower string function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param builder Borrowed input slot named builder; validation or normalization happens before stored state changes.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for lower string; ownership of newly created aggregates is transferred to the caller.
+ * @brief lower string.
  */
 function lowerString(
   builder: GraphBuilder,
@@ -130,12 +117,7 @@ function lowerString(
 }
 
 /**
- * @brief lower number function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param builder Borrowed input slot named builder; validation or normalization happens before stored state changes.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for lower number; ownership of newly created aggregates is transferred to the caller.
+ * @brief lower number.
  */
 function lowerNumber(
   builder: GraphBuilder,
@@ -165,12 +147,7 @@ function lowerNumber(
 }
 
 /**
- * @brief lower object function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param builder Borrowed input slot named builder; validation or normalization happens before stored state changes.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for lower object; ownership of newly created aggregates is transferred to the caller.
+ * @brief lower object.
  */
 function lowerObject(
   builder: GraphBuilder,
@@ -208,12 +185,7 @@ function lowerObject(
 }
 
 /**
- * @brief lower union function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param builder Borrowed input slot named builder; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for lower union; ownership of newly created aggregates is transferred to the caller.
+ * @brief lower union.
  */
 function lowerUnion(
   builder: GraphBuilder,
@@ -232,12 +204,7 @@ function lowerUnion(
 }
 
 /**
- * @brief lower discriminated union function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param builder Borrowed input slot named builder; validation or normalization happens before stored state changes.
- * @param cases Borrowed input slot named cases; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for lower discriminated union; ownership of newly created aggregates is transferred to the caller.
+ * @brief lower discriminated union.
  */
 function lowerDiscriminatedUnion(
   builder: GraphBuilder,

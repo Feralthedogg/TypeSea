@@ -14,24 +14,19 @@ import type {
 } from "./types.js";
 
 /**
- * @brief draft 07 schema id constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
+ * @brief draft 07 schema id.
  * @invariant The value is the default dialect marker for TypeSea JSON Schema output.
  */
 export const JSON_SCHEMA_DRAFT_07_ID = "http://json-schema.org/draft-07/schema#";
 
 /**
- * @brief draft 2020 12 schema id constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
+ * @brief draft 2020 12 schema id.
  * @invariant The value selects the `prefixItems` tuple keyword set.
  */
 export const JSON_SCHEMA_2020_12_ID = "https://json-schema.org/draft/2020-12/schema";
 
 /**
- * @brief read json schema guard schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @returns Result for read json schema guard schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read json schema guard schema.
  */
 export function readJsonSchemaGuardSchema(guard: unknown): Schema {
   if (!isRecord(guard)) {
@@ -41,10 +36,7 @@ export function readJsonSchemaGuardSchema(guard: unknown): Schema {
 }
 
 /**
- * @brief read json schema schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @returns Result for read json schema schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read json schema schema.
  */
 export function readJsonSchemaSchema(schema: unknown): Schema {
   if (!isSchemaValue(schema)) {
@@ -54,10 +46,7 @@ export function readJsonSchemaSchema(schema: unknown): Schema {
 }
 
 /**
- * @brief read json schema options function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for read json schema options; ownership of newly created aggregates is transferred to the caller.
+ * @brief read json schema options.
  */
 export function readJsonSchemaOptions(options: unknown): JsonSchemaOptions {
   if (options === undefined) {
@@ -81,10 +70,8 @@ export function readJsonSchemaOptions(options: unknown): JsonSchemaOptions {
 }
 
 /**
- * @brief read json schema dialect function contract.
- * @details Treats parameters as borrowed input and derives the emitter keyword set.
- * @param value Borrowed input slot named value; validation happens before it affects the output dialect.
- * @param schemaId Borrowed input slot named schemaId; known schema ids can imply a dialect.
+ * @brief read json schema dialect.
+ * @details Derives the emitter keyword set from the requested JSON Schema dialect.
  * @returns Normalized JSON Schema dialect.
  */
 function readJsonSchemaDialect(value: unknown, schemaId: unknown): JsonSchemaDialect {
@@ -98,9 +85,8 @@ function readJsonSchemaDialect(value: unknown, schemaId: unknown): JsonSchemaDia
 }
 
 /**
- * @brief infer json schema dialect function contract.
+ * @brief infer json schema dialect.
  * @details Chooses a keyword set from well-known schema identifiers without trusting arbitrary strings.
- * @param schemaId Borrowed input slot named schemaId; unknown ids keep the conservative default dialect.
  * @returns Normalized JSON Schema dialect.
  */
 function inferJsonSchemaDialect(schemaId: unknown): JsonSchemaDialect {
@@ -111,10 +97,7 @@ function inferJsonSchemaDialect(schemaId: unknown): JsonSchemaDialect {
 }
 
 /**
- * @brief is record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is record; ownership of newly created aggregates is transferred to the caller.
+ * @brief is record.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

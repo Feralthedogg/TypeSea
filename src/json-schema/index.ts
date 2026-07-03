@@ -40,11 +40,7 @@ export type {
 } from "./types.js";
 
 /**
- * @brief to json schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for to json schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief to json schema.
  */
 export function toJsonSchema<TValue>(
   guard: Guard<TValue, Presence> | Decoder<TValue> | AsyncDecoder<TValue>,
@@ -74,11 +70,7 @@ export function toJsonSchema<TValue>(
 }
 
 /**
- * @brief schema to json schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for schema to json schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief schema to json schema.
  */
 export function schemaToJsonSchema(
   schema: Schema,
@@ -88,11 +80,7 @@ export function schemaToJsonSchema(
 }
 
 /**
- * @brief export json schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for export json schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief export json schema.
  */
 function exportJsonSchema(
   schema: Schema,
@@ -119,9 +107,8 @@ function exportJsonSchema(
 }
 
 /**
- * @brief default json schema schema id function contract.
+ * @brief default json schema schema id.
  * @details Maps each TypeSea emitter dialect to the matching `$schema` marker.
- * @param dialect Borrowed input slot named dialect; validation happens before it controls output shape.
  * @returns Stable schema identifier for the selected dialect.
  */
 function defaultJsonSchemaSchemaId(dialect: JsonSchemaDialect): string {

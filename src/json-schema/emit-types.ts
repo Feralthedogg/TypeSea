@@ -12,9 +12,7 @@ import type {
 } from "./types.js";
 
 /**
- * @brief json schema emitter type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief json schema emitter.
  */
 export type JsonSchemaEmitter = (
   schema: Schema,

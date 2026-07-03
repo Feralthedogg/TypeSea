@@ -11,11 +11,7 @@ import { emitFunction, emitFunctions } from "./predicate.js";
 import type { CompiledSourceBundle } from "./types.js";
 
 /**
- * @brief emit compiled source bundle function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
- * @returns Result for emit compiled source bundle; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit compiled source bundle.
  */
 export function emitCompiledSourceBundle(
   schema: Schema,

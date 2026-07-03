@@ -10,7 +10,6 @@ import type {
   GetPropNode,
   GraphNode,
   HasOwnNode,
-  LengthNode,
   NodeId,
   NumericCompareNode,
   RegexNode,
@@ -29,12 +28,7 @@ import {
 } from "./fold-common.js";
 
 /**
- * @brief fold get prop function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold get prop; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold get prop.
  */
 export function foldGetProp(
   node: GetPropNode,
@@ -49,35 +43,7 @@ export function foldGetProp(
 }
 
 /**
- * @brief fold length function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold length; ownership of newly created aggregates is transferred to the caller.
- */
-export function foldLength(
-  node: LengthNode,
-  nodes: GraphNode[],
-  aliases: NodeId[]
-): FoldResult {
-  const value = readConst(nodes, node.value);
-  if (!value.found) {
-    return keep(node);
-  }
-  if (typeof value.value === "string") {
-    return replace(node, ensureConst(nodes, aliases, value.value.length));
-  }
-  return replace(node, ensureConst(nodes, aliases, undefined));
-}
-
-/**
- * @brief fold unary function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold unary; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold unary.
  */
 export function foldUnary(
   node: UnaryPredicateNode,
@@ -115,12 +81,7 @@ export function foldUnary(
 }
 
 /**
- * @brief fold equals function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold equals; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold equals.
  */
 export function foldEquals(
   node: EqualsNode,
@@ -136,12 +97,7 @@ export function foldEquals(
 }
 
 /**
- * @brief fold numeric function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold numeric; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold numeric.
  */
 export function foldNumeric(
   node: NumericCompareNode,
@@ -161,12 +117,7 @@ export function foldNumeric(
 }
 
 /**
- * @brief fold string bound function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold string bound; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold string bound.
  */
 export function foldStringBound(
   node: StringBoundNode,
@@ -184,12 +135,7 @@ export function foldStringBound(
 }
 
 /**
- * @brief fold regex function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold regex; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold regex.
  */
 export function foldRegex(
   node: RegexNode,
@@ -210,12 +156,7 @@ export function foldRegex(
 }
 
 /**
- * @brief fold has own function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold has own; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold has own.
  */
 export function foldHasOwn(
   node: HasOwnNode,
@@ -230,12 +171,7 @@ export function foldHasOwn(
 }
 
 /**
- * @brief fold strict keys function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold strict keys; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold strict keys.
  */
 export function foldStrictKeys(
   node: StrictKeysNode,
@@ -250,12 +186,7 @@ export function foldStrictKeys(
 }
 
 /**
- * @brief fold array every function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold array every; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold array every.
  */
 export function foldArrayEvery(
   node: ArrayEveryNode,

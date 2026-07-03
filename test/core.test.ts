@@ -138,6 +138,16 @@ describe("TypeSea core guards", () => {
     }).toThrow(TypeSeaAssertionError);
   });
 
+  test("accepts modern UUID variants and nil UUID", () => {
+    const UserId: StringGuard = t.string.uuid();
+
+    expect(UserId.is("00000000-0000-0000-0000-000000000000")).toBe(true);
+    expect(UserId.is("1ec9414c-232a-6b00-b3c8-9e6bdeced846")).toBe(true);
+    expect(UserId.is("01890f5c-7f6b-7cc2-98c4-dc0c0c07398f")).toBe(true);
+    expect(UserId.is("01890f5c-7f6b-8cc2-98c4-dc0c0c07398f")).toBe(true);
+    expect(UserId.is("01890f5c-7f6b-7cc2-18c4-dc0c0c07398f")).toBe(false);
+  });
+
   test("supports tuple and record schemas", () => {
     const Pair = t.tuple([t.string, t.number.int()]);
     const Scores = t.record(t.number.gte(0));

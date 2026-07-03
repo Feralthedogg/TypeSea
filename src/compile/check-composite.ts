@@ -25,9 +25,7 @@ import { stringLiteral } from "./names.js";
 import type { EmitContext } from "./types.js";
 
 /**
- * @brief check function emitter type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief check function emitter.
  */
 export type CheckFunctionEmitter = (
   schema: Schema,
@@ -35,15 +33,7 @@ export type CheckFunctionEmitter = (
 ) => string;
 
 /**
- * @brief emit array check function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param item Borrowed input slot named item; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @param emitChild Borrowed input slot named emitChild; validation or normalization happens before stored state changes.
- * @returns Result for emit array check; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit array check.
  */
 export function emitArrayCheck(
   item: Schema,
@@ -78,15 +68,7 @@ export function emitArrayCheck(
 }
 
 /**
- * @brief emit tuple check function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param items Borrowed input slot named items; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @param emitChild Borrowed input slot named emitChild; validation or normalization happens before stored state changes.
- * @returns Result for emit tuple check; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit tuple check.
  */
 export function emitTupleCheck(
   items: readonly Schema[],
@@ -131,15 +113,7 @@ export function emitTupleCheck(
 }
 
 /**
- * @brief emit record check function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param item Borrowed input slot named item; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @param emitChild Borrowed input slot named emitChild; validation or normalization happens before stored state changes.
- * @returns Result for emit record check; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit record check.
  */
 export function emitRecordCheck(
   item: Schema,
@@ -173,15 +147,7 @@ export function emitRecordCheck(
 }
 
 /**
- * @brief emit object check function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @param emitChild Borrowed input slot named emitChild; validation or normalization happens before stored state changes.
- * @returns Result for emit object check; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit object check.
  */
 export function emitObjectCheck(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>,
@@ -234,7 +200,7 @@ export function emitObjectCheck(
         keys[index] = entry.key;
       }
     }
-    parts.push(`const xs=Object.keys(${value});for(let i=0;i<xs.length;i+=1){const key=xs[i];if(key!==undefined&&!k[${String(pushKeyset(context, keys))}].includes(key)){${path}.push(key);${emitIssue(
+    parts.push(`const xs=Reflect.ownKeys(${value});for(let i=0;i<xs.length;i+=1){const key=xs[i];if(key!==undefined&&(typeof key!=="string"||!k[${String(pushKeyset(context, keys))}].includes(key))){${path}.push(typeof key==="string"?key:String(key));${emitIssue(
       issues,
       path,
       "unrecognized_key",
@@ -246,16 +212,7 @@ export function emitObjectCheck(
 }
 
 /**
- * @brief emit discriminated union check function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @param cases Borrowed input slot named cases; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @param emitChild Borrowed input slot named emitChild; validation or normalization happens before stored state changes.
- * @returns Result for emit discriminated union check; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit discriminated union check.
  */
 export function emitDiscriminatedUnionCheck(
   key: string,

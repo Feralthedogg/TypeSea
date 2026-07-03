@@ -2,6 +2,8 @@
 
 TypeSea is a zero-runtime-dependency TypeScript runtime narrowing library built
 around immutable guards and Sea-of-Nodes graph introspection.
+It is ESM-only: the package is published with `"type": "module"` and no
+CommonJS export.
 
 It is intentionally shaped like a small compiler: builders create frozen schema
 syntax, execution chooses interpretation, runtime compilation, or AOT source

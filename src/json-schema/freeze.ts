@@ -10,10 +10,7 @@ import type {
 } from "./types.js";
 
 /**
- * @brief freeze json schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @returns Result for freeze json schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief freeze json schema.
  */
 export function freezeJsonSchema(schema: JsonSchema): JsonSchema {
   if (typeof schema === "boolean") {
@@ -23,11 +20,7 @@ export function freezeJsonSchema(schema: JsonSchema): JsonSchema {
 }
 
 /**
- * @brief freeze json schema inner function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param frozen Borrowed input slot named frozen; validation or normalization happens before stored state changes.
- * @returns Result for freeze json schema inner; ownership of newly created aggregates is transferred to the caller.
+ * @brief freeze json schema inner.
  */
 function freezeJsonSchemaInner(
   schema: JsonSchemaObject,
@@ -71,11 +64,8 @@ function freezeJsonSchemaInner(
 }
 
 /**
- * @brief freeze json schema items function contract.
+ * @brief freeze json schema items.
  * @details Handles both homogeneous `items` schemas and draft-07 tuple item arrays.
- * @param items Borrowed input slot named items; validation or normalization happens before stored state changes.
- * @param frozen Borrowed input slot named frozen; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
  */
 function freezeJsonSchemaItems(
   items: JsonSchema | readonly JsonSchema[],
@@ -90,11 +80,7 @@ function freezeJsonSchemaItems(
 }
 
 /**
- * @brief freeze json schema value function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param frozen Borrowed input slot named frozen; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief freeze json schema value.
  */
 function freezeJsonSchemaValue(
   schema: JsonSchema,
@@ -106,11 +92,7 @@ function freezeJsonSchemaValue(
 }
 
 /**
- * @brief freeze json schema array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schemas Borrowed input slot named schemas; validation or normalization happens before stored state changes.
- * @param frozen Borrowed input slot named frozen; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief freeze json schema array.
  */
 function freezeJsonSchemaArray(
   schemas: readonly JsonSchema[],
@@ -126,11 +108,7 @@ function freezeJsonSchemaArray(
 }
 
 /**
- * @brief freeze json schema properties function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param properties Borrowed input slot named properties; validation or normalization happens before stored state changes.
- * @param frozen Borrowed input slot named frozen; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief freeze json schema properties.
  */
 function freezeJsonSchemaProperties(
   properties: Readonly<Record<string, JsonSchema>>,
@@ -150,10 +128,7 @@ function freezeJsonSchemaProperties(
 }
 
 /**
- * @brief freeze json schema issues function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @returns Result for freeze json schema issues; ownership of newly created aggregates is transferred to the caller.
+ * @brief freeze json schema issues.
  */
 export function freezeJsonSchemaIssues(
   issues: readonly JsonSchemaExportIssue[]

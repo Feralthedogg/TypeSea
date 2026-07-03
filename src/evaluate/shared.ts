@@ -11,21 +11,19 @@ import type {
 } from "../schema/index.js";
 
 /**
- * @brief unknown record type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief unknown record.
  */
 export type UnknownRecord = Readonly<Record<string, unknown>>;
 
 /**
- * @brief data property descriptor type alias contract.
+ * @brief data property descriptor.
  * @details Defines the subset of descriptors whose value is stable for one validation read.
  * @invariant Accessor descriptors never match this contract.
  */
 export interface DataPropertyDescriptor {
 
   /**
-   * @brief value field contract.
+   * @brief value.
    * @details The captured data slot is unknown until the schema-specific validator consumes it.
    * @invariant Accessing this field does not execute user getter code.
    */
@@ -33,21 +31,15 @@ export interface DataPropertyDescriptor {
 }
 
 /**
- * @brief has object key function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param keyLookup Borrowed input slot named keyLookup; validation or normalization happens before stored state changes.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @returns Result for has object key; ownership of newly created aggregates is transferred to the caller.
+ * @brief has object key.
  */
 export function hasObjectKey(keyLookup: ObjectKeyLookup, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(keyLookup, key);
 }
 
 /**
- * @brief read own data property function contract.
+ * @brief read own data property.
  * @details Reads one own property through its descriptor so getters are not executed.
- * @param record Borrowed input slot named record; validation happens before descriptor values are trusted.
- * @param key Borrowed input slot named key; validation happens before descriptor values are trusted.
  * @returns Own data descriptor, or undefined for missing/accessor properties.
  */
 export function readOwnDataProperty(
@@ -62,11 +54,7 @@ export function readOwnDataProperty(
 }
 
 /**
- * @brief find discriminated union case function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param cases Borrowed input slot named cases; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for find discriminated union case; ownership of newly created aggregates is transferred to the caller.
+ * @brief find discriminated union case.
  */
 export function findDiscriminatedUnionCase(
   cases: readonly DiscriminatedUnionCase[],
@@ -82,29 +70,22 @@ export function findDiscriminatedUnionCase(
 }
 
 /**
- * @brief is strict true function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is strict true; ownership of newly created aggregates is transferred to the caller.
+ * @brief is strict true.
  */
 export function isStrictTrue(value: unknown): boolean {
   return value === true;
 }
 
 /**
- * @brief is plain record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is plain record; ownership of newly created aggregates is transferred to the caller.
+ * @brief is plain record.
  */
 export function isPlainRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
- * @brief is data property descriptor function contract.
+ * @brief is data property descriptor.
  * @details Checks that a descriptor contains a data value instead of getter/setter code.
- * @param descriptor Borrowed input slot named descriptor; no user code is executed while checking it.
  * @returns True when the descriptor has a stable value slot.
  */
 export function isDataPropertyDescriptor(
@@ -114,10 +95,7 @@ export function isDataPropertyDescriptor(
 }
 
 /**
- * @brief actual type function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for actual type; ownership of newly created aggregates is transferred to the caller.
+ * @brief actual type.
  */
 export function actualType(value: unknown): string {
   if (value === null) {
@@ -139,10 +117,7 @@ export function actualType(value: unknown): string {
 }
 
 /**
- * @brief literal to expected function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for literal to expected; ownership of newly created aggregates is transferred to the caller.
+ * @brief literal to expected.
  */
 export function literalToExpected(value: LiteralValue): string {
   if (value === null) {

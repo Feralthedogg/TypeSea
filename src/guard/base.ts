@@ -29,7 +29,7 @@ import type {
 } from "./types.js";
 
 /**
- * @brief base guard class contract.
+ * @brief base guard.
  * @details Owns its state directly; methods expose receiver checks and explicit result flow.
  * @invariant Construction leaves the instance in a fully usable state before it escapes.
  */
@@ -37,33 +37,13 @@ export class BaseGuard<
   TValue,
   TPresence extends Presence = "required"
 > implements Guard<TValue, TPresence> {
-
-  /**
-   * @brief type symbol field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   public declare readonly [TypeSymbol]: TValue;
-
-  /**
-   * @brief presence symbol field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   public declare readonly [PresenceSymbol]: TPresence;
-
-  /**
-   * @brief schema field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   public declare readonly schema: Schema;
 
   /**
-   * @brief constructor constructor contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
-   * @post The receiver is initialized according to the class invariant before it can be observed.
+   * @brief constructor.
+       * @post The receiver is initialized according to the class invariant before it can be observed.
    */
   public constructor(schema: Schema) {
     defineReadonlyProperty(this, "schema", readConstructorSchema(schema), true);
@@ -74,12 +54,8 @@ export class BaseGuard<
   }
 
   /**
-   * @brief is routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param this Borrowed input slot named this; validation or normalization happens before stored state changes.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for is; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief is.
+           */
   public is(
     this: unknown,
     value: unknown
@@ -88,12 +64,8 @@ export class BaseGuard<
   }
 
   /**
-   * @brief check routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param this Borrowed input slot named this; validation or normalization happens before stored state changes.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for check; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief check.
+           */
   public check(
     this: unknown,
     value: unknown
@@ -105,12 +77,8 @@ export class BaseGuard<
   }
 
   /**
-   * @brief assert routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param this Borrowed input slot named this; validation or normalization happens before stored state changes.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @post No result value is produced; effects are limited to the documented receiver or output buffer.
-   */
+   * @brief assert.
+           */
   public assert(
     this: unknown,
     value: unknown
@@ -125,20 +93,15 @@ export class BaseGuard<
   }
 
   /**
-   * @brief graph routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param this Borrowed input slot named this; validation or normalization happens before stored state changes.
-   * @returns Result for graph; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief graph.
+         */
   public graph(this: unknown): Graph {
     return optimizeGraph(lowerSchema(readGuardSchema(this, "guard receiver")));
   }
 
   /**
-   * @brief optional routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @returns Result for optional; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief optional.
+       */
   public optional(): BaseGuard<TValue, "optional"> {
     return new BaseGuard<TValue, "optional">({
       tag: SchemaTag.Optional,
@@ -147,10 +110,8 @@ export class BaseGuard<
   }
 
   /**
-   * @brief undefinedable routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @returns Result for undefinedable; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief undefinedable.
+       */
   public undefinedable(): BaseGuard<TValue | undefined, TPresence> {
     return new BaseGuard<TValue | undefined, TPresence>({
       tag: SchemaTag.Undefinedable,
@@ -159,10 +120,8 @@ export class BaseGuard<
   }
 
   /**
-   * @brief nullable routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @returns Result for nullable; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief nullable.
+       */
   public nullable(): BaseGuard<TValue | null, TPresence> {
     return new BaseGuard<TValue | null, TPresence>({
       tag: SchemaTag.Nullable,
@@ -171,10 +130,8 @@ export class BaseGuard<
   }
 
   /**
-   * @brief array routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @returns Result for array; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief array.
+       */
   public array(): BaseGuard<RuntimeValue<TValue, TPresence>[]> {
     return new BaseGuard<RuntimeValue<TValue, TPresence>[]>({
       tag: SchemaTag.Array,
@@ -183,10 +140,8 @@ export class BaseGuard<
   }
 
   /**
-   * @brief brand routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @returns Result for brand; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief brand.
+       */
   public brand<TBrand extends string>(): BaseGuard<
     Brand<TValue, TBrand>,
     TPresence
@@ -199,12 +154,8 @@ export class BaseGuard<
   }
 
   /**
-   * @brief refine routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param predicate Borrowed input slot named predicate; validation or normalization happens before stored state changes.
-   * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
-   * @returns Result for refine; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief refine.
+           */
   public refine(
     predicate: (value: RuntimeValue<TValue, TPresence>) => boolean,
     name: string
@@ -220,11 +171,8 @@ export class BaseGuard<
   }
 
   /**
-   * @brief or routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param other Borrowed input slot named other; validation or normalization happens before stored state changes.
-   * @returns Result for or; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief or.
+         */
   public or<TOther extends Guard<unknown, Presence>>(
     other: TOther
   ): BaseGuard<RuntimeValue<TValue, TPresence> | Infer<TOther>> {
@@ -240,11 +188,8 @@ export class BaseGuard<
   }
 
   /**
-   * @brief intersect routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param other Borrowed input slot named other; validation or normalization happens before stored state changes.
-   * @returns Result for intersect; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief intersect.
+         */
   public intersect<TOther extends Guard<unknown, Presence>>(
     other: TOther
   ): BaseGuard<RuntimeValue<TValue, TPresence> & Infer<TOther>> {

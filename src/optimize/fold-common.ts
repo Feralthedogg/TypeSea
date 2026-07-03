@@ -8,56 +8,23 @@ import type { GraphNode, NodeId } from "../ir/index.js";
 import type { LiteralValue } from "../schema/index.js";
 
 /**
- * @brief const read interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief const read.
  */
 export interface ConstRead {
-
-  /**
-   * @brief found field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly found: boolean;
-
-  /**
-   * @brief value field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly value: LiteralValue | undefined;
 }
 
 /**
- * @brief fold result interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief fold result.
  */
 export interface FoldResult {
-
-  /**
-   * @brief node field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly node: GraphNode;
-
-  /**
-   * @brief replacement field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly replacement: NodeId | undefined;
 }
 
 /**
- * @brief ensure const function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for ensure const; ownership of newly created aggregates is transferred to the caller.
+ * @brief ensure const.
  */
 export function ensureConst(
   nodes: GraphNode[],
@@ -82,11 +49,7 @@ export function ensureConst(
 }
 
 /**
- * @brief read const function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param id Borrowed input slot named id; validation or normalization happens before stored state changes.
- * @returns Result for read const; ownership of newly created aggregates is transferred to the caller.
+ * @brief read const.
  */
 export function readConst(nodes: readonly GraphNode[], id: NodeId): ConstRead {
   const node = nodes[id];
@@ -103,10 +66,7 @@ export function readConst(nodes: readonly GraphNode[], id: NodeId): ConstRead {
 }
 
 /**
- * @brief keep function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @returns Result for keep; ownership of newly created aggregates is transferred to the caller.
+ * @brief keep.
  */
 export function keep(node: GraphNode): FoldResult {
   return {
@@ -116,11 +76,7 @@ export function keep(node: GraphNode): FoldResult {
 }
 
 /**
- * @brief replace function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param replacement Borrowed input slot named replacement; validation or normalization happens before stored state changes.
- * @returns Result for replace; ownership of newly created aggregates is transferred to the caller.
+ * @brief replace.
  */
 export function replace(node: GraphNode, replacement: NodeId): FoldResult {
   return {
@@ -130,20 +86,14 @@ export function replace(node: GraphNode, replacement: NodeId): FoldResult {
 }
 
 /**
- * @brief is finite number function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is finite number; ownership of newly created aggregates is transferred to the caller.
+ * @brief is finite number.
  */
 export function isFiniteNumber(value: unknown): boolean {
   return typeof value === "number" && Number.isFinite(value);
 }
 
 /**
- * @brief is plain record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is plain record; ownership of newly created aggregates is transferred to the caller.
+ * @brief is plain record.
  */
 export function isPlainRecord(value: unknown): boolean {
   return typeof value === "object" && value !== null && !Array.isArray(value);

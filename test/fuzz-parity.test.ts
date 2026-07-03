@@ -276,8 +276,13 @@ function makeValues(context: FuzzContext): readonly unknown[] {
     context.marker,
     Symbol("other"),
     [],
+    makeSparseArray(),
+    makeAccessorArray(),
     ["a", 1],
     ["alpha", "beta"],
+    makeNonEnumerableExtraRecord(),
+    makeSymbolExtraRecord(),
+    makeAccessorRecord(),
     { kind: "alpha", value: "a" },
     { kind: "alpha", value: undefined },
     { kind: "beta", flag: true },
@@ -298,7 +303,7 @@ function randomValue(
   context: FuzzContext,
   depth: number
 ): unknown {
-  const tag = rng.nextInt(depth >= 3 ? 8 : 11);
+  const tag = rng.nextInt(depth >= 3 ? 10 : 15);
   switch (tag) {
     case 0:
       return undefined;
@@ -326,6 +331,14 @@ function randomValue(
       return randomArray(rng, context, depth);
     case 9:
       return randomRecord(rng, context, depth);
+    case 10:
+      return randomSparseArray(rng, context, depth);
+    case 11:
+      return randomAccessorArray(rng);
+    case 12:
+      return randomDescriptorRecord(rng, context, depth);
+    case 13:
+      return randomSymbolRecord(rng, context, depth);
     default:
       return randomTaggedRecord(rng, context, depth);
   }
@@ -349,8 +362,68 @@ function randomArray(
   const length = rng.nextInt(5);
   const value = new Array<unknown>(length);
   for (let index = 0; index < length; index += 1) {
+    if (rng.nextInt(7) === 0) {
+      continue;
+    }
+    if (rng.nextInt(11) === 0) {
+      Object.defineProperty(value, String(index), {
+        configurable: true,
+        enumerable: true,
+        get(): never {
+          throw new Error("fuzz array getter must not execute");
+        }
+      });
+      continue;
+    }
     value[index] = randomValue(rng, context, depth + 1);
   }
+  return value;
+}
+
+function makeSparseArray(): unknown[] {
+  const value = new Array<unknown>(3);
+  value[1] = "alpha";
+  return value;
+}
+
+function makeAccessorArray(): unknown[] {
+  const value = new Array<unknown>(1);
+  Object.defineProperty(value, "0", {
+    configurable: true,
+    enumerable: true,
+    get(): never {
+      throw new Error("fuzz fixed array getter must not execute");
+    }
+  });
+  return value;
+}
+
+function randomSparseArray(
+  rng: Rng,
+  context: FuzzContext,
+  depth: number
+): unknown[] {
+  const length = 1 + rng.nextInt(5);
+  const value = new Array<unknown>(length);
+  for (let index = 0; index < length; index += 1) {
+    if (rng.nextBool()) {
+      value[index] = randomValue(rng, context, depth + 1);
+    }
+  }
+  return value;
+}
+
+function randomAccessorArray(rng: Rng): unknown[] {
+  const length = 1 + rng.nextInt(5);
+  const value = new Array<unknown>(length);
+  const index = rng.nextInt(length);
+  Object.defineProperty(value, String(index), {
+    configurable: true,
+    enumerable: rng.nextBool(),
+    get(): never {
+      throw new Error("fuzz random array getter must not execute");
+    }
+  });
   return value;
 }
 
@@ -368,6 +441,75 @@ function randomRecord(
       value[key] = randomValue(rng, context, depth + 1);
     }
   }
+  return value;
+}
+
+function makeNonEnumerableExtraRecord(): Readonly<Record<PropertyKey, unknown>> {
+  const value: Record<PropertyKey, unknown> = {
+    a: "alpha"
+  };
+  Object.defineProperty(value, "extra", {
+    configurable: true,
+    enumerable: false,
+    value: true
+  });
+  return value;
+}
+
+function makeSymbolExtraRecord(): Readonly<Record<PropertyKey, unknown>> {
+  return {
+    a: "alpha",
+    [Symbol("fuzz_extra")]: true
+  };
+}
+
+function makeAccessorRecord(): Readonly<Record<PropertyKey, unknown>> {
+  const value: Record<PropertyKey, unknown> = {};
+  Object.defineProperty(value, "a", {
+    configurable: true,
+    enumerable: true,
+    get(): never {
+      throw new Error("fuzz object getter must not execute");
+    }
+  });
+  return value;
+}
+
+function randomDescriptorRecord(
+  rng: Rng,
+  context: FuzzContext,
+  depth: number
+): Readonly<Record<PropertyKey, unknown>> {
+  const value: Record<PropertyKey, unknown> = {
+    a: randomValue(rng, context, depth + 1)
+  };
+  const key = rng.nextBool() ? "extra" : "flag";
+  Object.defineProperty(value, key, {
+    configurable: true,
+    enumerable: rng.nextBool(),
+    value: randomValue(rng, context, depth + 1)
+  });
+  if (rng.nextInt(3) === 0) {
+    Object.defineProperty(value, "b", {
+      configurable: true,
+      enumerable: rng.nextBool(),
+      get(): never {
+        throw new Error("fuzz descriptor getter must not execute");
+      }
+    });
+  }
+  return value;
+}
+
+function randomSymbolRecord(
+  rng: Rng,
+  context: FuzzContext,
+  depth: number
+): Readonly<Record<PropertyKey, unknown>> {
+  const value: Record<PropertyKey, unknown> = {
+    a: randomValue(rng, context, depth + 1)
+  };
+  value[Symbol("fuzz_extra")] = randomValue(rng, context, depth + 1);
   return value;
 }
 

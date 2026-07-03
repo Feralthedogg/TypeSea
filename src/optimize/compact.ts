@@ -7,10 +7,7 @@ import type { Graph, GraphNode, NodeId } from "../ir/index.js";
 import { remapId, remapNode } from "./remap.js";
 
 /**
- * @brief compact reachable function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param graph Borrowed input slot named graph; validation or normalization happens before stored state changes.
- * @returns Result for compact reachable; ownership of newly created aggregates is transferred to the caller.
+ * @brief compact reachable.
  */
 export function compactReachable(graph: Graph): Graph {
   const reachable = markReachable(graph);
@@ -40,10 +37,7 @@ export function compactReachable(graph: Graph): Graph {
 }
 
 /**
- * @brief mark reachable function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param graph Borrowed input slot named graph; validation or normalization happens before stored state changes.
- * @returns Result for mark reachable; ownership of newly created aggregates is transferred to the caller.
+ * @brief mark reachable.
  */
 function markReachable(graph: Graph): readonly boolean[] {
   const reachable = new Array<boolean>(graph.nodes.length).fill(false);

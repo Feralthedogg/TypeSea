@@ -14,6 +14,7 @@ const runtimeDependencyFields = [
 const expectedFiles = [
   "LICENSE",
   "README.md",
+  "CHANGELOG.md",
   "dist/adapters/index.d.ts",
   "dist/adapters/index.d.ts.map",
   "dist/adapters/index.js",
@@ -227,6 +228,9 @@ const expectedFiles = [
   "dist/optimize/index.d.ts",
   "dist/optimize/index.d.ts.map",
   "dist/optimize/index.js",
+  "dist/optimize/map-node.d.ts",
+  "dist/optimize/map-node.d.ts.map",
+  "dist/optimize/map-node.js",
   "dist/optimize/remap.d.ts",
   "dist/optimize/remap.d.ts.map",
   "dist/optimize/remap.js",
@@ -281,6 +285,10 @@ async function main() {
   if (!dependencyCheck.ok) {
     return dependencyCheck;
   }
+  const metadataCheck = checkReleaseMetadata(packageJson);
+  if (!metadataCheck.ok) {
+    return metadataCheck;
+  }
 
   const pack = run(npm, ["pack", "--dry-run", "--json", "--ignore-scripts"]);
   if (!pack.ok) {
@@ -314,6 +322,34 @@ function checkZeroRuntimeDependencies(packageJson) {
     if (field !== undefined && packageJson[field] !== undefined) {
       return err(`${field} are not allowed`);
     }
+  }
+  return ok(undefined);
+}
+
+function checkReleaseMetadata(packageJson) {
+  if (packageJson["version"] === "0.0.0") {
+    return err("package version must be release-ready");
+  }
+  if (packageJson["type"] !== "module") {
+    return err("package must be ESM-only");
+  }
+  if (typeof packageJson["author"] !== "string" || packageJson["author"].length === 0) {
+    return err("package author is required");
+  }
+  const repository = packageJson["repository"];
+  if (!isRecord(repository) ||
+    repository["type"] !== "git" ||
+    typeof repository["url"] !== "string" ||
+    repository["url"].length === 0) {
+    return err("package repository git url is required");
+  }
+  const exportsField = packageJson["exports"];
+  if (!isRecord(exportsField)) {
+    return err("package exports field is required");
+  }
+  const root = exportsField["."];
+  if (!isRecord(root) || root["default"] !== "./dist/index.js") {
+    return err("package root default export is required");
   }
   return ok(undefined);
 }

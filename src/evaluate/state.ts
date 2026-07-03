@@ -6,7 +6,7 @@
 import type { Schema } from "../schema/index.js";
 
 /**
- * @brief validation enter result type alias contract.
+ * @brief validation enter result.
  * @details Defines the control-flow result of entering a schema/value pair.
  * @invariant Only `entered` requires a matching leave operation.
  */
@@ -16,42 +16,27 @@ export type ValidationEnterResult =
   | "budget";
 
 /**
- * @brief default max validation depth constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
+ * @brief default max validation depth.
  * @invariant The value stays below the V8 stack depth that recursive lazy schemas can exhaust.
  */
 export const DEFAULT_MAX_VALIDATION_DEPTH = 1024;
 
 /**
- * @brief validation state interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief validation state.
  */
 export interface ValidationState {
-
-  /**
-   * @brief active field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly active: WeakMap<object, WeakSet<Schema>>;
-
-  /**
-   * @brief resolving field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly resolving: WeakSet<object>;
 
   /**
-   * @brief depth field contract.
+   * @brief depth.
    * @details Counts active recursive validator frames owned by this state object.
    * @invariant The value is incremented only after budget admission and decremented by `leaveValidation`.
    */
   depth: number;
 
   /**
-   * @brief max depth field contract.
+   * @brief max depth.
    * @details Hard cap for recursive validator frames.
    * @invariant Entering past this limit returns `budget` instead of recursing.
    */
@@ -59,9 +44,7 @@ export interface ValidationState {
 }
 
 /**
- * @brief make validation state function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @returns Result for make validation state; ownership of newly created aggregates is transferred to the caller.
+ * @brief make validation state.
  */
 export function makeValidationState(): ValidationState {
   return {
@@ -73,12 +56,7 @@ export function makeValidationState(): ValidationState {
 }
 
 /**
- * @brief enter validation function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @returns Result for enter validation; ownership of newly created aggregates is transferred to the caller.
+ * @brief enter validation.
  */
 export function enterValidation(
   schema: Schema,
@@ -107,12 +85,7 @@ export function enterValidation(
 }
 
 /**
- * @brief leave validation function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param state Borrowed input slot named state; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief leave validation.
  */
 export function leaveValidation(
   schema: Schema,
@@ -131,10 +104,7 @@ export function leaveValidation(
 }
 
 /**
- * @brief is reference value function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is reference value; ownership of newly created aggregates is transferred to the caller.
+ * @brief is reference value.
  */
 function isReferenceValue(value: unknown): value is object {
   return (typeof value === "object" && value !== null) || typeof value === "function";

@@ -7,9 +7,7 @@ import type { LiteralValue, Schema } from "../schema/index.js";
 import type { EmitContext } from "./types.js";
 
 /**
- * @brief create emit context function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @returns Result for create emit context; ownership of newly created aggregates is transferred to the caller.
+ * @brief create emit context.
  */
 export function createEmitContext(): EmitContext {
   return {
@@ -27,11 +25,7 @@ export function createEmitContext(): EmitContext {
 }
 
 /**
- * @brief push literal function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for push literal; ownership of newly created aggregates is transferred to the caller.
+ * @brief push literal.
  */
 export function pushLiteral(context: EmitContext, value: LiteralValue): number {
   const index = context.literals.length;
@@ -40,11 +34,7 @@ export function pushLiteral(context: EmitContext, value: LiteralValue): number {
 }
 
 /**
- * @brief push regex function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for push regex; ownership of newly created aggregates is transferred to the caller.
+ * @brief push regex.
  */
 export function pushRegex(context: EmitContext, value: RegExp): number {
   const index = context.regexps.length;
@@ -53,11 +43,7 @@ export function pushRegex(context: EmitContext, value: RegExp): number {
 }
 
 /**
- * @brief push keyset function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for push keyset; ownership of newly created aggregates is transferred to the caller.
+ * @brief push keyset.
  */
 export function pushKeyset(context: EmitContext, value: readonly string[]): number {
   const index = context.keysets.length;
@@ -66,22 +52,14 @@ export function pushKeyset(context: EmitContext, value: readonly string[]): numb
 }
 
 /**
- * @brief string ref function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for string ref; ownership of newly created aggregates is transferred to the caller.
+ * @brief string ref.
  */
 export function stringRef(context: EmitContext, value: string): string {
   return `u[${String(pushString(context, value))}]`;
 }
 
 /**
- * @brief push string function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for push string; ownership of newly created aggregates is transferred to the caller.
+ * @brief push string.
  */
 export function pushString(context: EmitContext, value: string): number {
   const cached = context.stringIndexes.get(value);
@@ -95,11 +73,7 @@ export function pushString(context: EmitContext, value: string): number {
 }
 
 /**
- * @brief push schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for push schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief push schema.
  */
 export function pushSchema(context: EmitContext, value: Schema): number {
   const index = context.schemas.length;

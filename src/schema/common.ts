@@ -6,10 +6,7 @@
 import type { ObjectKeyLookup } from "./types.js";
 
 /**
- * @brief is record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is record; ownership of newly created aggregates is transferred to the caller.
+ * @brief is record.
  */
 export function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" &&
@@ -19,19 +16,15 @@ export function isRecord(value: unknown): value is Readonly<Record<string, unkno
 }
 
 /**
- * @brief is unknown array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is unknown array; ownership of newly created aggregates is transferred to the caller.
+ * @brief is unknown array.
  */
 export function isUnknownArray(value: unknown): value is readonly unknown[] {
   return Array.isArray(value) && hasOnlyDataProperties(value);
 }
 
 /**
- * @brief has only data properties function contract.
+ * @brief has only data properties.
  * @details Rejects accessor descriptors before schema internals read fields by key.
- * @param value Borrowed input slot named value; descriptor inspection does not execute getters.
  * @returns True when every own property is backed by a data slot.
  */
 function hasOnlyDataProperties(value: object): boolean {
@@ -53,10 +46,7 @@ function hasOnlyDataProperties(value: object): boolean {
 }
 
 /**
- * @brief is plain reg exp function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is plain reg exp; ownership of newly created aggregates is transferred to the caller.
+ * @brief is plain reg exp.
  */
 export function isPlainRegExp(value: unknown): value is RegExp {
   return value instanceof RegExp &&
@@ -68,10 +58,7 @@ export function isPlainRegExp(value: unknown): value is RegExp {
 }
 
 /**
- * @brief is string array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is string array; ownership of newly created aggregates is transferred to the caller.
+ * @brief is string array.
  */
 export function isStringArray(value: unknown): value is readonly string[] {
   if (!isUnknownArray(value)) {
@@ -86,11 +73,7 @@ export function isStringArray(value: unknown): value is readonly string[] {
 }
 
 /**
- * @brief is object key lookup function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param keys Borrowed input slot named keys; validation or normalization happens before stored state changes.
- * @returns Result for is object key lookup; ownership of newly created aggregates is transferred to the caller.
+ * @brief is object key lookup.
  */
 export function isObjectKeyLookup(
   value: unknown,
@@ -119,11 +102,7 @@ export function isObjectKeyLookup(
 }
 
 /**
- * @brief includes string function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param values Borrowed input slot named values; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for includes string; ownership of newly created aggregates is transferred to the caller.
+ * @brief includes string.
  */
 export function includesString(values: readonly string[], value: string): boolean {
   for (let index = 0; index < values.length; index += 1) {

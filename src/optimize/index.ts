@@ -12,10 +12,7 @@ import { compactReachable } from "./compact.js";
 import { foldConstants } from "./fold.js";
 
 /**
- * @brief optimize graph function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param graph Borrowed input slot named graph; validation or normalization happens before stored state changes.
- * @returns Result for optimize graph; ownership of newly created aggregates is transferred to the caller.
+ * @brief optimize graph.
  */
 export function optimizeGraph(graph: Graph): Graph {
   const input = readGraph(graph);
@@ -23,10 +20,7 @@ export function optimizeGraph(graph: Graph): Graph {
 }
 
 /**
- * @brief read graph function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for read graph; ownership of newly created aggregates is transferred to the caller.
+ * @brief read graph.
  */
 function readGraph(value: unknown): Graph {
   if (!isGraphValue(value)) {

@@ -15,8 +15,6 @@ export type {
   Graph,
   GraphNode,
   HasOwnNode,
-  IssueNode,
-  LengthNode,
   NodeId,
   NumericCompareNode,
   ParamNode,

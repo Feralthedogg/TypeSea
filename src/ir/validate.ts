@@ -5,10 +5,6 @@
 
 import { NodeTag } from "../kind/index.js";
 import {
-  isIssueCodeValue,
-  type PathSegment
-} from "../issue/index.js";
-import {
   isLiteralValue,
   isSchemaValue
 } from "../schema/index.js";
@@ -16,10 +12,7 @@ import { isPlainRegExp } from "./regexp.js";
 import type { Graph, GraphNode, NodeId } from "./types.js";
 
 /**
- * @brief is graph value function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is graph value; ownership of newly created aggregates is transferred to the caller.
+ * @brief is graph value.
  */
 export function isGraphValue(value: unknown): value is Graph {
   if (!isRecord(value)) {
@@ -45,12 +38,7 @@ export function isGraphValue(value: unknown): value is Graph {
 }
 
 /**
- * @brief is graph node value function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param index Borrowed input slot named index; validation or normalization happens before stored state changes.
- * @param nodeCount Borrowed input slot named nodeCount; validation or normalization happens before stored state changes.
- * @returns Result for is graph node value; ownership of newly created aggregates is transferred to the caller.
+ * @brief is graph node value.
  */
 function isGraphNodeValue(
   value: unknown,
@@ -72,8 +60,6 @@ function isGraphNodeValue(
     case NodeTag.GetProp:
       return typeof value["key"] === "string" &&
         isSingleDepNode(value, deps, "object", nodeCount);
-    case NodeTag.Length:
-      return isSingleDepNode(value, deps, "value", nodeCount);
     case NodeTag.IsString:
     case NodeTag.IsNumber:
     case NodeTag.IsBoolean:
@@ -118,21 +104,13 @@ function isGraphNodeValue(
         sameNodeIds(deps, value["values"]);
     case NodeTag.Return:
       return isTwoDepNode(value, deps, "control", "value", nodeCount);
-    case NodeTag.Issue:
-      return isIssuePath(value["path"]) &&
-        isIssueCodeValue(value["code"]) &&
-        isSingleDepNode(value, deps, "condition", nodeCount);
     default:
       return false;
   }
 }
 
 /**
- * @brief is leaf node value function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param deps Borrowed input slot named deps; validation or normalization happens before stored state changes.
- * @returns Result for is leaf node value; ownership of newly created aggregates is transferred to the caller.
+ * @brief is leaf node value.
  */
 function isLeafNodeValue(
   value: Readonly<Record<string, unknown>>,
@@ -154,13 +132,7 @@ function isLeafNodeValue(
 }
 
 /**
- * @brief is single dep node function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param deps Borrowed input slot named deps; validation or normalization happens before stored state changes.
- * @param field Borrowed input slot named field; validation or normalization happens before stored state changes.
- * @param nodeCount Borrowed input slot named nodeCount; validation or normalization happens before stored state changes.
- * @returns Result for is single dep node; ownership of newly created aggregates is transferred to the caller.
+ * @brief is single dep node.
  */
 function isSingleDepNode(
   value: Readonly<Record<string, unknown>>,
@@ -174,14 +146,7 @@ function isSingleDepNode(
 }
 
 /**
- * @brief is two dep node function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param deps Borrowed input slot named deps; validation or normalization happens before stored state changes.
- * @param leftField Borrowed input slot named leftField; validation or normalization happens before stored state changes.
- * @param rightField Borrowed input slot named rightField; validation or normalization happens before stored state changes.
- * @param nodeCount Borrowed input slot named nodeCount; validation or normalization happens before stored state changes.
- * @returns Result for is two dep node; ownership of newly created aggregates is transferred to the caller.
+ * @brief is two dep node.
  */
 function isTwoDepNode(
   value: Readonly<Record<string, unknown>>,
@@ -198,11 +163,7 @@ function isTwoDepNode(
 }
 
 /**
- * @brief is node id function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param nodeCount Borrowed input slot named nodeCount; validation or normalization happens before stored state changes.
- * @returns Result for is node id; ownership of newly created aggregates is transferred to the caller.
+ * @brief is node id.
  */
 function isNodeId(value: unknown, nodeCount: number): value is NodeId {
   return typeof value === "number" &&
@@ -212,11 +173,7 @@ function isNodeId(value: unknown, nodeCount: number): value is NodeId {
 }
 
 /**
- * @brief is node id array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param nodeCount Borrowed input slot named nodeCount; validation or normalization happens before stored state changes.
- * @returns Result for is node id array; ownership of newly created aggregates is transferred to the caller.
+ * @brief is node id array.
  */
 function isNodeIdArray(
   value: unknown,
@@ -234,11 +191,7 @@ function isNodeIdArray(
 }
 
 /**
- * @brief same node ids function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param left Borrowed input slot named left; validation or normalization happens before stored state changes.
- * @param right Borrowed input slot named right; validation or normalization happens before stored state changes.
- * @returns Result for same node ids; ownership of newly created aggregates is transferred to the caller.
+ * @brief same node ids.
  */
 function sameNodeIds(
   left: readonly NodeId[],
@@ -256,10 +209,7 @@ function sameNodeIds(
 }
 
 /**
- * @brief is string array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is string array; ownership of newly created aggregates is transferred to the caller.
+ * @brief is string array.
  */
 function isStringArray(value: unknown): value is readonly string[] {
   if (!isUnknownArray(value)) {
@@ -274,32 +224,7 @@ function isStringArray(value: unknown): value is readonly string[] {
 }
 
 /**
- * @brief is issue path function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is issue path; ownership of newly created aggregates is transferred to the caller.
- */
-function isIssuePath(value: unknown): value is readonly PathSegment[] {
-  if (!isUnknownArray(value)) {
-    return false;
-  }
-  for (let index = 0; index < value.length; index += 1) {
-    const segment = value[index];
-    if (typeof segment !== "string" &&
-      (typeof segment !== "number" ||
-        !Number.isInteger(segment) ||
-        segment < 0)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/**
- * @brief is record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is record; ownership of newly created aggregates is transferred to the caller.
+ * @brief is record.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" &&
@@ -309,19 +234,15 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 }
 
 /**
- * @brief is unknown array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is unknown array; ownership of newly created aggregates is transferred to the caller.
+ * @brief is unknown array.
  */
 function isUnknownArray(value: unknown): value is readonly unknown[] {
   return Array.isArray(value) && hasOnlyDataProperties(value);
 }
 
 /**
- * @brief has only data properties function contract.
+ * @brief has only data properties.
  * @details Rejects accessor descriptors before graph internals read fields by key.
- * @param value Borrowed input slot named value; descriptor inspection does not execute getters.
  * @returns True when every own property is backed by a data slot.
  */
 function hasOnlyDataProperties(value: object): boolean {

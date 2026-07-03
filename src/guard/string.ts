@@ -15,7 +15,7 @@ import {
 import type { Presence } from "./types.js";
 
 /**
- * @brief string guard class contract.
+ * @brief string guard.
  * @details Owns its state directly; methods expose receiver checks and explicit result flow.
  * @invariant Construction leaves the instance in a fully usable state before it escapes.
  */
@@ -24,10 +24,8 @@ export class StringGuard<
 > extends BaseGuard<string, TPresence> {
 
   /**
-   * @brief constructor constructor contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
-   * @post The receiver is initialized according to the class invariant before it can be observed.
+   * @brief constructor.
+       * @post The receiver is initialized according to the class invariant before it can be observed.
    */
   public constructor(schema: StringSchema) {
     super(readStringConstructorSchema(schema));
@@ -35,11 +33,8 @@ export class StringGuard<
   }
 
   /**
-   * @brief min routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for min; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief min.
+         */
   public min(value: number): StringGuard<TPresence> {
     const schema = readStringMethodSchema(this, "string min receiver");
     const bound = checkStringLengthBound(value, "min");
@@ -56,11 +51,8 @@ export class StringGuard<
   }
 
   /**
-   * @brief max routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for max; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief max.
+         */
   public max(value: number): StringGuard<TPresence> {
     const schema = readStringMethodSchema(this, "string max receiver");
     const bound = checkStringLengthBound(value, "max");
@@ -77,12 +69,8 @@ export class StringGuard<
   }
 
   /**
-   * @brief regex routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param pattern Borrowed input slot named pattern; validation or normalization happens before stored state changes.
-   * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
-   * @returns Result for regex; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief regex.
+           */
   public regex(pattern: RegExp, name: string): StringGuard<TPresence> {
     if (!isPlainRegExp(pattern)) {
       throw new TypeError("regex pattern must be a plain RegExp");
@@ -105,10 +93,8 @@ export class StringGuard<
   }
 
   /**
-   * @brief uuid routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @returns Result for uuid; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief uuid.
+       */
   public uuid(): StringGuard<TPresence> {
     const schema = readStringMethodSchema(this, "string uuid receiver");
     return new StringGuard<TPresence>({

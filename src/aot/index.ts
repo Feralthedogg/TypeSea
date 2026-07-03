@@ -11,9 +11,7 @@ import {
 } from "../schema/index.js";
 
 /**
- * @brief aot issue code type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief aot issue code.
  */
 export type AotIssueCode =
   | "unsupported_aot_lazy"
@@ -21,92 +19,38 @@ export type AotIssueCode =
   | "unsupported_aot_symbol_literal";
 
 /**
- * @brief aot issue interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief aot issue.
  */
 export interface AotIssue {
-
-  /**
-   * @brief path field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly path: readonly PathSegment[];
-
-  /**
-   * @brief code field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly code: AotIssueCode;
-
-  /**
-   * @brief message field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly message: string;
 }
 
 /**
- * @brief aot compile options interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief aot compile options.
  */
 export interface AotCompileOptions {
-
-  /**
-   * @brief name field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly name: string | undefined;
 }
 
 /**
- * @brief resolved aot compile options interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief resolved aot compile options.
  */
 interface ResolvedAotCompileOptions {
-
-  /**
-   * @brief name field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly name: string;
 }
 
 /**
- * @brief aot module interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief aot module.
  */
 export interface AotModule {
-
-  /**
-   * @brief source field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly source: string;
-
-  /**
-   * @brief declaration source field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly declarationSource: string;
 }
 
 /**
- * @brief emit aot module function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for emit aot module; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit aot module.
  */
 export function emitAotModule(
   guard: Guard<unknown, Presence>,
@@ -136,10 +80,7 @@ export function emitAotModule(
 }
 
 /**
- * @brief read aot schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @returns Result for read aot schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read aot schema.
  */
 function readAotSchema(guard: unknown): Schema {
   if (!isRecord(guard)) {
@@ -153,10 +94,7 @@ function readAotSchema(guard: unknown): Schema {
 }
 
 /**
- * @brief read options function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for read options; ownership of newly created aggregates is transferred to the caller.
+ * @brief read options.
  */
 function readOptions(
   options: Partial<AotCompileOptions> | undefined
@@ -184,13 +122,7 @@ function readOptions(
 }
 
 /**
- * @brief scan aot schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param seen Borrowed input slot named seen; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief scan aot schema.
  */
 function scanAotSchema(
   schema: Schema,
@@ -274,13 +206,7 @@ function scanAotSchema(
 }
 
 /**
- * @brief scan schema array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schemas Borrowed input slot named schemas; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param seen Borrowed input slot named seen; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief scan schema array.
  */
 function scanSchemaArray(
   schemas: readonly Schema[],
@@ -297,13 +223,7 @@ function scanSchemaArray(
 }
 
 /**
- * @brief scan object entries function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param entries Borrowed input slot named entries; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param seen Borrowed input slot named seen; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief scan object entries.
  */
 function scanObjectEntries(
   entries: readonly {
@@ -323,53 +243,18 @@ function scanObjectEntries(
 }
 
 /**
- * @brief module bundle input interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief module bundle input.
  */
 interface ModuleBundleInput {
-
-  /**
-   * @brief source field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly source: string;
-
-  /**
-   * @brief literals field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly literals: readonly LiteralValue[];
-
-  /**
-   * @brief regexps field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly regexps: readonly RegExp[];
-
-  /**
-   * @brief keysets field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly keysets: readonly (readonly string[])[];
-
-  /**
-   * @brief strings field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly strings: readonly string[];
 }
 
 /**
- * @brief emit module source function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param bundle Borrowed input slot named bundle; validation or normalization happens before stored state changes.
- * @returns Result for emit module source; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit module source.
  */
 function emitModuleSource(bundle: ModuleBundleInput): string {
   return [
@@ -397,9 +282,7 @@ function emitModuleSource(bundle: ModuleBundleInput): string {
 }
 
 /**
- * @brief emit declaration source function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @returns Result for emit declaration source; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit declaration source.
  */
 function emitDeclarationSource(): string {
   return [
@@ -427,10 +310,7 @@ function emitDeclarationSource(): string {
 }
 
 /**
- * @brief serialize literal array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param values Borrowed input slot named values; validation or normalization happens before stored state changes.
- * @returns Result for serialize literal array; ownership of newly created aggregates is transferred to the caller.
+ * @brief serialize literal array.
  */
 function serializeLiteralArray(values: readonly LiteralValue[]): string {
   const parts = new Array<string>(values.length);
@@ -444,10 +324,7 @@ function serializeLiteralArray(values: readonly LiteralValue[]): string {
 }
 
 /**
- * @brief serialize literal function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for serialize literal; ownership of newly created aggregates is transferred to the caller.
+ * @brief serialize literal.
  */
 function serializeLiteral(value: LiteralValue): string {
   switch (typeof value) {
@@ -481,10 +358,7 @@ function serializeLiteral(value: LiteralValue): string {
 }
 
 /**
- * @brief serialize reg exp array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param values Borrowed input slot named values; validation or normalization happens before stored state changes.
- * @returns Result for serialize reg exp array; ownership of newly created aggregates is transferred to the caller.
+ * @brief serialize reg exp array.
  */
 function serializeRegExpArray(values: readonly RegExp[]): string {
   const parts = new Array<string>(values.length);
@@ -498,13 +372,7 @@ function serializeRegExpArray(values: readonly RegExp[]): string {
 }
 
 /**
- * @brief push issue function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param code Borrowed input slot named code; validation or normalization happens before stored state changes.
- * @param message Borrowed input slot named message; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief push issue.
  */
 function pushIssue(
   path: readonly PathSegment[],
@@ -520,10 +388,7 @@ function pushIssue(
 }
 
 /**
- * @brief freeze aot issues function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @returns Result for freeze aot issues; ownership of newly created aggregates is transferred to the caller.
+ * @brief freeze aot issues.
  */
 function freezeAotIssues(issues: readonly AotIssue[]): readonly AotIssue[] {
   for (let index = 0; index < issues.length; index += 1) {
@@ -537,10 +402,7 @@ function freezeAotIssues(issues: readonly AotIssue[]): readonly AotIssue[] {
 }
 
 /**
- * @brief is record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is record; ownership of newly created aggregates is transferred to the caller.
+ * @brief is record.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

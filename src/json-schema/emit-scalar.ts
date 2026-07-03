@@ -22,12 +22,7 @@ import type {
 } from "./types.js";
 
 /**
- * @brief emit string function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @returns Result for emit string; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit string.
  */
 export function emitString(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.String }>,
@@ -70,12 +65,7 @@ export function emitString(
 }
 
 /**
- * @brief emit number function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @returns Result for emit number; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit number.
  */
 export function emitNumber(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.Number }>,
@@ -117,12 +107,7 @@ export function emitNumber(
 }
 
 /**
- * @brief emit literal function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @returns Result for emit literal; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit literal.
  */
 export function emitLiteral(
   value: LiteralValue,

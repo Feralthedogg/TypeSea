@@ -1,16 +1,12 @@
 import type { Result } from "../result/index.js";
 
 /**
- * @brief path segment type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief path segment.
  */
 export type PathSegment = string | number;
 
 /**
- * @brief issue code type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief issue code.
  */
 export type IssueCode =
   | "expected_string"
@@ -39,71 +35,28 @@ export type IssueCode =
   | "unrecognized_key";
 
 /**
- * @brief issue interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief issue.
  */
 export interface Issue {
-
-  /**
-   * @brief path field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly path: readonly PathSegment[];
-
-  /**
-   * @brief code field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly code: IssueCode;
-
-  /**
-   * @brief expected field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly expected: string | undefined;
-
-  /**
-   * @brief actual field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly actual: string | undefined;
-
-  /**
-   * @brief message field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly message: string | undefined;
 }
 
 /**
- * @brief check result type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief check result.
  */
 export type CheckResult<TValue> = Result<TValue, readonly Issue[]>;
 
 /**
- * @brief empty issues constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief empty issues.
  */
 const EMPTY_ISSUES: readonly Issue[] = Object.freeze([]);
 
 /**
- * @brief make issue function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param code Borrowed input slot named code; validation or normalization happens before stored state changes.
- * @param expected Borrowed input slot named expected; validation or normalization happens before stored state changes.
- * @param actual Borrowed input slot named actual; validation or normalization happens before stored state changes.
- * @param message Borrowed input slot named message; validation or normalization happens before stored state changes.
- * @returns Result for make issue; ownership of newly created aggregates is transferred to the caller.
+ * @brief make issue.
  */
 export function makeIssue(
   path: readonly PathSegment[],
@@ -122,10 +75,7 @@ export function makeIssue(
 }
 
 /**
- * @brief copy issue array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for copy issue array; ownership of newly created aggregates is transferred to the caller.
+ * @brief copy issue array.
  */
 export function copyIssueArray(value: unknown): readonly Issue[] {
   if (!isUnknownArray(value)) {
@@ -139,10 +89,7 @@ export function copyIssueArray(value: unknown): readonly Issue[] {
 }
 
 /**
- * @brief finalize issue array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for finalize issue array; ownership of newly created aggregates is transferred to the caller.
+ * @brief finalize issue array.
  */
 export function finalizeIssueArray(value: unknown): readonly Issue[] {
   if (!isUnknownArray(value)) {
@@ -155,10 +102,7 @@ export function finalizeIssueArray(value: unknown): readonly Issue[] {
 }
 
 /**
- * @brief freeze issue array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @returns Result for freeze issue array; ownership of newly created aggregates is transferred to the caller.
+ * @brief freeze issue array.
  */
 export function freezeIssueArray(issues: readonly Issue[]): readonly Issue[] {
   for (let index = 0; index < issues.length; index += 1) {
@@ -172,10 +116,7 @@ export function freezeIssueArray(issues: readonly Issue[]): readonly Issue[] {
 }
 
 /**
- * @brief copy issue function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for copy issue; ownership of newly created aggregates is transferred to the caller.
+ * @brief copy issue.
  */
 function copyIssue(value: unknown): Issue {
   if (!isRecord(value)) {
@@ -198,10 +139,7 @@ function copyIssue(value: unknown): Issue {
 }
 
 /**
- * @brief copy path function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for copy path; ownership of newly created aggregates is transferred to the caller.
+ * @brief copy path.
  */
 function copyPath(value: unknown): readonly PathSegment[] {
   if (!isUnknownArray(value)) {
@@ -226,10 +164,7 @@ function copyPath(value: unknown): readonly PathSegment[] {
 }
 
 /**
- * @brief is issue code value function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is issue code value; ownership of newly created aggregates is transferred to the caller.
+ * @brief is issue code value.
  */
 export function isIssueCodeValue(value: unknown): value is IssueCode {
   switch (value) {
@@ -264,30 +199,21 @@ export function isIssueCodeValue(value: unknown): value is IssueCode {
 }
 
 /**
- * @brief is optional string function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is optional string; ownership of newly created aggregates is transferred to the caller.
+ * @brief is optional string.
  */
 function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === "string";
 }
 
 /**
- * @brief is record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is record; ownership of newly created aggregates is transferred to the caller.
+ * @brief is record.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
- * @brief is unknown array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is unknown array; ownership of newly created aggregates is transferred to the caller.
+ * @brief is unknown array.
  */
 function isUnknownArray(value: unknown): value is readonly unknown[] {
   return Array.isArray(value);

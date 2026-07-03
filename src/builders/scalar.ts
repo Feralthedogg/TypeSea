@@ -13,9 +13,7 @@ import type { LiteralValue } from "../schema/index.js";
 import { isLiteralValue } from "../schema/index.js";
 
 /**
- * @brief string guard constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief string guard.
  */
 export const stringGuard = new StringGuard({
   tag: SchemaTag.String,
@@ -23,27 +21,21 @@ export const stringGuard = new StringGuard({
 });
 
 /**
- * @brief unknown guard constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief unknown guard.
  */
 export const unknownGuard = new BaseGuard<unknown>({
   tag: SchemaTag.Unknown
 });
 
 /**
- * @brief never guard constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief never guard.
  */
 export const neverGuard = new BaseGuard<never>({
   tag: SchemaTag.Never
 });
 
 /**
- * @brief number guard constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief number guard.
  */
 export const numberGuard = new NumberGuard({
   tag: SchemaTag.Number,
@@ -51,37 +43,28 @@ export const numberGuard = new NumberGuard({
 });
 
 /**
- * @brief bigint guard constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief bigint guard.
  */
 export const bigintGuard = new BaseGuard<bigint>({
   tag: SchemaTag.BigInt
 });
 
 /**
- * @brief symbol guard constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief symbol guard.
  */
 export const symbolGuard = new BaseGuard<symbol>({
   tag: SchemaTag.Symbol
 });
 
 /**
- * @brief boolean guard constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief boolean guard.
  */
 export const booleanGuard = new BaseGuard<boolean>({
   tag: SchemaTag.Boolean
 });
 
 /**
- * @brief literal function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for literal; ownership of newly created aggregates is transferred to the caller.
+ * @brief literal.
  */
 export function literal<const TValue extends LiteralValue>(
   value: TValue

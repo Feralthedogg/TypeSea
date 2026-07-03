@@ -11,52 +11,22 @@ import {
 import { err } from "../result/index.js";
 
 /**
- * @brief message locale type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief message locale.
  */
 export type MessageLocale = "en" | "ko";
 
 /**
- * @brief issue message context interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief issue message context.
  */
 export interface IssueMessageContext {
-
-  /**
-   * @brief path field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly path: string;
-
-  /**
-   * @brief code field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly code: IssueCode;
-
-  /**
-   * @brief expected field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly expected: string;
-
-  /**
-   * @brief actual field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly actual: string;
 }
 
 /**
- * @brief issue message formatter type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief issue message formatter.
  */
 export type IssueMessageFormatter = (
   issue: Issue,
@@ -64,97 +34,46 @@ export type IssueMessageFormatter = (
 ) => string;
 
 /**
- * @brief issue message template type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief issue message template.
  */
 export type IssueMessageTemplate = string | IssueMessageFormatter;
 
 /**
- * @brief issue message catalog type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief issue message catalog.
  */
 export type IssueMessageCatalog = Partial<
   Readonly<Record<IssueCode, IssueMessageTemplate>>
 >;
 
 /**
- * @brief issue message options interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief issue message options.
  */
 export interface IssueMessageOptions {
-
-  /**
-   * @brief locale field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly locale: MessageLocale | undefined;
-
-  /**
-   * @brief catalog field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly catalog: IssueMessageCatalog | undefined;
-
-  /**
-   * @brief path formatter field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly pathFormatter:
     | ((path: readonly PathSegment[]) => string)
     | undefined;
 }
 
 /**
- * @brief resolved issue message options interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief resolved issue message options.
  */
 interface ResolvedIssueMessageOptions {
-
-  /**
-   * @brief locale field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly locale: MessageLocale;
-
-  /**
-   * @brief catalog field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly catalog: IssueMessageCatalog | undefined;
-
-  /**
-   * @brief path formatter field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly pathFormatter: (path: readonly PathSegment[]) => string;
 }
 
 /**
- * @brief define messages function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param catalog Borrowed input slot named catalog; validation or normalization happens before stored state changes.
- * @returns Result for define messages; ownership of newly created aggregates is transferred to the caller.
+ * @brief define messages.
  */
 export function defineMessages(catalog: IssueMessageCatalog): IssueMessageCatalog {
   return Object.freeze(copyCatalog(catalog));
 }
 
 /**
- * @brief format issue function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param issue Borrowed input slot named issue; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for format issue; ownership of newly created aggregates is transferred to the caller.
+ * @brief format issue.
  */
 export function formatIssue(
   issue: Issue,
@@ -169,11 +88,7 @@ export function formatIssue(
 }
 
 /**
- * @brief format issues function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for format issues; ownership of newly created aggregates is transferred to the caller.
+ * @brief format issues.
  */
 export function formatIssues(
   issues: readonly Issue[],
@@ -192,11 +107,7 @@ export function formatIssues(
 }
 
 /**
- * @brief with messages function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param result Borrowed input slot named result; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for with messages; ownership of newly created aggregates is transferred to the caller.
+ * @brief with messages.
  */
 export function withMessages<TValue>(
   result: CheckResult<TValue>,
@@ -224,11 +135,7 @@ export function withMessages<TValue>(
 }
 
 /**
- * @brief render issue function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param issue Borrowed input slot named issue; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for render issue; ownership of newly created aggregates is transferred to the caller.
+ * @brief render issue.
  */
 function renderIssue(
   issue: Issue,
@@ -246,11 +153,7 @@ function renderIssue(
 }
 
 /**
- * @brief make context function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param issue Borrowed input slot named issue; validation or normalization happens before stored state changes.
- * @param pathFormatter Borrowed input slot named pathFormatter; validation or normalization happens before stored state changes.
- * @returns Result for make context; ownership of newly created aggregates is transferred to the caller.
+ * @brief make context.
  */
 function makeContext(
   issue: Issue,
@@ -265,12 +168,7 @@ function makeContext(
 }
 
 /**
- * @brief render template function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param template Borrowed input slot named template; validation or normalization happens before stored state changes.
- * @param issue Borrowed input slot named issue; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for render template; ownership of newly created aggregates is transferred to the caller.
+ * @brief render template.
  */
 function renderTemplate(
   template: IssueMessageTemplate,
@@ -292,10 +190,7 @@ function renderTemplate(
 }
 
 /**
- * @brief read options function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for read options; ownership of newly created aggregates is transferred to the caller.
+ * @brief read options.
  */
 function readOptions(
   options: Partial<IssueMessageOptions> | undefined
@@ -321,10 +216,7 @@ function readOptions(
 }
 
 /**
- * @brief read locale function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for read locale; ownership of newly created aggregates is transferred to the caller.
+ * @brief read locale.
  */
 function readLocale(value: unknown): MessageLocale {
   if (value === undefined || value === "en") {
@@ -337,10 +229,7 @@ function readLocale(value: unknown): MessageLocale {
 }
 
 /**
- * @brief read path formatter function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for read path formatter; ownership of newly created aggregates is transferred to the caller.
+ * @brief read path formatter.
  */
 function readPathFormatter(
   value: unknown
@@ -362,10 +251,7 @@ function readPathFormatter(
 }
 
 /**
- * @brief copy catalog function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for copy catalog; ownership of newly created aggregates is transferred to the caller.
+ * @brief copy catalog.
  */
 function copyCatalog(value: unknown): IssueMessageCatalog {
   if (!isRecord(value)) {
@@ -391,20 +277,14 @@ function copyCatalog(value: unknown): IssueMessageCatalog {
 }
 
 /**
- * @brief is issue message template function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is issue message template; ownership of newly created aggregates is transferred to the caller.
+ * @brief is issue message template.
  */
 function isIssueMessageTemplate(value: unknown): value is IssueMessageTemplate {
   return typeof value === "string" || typeof value === "function";
 }
 
 /**
- * @brief default path formatter function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @returns Result for default path formatter; ownership of newly created aggregates is transferred to the caller.
+ * @brief default path formatter.
  */
 function defaultPathFormatter(path: readonly PathSegment[]): string {
   if (path.length === 0) {
@@ -423,19 +303,14 @@ function defaultPathFormatter(path: readonly PathSegment[]): string {
 }
 
 /**
- * @brief is record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is record; ownership of newly created aggregates is transferred to the caller.
+ * @brief is record.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
- * @brief en catalog constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief en catalog.
  */
 const enCatalog: Readonly<Record<IssueCode, string>> = Object.freeze({
   expected_string: "Expected string at {path}; received {actual}.",
@@ -465,9 +340,7 @@ const enCatalog: Readonly<Record<IssueCode, string>> = Object.freeze({
 });
 
 /**
- * @brief ko catalog constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief ko catalog.
  */
 const koCatalog: Readonly<Record<IssueCode, string>> = Object.freeze({
   expected_string: "{path}에서 문자열이 필요하지만 {actual}을 받았습니다.",
@@ -497,9 +370,7 @@ const koCatalog: Readonly<Record<IssueCode, string>> = Object.freeze({
 });
 
 /**
- * @brief default catalogs constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief default catalogs.
  */
 const defaultCatalogs: Readonly<Record<MessageLocale, Readonly<Record<IssueCode, string>>>> =
   Object.freeze({

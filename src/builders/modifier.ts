@@ -16,10 +16,7 @@ import type { Schema } from "../schema/index.js";
 import { isStrictTrue, readGuardSchema } from "../internal/index.js";
 
 /**
- * @brief optional function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @returns Result for optional; ownership of newly created aggregates is transferred to the caller.
+ * @brief optional.
  */
 export function optional<TGuard extends Guard<unknown, Presence>>(
   guard: TGuard
@@ -31,10 +28,7 @@ export function optional<TGuard extends Guard<unknown, Presence>>(
 }
 
 /**
- * @brief undefinedable function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @returns Result for undefinedable; ownership of newly created aggregates is transferred to the caller.
+ * @brief undefinedable.
  */
 export function undefinedable<TGuard extends Guard<unknown, Presence>>(
   guard: TGuard
@@ -46,10 +40,7 @@ export function undefinedable<TGuard extends Guard<unknown, Presence>>(
 }
 
 /**
- * @brief nullable function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @returns Result for nullable; ownership of newly created aggregates is transferred to the caller.
+ * @brief nullable.
  */
 export function nullable<TGuard extends Guard<unknown, Presence>>(
   guard: TGuard
@@ -61,10 +52,7 @@ export function nullable<TGuard extends Guard<unknown, Presence>>(
 }
 
 /**
- * @brief lazy function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param get Borrowed input slot named get; validation or normalization happens before stored state changes.
- * @returns Result for lazy; ownership of newly created aggregates is transferred to the caller.
+ * @brief lazy.
  */
 export function lazy<TGuard extends Guard<unknown, Presence>>(
   get: () => TGuard
@@ -83,12 +71,7 @@ export function lazy<TGuard extends Guard<unknown, Presence>>(
 }
 
 /**
- * @brief refine function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param predicate Borrowed input slot named predicate; validation or normalization happens before stored state changes.
- * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
- * @returns Result for refine; ownership of newly created aggregates is transferred to the caller.
+ * @brief refine.
  */
 export function refine<TGuard extends Guard<unknown, Presence>>(
   guard: TGuard,

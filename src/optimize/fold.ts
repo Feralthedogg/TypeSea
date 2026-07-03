@@ -16,7 +16,6 @@ import {
   foldEquals,
   foldGetProp,
   foldHasOwn,
-  foldLength,
   foldNumeric,
   foldRegex,
   foldStrictKeys,
@@ -26,10 +25,7 @@ import {
 import { resolveAlias, rewriteNodeDeps } from "./rewrite.js";
 
 /**
- * @brief fold constants function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param graph Borrowed input slot named graph; validation or normalization happens before stored state changes.
- * @returns Result for fold constants; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold constants.
  */
 export function foldConstants(graph: Graph): Graph {
   const originalLength = graph.nodes.length;
@@ -72,12 +68,7 @@ export function foldConstants(graph: Graph): Graph {
 }
 
 /**
- * @brief fold node function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param node Borrowed input slot named node; validation or normalization happens before stored state changes.
- * @param nodes Borrowed input slot named nodes; validation or normalization happens before stored state changes.
- * @param aliases Borrowed input slot named aliases; validation or normalization happens before stored state changes.
- * @returns Result for fold node; ownership of newly created aggregates is transferred to the caller.
+ * @brief fold node.
  */
 function foldNode(
   node: GraphNode,
@@ -89,12 +80,9 @@ function foldNode(
     case NodeTag.Param:
     case NodeTag.Const:
     case NodeTag.Return:
-    case NodeTag.Issue:
       return keep(node);
     case NodeTag.GetProp:
       return foldGetProp(node, nodes, aliases);
-    case NodeTag.Length:
-      return foldLength(node, nodes, aliases);
     case NodeTag.IsString:
     case NodeTag.IsNumber:
     case NodeTag.IsBoolean:

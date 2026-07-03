@@ -18,30 +18,21 @@ export function defineReadonlyProperty(
 }
 
 /**
- * @brief is strict true function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is strict true; ownership of newly created aggregates is transferred to the caller.
+ * @brief is strict true.
  */
 export function isStrictTrue(value: unknown): boolean {
   return value === true;
 }
 
 /**
- * @brief is record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is record; ownership of newly created aggregates is transferred to the caller.
+ * @brief is record.
  */
 export function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
- * @brief is plain reg exp function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is plain reg exp; ownership of newly created aggregates is transferred to the caller.
+ * @brief is plain reg exp.
  */
 export function isPlainRegExp(value: unknown): value is RegExp {
   return value instanceof RegExp &&

@@ -9,15 +9,7 @@ import { stringLiteral } from "./names.js";
 import type { EmitContext } from "./types.js";
 
 /**
- * @brief emit pattern issue function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param regex Borrowed input slot named regex; validation or normalization happens before stored state changes.
- * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for emit pattern issue; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit pattern issue.
  */
 export function emitPatternIssue(
   value: string,
@@ -40,14 +32,7 @@ export function emitPatternIssue(
 }
 
 /**
- * @brief emit issue function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param code Borrowed input slot named code; validation or normalization happens before stored state changes.
- * @param expected Borrowed input slot named expected; validation or normalization happens before stored state changes.
- * @param actualExpression Borrowed input slot named actualExpression; validation or normalization happens before stored state changes.
- * @returns Result for emit issue; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit issue.
  */
 export function emitIssue(
   issues: string,
@@ -66,14 +51,7 @@ export function emitIssue(
 }
 
 /**
- * @brief emit issue expr function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param code Borrowed input slot named code; validation or normalization happens before stored state changes.
- * @param expectedExpression Borrowed input slot named expectedExpression; validation or normalization happens before stored state changes.
- * @param actualExpression Borrowed input slot named actualExpression; validation or normalization happens before stored state changes.
- * @returns Result for emit issue expr; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit issue expr.
  */
 export function emitIssueExpr(
   issues: string,

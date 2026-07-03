@@ -24,11 +24,7 @@ import {
 import type { EmitContext, FunctionSource } from "./types.js";
 
 /**
- * @brief emit function function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for emit function; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit function.
  */
 export function emitFunction(schema: Schema, context: EmitContext): string {
   const cached = context.functionNames.get(schema);
@@ -47,10 +43,7 @@ export function emitFunction(schema: Schema, context: EmitContext): string {
 }
 
 /**
- * @brief emit functions function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for emit functions; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit functions.
  */
 export function emitFunctions(context: EmitContext): string {
   const chunks = new Array<string>(context.functions.length);
@@ -65,12 +58,7 @@ export function emitFunctions(context: EmitContext): string {
 }
 
 /**
- * @brief emit body function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for emit body; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit body.
  */
 function emitBody(schema: Schema, value: string, context: EmitContext): string {
   switch (schema.tag) {
@@ -90,12 +78,7 @@ function emitBody(schema: Schema, value: string, context: EmitContext): string {
 }
 
 /**
- * @brief emit expression function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for emit expression; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit expression.
  */
 export function emitExpression(
   schema: Schema,
@@ -151,12 +134,7 @@ export function emitExpression(
 }
 
 /**
- * @brief emit array body function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param item Borrowed input slot named item; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for emit array body; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit array body.
  */
 function emitArrayBody(
   item: Schema,
@@ -176,12 +154,7 @@ function emitArrayBody(
 }
 
 /**
- * @brief emit record body function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param item Borrowed input slot named item; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for emit record body; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit record body.
  */
 function emitRecordBody(
   item: Schema,
@@ -202,11 +175,8 @@ function emitRecordBody(
 }
 
 /**
- * @brief emit tuple body function contract.
+ * @brief emit tuple body.
  * @details Emits tuple validation as straight-line descriptor reads and early returns.
- * @param items Borrowed input slot named items; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
  * @returns Generated tuple predicate body.
  */
 function emitTupleBody(
@@ -236,11 +206,8 @@ function emitTupleBody(
 }
 
 /**
- * @brief emit object body function contract.
+ * @brief emit object body.
  * @details Emits object validation as Ajv-style straight-line code with local descriptor variables.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
  * @returns Generated object predicate body.
  */
 function emitObjectBody(
@@ -281,11 +248,8 @@ function emitObjectBody(
 }
 
 /**
- * @brief emit strict object key body function contract.
+ * @brief emit strict object key body.
  * @details Emits a low-allocation known-key check specialized for one object shape.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
  * @returns Generated strict-key prelude, or an empty string for passthrough objects.
  */
 function emitStrictObjectKeyBody(
@@ -305,24 +269,20 @@ function emitStrictObjectKeyBody(
     }
   }
   if (comparisons.length === 0) {
-    return `if(Object.keys(${value}).length!==0)return false;`;
+    return `if(Reflect.ownKeys(${value}).length!==0)return false;`;
   }
   return [
-    `const xs=Object.keys(${value});`,
+    `const xs=Reflect.ownKeys(${value});`,
     "for(let i=0;i<xs.length;i+=1){",
     "const key=xs[i];",
-    `if(key!==undefined&&${comparisons.join("&&")})return false;`,
+    `if(typeof key!=="string"||(${comparisons.join("&&")}))return false;`,
     "}"
   ].join("");
 }
 
 /**
- * @brief emit discriminated union body function contract.
+ * @brief emit discriminated union body.
  * @details Emits discriminant selection once and dispatches to branch validators.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @param cases Borrowed input slot named cases; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
  * @returns Generated discriminated-union predicate body.
  */
 function emitDiscriminatedUnionBody(
@@ -357,12 +317,7 @@ function emitDiscriminatedUnionBody(
 }
 
 /**
- * @brief emit string function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for emit string; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit string.
  */
 function emitString(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.String }>,
@@ -395,11 +350,7 @@ function emitString(
 }
 
 /**
- * @brief emit number function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for emit number; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit number.
  */
 function emitNumber(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.Number }>,
@@ -431,12 +382,7 @@ function emitNumber(
 }
 
 /**
- * @brief emit union function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for emit union; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit union.
  */
 export function emitUnion(
   options: readonly Schema[],
@@ -457,12 +403,7 @@ export function emitUnion(
 }
 
 /**
- * @brief emit regex function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param regex Borrowed input slot named regex; validation or normalization happens before stored state changes.
- * @param context Borrowed input slot named context; validation or normalization happens before stored state changes.
- * @returns Result for emit regex; ownership of newly created aggregates is transferred to the caller.
+ * @brief emit regex.
  */
 function emitRegex(value: string, regex: RegExp, context: EmitContext): string {
   const index = pushRegex(context, regex);

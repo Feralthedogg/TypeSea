@@ -1,15 +1,21 @@
 {
   "name": "typesea",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "V8-friendly runtime narrowing for TypeScript with Sea-of-Nodes graph introspection.",
   "type": "module",
+  "author": "feral",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/feral/TypeSea.git"
+  },
   "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "keywords": [
@@ -24,6 +30,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "docs"
   ],
   "scripts": {
@@ -36,7 +43,7 @@
     "check:dist": "node scripts/dist-policy.mjs",
     "check:pack": "node scripts/package-contents.mjs",
     "lint": "eslint .",
-    "pack:dry": "npm pack --dry-run",
+    "pack:dry": "npm pack --dry-run --ignore-scripts",
     "policy": "node scripts/source-policy.mjs",
     "prepack": "npm run check",
     "release:check": "node scripts/release-gate.mjs",

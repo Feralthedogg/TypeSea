@@ -17,13 +17,7 @@ import { pushIssue } from "./issue.js";
 import { actualType } from "./shared.js";
 
 /**
- * @brief collect string issues function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief collect string issues.
  */
 export function collectStringIssues(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.String }>,
@@ -81,13 +75,7 @@ export function collectStringIssues(
 }
 
 /**
- * @brief collect number issues function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief collect number issues.
  */
 export function collectNumberIssues(
   schema: Extract<Schema, { readonly tag: typeof SchemaTag.Number }>,

@@ -9,11 +9,7 @@ import { isSchemaValue } from "./validate.js";
 import type { LazySchema, Schema } from "./types.js";
 
 /**
- * @brief resolve lazy schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param resolving Borrowed input slot named resolving; validation or normalization happens before stored state changes.
- * @returns Result for resolve lazy schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief resolve lazy schema.
  */
 export function resolveLazySchema(
   schema: LazySchema,

@@ -26,10 +26,7 @@ import type {
 } from "./types.js";
 
 /**
- * @brief array function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param item Borrowed input slot named item; validation or normalization happens before stored state changes.
- * @returns Result for array; ownership of newly created aggregates is transferred to the caller.
+ * @brief array.
  */
 export function array<TGuard extends Guard<unknown, Presence>>(
   item: TGuard
@@ -41,10 +38,7 @@ export function array<TGuard extends Guard<unknown, Presence>>(
 }
 
 /**
- * @brief tuple function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param shape Borrowed input slot named shape; validation or normalization happens before stored state changes.
- * @returns Result for tuple; ownership of newly created aggregates is transferred to the caller.
+ * @brief tuple.
  */
 export function tuple<const TShape extends TupleShape>(
   shape: TShape
@@ -65,10 +59,7 @@ export function tuple<const TShape extends TupleShape>(
 }
 
 /**
- * @brief record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for record; ownership of newly created aggregates is transferred to the caller.
+ * @brief record.
  */
 export function record<TGuard extends Guard<unknown, Presence>>(
   value: TGuard
@@ -80,10 +71,7 @@ export function record<TGuard extends Guard<unknown, Presence>>(
 }
 
 /**
- * @brief union function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guards Borrowed input slot named guards; validation or normalization happens before stored state changes.
- * @returns Result for union; ownership of newly created aggregates is transferred to the caller.
+ * @brief union.
  */
 export function union<const TGuards extends UnionInput>(
   ...guards: TGuards
@@ -103,11 +91,7 @@ export function union<const TGuards extends UnionInput>(
 }
 
 /**
- * @brief intersect function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param left Borrowed input slot named left; validation or normalization happens before stored state changes.
- * @param right Borrowed input slot named right; validation or normalization happens before stored state changes.
- * @returns Result for intersect; ownership of newly created aggregates is transferred to the caller.
+ * @brief intersect.
  */
 export function intersect<
   TLeft extends Guard<unknown, Presence>,
@@ -124,11 +108,7 @@ export function intersect<
 }
 
 /**
- * @brief discriminated union function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @param cases Borrowed input slot named cases; validation or normalization happens before stored state changes.
- * @returns Result for discriminated union; ownership of newly created aggregates is transferred to the caller.
+ * @brief discriminated union.
  */
 export function discriminatedUnion<
   const TKey extends string,
@@ -168,12 +148,7 @@ export function discriminatedUnion<
 }
 
 /**
- * @brief read discriminated union case schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @param literal Borrowed input slot named literal; validation or normalization happens before stored state changes.
- * @returns Result for read discriminated union case schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief read discriminated union case schema.
  */
 function readDiscriminatedUnionCaseSchema(
   guard: Guard<unknown, Presence> | undefined,
@@ -190,12 +165,7 @@ function readDiscriminatedUnionCaseSchema(
 }
 
 /**
- * @brief case requires discriminant function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
- * @param literal Borrowed input slot named literal; validation or normalization happens before stored state changes.
- * @returns Result for case requires discriminant; ownership of newly created aggregates is transferred to the caller.
+ * @brief case requires discriminant.
  */
 function caseRequiresDiscriminant(
   schema: Schema,
@@ -219,10 +189,7 @@ function caseRequiresDiscriminant(
 }
 
 /**
- * @brief unwrap case object schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @returns Result for unwrap case object schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief unwrap case object schema.
  */
 function unwrapCaseObjectSchema(
   schema: Schema
@@ -241,11 +208,7 @@ function unwrapCaseObjectSchema(
 }
 
 /**
- * @brief schema requires literal function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
- * @param literal Borrowed input slot named literal; validation or normalization happens before stored state changes.
- * @returns Result for schema requires literal; ownership of newly created aggregates is transferred to the caller.
+ * @brief schema requires literal.
  */
 function schemaRequiresLiteral(schema: Schema, literal: string): boolean {
   switch (schema.tag) {

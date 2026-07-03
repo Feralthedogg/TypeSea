@@ -29,103 +29,47 @@ import {
 import { isSchemaValue } from "../schema/index.js";
 
 /**
- * @brief sync adapter source type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief sync adapter source.
  */
 export type SyncAdapterSource = DecodeSource;
 
 /**
- * @brief infer sync adapter type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief infer sync adapter.
  */
 export type InferSyncAdapter<TSource> = InferDecoder<TSource>;
 
 /**
- * @brief infer adapter type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief infer adapter.
  */
 export type InferAdapter<TSource> = InferAsyncDecoder<TSource>;
 
 /**
- * @brief trpc parser interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief trpc parser.
  */
 export interface TrpcParser<TValue> {
-
-  /**
-   * @brief parse field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly parse: (value: unknown) => TValue;
 }
 
 /**
- * @brief async trpc parser interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief async trpc parser.
  */
 export interface AsyncTrpcParser<TValue> {
-
-  /**
-   * @brief parse async field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly parseAsync: (value: unknown) => Promise<TValue>;
 }
 
 /**
- * @brief fastify route schema interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief fastify route schema.
  */
 export interface FastifyRouteSchema {
-
-  /**
-   * @brief body field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly body?: JsonSchema;
-
-  /**
-   * @brief querystring field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly querystring?: JsonSchema;
-
-  /**
-   * @brief params field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly params?: JsonSchema;
-
-  /**
-   * @brief headers field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly headers?: JsonSchema;
-
-  /**
-   * @brief response field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly response?: Readonly<Record<string, JsonSchema>>;
 }
 
 /**
- * @brief fastify http part type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief fastify http part.
  */
 export type FastifyHttpPart =
   | "body"
@@ -134,28 +78,20 @@ export type FastifyHttpPart =
   | "headers";
 
 /**
- * @brief fastify route schema options interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief fastify route schema options.
  */
 export interface FastifyRouteSchemaOptions {
-
-  /**
-   * @brief part field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly part: FastifyHttpPart;
 
   /**
-   * @brief schema id field contract.
+   * @brief schema id.
    * @details Forwards a concrete `$schema` marker to the JSON Schema exporter.
    * @invariant When omitted, TypeSea emits its conservative default dialect marker.
    */
   readonly schemaId?: string;
 
   /**
-   * @brief dialect field contract.
+   * @brief dialect.
    * @details Selects the JSON Schema keyword set used by generated route schemas.
    * @invariant Tuple schemas remain validator-visible for the selected dialect.
    */
@@ -163,68 +99,36 @@ export interface FastifyRouteSchemaOptions {
 }
 
 /**
- * @brief fastify validator route interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief fastify validator route.
  */
 export interface FastifyValidatorRoute {
-
-  /**
-   * @brief schema field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly schema: unknown;
-
-  /**
-   * @brief method field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly method: string | undefined;
-
-  /**
-   * @brief url field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly url: string | undefined;
-
-  /**
-   * @brief http part field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly httpPart: string | undefined;
 }
 
 /**
- * @brief fastify validation result type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief fastify validation result.
  */
 export type FastifyValidationResult =
   | { readonly value: unknown }
   | { readonly error: TypeSeaAssertionError };
 
 /**
- * @brief fastify validator type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief fastify validator.
  */
 export type FastifyValidator = (value: unknown) => FastifyValidationResult;
 
 /**
- * @brief fastify validator compiler type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief fastify validator compiler.
  */
 export type FastifyValidatorCompiler = (
   route: FastifyValidatorRoute
 ) => FastifyValidator;
 
 /**
- * @brief fastify validator compiler source map type alias contract.
+ * @brief fastify validator compiler source map.
  * @details Maps one Fastify payload channel to the TypeSea source that owns that channel.
  * @invariant Only supported Fastify HTTP parts are consulted by the compiler.
  */
@@ -233,7 +137,7 @@ export type FastifyValidatorCompilerSourceMap = Readonly<
 >;
 
 /**
- * @brief fastify validator compiler source type alias contract.
+ * @brief fastify validator compiler source.
  * @details Accepts the historical single-source form or an explicit route-part map.
  * @invariant A mapped source is selected by `route.httpPart` before validation.
  */
@@ -242,29 +146,15 @@ export type FastifyValidatorCompilerSource =
   | FastifyValidatorCompilerSourceMap;
 
 /**
- * @brief react hook form field error interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief react hook form field error.
  */
 export interface ReactHookFormFieldError {
-
-  /**
-   * @brief type field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly type: string;
-
-  /**
-   * @brief message field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly message: string;
 }
 
 /**
- * @brief react hook form errors interface contract.
+ * @brief react hook form errors.
  * @details Defines the nested field-error tree React Hook Form traverses by path segment.
  * @invariant Branches are frozen objects and leaves are frozen `ReactHookFormFieldError` values.
  */
@@ -273,31 +163,15 @@ export interface ReactHookFormErrors {
 }
 
 /**
- * @brief react hook form resolver result interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief react hook form resolver result.
  */
 export interface ReactHookFormResolverResult<TValue> {
-
-  /**
-   * @brief values field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly values: TValue | Readonly<Record<string, never>>;
-
-  /**
-   * @brief errors field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly errors: ReactHookFormErrors;
 }
 
 /**
- * @brief react hook form resolver type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief react hook form resolver.
  */
 export type ReactHookFormResolver<TValue> = (
   values: unknown,
@@ -306,25 +180,14 @@ export type ReactHookFormResolver<TValue> = (
 ) => Promise<ReactHookFormResolverResult<TValue>>;
 
 /**
- * @brief react hook form resolver options interface contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief react hook form resolver options.
  */
 export interface ReactHookFormResolverOptions {
-
-  /**
-   * @brief messages field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   readonly messages: Partial<IssueMessageOptions> | undefined;
 }
 
 /**
- * @brief to trpc parser function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @returns Result for to trpc parser; ownership of newly created aggregates is transferred to the caller.
+ * @brief to trpc parser.
  */
 export function toTrpcParser<TSource extends SyncAdapterSource>(
   source: TSource
@@ -342,10 +205,7 @@ export function toTrpcParser<TSource extends SyncAdapterSource>(
 }
 
 /**
- * @brief to async trpc parser function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @returns Result for to async trpc parser; ownership of newly created aggregates is transferred to the caller.
+ * @brief to async trpc parser.
  */
 export function toAsyncTrpcParser<TSource extends AsyncDecodeSource>(
   source: TSource
@@ -363,11 +223,7 @@ export function toAsyncTrpcParser<TSource extends AsyncDecodeSource>(
 }
 
 /**
- * @brief to fastify route schema function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param guard Borrowed input slot named guard; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for to fastify route schema; ownership of newly created aggregates is transferred to the caller.
+ * @brief to fastify route schema.
  */
 export function toFastifyRouteSchema(
   guard: Guard<unknown, Presence>,
@@ -387,10 +243,7 @@ export function toFastifyRouteSchema(
 }
 
 /**
- * @brief to fastify validator compiler function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @returns Result for to fastify validator compiler; ownership of newly created aggregates is transferred to the caller.
+ * @brief to fastify validator compiler.
  */
 export function toFastifyValidatorCompiler(
   source: FastifyValidatorCompilerSource
@@ -413,11 +266,7 @@ export function toFastifyValidatorCompiler(
 }
 
 /**
- * @brief to react hook form resolver function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for to react hook form resolver; ownership of newly created aggregates is transferred to the caller.
+ * @brief to react hook form resolver.
  */
 export function toReactHookFormResolver<TSource extends AsyncDecodeSource>(
   source: TSource,
@@ -443,11 +292,7 @@ export function toReactHookFormResolver<TSource extends AsyncDecodeSource>(
 }
 
 /**
- * @brief decode sync source function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for decode sync source; ownership of newly created aggregates is transferred to the caller.
+ * @brief decode sync source.
  */
 function decodeSyncSource<TValue>(
   source: unknown,
@@ -461,11 +306,7 @@ function decodeSyncSource<TValue>(
 }
 
 /**
- * @brief decode async source function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for decode async source; ownership of newly created aggregates is transferred to the caller.
+ * @brief decode async source.
  */
 async function decodeAsyncSource<TValue>(
   source: unknown,
@@ -482,11 +323,7 @@ async function decodeAsyncSource<TValue>(
 }
 
 /**
- * @brief read guard function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @returns Result for read guard; ownership of newly created aggregates is transferred to the caller.
+ * @brief read guard.
  */
 function readGuard(value: unknown, label: string): Guard<unknown, Presence> {
   if (!isRecord(value)) {
@@ -501,11 +338,7 @@ function readGuard(value: unknown, label: string): Guard<unknown, Presence> {
 }
 
 /**
- * @brief read sync adapter source function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief read sync adapter source.
  */
 function readSyncAdapterSource(source: unknown, label: string): void {
   if (isDecoderValue(source)) {
@@ -515,9 +348,8 @@ function readSyncAdapterSource(source: unknown, label: string): void {
 }
 
 /**
- * @brief read fastify validator compiler source function contract.
+ * @brief read fastify validator compiler source.
  * @details Normalizes a single validator source or a route-part source table into one selector.
- * @param source Borrowed input slot named source; validation happens before route compilation.
  * @returns Source selector used by the Fastify compiler callback.
  */
 function readFastifyValidatorCompilerSource(
@@ -542,9 +374,8 @@ function readFastifyValidatorCompilerSource(
 }
 
 /**
- * @brief is guard value function contract.
+ * @brief is guard value.
  * @details Performs the same structural guard check as `readGuard` without throwing.
- * @param value Borrowed input slot named value; validation does not execute user callbacks.
  * @returns True when the value is a TypeSea guard object.
  */
 function isGuardValue(value: unknown): value is Guard<unknown, Presence> {
@@ -556,9 +387,8 @@ function isGuardValue(value: unknown): value is Guard<unknown, Presence> {
 }
 
 /**
- * @brief read fastify compiler map function contract.
+ * @brief read fastify compiler map.
  * @details Validates every present route-part source before Fastify starts compiling routes.
- * @param source Borrowed input slot named source; only supported route-part keys are read.
  * @post No result value is produced; malformed sources throw TypeError.
  */
 function readFastifyCompilerMap(source: FastifyValidatorCompilerSourceMap): void {
@@ -569,10 +399,8 @@ function readFastifyCompilerMap(source: FastifyValidatorCompilerSourceMap): void
 }
 
 /**
- * @brief read optional fastify compiler part function contract.
+ * @brief read optional fastify compiler part.
  * @details Checks one optional source-map slot without consulting prototype state.
- * @param source Borrowed input slot named source; route-part entries are not mutated.
- * @param part Borrowed input slot named part; controls which source-map slot is read.
  * @post No result value is produced; malformed present sources throw TypeError.
  */
 function readOptionalFastifyCompilerPart(
@@ -590,9 +418,8 @@ function readOptionalFastifyCompilerPart(
 }
 
 /**
- * @brief read fastify route http part function contract.
+ * @brief read fastify route http part.
  * @details Converts Fastify's route descriptor slot into TypeSea's closed part union.
- * @param route Borrowed input slot named route; no route object mutation is performed.
  * @returns Validated Fastify HTTP part.
  */
 function readFastifyRouteHttpPart(route: FastifyValidatorRoute): FastifyHttpPart {
@@ -608,11 +435,7 @@ function readFastifyRouteHttpPart(route: FastifyValidatorRoute): FastifyHttpPart
 }
 
 /**
- * @brief read async adapter source function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param label Borrowed input slot named label; validation or normalization happens before stored state changes.
- * @post No result value is produced; effects are limited to the documented receiver or output buffer.
+ * @brief read async adapter source.
  */
 function readAsyncAdapterSource(source: unknown, label: string): void {
   if (isAsyncDecoderValue(source) || isDecoderValue(source)) {
@@ -622,10 +445,7 @@ function readAsyncAdapterSource(source: unknown, label: string): void {
 }
 
 /**
- * @brief read fastify part function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for read fastify part; ownership of newly created aggregates is transferred to the caller.
+ * @brief read fastify part.
  */
 function readFastifyPart(
   options: Partial<FastifyRouteSchemaOptions> | undefined
@@ -645,9 +465,8 @@ function readFastifyPart(
 }
 
 /**
- * @brief read fastify json schema options function contract.
+ * @brief read fastify json schema options.
  * @details Copies only JSON Schema exporter options out of the adapter options object.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
  * @returns Partial JSON Schema options without exact-optional undefined slots.
  */
 function readFastifyJsonSchemaOptions(
@@ -670,10 +489,7 @@ function readFastifyJsonSchemaOptions(
 }
 
 /**
- * @brief read react hook form options function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for read react hook form options; ownership of newly created aggregates is transferred to the caller.
+ * @brief read react hook form options.
  */
 function readReactHookFormOptions(
   options: Partial<ReactHookFormResolverOptions> | undefined
@@ -692,11 +508,7 @@ function readReactHookFormOptions(
 }
 
 /**
- * @brief issues to react hook form errors function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param issues Borrowed input slot named issues; validation or normalization happens before stored state changes.
- * @param options Borrowed input slot named options; validation or normalization happens before stored state changes.
- * @returns Result for issues to react hook form errors; ownership of newly created aggregates is transferred to the caller.
+ * @brief issues to react hook form errors.
  */
 function issuesToReactHookFormErrors(
   issues: readonly Issue[],
@@ -714,7 +526,7 @@ function issuesToReactHookFormErrors(
 }
 
 /**
- * @brief mutable react hook form errors interface contract.
+ * @brief mutable react hook form errors.
  * @details Internal null-prototype tree used while mapping TypeSea issues to field errors.
  * @invariant Branch objects have a null prototype; leaf error objects do not.
  */
@@ -723,7 +535,7 @@ interface MutableReactHookFormErrors {
 }
 
 /**
- * @brief make react hook form error branch function contract.
+ * @brief make react hook form error branch.
  * @details Allocates one null-prototype object so form field names cannot collide with inherited keys.
  * @returns Mutable branch owned by the caller.
  */
@@ -732,7 +544,7 @@ function makeReactHookFormErrorBranch(): MutableReactHookFormErrors {
 }
 
 /**
- * @brief insert react hook form issue function contract.
+ * @brief insert react hook form issue.
  * @details Inserts one TypeSea issue into a nested React Hook Form error tree.
  * @param errors Borrowed output branch that receives the leaf error when absent.
  * @param issue Borrowed input issue; its path is converted into string map keys.
@@ -779,7 +591,7 @@ function insertReactHookFormIssue(
 }
 
 /**
- * @brief react hook form path key function contract.
+ * @brief react hook form path key.
  * @details Converts one TypeSea path segment into the object key React Hook Form traverses.
  * @param segment Borrowed input path segment.
  * @returns Stable string key for object or array-index lookup.
@@ -789,7 +601,7 @@ function reactHookFormPathKey(segment: PathSegment): string {
 }
 
 /**
- * @brief freeze react hook form errors function contract.
+ * @brief freeze react hook form errors.
  * @details Recursively freezes the null-prototype tree after all issues have been inserted.
  * @param errors Borrowed mutable branch that becomes immutable before publication.
  * @returns Frozen React Hook Form error tree.
@@ -812,9 +624,9 @@ function freezeReactHookFormErrors(
 }
 
 /**
- * @brief is react hook form error branch function contract.
+ * @brief is react hook form error branch.
  * @details Distinguishes internal branch objects from frozen leaf error objects.
- * @param value Borrowed input slot named value.
+ * @param value Candidate branch or leaf error value.
  * @returns True when value is a null-prototype branch object.
  */
 function isReactHookFormErrorBranch(
@@ -826,32 +638,25 @@ function isReactHookFormErrorBranch(
 }
 
 /**
- * @brief root issue path constant contract.
+ * @brief root issue path.
  * @details Module-scope path used when a TypeSea issue points at the submitted root value.
  * @invariant The singleton is never mutated after module initialization.
  */
 const rootIssuePath: readonly PathSegment[] = Object.freeze(["root"]);
 
 /**
- * @brief is record function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for is record; ownership of newly created aggregates is transferred to the caller.
+ * @brief is record.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
- * @brief empty errors constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief empty errors.
  */
 const emptyErrors: ReactHookFormErrors = Object.freeze({});
 
 /**
- * @brief empty values constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief empty values.
  */
 const emptyValues: Readonly<Record<string, never>> = Object.freeze({});

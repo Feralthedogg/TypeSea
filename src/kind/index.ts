@@ -1,7 +1,5 @@
 /**
- * @brief schema tag constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief schema tag.
  */
 export const SchemaTag = {
   String: 1,
@@ -28,16 +26,12 @@ export const SchemaTag = {
 } as const;
 
 /**
- * @brief schema tag type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief schema tag.
  */
 export type SchemaTag = (typeof SchemaTag)[keyof typeof SchemaTag];
 
 /**
- * @brief object mode tag constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief object mode tag.
  */
 export const ObjectModeTag = {
   Passthrough: 1,
@@ -45,16 +39,12 @@ export const ObjectModeTag = {
 } as const;
 
 /**
- * @brief object mode tag type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief object mode tag.
  */
 export type ObjectModeTag = (typeof ObjectModeTag)[keyof typeof ObjectModeTag];
 
 /**
- * @brief presence tag constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief presence tag.
  */
 export const PresenceTag = {
   Required: 1,
@@ -62,16 +52,12 @@ export const PresenceTag = {
 } as const;
 
 /**
- * @brief presence tag type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief presence tag.
  */
 export type PresenceTag = (typeof PresenceTag)[keyof typeof PresenceTag];
 
 /**
- * @brief string check tag constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief string check tag.
  */
 export const StringCheckTag = {
   Min: 1,
@@ -81,17 +67,13 @@ export const StringCheckTag = {
 } as const;
 
 /**
- * @brief string check tag type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief string check tag.
  */
 export type StringCheckTag =
   (typeof StringCheckTag)[keyof typeof StringCheckTag];
 
 /**
- * @brief number check tag constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief number check tag.
  */
 export const NumberCheckTag = {
   Integer: 1,
@@ -100,24 +82,19 @@ export const NumberCheckTag = {
 } as const;
 
 /**
- * @brief number check tag type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief number check tag.
  */
 export type NumberCheckTag =
   (typeof NumberCheckTag)[keyof typeof NumberCheckTag];
 
 /**
- * @brief node tag constant contract.
- * @details Module-scope storage with stable identity, created once and reused by callers.
- * @invariant Initialization happens during module load and later code treats the binding as fixed.
+ * @brief node tag.
  */
 export const NodeTag = {
   Start: 1,
   Param: 2,
   Const: 3,
   GetProp: 4,
-  Length: 5,
   IsString: 20,
   IsNumber: 21,
   IsBoolean: 22,
@@ -141,13 +118,10 @@ export const NodeTag = {
   Not: 50,
   And: 51,
   Or: 52,
-  Return: 70,
-  Issue: 90
+  Return: 70
 } as const;
 
 /**
- * @brief node tag type alias contract.
- * @details Defines a closed compile-time contract used by nearby routines instead of an implicit side channel.
- * @invariant Values matching this contract keep the field layout described here.
+ * @brief node tag.
  */
 export type NodeTag = (typeof NodeTag)[keyof typeof NodeTag];

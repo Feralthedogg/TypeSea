@@ -98,6 +98,34 @@ describe("compiled guard parity", () => {
     expect(FastShape.check(value)).toEqual(Shape.check(value));
   });
 
+  test("rejects strict object non-enumerable and symbol extras", () => {
+    const Shape = t.strictObject({
+      id: t.string
+    });
+    const FastShape = compile(Shape, { name: "strict_own_key_shape" });
+    const symbolKey = Symbol("extra");
+    const nonEnumerableExtra: Record<PropertyKey, unknown> = {
+      id: "u-1"
+    };
+    const symbolExtra: Record<PropertyKey, unknown> = {
+      id: "u-1",
+      [symbolKey]: true
+    };
+
+    Object.defineProperty(nonEnumerableExtra, "hidden", {
+      configurable: true,
+      enumerable: false,
+      value: true
+    });
+
+    expect(Shape.is(nonEnumerableExtra)).toBe(false);
+    expect(FastShape.is(nonEnumerableExtra)).toBe(false);
+    expect(FastShape.check(nonEnumerableExtra)).toEqual(Shape.check(nonEnumerableExtra));
+    expect(Shape.is(symbolExtra)).toBe(false);
+    expect(FastShape.is(symbolExtra)).toBe(false);
+    expect(FastShape.check(symbolExtra)).toEqual(Shape.check(symbolExtra));
+  });
+
   test("matches sparse arrays and accessor-backed array slots", () => {
     const MaybeStringArray = t.array(t.undefinedable(t.string));
     const FastMaybeStringArray = compile(MaybeStringArray, {

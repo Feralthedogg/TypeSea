@@ -4,7 +4,6 @@
  */
 
 import { NodeTag } from "../kind/index.js";
-import type { IssueCode, PathSegment } from "../issue/index.js";
 import type { LiteralValue, Schema } from "../schema/index.js";
 import { freezeGraph } from "./freeze.js";
 import { isPlainRegExp } from "./regexp.js";
@@ -17,8 +16,6 @@ import type {
   Graph,
   GraphNode,
   HasOwnNode,
-  IssueNode,
-  LengthNode,
   NodeId,
   NumericCompareNode,
   ParamNode,
@@ -32,30 +29,17 @@ import type {
 } from "./types.js";
 
 /**
- * @brief graph builder class contract.
+ * @brief graph builder.
  * @details Owns its state directly; methods expose receiver checks and explicit result flow.
  * @invariant Construction leaves the instance in a fully usable state before it escapes.
  */
 export class GraphBuilder {
-
-  /**
-   * @brief nodes field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   private readonly nodes: GraphNode[];
-
-  /**
-   * @brief hash field contract.
-   * @details Documents one concrete slot in the parent layout so the data shape is visible at the declaration site.
-   * @invariant Storage follows the readonly or mutable qualifier written on this declaration.
-   */
   private readonly hash: Map<string, NodeId>;
 
   /**
-   * @brief constructor constructor contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @post The receiver is initialized according to the class invariant before it can be observed.
+   * @brief constructor.
+     * @post The receiver is initialized according to the class invariant before it can be observed.
    */
   public constructor() {
     this.nodes = [];
@@ -63,10 +47,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief start routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @returns Result for start; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief start.
+       */
   public start(): NodeId {
     return this.intern("start", (id: NodeId): StartNode => ({
       id,
@@ -76,11 +58,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief param routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
-   * @returns Result for param; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief param.
+         */
   public param(name: string): NodeId {
     return this.intern(`param:${name}`, (id: NodeId): ParamNode => ({
       id,
@@ -91,11 +70,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief constant routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for constant; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief constant.
+         */
   public constant(value: LiteralValue): NodeId {
     if (typeof value === "symbol") {
       return this.push((id: NodeId): ConstNode => ({
@@ -115,12 +91,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief get prop routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param object Borrowed input slot named object; validation or normalization happens before stored state changes.
-   * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
-   * @returns Result for get prop; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief get prop.
+           */
   public getProp(object: NodeId, key: string): NodeId {
     const hashKey = `getProp:${String(object)}:${key}`;
     return this.intern(hashKey, (id: NodeId): GetPropNode => ({
@@ -133,137 +105,85 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief length routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for length; ownership of newly created aggregates is transferred to the caller.
-   */
-  public length(value: NodeId): NodeId {
-    return this.intern(`length:${String(value)}`, (id: NodeId): LengthNode => ({
-      id,
-      tag: NodeTag.Length,
-      deps: [value],
-      value
-    }));
-  }
-
-  /**
-   * @brief is string routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for is string; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief is string.
+         */
   public isString(value: NodeId): NodeId {
     return this.unary(NodeTag.IsString, value);
   }
 
   /**
-   * @brief is number routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for is number; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief is number.
+         */
   public isNumber(value: NodeId): NodeId {
     return this.unary(NodeTag.IsNumber, value);
   }
 
   /**
-   * @brief is boolean routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for is boolean; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief is boolean.
+         */
   public isBoolean(value: NodeId): NodeId {
     return this.unary(NodeTag.IsBoolean, value);
   }
 
   /**
-   * @brief is big int routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for is big int; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief is big int.
+         */
   public isBigInt(value: NodeId): NodeId {
     return this.unary(NodeTag.IsBigInt, value);
   }
 
   /**
-   * @brief is symbol routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for is symbol; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief is symbol.
+         */
   public isSymbol(value: NodeId): NodeId {
     return this.unary(NodeTag.IsSymbol, value);
   }
 
   /**
-   * @brief is object routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for is object; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief is object.
+         */
   public isObject(value: NodeId): NodeId {
     return this.unary(NodeTag.IsObject, value);
   }
 
   /**
-   * @brief is array routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for is array; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief is array.
+         */
   public isArray(value: NodeId): NodeId {
     return this.unary(NodeTag.IsArray, value);
   }
 
   /**
-   * @brief is undefined routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for is undefined; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief is undefined.
+         */
   public isUndefined(value: NodeId): NodeId {
     return this.unary(NodeTag.IsUndefined, value);
   }
 
   /**
-   * @brief is null routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for is null; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief is null.
+         */
   public isNull(value: NodeId): NodeId {
     return this.unary(NodeTag.IsNull, value);
   }
 
   /**
-   * @brief is integer routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for is integer; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief is integer.
+         */
   public isInteger(value: NodeId): NodeId {
     return this.unary(NodeTag.IsInteger, value);
   }
 
   /**
-   * @brief not routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for not; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief not.
+         */
   public not(value: NodeId): NodeId {
     return this.unary(NodeTag.Not, value);
   }
 
   /**
-   * @brief equals routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param left Borrowed input slot named left; validation or normalization happens before stored state changes.
-   * @param right Borrowed input slot named right; validation or normalization happens before stored state changes.
-   * @returns Result for equals; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief equals.
+           */
   public equals(left: NodeId, right: NodeId): NodeId {
     const key = `eq:${String(left)}:${String(right)}`;
     return this.intern(key, (id: NodeId): EqualsNode => ({
@@ -276,57 +196,36 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief gte routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param left Borrowed input slot named left; validation or normalization happens before stored state changes.
-   * @param right Borrowed input slot named right; validation or normalization happens before stored state changes.
-   * @returns Result for gte; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief gte.
+           */
   public gte(left: NodeId, right: NodeId): NodeId {
     return this.numeric(NodeTag.Gte, left, right);
   }
 
   /**
-   * @brief lte routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param left Borrowed input slot named left; validation or normalization happens before stored state changes.
-   * @param right Borrowed input slot named right; validation or normalization happens before stored state changes.
-   * @returns Result for lte; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief lte.
+           */
   public lte(left: NodeId, right: NodeId): NodeId {
     return this.numeric(NodeTag.Lte, left, right);
   }
 
   /**
-   * @brief string min routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @param bound Borrowed input slot named bound; validation or normalization happens before stored state changes.
-   * @returns Result for string min; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief string min.
+           */
   public stringMin(value: NodeId, bound: number): NodeId {
     return this.stringBound(NodeTag.StringMin, value, bound);
   }
 
   /**
-   * @brief string max routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @param bound Borrowed input slot named bound; validation or normalization happens before stored state changes.
-   * @returns Result for string max; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief string max.
+           */
   public stringMax(value: NodeId, bound: number): NodeId {
     return this.stringBound(NodeTag.StringMax, value, bound);
   }
 
   /**
-   * @brief regex routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @param regex Borrowed input slot named regex; validation or normalization happens before stored state changes.
-   * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
-   * @returns Result for regex; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief regex.
+             */
   public regex(value: NodeId, regex: RegExp, name: string): NodeId {
     if (!isPlainRegExp(regex)) {
       throw new TypeError("regex node must use a plain RegExp");
@@ -346,12 +245,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief has own routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param object Borrowed input slot named object; validation or normalization happens before stored state changes.
-   * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
-   * @returns Result for has own; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief has own.
+           */
   public hasOwn(object: NodeId, key: string): NodeId {
     const hashKey = `hasOwn:${String(object)}:${key}`;
     return this.intern(hashKey, (id: NodeId): HasOwnNode => ({
@@ -364,12 +259,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief strict keys routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param object Borrowed input slot named object; validation or normalization happens before stored state changes.
-   * @param keys Borrowed input slot named keys; validation or normalization happens before stored state changes.
-   * @returns Result for strict keys; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief strict keys.
+           */
   public strictKeys(object: NodeId, keys: readonly string[]): NodeId {
     const hashKey = `strictKeys:${String(object)}:${JSON.stringify(keys)}`;
     return this.intern(hashKey, (id: NodeId): StrictKeysNode => ({
@@ -382,12 +273,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief array every routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @param item Borrowed input slot named item; validation or normalization happens before stored state changes.
-   * @returns Result for array every; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief array every.
+           */
   public arrayEvery(value: NodeId, item: Schema): NodeId {
     return this.push((id: NodeId): ArrayEveryNode => ({
       id,
@@ -399,12 +286,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief schema check routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @param schema Borrowed input slot named schema; validation or normalization happens before stored state changes.
-   * @returns Result for schema check; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief schema check.
+           */
   public schemaCheck(value: NodeId, schema: Schema): NodeId {
     return this.push((id: NodeId): SchemaCheckNode => ({
       id,
@@ -416,11 +299,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief and routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param values Borrowed input slot named values; validation or normalization happens before stored state changes.
-   * @returns Result for and; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief and.
+         */
   public and(values: readonly NodeId[]): NodeId {
     const first = values[0];
     if (first === undefined) {
@@ -439,11 +319,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief or routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param values Borrowed input slot named values; validation or normalization happens before stored state changes.
-   * @returns Result for or; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief or.
+         */
   public or(values: readonly NodeId[]): NodeId {
     const first = values[0];
     if (first === undefined) {
@@ -462,12 +339,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief ret routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param control Borrowed input slot named control; validation or normalization happens before stored state changes.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for ret; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief ret.
+           */
   public ret(control: NodeId, value: NodeId): NodeId {
     return this.push((id: NodeId): ReturnNode => ({
       id,
@@ -479,35 +352,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief issue routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param condition Borrowed input slot named condition; validation or normalization happens before stored state changes.
-   * @param path Borrowed input slot named path; validation or normalization happens before stored state changes.
-   * @param code Borrowed input slot named code; validation or normalization happens before stored state changes.
-   * @returns Result for issue; ownership of newly created aggregates is transferred to the caller.
-   */
-  public issue(
-    condition: NodeId,
-    path: readonly PathSegment[],
-    code: IssueCode
-  ): NodeId {
-    return this.push((id: NodeId): IssueNode => ({
-      id,
-      tag: NodeTag.Issue,
-      deps: [condition],
-      condition,
-      path,
-      code
-    }));
-  }
-
-  /**
-   * @brief finish routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param entry Borrowed input slot named entry; validation or normalization happens before stored state changes.
-   * @param result Borrowed input slot named result; validation or normalization happens before stored state changes.
-   * @returns Result for finish; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief finish.
+           */
   public finish(entry: NodeId, result: NodeId): Graph {
     return freezeGraph({
       nodes: this.nodes.slice(),
@@ -517,12 +363,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief unary routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param tag Borrowed input slot named tag; validation or normalization happens before stored state changes.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @returns Result for unary; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief unary.
+           */
   private unary(
     tag: UnaryPredicateNode["tag"],
     value: NodeId
@@ -537,13 +379,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief numeric routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param tag Borrowed input slot named tag; validation or normalization happens before stored state changes.
-   * @param left Borrowed input slot named left; validation or normalization happens before stored state changes.
-   * @param right Borrowed input slot named right; validation or normalization happens before stored state changes.
-   * @returns Result for numeric; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief numeric.
+             */
   private numeric(
     tag: NumericCompareNode["tag"],
     left: NodeId,
@@ -560,13 +397,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief string bound routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param tag Borrowed input slot named tag; validation or normalization happens before stored state changes.
-   * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
-   * @param bound Borrowed input slot named bound; validation or normalization happens before stored state changes.
-   * @returns Result for string bound; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief string bound.
+             */
   private stringBound(
     tag: StringBoundNode["tag"],
     value: NodeId,
@@ -583,12 +415,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief intern routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param key Borrowed input slot named key; validation or normalization happens before stored state changes.
-   * @param make Borrowed input slot named make; validation or normalization happens before stored state changes.
-   * @returns Result for intern; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief intern.
+           */
   private intern(
     key: string,
     make: (id: NodeId) => GraphNode
@@ -605,11 +433,8 @@ export class GraphBuilder {
   }
 
   /**
-   * @brief push routine contract.
-   * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
-   * @param make Borrowed input slot named make; validation or normalization happens before stored state changes.
-   * @returns Result for push; ownership of newly created aggregates is transferred to the caller.
-   */
+   * @brief push.
+         */
   private push(make: (id: NodeId) => GraphNode): NodeId {
     const id = this.nodes.length;
     const node = make(id);
@@ -619,12 +444,8 @@ export class GraphBuilder {
 }
 
 /**
- * @brief make regex intern key function contract.
+ * @brief make regex intern key.
  * @details Encodes each string segment with its byte-length-independent character length before concatenation.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @param source Borrowed input slot named source; validation or normalization happens before stored state changes.
- * @param flags Borrowed input slot named flags; validation or normalization happens before stored state changes.
- * @param name Borrowed input slot named name; validation or normalization happens before stored state changes.
  * @returns Collision-resistant intern key for one regex predicate identity.
  */
 function makeRegexInternKey(
@@ -637,9 +458,8 @@ function makeRegexInternKey(
 }
 
 /**
- * @brief length prefixed function contract.
+ * @brief length prefixed.
  * @details Preserves string tuple boundaries without allocating wrapper arrays or nested maps.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
  * @returns Encoded string segment suitable for intern table keys.
  */
 function lengthPrefixed(value: string): string {
@@ -647,10 +467,7 @@ function lengthPrefixed(value: string): string {
 }
 
 /**
- * @brief literal key function contract.
- * @details Treats parameters as borrowed input and makes state changes visible through the receiver or return value.
- * @param value Borrowed input slot named value; validation or normalization happens before stored state changes.
- * @returns Result for literal key; ownership of newly created aggregates is transferred to the caller.
+ * @brief literal key.
  */
 function literalKey(value: LiteralValue): string {
   if (value === null) {
