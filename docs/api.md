@@ -1,0 +1,289 @@
+# TypeSea API Reference
+
+TypeSea accepts untrusted input as `unknown` and narrows it through immutable
+guard values. The public API is small by design; most complexity lives behind
+builder validation, graph introspection, diagnostics, and export checks.
+
+## Import
+
+```ts
+import {
+  compile,
+  emitAotModule,
+  t,
+  toJsonSchema,
+  type Guard,
+  type Infer
+} from "typesea";
+```
+
+The package exposes one root entry point. Subpath imports are intentionally not
+part of the public API.
+
+## Guard Contract
+
+```ts
+interface Guard<T> {
+  is(value: unknown): value is T;
+  check(value: unknown): CheckResult<T>;
+  assert(value: unknown): asserts value is T;
+  graph(): Graph;
+}
+```
+
+| Method | Use it for | Contract |
+| --- | --- | --- |
+| `is` | Hot boolean narrowing | Avoids diagnostic allocation on the success path. |
+| `check` | Validation with issues | Returns frozen `Result<T, Issue[]>` containers. |
+| `assert` | Throwing integration boundaries | Throws `TypeSeaAssertionError` with copied, frozen issues. |
+| `graph` | Introspection and optimizer tests | Returns a validated, optimized, frozen Sea-of-Nodes graph. |
+
+Diagnostic paths contain only object keys and zero-based array or tuple indexes.
+Public diagnostic validators reject malformed path segments before diagnostics
+cross the API boundary.
+
+## Builder Families
+
+| Family | Builders |
+| --- | --- |
+| Scalars | `t.unknown`, `t.never`, `t.string`, `t.number`, `t.bigint`, `t.symbol`, `t.boolean` |
+| Literals and containers | `t.literal(value)`, `t.array(item)`, `t.tuple([a, b])`, `t.record(value)` |
+| Objects | `t.object(shape)`, `t.strictObject(shape)` |
+| Object transforms | `t.extend`, `t.pick`, `t.omit`, `t.partial`, and matching object guard methods |
+| Composition | `t.union`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect` |
+| Presence | `t.optional`, `t.undefinedable`, `t.nullable` |
+| Dynamic guards | `t.lazy`, `t.refine` |
+| Decoders | `t.decoder`, `t.transform`, `t.pipe`, `t.coerce` |
+| Async decoders | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
+
+Builder functions validate inputs before a schema can enter the interpreter, IR,
+compiler, AOT emitter, or JSON Schema exporter. Forged guard-like values,
+invalid schema tags, invalid predicates, invalid bounds, malformed regexps, and
+invalid discriminated union case sets are rejected during construction.
+
+Accepted schemas are frozen before storage. Public schema collection fields use
+frozen arrays and frozen key lookup records instead of mutable collection
+objects.
+
+## Object Presence
+
+TypeSea separates key presence from value domain.
+
+```ts
+const Shape = t.object({
+  name: t.optional(t.string),
+  nickname: t.undefinedable(t.string)
+});
+```
+
+- `name` may be absent. If `name` exists, its value must be a string.
+- `nickname` must be present. Its value may be a string or `undefined`.
+- `t.nullable(inner)` adds `null` to the value domain.
+- Presence-preserving wrappers keep optional-key semantics through `nullable`,
+  `undefinedable`, `brand`, and `refine`.
+
+Object combinators preserve object mode. Strict object guards remain strict
+after `extend`, `pick`, `omit`, or `partial`; passthrough object guards keep
+allowing unknown keys.
+
+## Composition
+
+`t.union(a, b)` accepts a value that satisfies at least one branch.
+
+`t.discriminatedUnion("kind", cases)` requires string case keys. Each case must
+be a statically inspectable object case whose dispatch key is a required string
+literal matching the case name.
+
+`t.intersect(a, b)` and `guard.intersect(other)` require the same input value to
+satisfy both guards. `check()` collects diagnostics from both sides.
+
+## Recursion
+
+Recursive contracts must use `t.lazy`.
+
+```ts
+interface ListNode {
+  readonly value: string;
+  readonly next?: ListNode;
+}
+
+const Node: Guard<ListNode> = t.lazy((): Guard<ListNode> =>
+  t.object({
+    value: t.string,
+    next: t.optional(Node)
+  })
+);
+```
+
+Direct cyclic schema objects are rejected at builder boundaries. Lazy guards
+resolve once per guard instance and keep recursive schema identity stable. A
+lazy chain must eventually resolve to a concrete non-lazy schema.
+
+## Decoder Pipelines
+
+```ts
+const Count = t.pipe(t.coerce.number(), t.number.int().gte(0));
+const result = Count.decode("42");
+```
+
+Decoders are for output-producing operations. They return `Result` from
+`decode()` and do not expose `is()` predicates, because the decoded output may
+not be the same runtime value as the input.
+
+- `t.transform(source, mapper)` decodes `source`, then maps the decoded value.
+- `t.pipe(source, next)` feeds a successful decoded value into the next guard or
+  decoder.
+- `t.coerce.string`, `t.coerce.number`, and `t.coerce.boolean` provide explicit
+  primitive coercion.
+- `t.asyncRefine`, `t.asyncTransform`, and `t.asyncPipe` return
+  `Promise<Result<T, Issue[]>>` from `decodeAsync()`.
+
+Expected async validation failures still return `Result` values.
+
+## Messages
+
+```ts
+const checked = withMessages(User.check(input), {
+  locale: "ko",
+  catalog: defineMessages({
+    expected_string: "{path}: 문자열 필요"
+  })
+});
+```
+
+`formatIssue`, `formatIssues`, and `withMessages` render diagnostics after
+validation has finished. This keeps `is()` and ordinary `check()` paths free from
+message allocation.
+
+Built-in locales are `en` and `ko`. Custom catalogs can use string templates
+with `{path}`, `{code}`, `{expected}`, and `{actual}`, or formatter callbacks.
+`withMessages(result, options)` preserves successful results and returns a new
+failed `Result` with copied, frozen issues whose `message` fields are populated.
+
+## Runtime Compile
+
+```ts
+const FastUser = compile(User, { name: "isUser" });
+
+FastUser.is(input);
+FastUser.check(input);
+```
+
+`compile` emits generated predicate and diagnostics collector functions from the
+frozen schema tree. Dynamic schema edges such as `lazy` and `refine` keep
+semantics by using interpreter fallbacks.
+
+The optional `name` is a debugging and profiling hint. TypeSea normalizes it
+into a strict-mode-safe JavaScript function name, prefixes reserved names, and
+caps generated name length. Direct compiled guard construction validates the
+predicate, collector, and source arguments. Collector diagnostics are validated,
+copied, and frozen before `check()` returns them.
+
+## AOT Emit
+
+```ts
+const emitted = emitAotModule(User, { name: "aotUser" });
+```
+
+`emitAotModule` returns `Result<AotModule, AotIssue[]>`. A successful result
+contains standalone ESM validator source plus declaration source. The generated
+module exports `is`, `check`, `assert`, and a default frozen guard-like object,
+without requiring dynamic source compilation at module load time.
+
+AOT generation is lossless-only. Schemas that require runtime callbacks or
+identity that cannot be serialized return explicit AOT issues.
+
+## Ecosystem Adapters
+
+```ts
+const parser = toTrpcParser(User);
+const routeSchema = toFastifyRouteSchema(User);
+const validatorCompiler = toFastifyValidatorCompiler(User);
+const resolver = toReactHookFormResolver(User);
+```
+
+Adapters are structural and zero-dependency. TypeSea does not import tRPC,
+Fastify, or React Hook Form.
+
+| Adapter | Export | Behavior |
+| --- | --- | --- |
+| tRPC | `toTrpcParser`, `toAsyncTrpcParser` | Return parser objects that emit decoded values or throw `TypeSeaAssertionError`. |
+| Fastify route schema | `toFastifyRouteSchema` | Converts guards to JSON Schema route fragments. |
+| Fastify validator compiler | `toFastifyValidatorCompiler` | Returns compiler-shaped validators that produce `{ value }` or `{ error }`. |
+| React Hook Form | `toReactHookFormResolver` | Returns an async resolver with TypeSea messages mapped to field errors. |
+
+## Graph and IR
+
+```ts
+const graph = User.graph();
+const optimized = optimizeGraph(graph);
+```
+
+`Guard.graph()` returns the optimized Sea-of-Nodes validation graph for
+introspection and optimizer consumers. Public graph values are validated,
+dependency-checked, dense, and frozen.
+
+`optimizeGraph(graph)` validates direct graph inputs before optimizing them.
+Regex graph nodes accept only plain `RegExp` values and store non-extensible
+regexps, cloning extensible inputs before the graph is frozen.
+
+`SchemaCheck` records dynamic runtime schema logic in the graph. It keeps the IR
+truthful instead of pretending a callback-backed edge is a static primitive.
+
+## JSON Schema
+
+```ts
+const result = toJsonSchema(User);
+```
+
+`toJsonSchema` returns `Result<JsonSchema, JsonSchemaExportIssue[]>`. It
+succeeds only when TypeSea can represent the contract over JSON-compatible input
+values without semantic loss.
+
+Runtime-only concepts return explicit export issues:
+
+- `undefined`
+- `bigint`
+- `symbol`
+- `lazy`
+- `refine`
+- decoder transforms
+- async validation
+- regexps with flags
+- numeric literals that JSON cannot preserve, such as `NaN`, `Infinity`, and
+  `-0`
+
+`schemaToJsonSchema(schema)` is the direct schema API. It validates the supplied
+schema and freezes it before export. JSON Schema options are also validated;
+`schemaId`, when present, must be a string.
+
+Object `properties` maps are emitted as null-prototype records so special keys
+such as `__proto__`, `constructor`, and `hasOwnProperty` remain ordinary own
+schema properties.
+
+## Edge Semantics
+
+- Literal guards use `Object.is`, so `t.literal(Number.NaN)` matches `NaN` and
+  `t.literal(-0)` does not match `0`.
+- `t.number` accepts only finite JavaScript numbers. `NaN`, `Infinity`, and
+  `-Infinity` are rejected before configured numeric predicates run.
+- String length bounds must be non-negative integers.
+- Numeric comparison bounds must be finite.
+- Predicate callbacks must return strict `true`; truthy non-boolean values do
+  not pass validation.
+- `RegExp` checks reset `lastIndex` before each test, so global and sticky
+  regexps do not leak state across validations.
+- String regex builders and direct string regex schemas accept only plain
+  `RegExp` instances. Accepted regex checks are cloned before storage.
+
+## Result Contract
+
+```ts
+type Result<T, E> =
+  | { ok: true; value: T }
+  | { ok: false; error: E };
+```
+
+Expected validation failures use `Result`. Result containers are frozen at
+runtime. Successful values are not recursively frozen because they are
+caller-owned data.

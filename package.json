@@ -1,0 +1,61 @@
+{
+  "name": "typesea",
+  "version": "0.0.0",
+  "description": "V8-friendly runtime narrowing for TypeScript with Sea-of-Nodes graph introspection.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "keywords": [
+    "typescript",
+    "typeguard",
+    "type-guard",
+    "runtime-validation",
+    "schema",
+    "narrowing",
+    "v8"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "docs"
+  ],
+  "scripts": {
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json",
+    "bench": "vitest bench",
+    "check": "npm run policy && npm run check:docs && npm run typecheck && npm run lint && npm run test && npm run build && npm run check:dist && npm run check:api && npm run check:pack",
+    "check:api": "node scripts/public-api-surface.mjs",
+    "check:consumer": "node scripts/consumer-smoke.mjs",
+    "check:docs": "node scripts/docs-site-check.mjs",
+    "check:dist": "node scripts/dist-policy.mjs",
+    "check:pack": "node scripts/package-contents.mjs",
+    "lint": "eslint .",
+    "pack:dry": "npm pack --dry-run",
+    "policy": "node scripts/source-policy.mjs",
+    "prepack": "npm run check",
+    "release:check": "node scripts/release-gate.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.0",
+    "ajv": "^8.20.0",
+    "eslint": "^10.6.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.1",
+    "valibot": "^1.4.2",
+    "vitest": "^4.1.9",
+    "zod": "^4.4.3"
+  }
+}
