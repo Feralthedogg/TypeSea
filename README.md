@@ -309,7 +309,7 @@ CI executes it on Node 20.19, 22, and 24; releases publish with npm provenance.
 
 ## Documentation
 
-- [Documentation site](docs/index.html)
+- [Documentation site](https://feralthedogg.github.io/TypeSea/)
 - [API reference](docs/api.md)
 - [Engine notes](docs/engine-notes.md)
 
