@@ -19,13 +19,25 @@ export type ValidationEnterResult =
  * @brief default max validation depth.
  * @invariant The value stays below the V8 stack depth that recursive lazy schemas can exhaust.
  */
-export const DEFAULT_MAX_VALIDATION_DEPTH = 1024;
+export const DEFAULT_MAX_VALIDATION_DEPTH = 256;
+
+/**
+ * @brief graph evaluation frame.
+ * @details Owns scratch slots for one active Sea-of-Nodes graph execution.
+ * @invariant `seen[id] === epoch` means `values[id]` belongs to the current run.
+ */
+export interface GraphEvaluationFrame {
+  values: unknown[];
+  seen: Uint32Array;
+  epoch: number;
+}
 
 /**
  * @brief validation state.
  */
 export interface ValidationState {
   readonly active: WeakMap<object, WeakSet<Schema>>;
+  readonly graphFrames: GraphEvaluationFrame[];
   readonly resolving: WeakSet<object>;
 
   /**
@@ -34,6 +46,13 @@ export interface ValidationState {
    * @invariant The value is incremented only after budget admission and decremented by `leaveValidation`.
    */
   depth: number;
+
+  /**
+   * @brief graph depth.
+   * @details Counts active nested graph executions using `graphFrames` as a stack.
+   * @invariant Incremented by IR execution before frame use and decremented after it.
+   */
+  graphDepth: number;
 
   /**
    * @brief max depth.
@@ -49,8 +68,10 @@ export interface ValidationState {
 export function makeValidationState(): ValidationState {
   return {
     active: new WeakMap<object, WeakSet<Schema>>(),
+    graphFrames: [],
     resolving: new WeakSet<object>(),
     depth: 0,
+    graphDepth: 0,
     maxDepth: DEFAULT_MAX_VALIDATION_DEPTH
   };
 }

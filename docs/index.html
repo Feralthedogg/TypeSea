@@ -5,25 +5,56 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
       name="description"
-      content="TypeSea documentation for zero-dependency TypeScript runtime narrowing with Sea-of-Nodes validation IR introspection."
+      content="TypeSea documentation: zero-dependency TypeScript runtime narrowing with cached Sea-of-Nodes validation plans, runtime compilation, and AOT emission."
     >
     <title>TypeSea Docs</title>
     <style>
       :root {
-        color-scheme: light;
-        --bg: #f7f8f4;
+        color-scheme: light dark;
+        --bg: #f6f8f7;
         --surface: #ffffff;
-        --surface-2: #eef3ec;
-        --ink: #1e2428;
-        --muted: #5f6b65;
-        --line: #d7ded5;
-        --teal: #047857;
+        --surface-2: #eef2ef;
+        --ink: #1c2422;
+        --muted: #5c6a64;
+        --line: #dbe2dc;
+        --accent: #0f7a5c;
+        --accent-ink: #0b5c46;
+        --accent-soft: #d9f2e7;
         --amber: #b45309;
-        --red: #b91c1c;
+        --amber-soft: #fdecd3;
         --violet: #6d28d9;
-        --code-bg: #151a21;
-        --code-ink: #edf2f7;
-        --shadow: 0 16px 45px rgba(30, 36, 40, 0.08);
+        --violet-soft: #ede9fe;
+        --code-bg: #14181f;
+        --code-ink: #e8eef5;
+        --code-comment: #8b98a9;
+        --sidebar-bg: #1d2422;
+        --sidebar-ink: #e9efe9;
+        --sidebar-muted: #9fae a5;
+        --sidebar-muted: #9faea5;
+        --sidebar-line: rgba(233, 239, 233, 0.12);
+        --shadow: 0 10px 30px rgba(28, 36, 34, 0.07);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #12171a;
+          --surface: #191f23;
+          --surface-2: #1f272c;
+          --ink: #e4eae6;
+          --muted: #97a49d;
+          --line: #2a333a;
+          --accent: #34c496;
+          --accent-ink: #7fe0c0;
+          --accent-soft: rgba(52, 196, 150, 0.16);
+          --amber: #f0a24a;
+          --amber-soft: rgba(240, 162, 74, 0.16);
+          --violet: #a78bfa;
+          --violet-soft: rgba(167, 139, 250, 0.16);
+          --code-bg: #0d1116;
+          --code-ink: #dde5ee;
+          --sidebar-bg: #151b1e;
+          --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
       }
 
       * {
@@ -40,14 +71,15 @@
         background: var(--bg);
         color: var(--ink);
         font-family:
-          Inter,
           ui-sans-serif,
           system-ui,
           -apple-system,
-          BlinkMacSystemFont,
           "Segoe UI",
+          Roboto,
+          "Helvetica Neue",
           sans-serif;
-        line-height: 1.55;
+        font-size: 15px;
+        line-height: 1.6;
       }
 
       a {
@@ -58,91 +90,149 @@
       code,
       pre {
         font-family:
+          ui-monospace,
           "SFMono-Regular",
+          Menlo,
           Consolas,
           "Liberation Mono",
           monospace;
       }
 
+      p code,
+      li code,
+      td code {
+        border-radius: 5px;
+        padding: 1px 5px;
+        background: var(--surface-2);
+        font-size: 0.92em;
+      }
+
+      /* ---------- shell ---------- */
+
       .shell {
         display: grid;
         min-height: 100vh;
-        grid-template-columns: 292px minmax(0, 1fr);
+        grid-template-columns: 264px minmax(0, 1fr);
       }
 
       .sidebar {
         position: sticky;
         top: 0;
+        display: flex;
+        flex-direction: column;
         height: 100vh;
-        border-right: 1px solid var(--line);
-        background: #202624;
-        color: #f4f7f0;
+        border-right: 1px solid var(--sidebar-line);
+        background: var(--sidebar-bg);
+        color: var(--sidebar-ink);
         overflow-y: auto;
       }
 
       .brand {
-        padding: 28px 24px 18px;
-        border-bottom: 1px solid rgba(244, 247, 240, 0.12);
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 26px 22px 6px;
       }
 
       .brand h1 {
         margin: 0;
-        font-size: 28px;
+        font-size: 22px;
         line-height: 1;
-        letter-spacing: 0;
+        letter-spacing: -0.01em;
       }
 
-      .brand p {
-        margin: 10px 0 0;
-        color: #c8d2ca;
-        font-size: 13px;
+      .brand .version {
+        border-radius: 999px;
+        padding: 2px 8px;
+        background: rgba(52, 196, 150, 0.18);
+        color: #7fe0c0;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .brand-tagline {
+        margin: 0;
+        padding: 0 22px 18px;
+        border-bottom: 1px solid var(--sidebar-line);
+        color: var(--sidebar-muted);
+        font-size: 12.5px;
+        line-height: 1.5;
       }
 
       .search {
-        padding: 18px 18px 12px;
+        padding: 16px 16px 8px;
       }
 
       .search input {
         width: 100%;
-        min-height: 40px;
-        border: 1px solid rgba(244, 247, 240, 0.18);
+        min-height: 36px;
+        border: 1px solid var(--sidebar-line);
         border-radius: 8px;
         padding: 0 12px;
-        background: rgba(255, 255, 255, 0.08);
-        color: #ffffff;
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--sidebar-ink);
         font: inherit;
+        font-size: 13px;
         outline: none;
       }
 
       .search input:focus {
-        border-color: #67e8c3;
+        border-color: #46b48f;
       }
 
       .search input::placeholder {
-        color: #9fb0a7;
+        color: var(--sidebar-muted);
       }
 
       .nav {
-        display: grid;
-        gap: 4px;
-        padding: 4px 12px 24px;
+        flex: 1;
+        padding: 6px 12px 18px;
+      }
+
+      .nav-group {
+        margin: 14px 0 4px;
+        padding: 0 12px;
+        color: var(--sidebar-muted);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
 
       .nav a {
         display: flex;
         align-items: center;
-        min-height: 36px;
-        border-radius: 8px;
-        padding: 8px 12px;
-        color: #dfe8df;
-        font-size: 14px;
+        min-height: 33px;
+        border-left: 2px solid transparent;
+        border-radius: 0 7px 7px 0;
+        margin: 1px 0;
+        padding: 5px 12px;
+        color: var(--sidebar-ink);
+        opacity: 0.82;
+        font-size: 13.5px;
       }
 
       .nav a:hover,
       .nav a:focus {
-        background: rgba(255, 255, 255, 0.1);
-        color: #ffffff;
+        background: rgba(255, 255, 255, 0.07);
+        opacity: 1;
       }
+
+      .nav a.active {
+        border-left-color: #34c496;
+        background: rgba(52, 196, 150, 0.1);
+        color: #9ce8cd;
+        opacity: 1;
+      }
+
+      .sidebar-foot {
+        padding: 14px 22px 20px;
+        border-top: 1px solid var(--sidebar-line);
+        color: var(--sidebar-muted);
+        font-size: 12px;
+      }
+
+      /* ---------- content ---------- */
 
       .content {
         min-width: 0;
@@ -156,41 +246,53 @@
         align-items: center;
         justify-content: space-between;
         gap: 16px;
-        min-height: 64px;
+        min-height: 56px;
         border-bottom: 1px solid var(--line);
-        padding: 0 32px;
-        background: rgba(247, 248, 244, 0.92);
-        backdrop-filter: blur(12px);
+        padding: 0 34px;
+        background: color-mix(in srgb, var(--bg) 90%, transparent);
+        backdrop-filter: blur(10px);
       }
 
-      .topbar strong {
-        font-size: 14px;
+      .topbar-crumb {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .topbar-crumb strong {
+        color: var(--ink);
+        font-weight: 650;
       }
 
       .topbar-links {
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
+        gap: 8px;
       }
 
       .topbar-links a {
         border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 7px 10px;
+        border-radius: 7px;
+        padding: 5px 11px;
         background: var(--surface);
         color: var(--ink);
-        font-size: 13px;
+        font-size: 12.5px;
+      }
+
+      .topbar-links a:hover {
+        border-color: var(--accent);
+        color: var(--accent-ink);
       }
 
       main {
-        width: min(1120px, calc(100vw - 292px));
+        max-width: 880px;
         margin: 0 auto;
-        padding: 42px 32px 72px;
+        padding: 40px 34px 80px;
       }
 
       section {
+        padding: 30px 0 34px;
         border-bottom: 1px solid var(--line);
-        padding: 38px 0;
+        scroll-margin-top: 72px;
       }
 
       section:first-child {
@@ -201,49 +303,80 @@
         border-bottom: 0;
       }
 
-      .intro {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 360px;
-        gap: 30px;
-        align-items: start;
-      }
-
       .eyebrow {
-        margin: 0 0 10px;
-        color: var(--teal);
-        font-size: 13px;
-        font-weight: 800;
-        letter-spacing: 0;
+        margin: 0 0 6px;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: 0.07em;
         text-transform: uppercase;
       }
 
       h2 {
-        margin: 0 0 14px;
-        font-size: 34px;
-        line-height: 1.12;
-        letter-spacing: 0;
+        margin: 0 0 10px;
+        font-size: 25px;
+        line-height: 1.2;
+        letter-spacing: -0.01em;
       }
 
       h3 {
-        margin: 0 0 10px;
-        font-size: 20px;
-        line-height: 1.25;
-        letter-spacing: 0;
+        margin: 0 0 8px;
+        font-size: 16px;
+        line-height: 1.3;
       }
 
       p {
-        margin: 0 0 14px;
+        margin: 0 0 12px;
       }
 
       .lede {
-        max-width: 760px;
+        max-width: 720px;
+        margin-bottom: 16px;
         color: var(--muted);
-        font-size: 17px;
+        font-size: 15.5px;
+      }
+
+      /* ---------- components ---------- */
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 300px;
+        gap: 28px;
+        align-items: start;
+      }
+
+      .checklist {
+        display: grid;
+        gap: 8px;
+        margin: 16px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .checklist li {
+        position: relative;
+        padding-left: 24px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .checklist li::before {
+        position: absolute;
+        left: 0;
+        top: 1px;
+        color: var(--accent);
+        font-weight: 700;
+        content: "✓";
+      }
+
+      .checklist li strong {
+        color: var(--ink);
+        font-weight: 600;
       }
 
       .status-panel {
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 10px;
         background: var(--surface);
         box-shadow: var(--shadow);
         overflow: hidden;
@@ -251,25 +384,21 @@
 
       .status-panel header {
         border-bottom: 1px solid var(--line);
-        padding: 14px 16px;
+        padding: 11px 16px;
         background: var(--surface-2);
-        font-weight: 800;
-      }
-
-      .status-list {
-        display: grid;
-        gap: 0;
+        font-size: 13px;
+        font-weight: 700;
       }
 
       .status-row {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 16px;
-        min-height: 44px;
+        gap: 12px;
+        min-height: 40px;
         border-bottom: 1px solid var(--line);
-        padding: 10px 16px;
-        font-size: 14px;
+        padding: 8px 16px;
+        font-size: 13.5px;
       }
 
       .status-row:last-child {
@@ -279,177 +408,232 @@
       .pill {
         display: inline-flex;
         align-items: center;
-        min-height: 24px;
         border-radius: 999px;
-        padding: 3px 9px;
-        font-size: 12px;
-        font-weight: 800;
+        padding: 2px 9px;
+        font-size: 11.5px;
+        font-weight: 700;
         white-space: nowrap;
       }
 
-      .pill.teal {
-        background: #d8f5e8;
-        color: #065f46;
+      .pill.green {
+        background: var(--accent-soft);
+        color: var(--accent-ink);
       }
 
       .pill.amber {
-        background: #fdebd2;
-        color: #92400e;
+        background: var(--amber-soft);
+        color: var(--amber);
       }
 
-      .pill.red {
-        background: #fee2e2;
-        color: #991b1b;
+      .pill.violet {
+        background: var(--violet-soft);
+        color: var(--violet);
       }
 
-      .grid {
+      .callout {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 14px;
-        margin-top: 20px;
-      }
-
-      .tile {
-        min-height: 156px;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        margin: 16px 0 0;
         border: 1px solid var(--line);
+        border-left: 3px solid var(--accent);
         border-radius: 8px;
-        padding: 18px;
+        padding: 12px 14px;
         background: var(--surface);
+        font-size: 13.5px;
       }
 
-      .tile p {
+      .callout.warn {
+        border-left-color: var(--amber);
+      }
+
+      .callout .icon {
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .callout p {
+        margin: 0;
         color: var(--muted);
-        font-size: 14px;
       }
 
-      .tile code {
-        display: inline-block;
-        margin-top: 6px;
-        border-radius: 6px;
-        padding: 3px 6px;
-        background: #edf3ef;
-        color: #23433a;
-        font-size: 13px;
+      .callout strong {
+        color: var(--ink);
       }
 
       .code-block {
-        margin: 18px 0 0;
-        border-radius: 8px;
-        overflow: auto;
+        margin: 16px 0 0;
+        border-radius: 10px;
+        overflow-x: auto;
         background: var(--code-bg);
         color: var(--code-ink);
       }
 
       .code-block pre {
         margin: 0;
-        padding: 18px;
+        padding: 16px 18px;
         font-size: 13px;
-        line-height: 1.55;
+        line-height: 1.6;
       }
 
-      .diagram {
+      .code-block .cm {
+        color: var(--code-comment);
+      }
+
+      .grid {
         display: grid;
-        grid-template-columns: repeat(5, minmax(96px, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 12px;
-        margin-top: 20px;
-        align-items: stretch;
+        margin-top: 16px;
       }
 
-      .diagram-node {
-        position: relative;
-        min-height: 104px;
+      .grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .tile {
         border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 14px;
+        border-radius: 10px;
+        padding: 15px 16px;
         background: var(--surface);
       }
 
-      .diagram-node::after {
-        position: absolute;
-        top: 50%;
-        right: -13px;
-        width: 13px;
-        height: 2px;
-        background: var(--line);
-        content: "";
-      }
-
-      .diagram-node:last-child::after {
-        display: none;
-      }
-
-      .diagram-node strong {
-        display: block;
-        margin-bottom: 8px;
-      }
-
-      .diagram-node span {
+      .tile p {
+        margin: 0 0 8px;
         color: var(--muted);
         font-size: 13px;
       }
 
-      .accent-teal {
-        border-top: 4px solid var(--teal);
+      .tile > code,
+      .tile code a {
+        display: inline-block;
+        border-radius: 6px;
+        padding: 2px 7px;
+        background: var(--surface-2);
+        color: var(--accent-ink);
+        font-size: 12.5px;
       }
 
-      .accent-amber {
-        border-top: 4px solid var(--amber);
+      .tile h3 {
+        font-size: 14.5px;
       }
 
-      .accent-red {
-        border-top: 4px solid var(--red);
+      .pipeline {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 18px;
+        counter-reset: stage;
       }
 
-      .accent-violet {
-        border-top: 4px solid var(--violet);
+      .stage {
+        position: relative;
+        border: 1px solid var(--line);
+        border-top: 3px solid var(--accent);
+        border-radius: 9px;
+        padding: 12px 13px 11px;
+        background: var(--surface);
+        counter-increment: stage;
       }
 
-      .table {
+      .stage.alt {
+        border-top-color: var(--violet);
+      }
+
+      .stage::before {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        content: "STEP " counter(stage);
+      }
+
+      .stage strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 13.5px;
+      }
+
+      .stage span {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+        display: block;
+      }
+
+      .consumers {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 12px;
+      }
+
+      .table-wrap {
+        margin-top: 16px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        overflow-x: auto;
+      }
+
+      table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 18px;
-        overflow: hidden;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--surface);
+        font-size: 13.5px;
       }
 
-      .table th,
-      .table td {
+      th,
+      td {
         border-bottom: 1px solid var(--line);
-        padding: 13px 14px;
+        padding: 10px 14px;
         text-align: left;
         vertical-align: top;
       }
 
-      .table th {
+      th {
         background: var(--surface-2);
-        font-size: 13px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: var(--muted);
+        white-space: nowrap;
       }
 
-      .table tr:last-child td {
+      tr:last-child td {
         border-bottom: 0;
       }
 
-      .list {
-        display: grid;
-        gap: 10px;
-        padding: 0;
-        margin: 18px 0 0;
-        list-style: none;
+      td.num {
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        white-space: nowrap;
       }
 
-      .list li {
-        border-left: 3px solid var(--teal);
-        padding: 5px 0 5px 12px;
+      th.num {
+        text-align: right;
+      }
+
+      td .best {
+        color: var(--accent-ink);
+        font-weight: 700;
+      }
+
+      .footnote {
+        margin-top: 10px;
         color: var(--muted);
+        font-size: 12.5px;
       }
 
       .hidden {
         display: none;
       }
 
-      @media (max-width: 980px) {
+      /* ---------- responsive ---------- */
+
+      @media (max-width: 960px) {
         .shell {
           grid-template-columns: 1fr;
         }
@@ -459,56 +643,41 @@
           height: auto;
         }
 
-        .nav {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        main {
-          width: 100%;
-        }
-
-        .intro {
+        .hero {
           grid-template-columns: 1fr;
-        }
-
-        .grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .diagram {
-          grid-template-columns: 1fr;
-        }
-
-        .diagram-node::after {
-          display: none;
-        }
-      }
-
-      @media (max-width: 640px) {
-        .topbar {
-          position: static;
-          align-items: flex-start;
-          flex-direction: column;
-          padding: 14px 18px;
-        }
-
-        main {
-          padding: 30px 18px 52px;
-        }
-
-        h2 {
-          font-size: 28px;
         }
 
         .grid,
-        .nav {
-          grid-template-columns: 1fr;
+        .consumers {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
-        .status-row {
-          align-items: flex-start;
+        .pipeline {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 620px) {
+        .topbar {
+          position: static;
           flex-direction: column;
-          gap: 6px;
+          align-items: flex-start;
+          padding: 12px 18px;
+        }
+
+        main {
+          padding: 28px 18px 56px;
+        }
+
+        h2 {
+          font-size: 22px;
+        }
+
+        .grid,
+        .grid.two,
+        .consumers,
+        .pipeline {
+          grid-template-columns: 1fr;
         }
       }
     </style>
@@ -518,83 +687,99 @@
       <aside class="sidebar" aria-label="Documentation navigation">
         <div class="brand">
           <h1>TypeSea</h1>
-          <p>Zero-dependency runtime narrowing for TypeScript.</p>
+          <span class="version">v0.1.0</span>
         </div>
+        <p class="brand-tagline">
+          Zero-dependency runtime narrowing for TypeScript.
+          ESM-only &middot; Node &ge; 20.19 &middot; MIT
+        </p>
         <div class="search">
-          <input data-search type="search" placeholder="Search sections" aria-label="Search documentation sections">
+          <input data-search type="search" placeholder="Filter sections&hellip;" aria-label="Filter documentation sections">
         </div>
         <nav class="nav">
+          <p class="nav-group">Guide</p>
           <a href="#overview">Overview</a>
           <a href="#quick-start">Quick start</a>
+          <a href="#semantics">Semantics</a>
+          <p class="nav-group">Internals</p>
           <a href="#architecture">Architecture</a>
           <a href="#api">API map</a>
           <a href="#adapters">Adapters</a>
+          <p class="nav-group">Quality</p>
           <a href="#benchmarks">Benchmarks</a>
           <a href="#release">Release gate</a>
           <a href="#files">Reference files</a>
         </nav>
+        <p class="sidebar-foot">MIT License &middot; zero runtime dependencies</p>
       </aside>
 
       <div class="content">
         <div class="topbar">
-          <strong>Sea-of-Nodes validation IR, Result-first diagnostics, strict public surface.</strong>
+          <span class="topbar-crumb"><strong>TypeSea</strong> / Documentation</span>
           <div class="topbar-links">
-            <a href="./api.md">API</a>
-            <a href="./engine-notes.md">Engine notes</a>
-            <a href="./documentation-style.md">Doc style</a>
-            <a href="./release-checklist.md">Release checklist</a>
+            <a href="https://github.com/Feralthedogg/TypeSea">GitHub</a>
+            <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">API reference</a>
+            <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">Engine notes</a>
           </div>
         </div>
 
         <main>
-          <section id="overview" data-doc-section data-title="overview hard rules zero dependency">
-            <div class="intro">
+          <section id="overview" data-doc-section data-title="overview contract zero dependency esm result frozen">
+            <div class="hero">
               <div>
-                <p class="eyebrow">Project target</p>
-                <h2>Runtime typeguards shaped like a compiler pipeline.</h2>
+                <p class="eyebrow">Overview</p>
+                <h2>Runtime typeguards shaped like a small compiler.</h2>
                 <p class="lede">
-                  TypeSea treats validation schemas as frontend syntax. Guards execute through an
-                  interpreter, runtime compiler, or AOT module emitter, and can also expose an
-                  optimized Sea-of-Nodes graph for introspection.
+                  TypeSea treats validation schemas as frontend syntax. Each guard lowers into a
+                  cached validation plan &mdash; a schema-specialized predicate kernel plus an
+                  optimized graph &mdash; and executes through the plan, a runtime-compiled
+                  validator, or a standalone AOT module.
                 </p>
-                <ul class="list">
-                  <li>No runtime, peer, optional, or bundled dependencies in the published package.</li>
-                  <li>No public unchecked boundary: external values enter as <code>unknown</code>.</li>
-                  <li>Expected failures return immutable <code>Result</code> values and frozen diagnostics.</li>
-                  <li>Hot <code>is()</code> validation avoids diagnostic allocation.</li>
+                <ul class="checklist">
+                  <li><strong>Zero dependencies</strong> &mdash; no runtime, peer, optional, or bundled packages, enforced by policy.</li>
+                  <li><strong>Hostile-input safe</strong> &mdash; descriptor reads mean user getters never execute.</li>
+                  <li><strong>Result-first</strong> &mdash; expected failures return frozen <code>Result</code> values, never <code>throw</code>.</li>
+                  <li><strong>Allocation-aware</strong> &mdash; successful <code>is()</code> avoids diagnostic allocation.</li>
+                  <li><strong>No escape hatches</strong> &mdash; <code>any</code>, <code>try</code>, and <code>catch</code> are banned from the codebase.</li>
                 </ul>
               </div>
-              <aside class="status-panel" aria-label="Current status">
-                <header>Current status</header>
-                <div class="status-list">
-                  <div class="status-row">
-                    <span>Runtime dependencies</span>
-                    <span class="pill teal">zero</span>
-                  </div>
-                  <div class="status-row">
-                    <span>Validation engines</span>
-                    <span class="pill teal">interp + jit + aot</span>
-                  </div>
-                  <div class="status-row">
-                    <span>Adapters</span>
-                    <span class="pill amber">structural</span>
-                  </div>
-                  <div class="status-row">
-                    <span>Release gate</span>
-                    <span class="pill teal">scripted</span>
-                  </div>
+              <aside class="status-panel" aria-label="Package status">
+                <header>Package status</header>
+                <div class="status-row">
+                  <span>Runtime dependencies</span>
+                  <span class="pill green">zero</span>
+                </div>
+                <div class="status-row">
+                  <span>Execution engines</span>
+                  <span class="pill green">plan &middot; jit &middot; aot</span>
+                </div>
+                <div class="status-row">
+                  <span>Module format</span>
+                  <span class="pill violet">ESM-only</span>
+                </div>
+                <div class="status-row">
+                  <span>Node.js</span>
+                  <span class="pill green">&ge; 20.19</span>
+                </div>
+                <div class="status-row">
+                  <span>Adapters</span>
+                  <span class="pill amber">structural</span>
                 </div>
               </aside>
             </div>
           </section>
 
-          <section id="quick-start" data-doc-section data-title="quick start guard compile schema">
+          <section id="quick-start" data-doc-section data-title="quick start install guard compile check json schema csp">
             <p class="eyebrow">Quick start</p>
             <h2>Define a guard once, then choose the execution path.</h2>
             <p class="lede">
-              The same guard can narrow through <code>is()</code>, return diagnostics through
-              <code>check()</code>, emit JSON Schema, or compile into a generated validator.
+              The same guard narrows through <code>is()</code>, returns immutable diagnostics
+              through <code>check()</code>, exports lossless JSON Schema, or compiles into a
+              generated validator.
             </p>
+            <div class="code-block">
+              <pre><code>npm install typesea</code></pre>
+            </div>
             <div class="code-block">
               <pre><code>import { compile, t, toJsonSchema, type Infer } from "typesea";
 
@@ -606,50 +791,190 @@ const User = t.strictObject({
 
 type User = Infer&lt;typeof User&gt;;
 
+<span class="cm">// 1) Boolean narrowing &mdash; no diagnostic allocation on success</span>
+if (User.is(input)) {
+  input.id; <span class="cm">// narrowed</span>
+}
+
+<span class="cm">// 2) Immutable diagnostics &mdash; frozen Result, never throws</span>
 const checked = User.check(input);
+
+<span class="cm">// 3) Hot path &mdash; generated validator code</span>
 const FastUser = compile(User, { name: "isUser" });
+
+<span class="cm">// 4) Interop &mdash; lossless-only JSON Schema export</span>
 const schema = toJsonSchema(User);</code></pre>
             </div>
-          </section>
-
-          <section id="architecture" data-doc-section data-title="architecture sea nodes ir lower optimize compile">
-            <p class="eyebrow">Architecture</p>
-            <h2>Schema syntax lowers into a validation graph.</h2>
-            <p class="lede">
-              The public schema tree is kept for diagnostics and introspection. Execution uses a
-              graph with shared predicate and value nodes so common checks can be reused.
-            </p>
-            <div class="diagram" aria-label="TypeSea validation pipeline">
-              <div class="diagram-node accent-teal">
-                <strong>Builder</strong>
-                <span>Immutable public guards validate construction inputs.</span>
-              </div>
-              <div class="diagram-node accent-amber">
-                <strong>Schema</strong>
-                <span>Frozen tree stores semantics and diagnostic structure.</span>
-              </div>
-              <div class="diagram-node accent-violet">
-                <strong>IR</strong>
-                <span>Sea-of-Nodes graph exposes loads, predicates, and keysets for inspection.</span>
-              </div>
-              <div class="diagram-node accent-teal">
-                <strong>Optimize</strong>
-                <span>Reachability and dense node ids keep graph invariants simple.</span>
-              </div>
-              <div class="diagram-node accent-red">
-                <strong>Execute</strong>
-                <span>Interpreter, runtime compile, or standalone AOT module.</span>
-              </div>
+            <div class="callout warn">
+              <span class="icon">&#9888;</span>
+              <p>
+                <strong><code>compile()</code> uses <code>new Function</code></strong>, which throws under a
+                Content-Security-Policy that forbids <code>unsafe-eval</code>. In CSP-restricted
+                environments, emit validator source ahead of time with <code>emitAotModule()</code>.
+              </p>
             </div>
           </section>
 
-          <section id="api" data-doc-section data-title="api builders decoder async messages json schema">
+          <section id="semantics" data-doc-section data-title="semantics presence optional undefinedable nullable edge nan proto uuid strict">
+            <p class="eyebrow">Semantics</p>
+            <h2>Explicit presence, deliberate edge behavior.</h2>
+            <p class="lede">
+              Object presence is a first-class concept, and edge cases that break typical
+              validators are deliberate, documented decisions pinned by tests.
+            </p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Wrapper</th>
+                    <th>Key may be absent</th>
+                    <th>Value may be <code>undefined</code></th>
+                    <th>Inferred type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>t.optional(inner)</code></td>
+                    <td>yes</td>
+                    <td>no</td>
+                    <td><code>key?: T</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>t.undefinedable(inner)</code></td>
+                    <td>no</td>
+                    <td>yes</td>
+                    <td><code>key: T | undefined</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>t.nullable(inner)</code></td>
+                    <td>&mdash;</td>
+                    <td>value may be <code>null</code></td>
+                    <td><code>key: T | null</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Input</th>
+                    <th>Behavior</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>NaN</code>, <code>Infinity</code></td>
+                    <td><code>t.number</code> accepts finite numbers only; <code>t.literal(NaN)</code> matches <code>NaN</code> via <code>Object.is</code>.</td>
+                  </tr>
+                  <tr>
+                    <td>Getter-backed properties</td>
+                    <td>Never executed &mdash; reads go through descriptors, accessors count as missing data.</td>
+                  </tr>
+                  <tr>
+                    <td><code>__proto__</code>, <code>constructor</code> keys</td>
+                    <td>Validated as plain own keys through null-prototype lookups; no pollution.</td>
+                  </tr>
+                  <tr>
+                    <td>Strict-object extras</td>
+                    <td>Rejected via <code>Reflect.ownKeys</code> &mdash; including symbol keys and non-enumerable properties.</td>
+                  </tr>
+                  <tr>
+                    <td>Sparse array holes</td>
+                    <td>Read as <code>undefined</code> without executing accessors.</td>
+                  </tr>
+                  <tr>
+                    <td>Global-flag regexes</td>
+                    <td>Cloned at construction; <code>lastIndex</code> reset before every test.</td>
+                  </tr>
+                  <tr>
+                    <td>UUID strings</td>
+                    <td>RFC 9562 versions 1&ndash;8 plus the nil UUID.</td>
+                  </tr>
+                  <tr>
+                    <td>Cyclic input values</td>
+                    <td>Validate finitely via (value &times; schema) active-pair tracking.</td>
+                  </tr>
+                  <tr>
+                    <td>Nesting depth</td>
+                    <td>Capped at 1024 frames &mdash; deep input fails instead of overflowing the stack.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="architecture" data-doc-section data-title="architecture sea of nodes ir lower optimize plan kernel graph codegen">
+            <p class="eyebrow">Architecture</p>
+            <h2>Every schema lowers into a cached validation plan.</h2>
+            <p class="lede">
+              The public schema tree is kept for builder validation and diagnostics. Each schema
+              identity lowers once into the Sea-of-Nodes validation IR, is optimized, and is cached
+              as a validation plan owning both a schema-specialized predicate kernel and the
+              optimized graph consumed by generated validators.
+            </p>
+            <div class="pipeline" aria-label="TypeSea validation pipeline">
+              <div class="stage">
+                <strong>Builder</strong>
+                <span>Immutable guards validate construction inputs up front.</span>
+              </div>
+              <div class="stage">
+                <strong>Frozen schema</strong>
+                <span>The tree stores semantics and diagnostic structure.</span>
+              </div>
+              <div class="stage alt">
+                <strong>Sea-of-Nodes IR</strong>
+                <span>Lowering shares loads, predicates, keysets, and discriminant dispatch.</span>
+              </div>
+              <div class="stage alt">
+                <strong>Optimize</strong>
+                <span>Folding, reachability, and dense node ids keep invariants simple.</span>
+              </div>
+              <div class="stage">
+                <strong>Validation plan</strong>
+                <span>Cached per schema identity: predicate kernel + optimized graph.</span>
+              </div>
+            </div>
+            <div class="consumers">
+              <div class="tile">
+                <h3>Plan kernel</h3>
+                <p>Drives <code>is()</code> and the <code>check()</code> verdict preflight without per-node interpreter dispatch.</p>
+                <code>guard.is()</code>
+              </div>
+              <div class="tile">
+                <h3>Optimized graph</h3>
+                <p>Source of truth for runtime-compiled and AOT-emitted predicates, and for introspection.</p>
+                <code>compile() &middot; emitAotModule() &middot; graph()</code>
+              </div>
+              <div class="tile">
+                <h3>Diagnostic collector</h3>
+                <p>Failed <code>check()</code> calls replay the schema-aware collector for issue paths and codes.</p>
+                <code>guard.check()</code>
+              </div>
+            </div>
+            <div class="callout">
+              <span class="icon">&#128274;</span>
+              <p>
+                <strong>Injection-safe codegen:</strong> user-controlled literals, regexps, object
+                keys, keysets, and dynamic schema fallbacks live in side tables referenced by
+                numeric index. Hostile property names cannot escape into generated source &mdash;
+                pinned by dedicated injection-audit tests.
+              </p>
+            </div>
+          </section>
+
+          <section id="api" data-doc-section data-title="api builders decoder async messages json schema execution">
             <p class="eyebrow">API map</p>
             <h2>Small public surface, strict contracts.</h2>
+            <p class="lede">
+              Every entry point is exported from the package root; builders are also grouped under
+              the <code>t</code> table. The full signatures live in the
+              <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md"><code>API reference</code></a>.
+            </p>
             <div class="grid">
               <article class="tile">
                 <h3>Builders</h3>
-                <p>Primitives, objects, records, tuples, unions, intersections, and lazy recursion.</p>
+                <p>Scalars, literals, arrays, tuples, records, unions, intersections, and lazy recursion.</p>
                 <code>t.strictObject</code>
               </article>
               <article class="tile">
@@ -658,117 +983,190 @@ const schema = toJsonSchema(User);</code></pre>
                 <code>guard.extend</code>
               </article>
               <article class="tile">
+                <h3>Presence wrappers</h3>
+                <p>Explicit key-absence vs undefined-value vs null-value contracts.</p>
+                <code>t.optional</code>
+              </article>
+              <article class="tile">
                 <h3>Decoders</h3>
-                <p>Result-returning transform, pipe, and primitive coercion pipelines.</p>
+                <p>Result-returning transform, pipe, and coercion; async variants keep expected failures in <code>Result</code>.</p>
                 <code>t.pipe</code>
               </article>
               <article class="tile">
-                <h3>Async</h3>
-                <p>Async refine, transform, and pipe without changing expected failures into exceptions.</p>
-                <code>decodeAsync</code>
+                <h3>Execution</h3>
+                <p>Runtime-compiled validators and standalone AOT module emission from the optimized graph.</p>
+                <code>compile</code>
               </article>
               <article class="tile">
-                <h3>Messages</h3>
-                <p>Post-validation formatting with built-in English and Korean catalogs.</p>
-                <code>withMessages</code>
-              </article>
-              <article class="tile">
-                <h3>JSON Schema</h3>
-                <p>Lossless-only export with explicit issues for runtime-only schema features.</p>
+                <h3>Messages &amp; export</h3>
+                <p>Locale-aware issue formatting (English and Korean built in) and lossless JSON Schema export.</p>
                 <code>toJsonSchema</code>
               </article>
             </div>
           </section>
 
-          <section id="adapters" data-doc-section data-title="adapters trpc fastify react hook form">
+          <section id="adapters" data-doc-section data-title="adapters trpc fastify react hook form resolver">
             <p class="eyebrow">Ecosystem adapters</p>
             <h2>Structural adapters without importing frameworks.</h2>
             <p class="lede">
-              Adapter functions return objects or functions shaped for the target ecosystem. TypeSea
-              does not import tRPC, Fastify, or React Hook Form at runtime.
+              Adapter functions return objects or functions shaped for the target ecosystem.
+              TypeSea does not import tRPC, Fastify, or React Hook Form at runtime.
             </p>
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Adapter</th>
-                  <th>Export</th>
-                  <th>Behavior</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>tRPC</td>
-                  <td><code>toTrpcParser</code></td>
-                  <td>Returns a parser object that emits decoded values or <code>TypeSeaAssertionError</code>.</td>
-                </tr>
-                <tr>
-                  <td>Fastify</td>
-                  <td><code>toFastifyRouteSchema</code></td>
-                  <td>Exports JSON Schema fragments for route body, querystring, params, or headers.</td>
-                </tr>
-                <tr>
-                  <td>Fastify</td>
-                  <td><code>toFastifyValidatorCompiler</code></td>
-                  <td>Returns validators that produce <code>{ value }</code> or <code>{ error }</code>.</td>
-                </tr>
-                <tr>
-                  <td>React Hook Form</td>
-                  <td><code>toReactHookFormResolver</code></td>
-                  <td>Returns an async resolver with TypeSea messages mapped to field errors.</td>
-                </tr>
-              </tbody>
-            </table>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Target</th>
+                    <th>Export</th>
+                    <th>Behavior</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>tRPC</td>
+                    <td><code>toTrpcParser</code> / <code>toAsyncTrpcParser</code></td>
+                    <td>Parser objects that return decoded values or throw <code>TypeSeaAssertionError</code>.</td>
+                  </tr>
+                  <tr>
+                    <td>Fastify</td>
+                    <td><code>toFastifyRouteSchema</code></td>
+                    <td>Lossless JSON Schema fragments for body, querystring, params, or headers.</td>
+                  </tr>
+                  <tr>
+                    <td>Fastify</td>
+                    <td><code>toFastifyValidatorCompiler</code></td>
+                    <td>Route validators dispatched by <code>httpPart</code>, producing <code>{ value }</code> or <code>{ error }</code>.</td>
+                  </tr>
+                  <tr>
+                    <td>React Hook Form</td>
+                    <td><code>toReactHookFormResolver</code></td>
+                    <td>Async resolver returning a nested field-error tree that RHF traverses by path.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </section>
 
-          <section id="benchmarks" data-doc-section data-title="benchmarks performance zod valibot ajv">
+          <section id="benchmarks" data-doc-section data-title="benchmarks performance zod valibot ajv compiled interpreted">
             <p class="eyebrow">Benchmarks</p>
-            <h2>Benchmark scope is checked by the release gate.</h2>
+            <h2>Measured honestly, gated on every release.</h2>
             <p class="lede">
-              TypeSea tracks two performance questions: interpreted versus compiled TypeSea, and a
-              JSON-compatible comparison against Zod, Valibot, and Ajv. The comparison packages are
-              development-only measurement tools.
+              The suite compares the runtime plan against compiled TypeSea, and both against
+              Zod, Valibot, and Ajv over one JSON-compatible strict-object contract. Comparison
+              packages are development-only measurement tools, and diagnostic-path
+              (<code>check()</code> vs <code>safeParse</code>) rows keep the numbers
+              apples-to-apples.
+            </p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Valid object path</th>
+                    <th class="num">ops/sec</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>TypeSea runtime plan <code>is()</code></td>
+                    <td class="num">496,270</td>
+                  </tr>
+                  <tr>
+                    <td>TypeSea compiled <code>is()</code></td>
+                    <td class="num"><span class="best">4,237,892</span></td>
+                  </tr>
+                  <tr>
+                    <td>Zod <code>safeParse</code></td>
+                    <td class="num">1,363,792</td>
+                  </tr>
+                  <tr>
+                    <td>Valibot <code>safeParse</code></td>
+                    <td class="num">1,384,892</td>
+                  </tr>
+                  <tr>
+                    <td>Ajv compiled</td>
+                    <td class="num">4,312,174</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Invalid object path</th>
+                    <th class="num">ops/sec</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>TypeSea runtime plan <code>is()</code></td>
+                    <td class="num">3,422,416</td>
+                  </tr>
+                  <tr>
+                    <td>TypeSea compiled <code>is()</code></td>
+                    <td class="num"><span class="best">27,125,445</span></td>
+                  </tr>
+                  <tr>
+                    <td>Zod <code>safeParse</code></td>
+                    <td class="num">83,501</td>
+                  </tr>
+                  <tr>
+                    <td>Valibot <code>safeParse</code></td>
+                    <td class="num">902,616</td>
+                  </tr>
+                  <tr>
+                    <td>Ajv compiled</td>
+                    <td class="num">28,953,501</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="footnote">
+              Local release smoke, 2026-07-04 KST, single machine &mdash; regression telemetry,
+              not throughput guarantees. The compiled path stays at Ajv-level speed while keeping
+              descriptor-based reads, strict symbol/non-enumerable key rejection, and immutable
+              diagnostics.
             </p>
             <div class="code-block">
               <pre><code>npm run bench -- --run</code></pre>
             </div>
           </section>
 
-          <section id="release" data-doc-section data-title="release gate policy source dist pack consumer">
+          <section id="release" data-doc-section data-title="release gate policy typecheck lint test dist api pack consumer provenance">
             <p class="eyebrow">Release gate</p>
             <h2>Publishing requires the full local gate.</h2>
             <p class="lede">
-              The release script runs source policy, typecheck, lint, tests, build, dist policy,
-              public API snapshot, package contents, clean consumer install, benchmarks, and pack
-              dry run.
+              One script runs everything CI runs: source policy, docs smoke, typecheck, lint,
+              tests, build, dist policy, public API snapshot, package contents, clean consumer
+              install, benchmark smoke, and pack dry run. CI executes the same gate on
+              Node 20.19, 22, and 24; releases publish with npm provenance.
             </p>
             <div class="code-block">
               <pre><code>npm run release:check</code></pre>
             </div>
+            <div class="callout">
+              <span class="icon">&#128737;</span>
+              <p>
+                <strong><code>prepack</code> re-runs the full check</strong>, so even a bare
+                <code>npm publish</code> cannot skip the gate. Package policy rejects any runtime
+                dependency fields before the tarball is accepted.
+              </p>
+            </div>
           </section>
 
-          <section id="files" data-doc-section data-title="reference files api engine checklist">
+          <section id="files" data-doc-section data-title="reference files api engine notes github">
             <p class="eyebrow">Reference files</p>
             <h2>Detailed contracts live in focused documents.</h2>
-            <div class="grid">
+            <div class="grid two">
               <article class="tile">
                 <h3>API reference</h3>
-                <p>Guard, decoder, AOT, adapter, graph, and JSON Schema behavior.</p>
-                <code><a href="./api.md">docs/api.md</a></code>
+                <p>Guard, decoder, AOT, adapter, graph, and JSON Schema behavior with edge semantics.</p>
+                <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">docs/api.md</a></code>
               </article>
               <article class="tile">
                 <h3>Engine notes</h3>
-                <p>V8-facing implementation rules and Sea-of-Nodes validation semantics.</p>
-                <code><a href="./engine-notes.md">docs/engine-notes.md</a></code>
-              </article>
-              <article class="tile">
-                <h3>Documentation style</h3>
-                <p>C/Doxygen contract comments mixed with TypeScript API documentation rules.</p>
-                <code><a href="./documentation-style.md">docs/documentation-style.md</a></code>
-              </article>
-              <article class="tile">
-                <h3>Release checklist</h3>
-                <p>The invariant list that the scripted release gate must protect.</p>
-                <code><a href="./release-checklist.md">docs/release-checklist.md</a></code>
+                <p>V8-facing implementation rules and Sea-of-Nodes validation IR semantics.</p>
+                <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">docs/engine-notes.md</a></code>
               </article>
             </div>
           </section>
@@ -780,22 +1178,64 @@ const schema = toJsonSchema(User);</code></pre>
       const search = document.querySelector("[data-search]");
       const sections = Array.from(document.querySelectorAll("[data-doc-section]"));
       const links = Array.from(document.querySelectorAll(".nav a"));
+      const groups = Array.from(document.querySelectorAll(".nav-group"));
 
       if (search instanceof HTMLInputElement) {
         search.addEventListener("input", () => {
           const query = search.value.trim().toLowerCase();
           for (const section of sections) {
             const title = section.getAttribute("data-title") ?? "";
-            const visible = query === "" || title.includes(query);
+            const text = section.textContent?.toLowerCase() ?? "";
+            const visible = query === "" || title.includes(query) || text.includes(query);
             section.classList.toggle("hidden", !visible);
           }
           for (const link of links) {
             const target = link.getAttribute("href") ?? "";
-            const section = document.querySelector(target);
+            const section = target.startsWith("#")
+              ? document.getElementById(target.slice(1))
+              : null;
             const visible = section === null || !section.classList.contains("hidden");
             link.classList.toggle("hidden", !visible);
           }
+          for (const group of groups) {
+            let sibling = group.nextElementSibling;
+            let anyVisible = false;
+            while (sibling !== null && !sibling.classList.contains("nav-group")) {
+              if (sibling.matches("a") && !sibling.classList.contains("hidden")) {
+                anyVisible = true;
+              }
+              sibling = sibling.nextElementSibling;
+            }
+            group.classList.toggle("hidden", !anyVisible);
+          }
         });
+      }
+
+      const linkById = new Map(
+        links
+          .map((link) => [link.getAttribute("href")?.slice(1) ?? "", link])
+          .filter(([id]) => id !== "")
+      );
+
+      if ("IntersectionObserver" in window) {
+        const observer = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting) {
+                for (const link of links) {
+                  link.classList.toggle(
+                    "active",
+                    link === linkById.get(entry.target.id)
+                  );
+                }
+              }
+            }
+          },
+          { rootMargin: "-20% 0px -70% 0px" }
+        );
+        for (const section of sections) {
+          observer.observe(section);
+        }
       }
     </script>
   </body>

@@ -11,20 +11,25 @@ import type {
   ArrayEveryNode,
   BooleanFoldNode,
   ConstNode,
+  DiscriminantDispatchLookup,
+  DiscriminantDispatchNode,
   EqualsNode,
   GetPropNode,
   Graph,
   GraphNode,
+  HasOwnDataNode,
   HasOwnNode,
   NodeId,
   NumericCompareNode,
   ParamNode,
+  RecordEveryNode,
   RegexNode,
   ReturnNode,
   SchemaCheckNode,
   StartNode,
   StrictKeysNode,
   StringBoundNode,
+  TupleItemsNode,
   UnaryPredicateNode
 } from "./types.js";
 
@@ -259,6 +264,20 @@ export class GraphBuilder {
   }
 
   /**
+   * @brief has own data.
+           */
+  public hasOwnData(object: NodeId, key: string): NodeId {
+    const hashKey = `hasOwnData:${String(object)}:${key}`;
+    return this.intern(hashKey, (id: NodeId): HasOwnDataNode => ({
+      id,
+      tag: NodeTag.HasOwnData,
+      deps: [object],
+      object,
+      key
+    }));
+  }
+
+  /**
    * @brief strict keys.
            */
   public strictKeys(object: NodeId, keys: readonly string[]): NodeId {
@@ -282,6 +301,53 @@ export class GraphBuilder {
       deps: [value],
       value,
       item
+    }));
+  }
+
+  /**
+   * @brief tuple items.
+           */
+  public tupleItems(value: NodeId, items: readonly Schema[]): NodeId {
+    return this.push((id: NodeId): TupleItemsNode => ({
+      id,
+      tag: NodeTag.TupleItems,
+      deps: [value],
+      value,
+      items
+    }));
+  }
+
+  /**
+   * @brief record every.
+           */
+  public recordEvery(value: NodeId, item: Schema): NodeId {
+    return this.push((id: NodeId): RecordEveryNode => ({
+      id,
+      tag: NodeTag.RecordEvery,
+      deps: [value],
+      value,
+      item
+    }));
+  }
+
+  /**
+   * @brief discriminant dispatch.
+           */
+  public discriminantDispatch(
+    value: NodeId,
+    key: string,
+    literals: readonly string[],
+    schemas: readonly Schema[]
+  ): NodeId {
+    return this.push((id: NodeId): DiscriminantDispatchNode => ({
+      id,
+      tag: NodeTag.DiscriminantDispatch,
+      deps: [value],
+      value,
+      key,
+      literals,
+      schemas,
+      lookup: makeDiscriminantLookup(literals)
     }));
   }
 
@@ -493,4 +559,20 @@ function literalKey(value: LiteralValue): string {
     return `boolean:${String(value)}`;
   }
   return "undefined";
+}
+
+/**
+ * @brief make discriminant lookup.
+ */
+function makeDiscriminantLookup(
+  literals: readonly string[]
+): DiscriminantDispatchLookup {
+  const lookup = Object.create(null) as Record<string, number>;
+  for (let index = 0; index < literals.length; index += 1) {
+    const literal = literals[index];
+    if (literal !== undefined) {
+      lookup[literal] = index;
+    }
+  }
+  return Object.freeze(lookup);
 }

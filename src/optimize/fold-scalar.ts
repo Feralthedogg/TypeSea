@@ -6,15 +6,19 @@
 import { NodeTag } from "../kind/index.js";
 import type {
   ArrayEveryNode,
+  DiscriminantDispatchNode,
   EqualsNode,
   GetPropNode,
   GraphNode,
+  HasOwnDataNode,
   HasOwnNode,
   NodeId,
   NumericCompareNode,
+  RecordEveryNode,
   RegexNode,
   StrictKeysNode,
   StringBoundNode,
+  TupleItemsNode,
   UnaryPredicateNode
 } from "../ir/index.js";
 import {
@@ -171,6 +175,21 @@ export function foldHasOwn(
 }
 
 /**
+ * @brief fold has own data.
+ */
+export function foldHasOwnData(
+  node: HasOwnDataNode,
+  nodes: GraphNode[],
+  aliases: NodeId[]
+): FoldResult {
+  const value = readConst(nodes, node.object);
+  if (value.found) {
+    return replace(node, ensureConst(nodes, aliases, false));
+  }
+  return keep(node);
+}
+
+/**
  * @brief fold strict keys.
  */
 export function foldStrictKeys(
@@ -190,6 +209,51 @@ export function foldStrictKeys(
  */
 export function foldArrayEvery(
   node: ArrayEveryNode,
+  nodes: GraphNode[],
+  aliases: NodeId[]
+): FoldResult {
+  const value = readConst(nodes, node.value);
+  if (value.found) {
+    return replace(node, ensureConst(nodes, aliases, false));
+  }
+  return keep(node);
+}
+
+/**
+ * @brief fold tuple items.
+ */
+export function foldTupleItems(
+  node: TupleItemsNode,
+  nodes: GraphNode[],
+  aliases: NodeId[]
+): FoldResult {
+  const value = readConst(nodes, node.value);
+  if (value.found) {
+    return replace(node, ensureConst(nodes, aliases, false));
+  }
+  return keep(node);
+}
+
+/**
+ * @brief fold record every.
+ */
+export function foldRecordEvery(
+  node: RecordEveryNode,
+  nodes: GraphNode[],
+  aliases: NodeId[]
+): FoldResult {
+  const value = readConst(nodes, node.value);
+  if (value.found) {
+    return replace(node, ensureConst(nodes, aliases, false));
+  }
+  return keep(node);
+}
+
+/**
+ * @brief fold discriminant dispatch.
+ */
+export function foldDiscriminantDispatch(
+  node: DiscriminantDispatchNode,
   nodes: GraphNode[],
   aliases: NodeId[]
 ): FoldResult {

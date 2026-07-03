@@ -268,7 +268,7 @@ function emitModuleSource(bundle: ModuleBundleInput): string {
     JSON.stringify(bundle.strings),
     ";const d=function(){return false;};",
     "const m=function(){return;};",
-    "const sk=function(v,ks){if(typeof v!==\"object\"||v===null||Array.isArray(v))return false;const ps=Object.keys(v);for(let i=0;i<ps.length;i+=1){const key=ps[i];if(key===undefined||!ks.includes(key))return false;}return true;};",
+    "const sk=function(v,ks){if(typeof v!==\"object\"||v===null||Array.isArray(v))return false;const ps=Reflect.ownKeys(v);for(let i=0;i<ps.length;i+=1){const key=ps[i];if(typeof key!==\"string\"||!ks.includes(key))return false;}return true;};",
     "const __typesea=(function(l,r,k,u,d,m,sk){",
     bundle.source,
     "})(l,r,k,u,d,m,sk);",

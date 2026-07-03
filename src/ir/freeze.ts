@@ -37,6 +37,29 @@ function freezeGraphNode(node: GraphNode): void {
     case NodeTag.ArrayEvery:
       freezeSchema(node.item);
       break;
+    case NodeTag.TupleItems:
+      for (let index = 0; index < node.items.length; index += 1) {
+        const item = node.items[index];
+        if (item !== undefined) {
+          freezeSchema(item);
+        }
+      }
+      Object.freeze(node.items);
+      break;
+    case NodeTag.RecordEvery:
+      freezeSchema(node.item);
+      break;
+    case NodeTag.DiscriminantDispatch:
+      Object.freeze(node.literals);
+      for (let index = 0; index < node.schemas.length; index += 1) {
+        const schema = node.schemas[index];
+        if (schema !== undefined) {
+          freezeSchema(schema);
+        }
+      }
+      Object.freeze(node.schemas);
+      Object.freeze(node.lookup);
+      break;
     case NodeTag.SchemaCheck:
       freezeSchema(node.schema);
       break;

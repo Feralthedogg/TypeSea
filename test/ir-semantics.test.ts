@@ -88,6 +88,41 @@ describe("Sea-of-Nodes graph semantics", () => {
     expect(evaluateGraph(graph, { name: "x", count: 1, extra: true })).toBe(false);
   });
 
+  test("lowers tuple and record schemas into native IR nodes", () => {
+    const Tuple = t.tuple([t.literal("point"), t.number]);
+    const Record = t.record(t.string);
+    const tupleGraph = Tuple.graph();
+    const recordGraph = Record.graph();
+
+    expect(tupleGraph.nodes.some((node) => node.tag === NodeTag.TupleItems)).toBe(true);
+    expect(recordGraph.nodes.some((node) => node.tag === NodeTag.RecordEvery)).toBe(true);
+    expect(tupleGraph.nodes.some((node) => node.tag === NodeTag.SchemaCheck)).toBe(false);
+    expect(recordGraph.nodes.some((node) => node.tag === NodeTag.SchemaCheck)).toBe(false);
+    expect(evaluateGraph(tupleGraph, ["point", 1])).toBe(true);
+    expect(evaluateGraph(recordGraph, { a: "x", b: "y" })).toBe(true);
+  });
+
+  test("lowers discriminated unions into dispatch IR nodes", () => {
+    const Union = t.discriminatedUnion("kind", {
+      point: t.object({
+        kind: t.literal("point"),
+        x: t.number
+      }),
+      label: t.object({
+        kind: t.literal("label"),
+        text: t.string
+      })
+    });
+    const graph = Union.graph();
+
+    expect(graph.nodes.some((node) => node.tag === NodeTag.DiscriminantDispatch))
+      .toBe(true);
+    expect(graph.nodes.some((node) => node.tag === NodeTag.Or)).toBe(false);
+    expect(evaluateGraph(graph, { kind: "point", x: 1 })).toBe(true);
+    expect(evaluateGraph(graph, { kind: "label", text: "x" })).toBe(true);
+    expect(evaluateGraph(graph, { kind: "point", text: "x" })).toBe(false);
+  });
+
   test("freezes graph outputs and rejects malformed optimizer inputs", () => {
     const Strict = t.strictObject({
       name: t.string,
@@ -534,10 +569,23 @@ function evaluateGraphNode(state: EvalState, node: GraphNode): unknown {
       return regexMatches(evaluateNode(state, node.value), node.regex);
     case NodeTag.HasOwn:
       return hasOwn(evaluateNode(state, node.object), node.key);
+    case NodeTag.HasOwnData:
+      return hasOwnData(evaluateNode(state, node.object), node.key);
     case NodeTag.StrictKeys:
       return hasOnlyKnownKeys(evaluateNode(state, node.object), node.keys);
     case NodeTag.ArrayEvery:
       return arrayEvery(evaluateNode(state, node.value), node.item);
+    case NodeTag.TupleItems:
+      return tupleItems(evaluateNode(state, node.value), node.items);
+    case NodeTag.RecordEvery:
+      return recordEvery(evaluateNode(state, node.value), node.item);
+    case NodeTag.DiscriminantDispatch:
+      return discriminantDispatch(
+        evaluateNode(state, node.value),
+        node.key,
+        node.schemas,
+        node.lookup
+      );
     case NodeTag.SchemaCheck:
       return isSchema(node.schema, evaluateNode(state, node.value));
     case NodeTag.And:
@@ -560,7 +608,11 @@ function isPlainObject(value: unknown): value is Readonly<Record<string, unknown
 
 function readProperty(value: unknown, key: string): unknown {
   if ((typeof value === "object" && value !== null) || typeof value === "function") {
-    return (value as Readonly<Record<string, unknown>>)[key];
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor !== undefined &&
+      Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+      return descriptor.value;
+    }
   }
   return undefined;
 }
@@ -598,6 +650,15 @@ function hasOwn(value: unknown, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
+function hasOwnData(value: unknown, key: string): boolean {
+  if ((typeof value !== "object" || value === null) && typeof value !== "function") {
+    return false;
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  return descriptor !== undefined &&
+    Object.prototype.hasOwnProperty.call(descriptor, "value");
+}
+
 function hasOnlyKnownKeys(value: unknown, keys: readonly string[]): boolean {
   if (!isPlainObject(value)) {
     return false;
@@ -617,11 +678,100 @@ function arrayEvery(value: unknown, schema: Parameters<typeof isSchema>[0]): boo
     return false;
   }
   for (let index = 0; index < value.length; index += 1) {
-    if (!isSchema(schema, value[index])) {
+    const slot = readArraySlot(value, index);
+    if (slot.accessor || !isSchema(schema, slot.value)) {
       return false;
     }
   }
   return true;
+}
+
+function tupleItems(
+  value: unknown,
+  schemas: readonly Parameters<typeof isSchema>[0][]
+): boolean {
+  if (!Array.isArray(value) || value.length !== schemas.length) {
+    return false;
+  }
+  for (let index = 0; index < schemas.length; index += 1) {
+    const schema = schemas[index];
+    if (schema === undefined) {
+      return false;
+    }
+    const slot = readArraySlot(value, index);
+    if (slot.accessor || !isSchema(schema, slot.value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function recordEvery(value: unknown, schema: Parameters<typeof isSchema>[0]): boolean {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  const keys = Object.keys(value);
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === undefined) {
+      return false;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined ||
+      !Object.prototype.hasOwnProperty.call(descriptor, "value") ||
+      !isSchema(schema, descriptor.value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function discriminantDispatch(
+  value: unknown,
+  key: string,
+  schemas: readonly Parameters<typeof isSchema>[0][],
+  lookup: Readonly<Record<string, number>>
+): boolean {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  if (descriptor === undefined ||
+    !Object.prototype.hasOwnProperty.call(descriptor, "value") ||
+    typeof descriptor.value !== "string") {
+    return false;
+  }
+  const index = Object.prototype.hasOwnProperty.call(lookup, descriptor.value)
+    ? lookup[descriptor.value]
+    : undefined;
+  if (index === undefined) {
+    return false;
+  }
+  const schema = schemas[index];
+  return schema !== undefined && isSchema(schema, value);
+}
+
+function readArraySlot(
+  value: readonly unknown[],
+  index: number
+): { readonly accessor: boolean; readonly value: unknown } {
+  const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+  if (descriptor === undefined) {
+    return {
+      accessor: false,
+      value: undefined
+    };
+  }
+  if (!Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+    return {
+      accessor: true,
+      value: undefined
+    };
+  }
+  return {
+    accessor: false,
+    value: descriptor.value
+  };
 }
 
 function evaluateAnd(state: EvalState, values: readonly number[]): boolean {

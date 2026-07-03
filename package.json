@@ -6,7 +6,7 @@
   "author": "feral",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/feral/TypeSea.git"
+    "url": "git+https://github.com/Feralthedogg/TypeSea.git"
   },
   "sideEffects": false,
   "main": "./dist/index.js",

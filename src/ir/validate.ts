@@ -87,6 +87,7 @@ function isGraphNodeValue(
         typeof value["name"] === "string" &&
         isSingleDepNode(value, deps, "value", nodeCount);
     case NodeTag.HasOwn:
+    case NodeTag.HasOwnData:
       return typeof value["key"] === "string" &&
         isSingleDepNode(value, deps, "object", nodeCount);
     case NodeTag.StrictKeys:
@@ -94,6 +95,19 @@ function isGraphNodeValue(
         isSingleDepNode(value, deps, "object", nodeCount);
     case NodeTag.ArrayEvery:
       return isSchemaValue(value["item"]) &&
+        isSingleDepNode(value, deps, "value", nodeCount);
+    case NodeTag.TupleItems:
+      return isSchemaArray(value["items"]) &&
+        isSingleDepNode(value, deps, "value", nodeCount);
+    case NodeTag.RecordEvery:
+      return isSchemaValue(value["item"]) &&
+        isSingleDepNode(value, deps, "value", nodeCount);
+    case NodeTag.DiscriminantDispatch:
+      return typeof value["key"] === "string" &&
+        isStringArray(value["literals"]) &&
+        isSchemaArray(value["schemas"]) &&
+        isDiscriminantLookup(value["lookup"], value["literals"]) &&
+        value["literals"].length === value["schemas"].length &&
         isSingleDepNode(value, deps, "value", nodeCount);
     case NodeTag.SchemaCheck:
       return isSchemaValue(value["schema"]) &&
@@ -217,6 +231,45 @@ function isStringArray(value: unknown): value is readonly string[] {
   }
   for (let index = 0; index < value.length; index += 1) {
     if (typeof value[index] !== "string") {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * @brief is schema array.
+ */
+function isSchemaArray(value: unknown): value is readonly unknown[] {
+  if (!isUnknownArray(value)) {
+    return false;
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    if (!isSchemaValue(value[index])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * @brief is discriminant lookup.
+ */
+function isDiscriminantLookup(
+  value: unknown,
+  literals: readonly unknown[]
+): value is Readonly<Record<string, number>> {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== literals.length) {
+    return false;
+  }
+  for (let index = 0; index < literals.length; index += 1) {
+    const literal = literals[index];
+    if (typeof literal !== "string" ||
+      value[literal] !== index) {
       return false;
     }
   }

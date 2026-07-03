@@ -37,7 +37,7 @@ interface Guard<T> {
 | `is` | Hot boolean narrowing | Avoids diagnostic allocation on the success path. |
 | `check` | Validation with issues | Returns frozen `Result<T, Issue[]>` containers. |
 | `assert` | Throwing integration boundaries | Throws `TypeSeaAssertionError` with copied, frozen issues. |
-| `graph` | Introspection and optimizer tests | Returns a validated, optimized, frozen Sea-of-Nodes graph. |
+| `graph` | Runtime plan introspection | Returns the validated, optimized, frozen Sea-of-Nodes graph held by the validation plan. |
 
 Diagnostic paths contain only object keys and zero-based array or tuple indexes.
 Public diagnostic validators reject malformed path segments before diagnostics
@@ -57,8 +57,8 @@ cross the API boundary.
 | Decoders | `t.decoder`, `t.transform`, `t.pipe`, `t.coerce` |
 | Async decoders | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
 
-Builder functions validate inputs before a schema can enter the interpreter, IR,
-compiler, AOT emitter, or JSON Schema exporter. Forged guard-like values,
+Builder functions validate inputs before a schema can enter the validation plan,
+compiler, AOT emitter, diagnostic collector, or JSON Schema exporter. Forged guard-like values,
 invalid schema tags, invalid predicates, invalid bounds, malformed regexps, and
 invalid discriminated union case sets are rejected during construction.
 
@@ -170,15 +170,22 @@ FastUser.is(input);
 FastUser.check(input);
 ```
 
-`compile` emits generated predicate and diagnostics collector functions from the
-frozen schema tree. Dynamic schema edges such as `lazy` and `refine` keep
-semantics by using interpreter fallbacks.
+`compile` emits generated predicate functions from the optimized Sea-of-Nodes
+validation graph plus diagnostics collectors for failed values. Static scalar,
+object, array, record, union, and strict-key nodes lower to straight-line
+JavaScript or indexed loops where possible. Dynamic schema edges such as `lazy`
+and `refine` keep semantics by using the same IR-backed runtime fallback as
+ordinary guards.
 
 The optional `name` is a debugging and profiling hint. TypeSea normalizes it
 into a strict-mode-safe JavaScript function name, prefixes reserved names, and
 caps generated name length. Direct compiled guard construction validates the
 predicate, collector, and source arguments. Collector diagnostics are validated,
 copied, and frozen before `check()` returns them.
+
+Generated source never interpolates user-controlled values directly. Literals,
+regexps, property keys, keysets, and dynamic schema fallbacks are captured in
+side tables and referenced by numeric index.
 
 ## AOT Emit
 
@@ -220,16 +227,20 @@ const graph = User.graph();
 const optimized = optimizeGraph(graph);
 ```
 
-`Guard.graph()` returns the optimized Sea-of-Nodes validation graph for
-introspection and optimizer consumers. Public graph values are validated,
+`Guard.graph()` returns the optimized Sea-of-Nodes validation graph held by the
+runtime validation plan. The same plan also owns the specialized predicate
+kernel used by `is()`. The graph is the source for `compile()` and
+`emitAotModule()`, while the kernel keeps ordinary guard execution out of a
+generic per-node interpreter. Public graph values are validated,
 dependency-checked, dense, and frozen.
 
 `optimizeGraph(graph)` validates direct graph inputs before optimizing them.
 Regex graph nodes accept only plain `RegExp` values and store non-extensible
 regexps, cloning extensible inputs before the graph is frozen.
 
-`SchemaCheck` records dynamic runtime schema logic in the graph. It keeps the IR
-truthful instead of pretending a callback-backed edge is a static primitive.
+`SchemaCheck` records dynamic runtime schema logic such as `lazy` or `refine`.
+It keeps the IR truthful instead of pretending a callback-backed edge is a
+static primitive.
 
 ## JSON Schema
 

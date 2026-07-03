@@ -25,8 +25,12 @@ export type GraphNode =
   | StringBoundNode
   | RegexNode
   | HasOwnNode
+  | HasOwnDataNode
   | StrictKeysNode
   | ArrayEveryNode
+  | TupleItemsNode
+  | RecordEveryNode
+  | DiscriminantDispatchNode
   | SchemaCheckNode
   | BooleanFoldNode
   | ReturnNode;
@@ -158,6 +162,17 @@ export interface HasOwnNode {
 }
 
 /**
+ * @brief has own data node.
+ */
+export interface HasOwnDataNode {
+  readonly id: NodeId;
+  readonly tag: typeof NodeTag.HasOwnData;
+  readonly deps: readonly [NodeId];
+  readonly object: NodeId;
+  readonly key: string;
+}
+
+/**
  * @brief strict keys node.
  */
 export interface StrictKeysNode {
@@ -177,6 +192,47 @@ export interface ArrayEveryNode {
   readonly deps: readonly [NodeId];
   readonly value: NodeId;
   readonly item: Schema;
+}
+
+/**
+ * @brief tuple items node.
+ */
+export interface TupleItemsNode {
+  readonly id: NodeId;
+  readonly tag: typeof NodeTag.TupleItems;
+  readonly deps: readonly [NodeId];
+  readonly value: NodeId;
+  readonly items: readonly Schema[];
+}
+
+/**
+ * @brief record every node.
+ */
+export interface RecordEveryNode {
+  readonly id: NodeId;
+  readonly tag: typeof NodeTag.RecordEvery;
+  readonly deps: readonly [NodeId];
+  readonly value: NodeId;
+  readonly item: Schema;
+}
+
+/**
+ * @brief discriminant dispatch lookup.
+ */
+export type DiscriminantDispatchLookup = Readonly<Record<string, number>>;
+
+/**
+ * @brief discriminant dispatch node.
+ */
+export interface DiscriminantDispatchNode {
+  readonly id: NodeId;
+  readonly tag: typeof NodeTag.DiscriminantDispatch;
+  readonly deps: readonly [NodeId];
+  readonly value: NodeId;
+  readonly key: string;
+  readonly literals: readonly string[];
+  readonly schemas: readonly Schema[];
+  readonly lookup: DiscriminantDispatchLookup;
 }
 
 /**

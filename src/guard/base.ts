@@ -5,8 +5,7 @@
 
 import { SchemaTag } from "../kind/index.js";
 import { checkSchema, isSchema } from "../evaluate/index.js";
-import { lowerSchema } from "../lower/index.js";
-import { optimizeGraph } from "../optimize/index.js";
+import { makeValidationPlan } from "../plan/index.js";
 import type { CheckResult } from "../issue/index.js";
 import type { Graph } from "../ir/index.js";
 import type { Schema } from "../schema/index.js";
@@ -96,7 +95,7 @@ export class BaseGuard<
    * @brief graph.
          */
   public graph(this: unknown): Graph {
-    return optimizeGraph(lowerSchema(readGuardSchema(this, "guard receiver")));
+    return makeValidationPlan(readGuardSchema(this, "guard receiver")).graph;
   }
 
   /**

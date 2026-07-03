@@ -21,10 +21,9 @@ async function main() {
     "Sea-of-Nodes validation IR",
     "Zod, Valibot, and Ajv",
     "npm run release:check",
-    'href="./api.md"',
-    'href="./engine-notes.md"',
-    'href="./documentation-style.md"',
-    'href="./release-checklist.md"'
+    'href="https://github.com/Feralthedogg/TypeSea"',
+    'href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md"',
+    'href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md"'
   ];
 
   for (let index = 0; index < required.length; index += 1) {
@@ -34,19 +33,23 @@ async function main() {
     }
   }
 
-  if (source.includes("https://") || source.includes("http://")) {
-    return err("docs/index.html must not load remote resources");
-  }
-
   const hrefs = collectHrefs(source);
   for (let index = 0; index < hrefs.length; index += 1) {
     const href = hrefs[index];
-    if (href === undefined || !href.startsWith("#")) {
+    if (href === undefined) {
       continue;
     }
-    const id = href.slice(1);
-    if (!source.includes(`id="${id}"`)) {
-      return err(`docs/index.html has broken anchor ${href}`);
+    if (href.startsWith("http://") || href.startsWith("https://")) {
+      if (!href.startsWith("https://github.com/Feralthedogg/TypeSea")) {
+        return err(`docs/index.html has unsupported remote link ${href}`);
+      }
+      continue;
+    }
+    if (href.startsWith("#")) {
+      const id = href.slice(1);
+      if (!source.includes(`id="${id}"`)) {
+        return err(`docs/index.html has broken anchor ${href}`);
+      }
     }
   }
 

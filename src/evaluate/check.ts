@@ -24,7 +24,7 @@ import {
   collectStringIssues
 } from "./check-scalar.js";
 import { pushIssue } from "./issue.js";
-import { isUnionSchema } from "./predicate.js";
+import { isSchemaWithState, isUnionSchema } from "./predicate.js";
 import {
   actualType,
   literalToExpected
@@ -43,11 +43,14 @@ export function checkSchema<TValue>(
   schema: Schema,
   value: unknown
 ): CheckResult<TValue> {
+  if (isSchemaWithState(schema, value, makeValidationState())) {
+    return ok(value as TValue);
+  }
   const issues: Issue[] = [];
   const path: PathSegment[] = [];
   collectIssues(schema, value, path, issues, makeValidationState());
   if (issues.length === 0) {
-    return ok(value as TValue);
+    pushIssue(path, issues, "expected_refinement", "matching schema", actualType(value));
   }
   return err(freezeIssueArray(issues));
 }

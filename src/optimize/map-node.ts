@@ -124,6 +124,16 @@ export function mapNodeIds(
         key: node.key
       };
     }
+    case NodeTag.HasOwnData: {
+      const object = mapId(node.object);
+      return {
+        id,
+        tag: node.tag,
+        deps: [object],
+        object,
+        key: node.key
+      };
+    }
     case NodeTag.StrictKeys: {
       const object = mapId(node.object);
       return {
@@ -142,6 +152,39 @@ export function mapNodeIds(
         deps: [value],
         value,
         item: node.item
+      };
+    }
+    case NodeTag.TupleItems: {
+      const value = mapId(node.value);
+      return {
+        id,
+        tag: node.tag,
+        deps: [value],
+        value,
+        items: node.items
+      };
+    }
+    case NodeTag.RecordEvery: {
+      const value = mapId(node.value);
+      return {
+        id,
+        tag: node.tag,
+        deps: [value],
+        value,
+        item: node.item
+      };
+    }
+    case NodeTag.DiscriminantDispatch: {
+      const value = mapId(node.value);
+      return {
+        id,
+        tag: node.tag,
+        deps: [value],
+        value,
+        key: node.key,
+        literals: node.literals,
+        schemas: node.schemas,
+        lookup: node.lookup
       };
     }
     case NodeTag.SchemaCheck: {

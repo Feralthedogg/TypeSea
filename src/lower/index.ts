@@ -51,8 +51,15 @@ function lowerPredicate(
         builder.arrayEvery(value, schema.item)
       ]);
     case SchemaTag.Tuple:
+      return builder.and([
+        builder.isArray(value),
+        builder.tupleItems(value, schema.items)
+      ]);
     case SchemaTag.Record:
-      return builder.schemaCheck(value, schema);
+      return builder.and([
+        builder.isObject(value),
+        builder.recordEvery(value, schema.value)
+      ]);
     case SchemaTag.Object:
       return lowerObject(builder, schema, value);
     case SchemaTag.Union:
@@ -74,7 +81,7 @@ function lowerPredicate(
         lowerPredicate(builder, schema.inner, value)
       ]);
     case SchemaTag.DiscriminatedUnion:
-      return lowerDiscriminatedUnion(builder, schema.cases, value);
+      return lowerDiscriminatedUnion(builder, schema.key, schema.cases, value);
     case SchemaTag.Brand:
       return lowerPredicate(builder, schema.inner, value);
     case SchemaTag.Lazy:
@@ -163,11 +170,15 @@ function lowerObject(
     }
     const prop = builder.getProp(value, entry.key);
     const propTest = lowerPredicate(builder, entry.schema, prop);
+    const hasData = builder.hasOwnData(value, entry.key);
     if (entry.presence === PresenceTag.Optional) {
       const hasKey = builder.hasOwn(value, entry.key);
-      tests.push(builder.or([builder.not(hasKey), propTest]));
+      tests.push(builder.or([
+        builder.not(hasKey),
+        builder.and([hasData, propTest])
+      ]));
     } else {
-      tests.push(builder.hasOwn(value, entry.key));
+      tests.push(hasData);
       tests.push(propTest);
     }
   }
@@ -208,17 +219,20 @@ function lowerUnion(
  */
 function lowerDiscriminatedUnion(
   builder: GraphBuilder,
+  key: string,
   cases: Extract<Schema, {
     readonly tag: typeof SchemaTag.DiscriminatedUnion
   }>["cases"],
   value: NodeId
 ): NodeId {
-  const options = new Array<Schema>(cases.length);
+  const literals = new Array<string>(cases.length);
+  const schemas = new Array<Schema>(cases.length);
   for (let index = 0; index < cases.length; index += 1) {
     const unionCase = cases[index];
     if (unionCase !== undefined) {
-      options[index] = unionCase.schema;
+      literals[index] = unionCase.literal;
+      schemas[index] = unionCase.schema;
     }
   }
-  return lowerUnion(builder, options, value);
+  return builder.discriminantDispatch(value, key, literals, schemas);
 }

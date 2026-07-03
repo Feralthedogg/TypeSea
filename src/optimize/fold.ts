@@ -13,13 +13,17 @@ import { foldAnd, foldOr } from "./fold-boolean.js";
 import { keep, type FoldResult } from "./fold-common.js";
 import {
   foldArrayEvery,
+  foldDiscriminantDispatch,
   foldEquals,
   foldGetProp,
   foldHasOwn,
+  foldHasOwnData,
   foldNumeric,
+  foldRecordEvery,
   foldRegex,
   foldStrictKeys,
   foldStringBound,
+  foldTupleItems,
   foldUnary
 } from "./fold-scalar.js";
 import { resolveAlias, rewriteNodeDeps } from "./rewrite.js";
@@ -107,10 +111,18 @@ function foldNode(
       return foldRegex(node, nodes, aliases);
     case NodeTag.HasOwn:
       return foldHasOwn(node, nodes, aliases);
+    case NodeTag.HasOwnData:
+      return foldHasOwnData(node, nodes, aliases);
     case NodeTag.StrictKeys:
       return foldStrictKeys(node, nodes, aliases);
     case NodeTag.ArrayEvery:
       return foldArrayEvery(node, nodes, aliases);
+    case NodeTag.TupleItems:
+      return foldTupleItems(node, nodes, aliases);
+    case NodeTag.RecordEvery:
+      return foldRecordEvery(node, nodes, aliases);
+    case NodeTag.DiscriminantDispatch:
+      return foldDiscriminantDispatch(node, nodes, aliases);
     case NodeTag.SchemaCheck:
       return keep(node);
     case NodeTag.And:
