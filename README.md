@@ -11,6 +11,19 @@
 built around **immutable guards**, optimized **Sea-of-Nodes validation plans**,
 runtime compilation, and AOT source generation.
 
+## Benchmark Headline
+
+Last local benchmark on 2026-07-04 KST:
+`npm run bench -- bench/ecosystem.bench.ts --run`, strict-object contract,
+operations per second on one machine.
+
+![TypeSea benchmark comparison](./docs/assets/benchmark-headline.svg)
+
+TypeSea safe compiled validators are already in Ajv's boolean hot-path class
+while keeping descriptor-based hostile-input semantics. Unsafe and unchecked
+FastMode are the bragging-rights path for trusted normalized data: direct field
+loads, allocation-light strict-key loops, and V8-friendly monomorphic codegen.
+
 > Goal: not "probably valid", but **provably parity-tested validation** that
 > never executes user code, never throws on expected failures, and never leaks
 > mutable state across a public boundary.
@@ -110,6 +123,47 @@ schema is hot enough to deserve generated validator code.
 > environments, generate validator source ahead of time with
 > `emitAotModule()` instead.
 
+### Unsafe FastMode
+
+```ts
+const FastButLooseUser = compile(User, {
+  name: "isUserFast",
+  mode: "unsafe"
+});
+
+const FastTrustedShapeUser = compile(User, {
+  name: "isUserTrustedShape",
+  mode: "unchecked"
+});
+```
+
+`compile(..., { mode: "unsafe" })` and
+`emitAotModule(..., { mode: "unsafe" })` emit the V8-friendliest predicate
+TypeSea can generate: required object fields are read with direct bracket
+access, arrays and tuples use direct indexed loads, discriminants avoid
+descriptor reads, and strict-object extras are checked with an allocation-free
+`for...in` loop. This mode is for trusted, already-normalized data on extremely
+hot paths.
+
+The default is still `mode: "safe"`. Unsafe mode may execute getters, may accept
+prototype-backed values, and strict objects do not reject symbol or
+non-enumerable extras. Use it only when the caller owns the object graph or has
+already normalized input into plain data records. Unsafe generated predicates
+may also embed escaped static property keys directly in source so V8 can use
+ordinary property-load inline caches.
+
+`mode: "unchecked"` goes one step further: it trusts the object shape and skips
+strict extra-key loops entirely. That is the fastest path for already-owned DTOs,
+but strict objects no longer reject any extra keys.
+
+In unsafe and unchecked modes, successful compiled `check()` calls return a raw
+`{ ok: true, value }` object instead of freezing the success result. Failed
+diagnostics are still frozen. Safe mode keeps the fully frozen Result contract.
+FastMode diagnostic collectors also use the same trusted direct-read object
+shape where possible, so their issue codes can be less hostile-input-specific
+than safe mode for missing/accessor-backed fields and sparse/accessor-backed
+array or record slots. Discriminant diagnostics also read tags directly.
+
 ---
 
 ## Presence Semantics
@@ -159,29 +213,56 @@ failed check() -> schema-aware diagnostic collector
 
 ## Performance Snapshot
 
-Last local release smoke on 2026-07-04 KST, using
-`npm run release:check` on the benchmark strict-object contract. These are
-operations per second on one machine, not release guarantees.
+Last local benchmark on 2026-07-04 KST, using
+`npm run bench -- bench/ecosystem.bench.ts --run` on the benchmark strict-object
+contract. These are operations per second on one machine, not release
+guarantees.
 
 | Valid object path | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 496,270 |
-| TypeSea compiled `is()` | 4,237,892 |
-| Zod `safeParse` | 1,363,792 |
-| Valibot `safeParse` | 1,384,892 |
-| Ajv compiled | 4,312,174 |
+| TypeSea interpreted `is()` | 513,701 |
+| TypeSea compiled safe `is()` | 4,297,306 |
+| TypeSea compiled unsafe `is()` | 36,297,653 |
+| TypeSea compiled unchecked `is()` | 42,581,174 |
+| Zod `safeParse` | 1,343,756 |
+| Valibot `safeParse` | 1,406,528 |
+| Ajv compiled | 4,275,389 |
+
+| Valid diagnostic path | hz |
+| --- | ---: |
+| TypeSea interpreted `check()` | 503,232 |
+| TypeSea compiled safe `check()` | 3,903,929 |
+| TypeSea compiled unsafe `check()` | 35,568,425 |
+| TypeSea compiled unchecked `check()` | 40,084,605 |
+| Zod `safeParse` | 1,355,014 |
+| Valibot `safeParse` | 1,378,266 |
+| Ajv compiled | 4,278,587 |
 
 | Invalid object path | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 3,422,416 |
-| TypeSea compiled `is()` | 27,125,445 |
-| Zod `safeParse` | 83,501 |
-| Valibot `safeParse` | 902,616 |
-| Ajv compiled | 28,953,501 |
+| TypeSea interpreted `is()` | 3,636,369 |
+| TypeSea compiled safe `is()` | 42,080,241 |
+| TypeSea compiled unsafe `is()` | 49,654,076 |
+| TypeSea compiled unchecked `is()` | 50,482,732 |
+| Zod `safeParse` | 84,272 |
+| Valibot `safeParse` | 878,521 |
+| Ajv compiled | 27,820,643 |
 
-The compiled path stays close to Ajv while retaining TypeSea semantics:
-descriptor-based property reads, symbol/non-enumerable strict-key rejection,
-presence semantics, immutable diagnostics, and TypeScript guard inference.
+| Invalid diagnostic path | hz |
+| --- | ---: |
+| TypeSea interpreted `check()` | 420,446 |
+| TypeSea compiled safe `check()` | 2,086,129 |
+| TypeSea compiled unsafe `check()` | 3,077,367 |
+| TypeSea compiled unchecked `check()` | 3,673,508 |
+| Zod `safeParse` | 79,613 |
+| Valibot `safeParse` | 887,991 |
+| Ajv compiled | 28,713,035 |
+
+The safe compiled path stays close to Ajv while retaining TypeSea hostile-input
+semantics: descriptor-based property reads, symbol/non-enumerable strict-key
+rejection, presence semantics, immutable diagnostics, and TypeScript guard
+inference. Unsafe and unchecked compiled modes are faster because they
+deliberately give up parts of that hostile-input contract.
 
 ---
 

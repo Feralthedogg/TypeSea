@@ -1,39 +1,42 @@
 name: Publish
 
 on:
-  workflow_dispatch:
-  release:
-    types:
-      - published
+    release:
+        types:
+            - published
 
 permissions:
-  contents: read
-  id-token: write
+    contents: read
+    id-token: write
 
 jobs:
-  publish:
-    name: Publish to npm
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    publish:
+        name: Publish to npm
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        environment: npm-publish
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20.19"
-          registry-url: https://registry.npmjs.org
-          cache: npm
+            - name: Setup Node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "20.19"
+                  registry-url: https://registry.npmjs.org
+                  cache: npm
 
-      - name: Install
-        run: npm ci
+            - name: Install
+              run: npm ci
 
-      - name: Release Gate
-        run: npm run release:check
+            - name: Verify Release Tag
+              run: node scripts/verify-release-tag.mjs
 
-      - name: Publish
-        run: npm publish --provenance --access public --ignore-scripts
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+            - name: Release Gate
+              run: npm run release:check
+
+            - name: Publish
+              run: npm publish --provenance --access public --ignore-scripts
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

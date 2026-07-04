@@ -187,10 +187,67 @@ Generated source never interpolates user-controlled values directly. Literals,
 regexps, property keys, keysets, and dynamic schema fallbacks are captured in
 side tables and referenced by numeric index.
 
+### Unsafe Compile Mode
+
+```ts
+const FastButLooseUser = compile(User, {
+  name: "isUserFast",
+  mode: "unsafe"
+});
+```
+
+`CompileOptions["mode"]` and `AotCompileOptions["mode"]` are
+`"safe" | "unsafe" | "unchecked" | undefined`; omitted options default to
+`"safe"`. Safe mode keeps TypeSea's hostile-input contract: descriptor-based
+property reads, no getter execution, and strict-object rejection for symbol and
+non-enumerable extras.
+
+Unsafe mode is an explicit performance escape hatch for trusted, normalized
+plain data:
+
+- Required object fields read with `value[key]` when the field schema rejects
+  `undefined`.
+- Discriminant dispatch reads the tag with direct bracket access.
+- Arrays and tuples read items with direct indexed loads.
+- Strict-object extra-key rejection uses an allocation-free own-enumerable
+  `for...in` loop.
+
+This may execute getters, may accept prototype-backed values, and does not
+reject symbol or non-enumerable extras on strict objects. Because compiled
+`check()` first trusts the generated predicate verdict, an unsafe predicate
+that returns `true` also returns a successful `check()` result. Use unsafe mode
+only after the input has crossed a trusted normalization boundary.
+
+Unsafe mode may embed escaped static property keys directly into generated
+predicate source so V8 can attach ordinary property-load inline caches. Safe
+mode keeps property keys in side tables.
+
+Unchecked mode uses the unsafe direct-read shape and also skips strict-object
+extra-key loops. It is only for input whose object shape has already been
+trusted or normalized; strict objects no longer reject extra keys in this mode.
+Unsafe and unchecked compiled `check()` calls also return raw successful Result
+objects without `Object.freeze()`. Failure diagnostics remain frozen. Safe mode
+keeps frozen success and failure Result objects.
+FastMode diagnostic collectors use direct field reads and FastMode strict-key
+rules for object diagnostics where possible, so missing/accessor issue codes
+are not guaranteed to match safe mode. Array and tuple diagnostics also use
+direct indexed reads in fast modes, so sparse slots are diagnosed from the
+loaded `undefined` value. Record diagnostics use direct `record[key]` reads;
+unchecked mode also visits inherited enumerable keys. Discriminant diagnostics
+read the tag directly and compare string cases with `===`.
+
 ## AOT Emit
 
 ```ts
 const emitted = emitAotModule(User, { name: "aotUser" });
+const unsafeEmitted = emitAotModule(User, {
+  name: "aotUserFast",
+  mode: "unsafe"
+});
+const uncheckedEmitted = emitAotModule(User, {
+  name: "aotUserTrustedShape",
+  mode: "unchecked"
+});
 ```
 
 `emitAotModule` returns `Result<AotModule, AotIssue[]>`. A successful result

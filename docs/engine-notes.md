@@ -18,6 +18,9 @@ allocation sites, branch behavior, and validation contracts visible in code.
 - For all-required strict objects, reject extras by counting own string names
   and own symbols after field validation. Optional strict objects keep the full
   key membership scan.
+- Keep `compile()` and `emitAotModule()` safe by default. Unsafe mode is an
+  explicit opt-in that may use direct property/index loads and own-enumerable
+  strict-key loops after the caller accepts getter/prototype/symbol-extra risk.
 - Mark constructed guards out-of-band so normal receivers avoid repeated schema
   validation while forged receivers still fall back to structural checks.
 - Use `Readonly<Record<string, unknown>>` after object guards.
@@ -91,14 +94,51 @@ descriptor-based element access, and dynamic edges use the same IR-backed
 runtime fallback as ordinary guard execution, preserving behavior for `lazy` and
 `refine`.
 
-Strict object IR emits two shapes. When every declared key is required and has
-already passed the data-property descriptor check, generated validators compare
-`Object.getOwnPropertyNames(value).length` with the declared key count and
-require `Object.getOwnPropertySymbols(value).length === 0`. This keeps
-non-enumerable and symbol extras rejected without paying a `Reflect.ownKeys`
-membership loop on the common all-required path. Optional strict objects still
-emit the full own-key membership scan because a missing optional key cannot be
-distinguished by the final key count alone.
+Strict object IR emits two shapes. When every declared key is required,
+generated validators run the strict-key count before field descriptor reads:
+they compare `Object.getOwnPropertyNames(value).length` with the declared key
+count and require `Object.getOwnPropertySymbols(value).length === 0`. V8
+optimizes this count-only path better than a generic `Reflect.ownKeys` count,
+and it rejects obvious extra-key objects before touching field descriptors.
+Optional strict objects still emit the full own-key membership scan because a
+missing optional key cannot be distinguished by the final key count alone.
+
+`compile(..., { mode: "unsafe" })` and
+`emitAotModule(..., { mode: "unsafe" })` switch generated predicates to a
+trusted-data code shape. Required object fields whose schemas reject
+`undefined` use direct `value[key]` loads without descriptor or own-key checks.
+Required fields that can accept `undefined` retain an own-key presence guard so
+missing required keys do not collapse into valid `undefined` values. Optional
+fields take the direct-load fast path for present non-`undefined` values and
+fall back to an own-key check only for the ambiguous `undefined` case.
+
+Unsafe array, tuple, record, and discriminant paths also prefer direct loads.
+Strict objects use a `for...in` own-enumerable key loop instead of allocating
+own-key arrays.
+Object keys that are ASCII identifier names emit as dot-property loads such as
+`value.id`; other keys emit as escaped string-literal bracket loads. That is
+intentionally not hostile-input equivalent: getters can execute,
+prototype-backed values can be accepted, symbol or non-enumerable strict extras
+are not rejected, and static property names may appear in unsafe generated
+predicate source.
+
+`mode: "unchecked"` keeps the unsafe direct-read shape and removes strict
+extra-key loops. It is a trusted-shape path for objects already normalized by
+the caller; strict objects no longer reject any extra keys there.
+
+Fast modes also remove `Object.freeze()` from successful compiled `check()`
+results. The returned object keeps the same `{ ok: true, value }` shape, but it
+is intentionally not frozen. Failed diagnostics stay frozen because those
+objects are off the success hot path and are often retained for reporting.
+Object diagnostics in fast modes are generated from the same direct-read
+contract as predicates. Required fields load through `value.key`, optional
+fields use direct load plus an own-key fallback for `undefined`, unsafe strict
+objects scan own enumerable string keys, and unchecked strict objects skip the
+strict-key diagnostic scan. Array and tuple diagnostics in fast modes read
+items through direct indexes instead of descriptor probes. Record diagnostics
+read through `record[key]`; unchecked mode intentionally keeps inherited
+enumerable keys visible. Discriminant diagnostics read the tag directly and
+compare literal string cases with strict equality.
 
 ## Recursion
 
@@ -141,13 +181,16 @@ Zod, Valibot, and Ajv are dev dependencies for measurement only. They are not
 imported by `src`, and package policy rejects runtime, peer, optional, or
 bundled dependency fields before release.
 
-Last local release smoke on 2026-07-04 KST reported this ecosystem boolean
-path over the JSON-compatible strict-object benchmark:
+Last local benchmark on 2026-07-04 KST reported these ecosystem paths over the
+JSON-compatible strict-object benchmark:
 
-| Case | TypeSea runtime plan | TypeSea compiled | Ajv compiled |
-| --- | ---: | ---: | ---: |
-| Valid object | 496,270 hz | 4,237,892 hz | 4,312,174 hz |
-| Invalid object | 3,422,416 hz | 27,125,445 hz | 28,953,501 hz |
+| Case | TypeSea runtime plan | TypeSea compiled safe | TypeSea compiled unsafe | TypeSea compiled unchecked | Ajv compiled |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Valid `is()` | 513,701 hz | 4,297,306 hz | 36,297,653 hz | 42,581,174 hz | 4,275,389 hz |
+| Valid `check()` | 503,232 hz | 3,903,929 hz | 35,568,425 hz | 40,084,605 hz | 4,278,587 hz |
+| Invalid `is()` | 3,636,369 hz | 42,080,241 hz | 49,654,076 hz | 50,482,732 hz | 27,820,643 hz |
+| Invalid `check()` | 420,446 hz | 2,086,129 hz | 3,077,367 hz | 3,673,508 hz | 28,713,035 hz |
 
 Benchmark numbers are machine-local telemetry. They are useful for catching
-regressions, not for promising a fixed throughput floor.
+regressions, not for promising a fixed throughput floor. Unsafe and unchecked
+numbers are not hostile-input equivalent to safe mode.

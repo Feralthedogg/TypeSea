@@ -159,31 +159,6 @@
         line-height: 1.5;
       }
 
-      .search {
-        padding: 16px 16px 8px;
-      }
-
-      .search input {
-        width: 100%;
-        min-height: 36px;
-        border: 1px solid var(--sidebar-line);
-        border-radius: 8px;
-        padding: 0 12px;
-        background: rgba(255, 255, 255, 0.06);
-        color: var(--sidebar-ink);
-        font: inherit;
-        font-size: 13px;
-        outline: none;
-      }
-
-      .search input:focus {
-        border-color: #46b48f;
-      }
-
-      .search input::placeholder {
-        color: var(--sidebar-muted);
-      }
-
       .nav {
         flex: 1;
         padding: 6px 12px 18px;
@@ -687,15 +662,12 @@
       <aside class="sidebar" aria-label="Documentation navigation">
         <div class="brand">
           <h1>TypeSea</h1>
-          <span class="version">v0.1.0</span>
+          <span class="version">v0.2.0</span>
         </div>
         <p class="brand-tagline">
           Zero-dependency runtime narrowing for TypeScript.
           ESM-only &middot; Node &ge; 20.19 &middot; MIT
         </p>
-        <div class="search">
-          <input data-search type="search" placeholder="Filter sections&hellip;" aria-label="Filter documentation sections">
-        </div>
         <nav class="nav">
           <p class="nav-group">Guide</p>
           <a href="#overview">Overview</a>
@@ -811,6 +783,22 @@ const schema = toJsonSchema(User);</code></pre>
                 <strong><code>compile()</code> uses <code>new Function</code></strong>, which throws under a
                 Content-Security-Policy that forbids <code>unsafe-eval</code>. In CSP-restricted
                 environments, emit validator source ahead of time with <code>emitAotModule()</code>.
+              </p>
+            </div>
+            <div class="callout warn">
+              <span class="icon">&#9888;</span>
+              <p>
+                <strong>Unsafe FastMode:</strong> <code>compile(User, { mode: "unsafe" })</code>
+                and <code>emitAotModule(User, { mode: "unsafe" })</code> emit direct
+                property and index reads plus an allocation-free strict-key loop for trusted
+                normalized data. They may execute getters, may accept prototype-backed values,
+                strict objects do not reject symbol or non-enumerable extras, and escaped
+                static property keys may appear directly in unsafe predicate source.
+                <code>mode: "unchecked"</code> also skips strict extra-key loops for
+                already-trusted object shapes. Unsafe and unchecked successful
+                <code>check()</code> results are raw <code>{ ok: true, value }</code>
+                objects; failed diagnostics remain frozen and use the same direct-read
+                FastMode object/array/record/discriminant contract where possible.
               </p>
             </div>
           </section>
@@ -1068,23 +1056,71 @@ const schema = toJsonSchema(User);</code></pre>
                 <tbody>
                   <tr>
                     <td>TypeSea runtime plan <code>is()</code></td>
-                    <td class="num">496,270</td>
+                    <td class="num">513,701</td>
                   </tr>
                   <tr>
-                    <td>TypeSea compiled <code>is()</code></td>
-                    <td class="num"><span class="best">4,237,892</span></td>
+                    <td>TypeSea compiled safe <code>is()</code></td>
+                    <td class="num">4,297,306</td>
+                  </tr>
+                  <tr>
+                    <td>TypeSea compiled unsafe <code>is()</code></td>
+                    <td class="num">36,297,653</td>
+                  </tr>
+                  <tr>
+                    <td>TypeSea compiled unchecked <code>is()</code></td>
+                    <td class="num"><span class="best">42,581,174</span></td>
                   </tr>
                   <tr>
                     <td>Zod <code>safeParse</code></td>
-                    <td class="num">1,363,792</td>
+                    <td class="num">1,343,756</td>
                   </tr>
                   <tr>
                     <td>Valibot <code>safeParse</code></td>
-                    <td class="num">1,384,892</td>
+                    <td class="num">1,406,528</td>
                   </tr>
                   <tr>
                     <td>Ajv compiled</td>
-                    <td class="num">4,312,174</td>
+                    <td class="num">4,275,389</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Valid diagnostic path</th>
+                    <th class="num">ops/sec</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>TypeSea runtime plan <code>check()</code></td>
+                    <td class="num">503,232</td>
+                  </tr>
+                  <tr>
+                    <td>TypeSea compiled safe <code>check()</code></td>
+                    <td class="num">3,903,929</td>
+                  </tr>
+                  <tr>
+                    <td>TypeSea compiled unsafe <code>check()</code></td>
+                    <td class="num">35,568,425</td>
+                  </tr>
+                  <tr>
+                    <td>TypeSea compiled unchecked <code>check()</code></td>
+                    <td class="num"><span class="best">40,084,605</span></td>
+                  </tr>
+                  <tr>
+                    <td>Zod <code>safeParse</code></td>
+                    <td class="num">1,355,014</td>
+                  </tr>
+                  <tr>
+                    <td>Valibot <code>safeParse</code></td>
+                    <td class="num">1,378,266</td>
+                  </tr>
+                  <tr>
+                    <td>Ajv compiled</td>
+                    <td class="num">4,278,587</td>
                   </tr>
                 </tbody>
               </table>
@@ -1100,35 +1136,83 @@ const schema = toJsonSchema(User);</code></pre>
                 <tbody>
                   <tr>
                     <td>TypeSea runtime plan <code>is()</code></td>
-                    <td class="num">3,422,416</td>
+                    <td class="num">3,636,369</td>
                   </tr>
                   <tr>
-                    <td>TypeSea compiled <code>is()</code></td>
-                    <td class="num"><span class="best">27,125,445</span></td>
+                    <td>TypeSea compiled safe <code>is()</code></td>
+                    <td class="num">42,080,241</td>
+                  </tr>
+                  <tr>
+                    <td>TypeSea compiled unsafe <code>is()</code></td>
+                    <td class="num">49,654,076</td>
+                  </tr>
+                  <tr>
+                    <td>TypeSea compiled unchecked <code>is()</code></td>
+                    <td class="num"><span class="best">50,482,732</span></td>
                   </tr>
                   <tr>
                     <td>Zod <code>safeParse</code></td>
-                    <td class="num">83,501</td>
+                    <td class="num">84,272</td>
                   </tr>
                   <tr>
                     <td>Valibot <code>safeParse</code></td>
-                    <td class="num">902,616</td>
+                    <td class="num">878,521</td>
                   </tr>
                   <tr>
                     <td>Ajv compiled</td>
-                    <td class="num">28,953,501</td>
+                    <td class="num">27,820,643</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Invalid diagnostic path</th>
+                    <th class="num">ops/sec</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>TypeSea runtime plan <code>check()</code></td>
+                    <td class="num">420,446</td>
+                  </tr>
+                  <tr>
+                    <td>TypeSea compiled safe <code>check()</code></td>
+                    <td class="num">2,086,129</td>
+                  </tr>
+                  <tr>
+                    <td>TypeSea compiled unsafe <code>check()</code></td>
+                    <td class="num">3,077,367</td>
+                  </tr>
+                  <tr>
+                    <td>TypeSea compiled unchecked <code>check()</code></td>
+                    <td class="num">3,673,508</td>
+                  </tr>
+                  <tr>
+                    <td>Zod <code>safeParse</code></td>
+                    <td class="num">79,613</td>
+                  </tr>
+                  <tr>
+                    <td>Valibot <code>safeParse</code></td>
+                    <td class="num">887,991</td>
+                  </tr>
+                  <tr>
+                    <td>Ajv compiled</td>
+                    <td class="num"><span class="best">28,713,035</span></td>
                   </tr>
                 </tbody>
               </table>
             </div>
             <p class="footnote">
-              Local release smoke, 2026-07-04 KST, single machine &mdash; regression telemetry,
-              not throughput guarantees. The compiled path stays at Ajv-level speed while keeping
-              descriptor-based reads, strict symbol/non-enumerable key rejection, and immutable
-              diagnostics.
+              Local benchmark, 2026-07-04 KST, single machine &mdash; regression telemetry,
+              not throughput guarantees. Safe compiled mode keeps descriptor-based reads,
+              strict symbol/non-enumerable key rejection, and immutable diagnostics. Unsafe
+              and unchecked modes are faster because they are only for trusted normalized data.
             </p>
             <div class="code-block">
-              <pre><code>npm run bench -- --run</code></pre>
+              <pre><code>npm run bench -- bench/ecosystem.bench.ts --run</code></pre>
             </div>
           </section>
 
@@ -1174,69 +1258,5 @@ const schema = toJsonSchema(User);</code></pre>
       </div>
     </div>
 
-    <script>
-      const search = document.querySelector("[data-search]");
-      const sections = Array.from(document.querySelectorAll("[data-doc-section]"));
-      const links = Array.from(document.querySelectorAll(".nav a"));
-      const groups = Array.from(document.querySelectorAll(".nav-group"));
-
-      if (search instanceof HTMLInputElement) {
-        search.addEventListener("input", () => {
-          const query = search.value.trim().toLowerCase();
-          for (const section of sections) {
-            const title = section.getAttribute("data-title") ?? "";
-            const text = section.textContent?.toLowerCase() ?? "";
-            const visible = query === "" || title.includes(query) || text.includes(query);
-            section.classList.toggle("hidden", !visible);
-          }
-          for (const link of links) {
-            const target = link.getAttribute("href") ?? "";
-            const section = target.startsWith("#")
-              ? document.getElementById(target.slice(1))
-              : null;
-            const visible = section === null || !section.classList.contains("hidden");
-            link.classList.toggle("hidden", !visible);
-          }
-          for (const group of groups) {
-            let sibling = group.nextElementSibling;
-            let anyVisible = false;
-            while (sibling !== null && !sibling.classList.contains("nav-group")) {
-              if (sibling.matches("a") && !sibling.classList.contains("hidden")) {
-                anyVisible = true;
-              }
-              sibling = sibling.nextElementSibling;
-            }
-            group.classList.toggle("hidden", !anyVisible);
-          }
-        });
-      }
-
-      const linkById = new Map(
-        links
-          .map((link) => [link.getAttribute("href")?.slice(1) ?? "", link])
-          .filter(([id]) => id !== "")
-      );
-
-      if ("IntersectionObserver" in window) {
-        const observer = new IntersectionObserver(
-          (entries) => {
-            for (const entry of entries) {
-              if (entry.isIntersecting) {
-                for (const link of links) {
-                  link.classList.toggle(
-                    "active",
-                    link === linkById.get(entry.target.id)
-                  );
-                }
-              }
-            }
-          },
-          { rootMargin: "-20% 0px -70% 0px" }
-        );
-        for (const section of sections) {
-          observer.observe(section);
-        }
-      }
-    </script>
   </body>
 </html>

@@ -1,6 +1,8 @@
 /**
  * @file cache.ts
  * @brief Validation plan cache.
+ * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
+ * preserving interpreter parity.
  */
 
 import { lowerSchema } from "../lower/index.js";
@@ -24,114 +26,128 @@ const planCache = new WeakMap<Schema, ValidationPlan>();
 const trackingCache = new WeakMap<Schema, boolean>();
 
 /**
- * @brief make validation plan.
+ * @brief Build or reuse the optimized validation plan for a schema identity.
  * @details Lowers a schema into Sea-of-Nodes IR, runs the optimizer, and caches
- * the resulting graph for all runtime users of the schema.
+ * the resulting graph for all runtime users of the schema. Schema objects are
+ * immutable after construction, so identity is a stable cache key.
+ * @param schema Schema whose execution plan is requested.
  * @returns Cached or freshly built validation plan for the schema identity.
  */
 export function makeValidationPlan(schema: Schema): ValidationPlan {
-  const cached = planCache.get(schema);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const plan: ValidationPlan = Object.freeze({
-    schema,
-    graph: optimizeGraph(lowerSchema(schema)),
-    tracksRecursion: schemaRequiresTracking(schema)
-  });
-  planCache.set(schema, plan);
-  return plan;
+    const cached = planCache.get(schema);
+    if (cached !== undefined) {
+        return cached;
+    }
+    const plan: ValidationPlan = Object.freeze({
+        schema,
+        graph: optimizeGraph(lowerSchema(schema)),
+        tracksRecursion: schemaRequiresTracking(schema)
+    });
+    planCache.set(schema, plan);
+    return plan;
 }
 
 /**
- * @brief schema requires tracking.
+ * @brief Decide whether validation needs active schema/value pair tracking.
  * @details Returns true only for schemas that can recurse through `lazy`.
+ * Non-recursive schemas can skip the WeakMap bookkeeping on the hot path.
+ * @param schema Schema being analyzed.
  * @returns True when active schema/value pair tracking is required.
  */
 export function schemaRequiresTracking(schema: Schema): boolean {
-  const cached = trackingCache.get(schema);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const result = schemaRequiresTrackingInner(schema, new WeakSet<object>());
-  trackingCache.set(schema, result);
-  return result;
+    const cached = trackingCache.get(schema);
+    if (cached !== undefined) {
+        return cached;
+    }
+    const result = schemaRequiresTrackingInner(schema, new WeakSet<object>());
+    trackingCache.set(schema, result);
+    return result;
 }
 
 /**
- * @brief schema requires tracking inner.
+ * @brief Walk a schema tree looking for lazy recursion boundaries.
+ * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
+ * preserving interpreter parity.
+ * @param schema Current schema node.
+ * @param seen Schema identities already visited in this walk.
+ * @returns True when a reachable node can re-enter validation recursively.
  */
 function schemaRequiresTrackingInner(
-  schema: Schema,
-  seen: WeakSet<object>
+    schema: Schema,
+    seen: WeakSet<object>
 ): boolean {
-  if (seen.has(schema)) {
-    return false;
-  }
-  seen.add(schema);
-  switch (schema.tag) {
-    case SchemaTag.Lazy:
-      return true;
-    case SchemaTag.Array:
-      return schemaRequiresTrackingInner(schema.item, seen);
-    case SchemaTag.Tuple:
-      return schemaArrayRequiresTracking(schema.items, seen);
-    case SchemaTag.Record:
-      return schemaRequiresTrackingInner(schema.value, seen);
-    case SchemaTag.Object:
-      for (let index = 0; index < schema.entries.length; index += 1) {
-        const entry = schema.entries[index];
-        if (entry !== undefined &&
-          schemaRequiresTrackingInner(entry.schema, seen)) {
-          return true;
-        }
-      }
-      return false;
-    case SchemaTag.Union:
-      return schemaArrayRequiresTracking(schema.options, seen);
-    case SchemaTag.Intersection:
-      return schemaRequiresTrackingInner(schema.left, seen) ||
-        schemaRequiresTrackingInner(schema.right, seen);
-    case SchemaTag.Optional:
-    case SchemaTag.Undefinedable:
-    case SchemaTag.Nullable:
-    case SchemaTag.Brand:
-      return schemaRequiresTrackingInner(schema.inner, seen);
-    case SchemaTag.DiscriminatedUnion:
-      for (let index = 0; index < schema.cases.length; index += 1) {
-        const unionCase = schema.cases[index];
-        if (unionCase !== undefined &&
-          schemaRequiresTrackingInner(unionCase.schema, seen)) {
-          return true;
-        }
-      }
-      return false;
-    case SchemaTag.Refine:
-      return schemaRequiresTrackingInner(schema.inner, seen);
-    case SchemaTag.Unknown:
-    case SchemaTag.Never:
-    case SchemaTag.String:
-    case SchemaTag.Number:
-    case SchemaTag.BigInt:
-    case SchemaTag.Symbol:
-    case SchemaTag.Boolean:
-    case SchemaTag.Literal:
-      return false;
-  }
+    if (seen.has(schema)) {
+        return false;
+    }
+    seen.add(schema);
+    switch (schema.tag) {
+        case SchemaTag.Lazy:
+            return true;
+        case SchemaTag.Array:
+            return schemaRequiresTrackingInner(schema.item, seen);
+        case SchemaTag.Tuple:
+            return schemaArrayRequiresTracking(schema.items, seen);
+        case SchemaTag.Record:
+            return schemaRequiresTrackingInner(schema.value, seen);
+        case SchemaTag.Object:
+            for (let index = 0; index < schema.entries.length; index += 1) {
+                const entry = schema.entries[index];
+                if (entry !== undefined &&
+                    schemaRequiresTrackingInner(entry.schema, seen)) {
+                    return true;
+                }
+            }
+            return false;
+        case SchemaTag.Union:
+            return schemaArrayRequiresTracking(schema.options, seen);
+        case SchemaTag.Intersection:
+            return schemaRequiresTrackingInner(schema.left, seen) ||
+                schemaRequiresTrackingInner(schema.right, seen);
+        case SchemaTag.Optional:
+        case SchemaTag.Undefinedable:
+        case SchemaTag.Nullable:
+        case SchemaTag.Brand:
+            return schemaRequiresTrackingInner(schema.inner, seen);
+        case SchemaTag.DiscriminatedUnion:
+            for (let index = 0; index < schema.cases.length; index += 1) {
+                const unionCase = schema.cases[index];
+                if (unionCase !== undefined &&
+                    schemaRequiresTrackingInner(unionCase.schema, seen)) {
+                    return true;
+                }
+            }
+            return false;
+        case SchemaTag.Refine:
+            return schemaRequiresTrackingInner(schema.inner, seen);
+        case SchemaTag.Unknown:
+        case SchemaTag.Never:
+        case SchemaTag.String:
+        case SchemaTag.Number:
+        case SchemaTag.BigInt:
+        case SchemaTag.Symbol:
+        case SchemaTag.Boolean:
+        case SchemaTag.Literal:
+            return false;
+    }
 }
 
 /**
- * @brief schema array requires tracking.
+ * @brief Scan a vector of child schemas for recursion tracking needs.
+ * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
+ * preserving interpreter parity.
+ * @param schemas Child schema vector.
+ * @param seen Schema identities already visited in this walk.
+ * @returns True when at least one child requires active-pair tracking.
  */
 function schemaArrayRequiresTracking(
-  schemas: readonly Schema[],
-  seen: WeakSet<object>
+    schemas: readonly Schema[],
+    seen: WeakSet<object>
 ): boolean {
-  for (let index = 0; index < schemas.length; index += 1) {
-    const schema = schemas[index];
-    if (schema !== undefined && schemaRequiresTrackingInner(schema, seen)) {
-      return true;
+    for (let index = 0; index < schemas.length; index += 1) {
+        const schema = schemas[index];
+        if (schema !== undefined && schemaRequiresTrackingInner(schema, seen)) {
+            return true;
+        }
     }
-  }
-  return false;
+    return false;
 }

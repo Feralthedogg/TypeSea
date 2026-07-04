@@ -1,11 +1,13 @@
 /**
  * @file optimize-remap.ts
  * @brief Dense node-id remapping helpers for graph compaction.
+ * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
+ * before code generation consumes the graph.
  */
 
 import type {
-  GraphNode,
-  NodeId
+    GraphNode,
+    NodeId
 } from "../ir/index.js";
 import { mapNodeIds } from "./map-node.js";
 
@@ -17,14 +19,14 @@ import { mapNodeIds } from "./map-node.js";
  * @returns Graph node rewritten into the compacted id space.
  */
 export function remapNode(
-  node: GraphNode,
-  remap: readonly NodeId[]
+    node: GraphNode,
+    remap: readonly NodeId[]
 ): GraphNode {
-  return mapNodeIds(
-    node,
-    (value: NodeId): NodeId => remapId(value, remap),
-    remapId(node.id, remap)
-  );
+    return mapNodeIds(
+        node,
+        (value: NodeId): NodeId => remapId(value, remap),
+        remapId(node.id, remap)
+    );
 }
 
 /**
@@ -35,11 +37,11 @@ export function remapNode(
  * @returns New node id for the compacted graph.
  */
 export function remapId(value: NodeId, remap: readonly NodeId[]): NodeId {
-  const mapped = remap[value];
-  if (mapped === undefined) {
-    throw new Error("Unreachable dependency escaped graph optimization");
-  }
-  return mapped;
+    const mapped = remap[value];
+    if (mapped === undefined) {
+        throw new Error("Unreachable dependency escaped graph optimization");
+    }
+    return mapped;
 }
 
 /**
@@ -50,12 +52,12 @@ export function remapId(value: NodeId, remap: readonly NodeId[]): NodeId {
  * @returns New dense vector in compacted id space.
  */
 export function remapIds(values: readonly NodeId[], remap: readonly NodeId[]): NodeId[] {
-  const remapped = new Array<NodeId>(values.length);
-  for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
-    if (value !== undefined) {
-      remapped[index] = remapId(value, remap);
+    const remapped = new Array<NodeId>(values.length);
+    for (let index = 0; index < values.length; index += 1) {
+        const value = values[index];
+        if (value !== undefined) {
+            remapped[index] = remapId(value, remap);
+        }
     }
-  }
-  return remapped;
+    return remapped;
 }

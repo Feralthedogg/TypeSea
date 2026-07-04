@@ -1,130 +1,155 @@
 import {
-  type AsyncDecodeSource,
-  type AsyncDecoder,
-  type InferAsyncDecoder,
-  isAsyncDecoderValue
+    type AsyncDecodeSource,
+    type AsyncDecoder,
+    type InferAsyncDecoder,
+    isAsyncDecoderValue
 } from "../async/index.js";
 import {
-  type DecodeSource,
-  type InferDecoder,
-  isDecoderValue
+    type DecodeSource,
+    type InferDecoder,
+    isDecoderValue
 } from "../decoder/index.js";
 import {
-  TypeSeaAssertionError,
-  type Guard,
-  type Presence
+    TypeSeaAssertionError,
+    type Guard,
+    type Presence
 } from "../guard/index.js";
+import { isConstructedGuard } from "../guard/registry.js";
 import type { CheckResult, Issue, PathSegment } from "../issue/index.js";
 import {
-  formatIssue,
-  type IssueMessageOptions
+    formatIssue,
+    type IssueMessageOptions
 } from "../message/index.js";
 import type { Result } from "../result/index.js";
 import {
-  toJsonSchema,
-  type JsonSchema,
-  type JsonSchemaDialect,
-  type JsonSchemaExportIssue
+    toJsonSchema,
+    type JsonSchema,
+    type JsonSchemaDialect,
+    type JsonSchemaExportIssue
 } from "../json-schema/index.js";
 import { isSchemaValue } from "../schema/index.js";
 
 /**
  * @brief sync adapter source.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export type SyncAdapterSource = DecodeSource;
 
 /**
  * @brief infer sync adapter.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export type InferSyncAdapter<TSource> = InferDecoder<TSource>;
 
 /**
  * @brief infer adapter.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export type InferAdapter<TSource> = InferAsyncDecoder<TSource>;
 
 /**
  * @brief trpc parser.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export interface TrpcParser<TValue> {
-  readonly parse: (value: unknown) => TValue;
+    readonly parse: (value: unknown) => TValue;
 }
 
 /**
  * @brief async trpc parser.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export interface AsyncTrpcParser<TValue> {
-  readonly parseAsync: (value: unknown) => Promise<TValue>;
+    readonly parseAsync: (value: unknown) => Promise<TValue>;
 }
 
 /**
  * @brief fastify route schema.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export interface FastifyRouteSchema {
-  readonly body?: JsonSchema;
-  readonly querystring?: JsonSchema;
-  readonly params?: JsonSchema;
-  readonly headers?: JsonSchema;
-  readonly response?: Readonly<Record<string, JsonSchema>>;
+    readonly body?: JsonSchema;
+    readonly querystring?: JsonSchema;
+    readonly params?: JsonSchema;
+    readonly headers?: JsonSchema;
+    readonly response?: Readonly<Record<string, JsonSchema>>;
 }
 
 /**
  * @brief fastify http part.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export type FastifyHttpPart =
-  | "body"
-  | "querystring"
-  | "params"
-  | "headers";
+    | "body"
+    | "querystring"
+    | "params"
+    | "headers";
 
 /**
  * @brief fastify route schema options.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export interface FastifyRouteSchemaOptions {
-  readonly part: FastifyHttpPart;
+    readonly part: FastifyHttpPart;
 
-  /**
+    /**
    * @brief schema id.
    * @details Forwards a concrete `$schema` marker to the JSON Schema exporter.
    * @invariant When omitted, TypeSea emits its conservative default dialect marker.
    */
-  readonly schemaId?: string;
+    readonly schemaId?: string;
 
-  /**
+    /**
    * @brief dialect.
    * @details Selects the JSON Schema keyword set used by generated route schemas.
    * @invariant Tuple schemas remain validator-visible for the selected dialect.
    */
-  readonly dialect?: JsonSchemaDialect;
+    readonly dialect?: JsonSchemaDialect;
 }
 
 /**
  * @brief fastify validator route.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export interface FastifyValidatorRoute {
-  readonly schema: unknown;
-  readonly method: string | undefined;
-  readonly url: string | undefined;
-  readonly httpPart: string | undefined;
+    readonly schema: unknown;
+    readonly method: string | undefined;
+    readonly url: string | undefined;
+    readonly httpPart: string | undefined;
 }
 
 /**
  * @brief fastify validation result.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export type FastifyValidationResult =
-  | { readonly value: unknown }
-  | { readonly error: TypeSeaAssertionError };
+    | { readonly value: unknown }
+    | { readonly error: TypeSeaAssertionError };
 
 /**
  * @brief fastify validator.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export type FastifyValidator = (value: unknown) => FastifyValidationResult;
 
 /**
  * @brief fastify validator compiler.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export type FastifyValidatorCompiler = (
-  route: FastifyValidatorRoute
+    route: FastifyValidatorRoute
 ) => FastifyValidator;
 
 /**
@@ -133,7 +158,7 @@ export type FastifyValidatorCompiler = (
  * @invariant Only supported Fastify HTTP parts are consulted by the compiler.
  */
 export type FastifyValidatorCompilerSourceMap = Readonly<
-  Partial<Record<FastifyHttpPart, SyncAdapterSource>>
+    Partial<Record<FastifyHttpPart, SyncAdapterSource>>
 >;
 
 /**
@@ -142,15 +167,21 @@ export type FastifyValidatorCompilerSourceMap = Readonly<
  * @invariant A mapped source is selected by `route.httpPart` before validation.
  */
 export type FastifyValidatorCompilerSource =
-  | SyncAdapterSource
-  | FastifyValidatorCompilerSourceMap;
+    | SyncAdapterSource
+    | FastifyValidatorCompilerSourceMap;
+
+type FastifyCompilerSourceLookup = Readonly<
+    Record<FastifyHttpPart, SyncAdapterSource | undefined>
+>;
 
 /**
  * @brief react hook form field error.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export interface ReactHookFormFieldError {
-  readonly type: string;
-  readonly message: string;
+    readonly type: string;
+    readonly message: string;
 }
 
 /**
@@ -159,370 +190,477 @@ export interface ReactHookFormFieldError {
  * @invariant Branches are frozen objects and leaves are frozen `ReactHookFormFieldError` values.
  */
 export interface ReactHookFormErrors {
-  readonly [key: string]: ReactHookFormFieldError | ReactHookFormErrors;
+    readonly [key: string]: ReactHookFormFieldError | ReactHookFormErrors;
 }
 
 /**
  * @brief react hook form resolver result.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export interface ReactHookFormResolverResult<TValue> {
-  readonly values: TValue | Readonly<Record<string, never>>;
-  readonly errors: ReactHookFormErrors;
+    readonly values: TValue | Readonly<Record<string, never>>;
+    readonly errors: ReactHookFormErrors;
 }
 
 /**
  * @brief react hook form resolver.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export type ReactHookFormResolver<TValue> = (
-  values: unknown,
-  context: unknown,
-  options: unknown
+    values: unknown,
+    context: unknown,
+    options: unknown
 ) => Promise<ReactHookFormResolverResult<TValue>>;
 
 /**
  * @brief react hook form resolver options.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export interface ReactHookFormResolverOptions {
-  readonly messages: Partial<IssueMessageOptions> | undefined;
+    readonly messages: Partial<IssueMessageOptions> | undefined;
 }
 
 /**
  * @brief to trpc parser.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export function toTrpcParser<TSource extends SyncAdapterSource>(
-  source: TSource
+    source: TSource
 ): TrpcParser<InferSyncAdapter<TSource>> {
-  readSyncAdapterSource(source, "tRPC parser source");
-  return Object.freeze({
-    parse(value: unknown): InferSyncAdapter<TSource> {
-      const result = decodeSyncSource<InferSyncAdapter<TSource>>(source, value);
-      if (result.ok) {
-        return result.value;
-      }
-      throw new TypeSeaAssertionError(result.error);
-    }
-  });
+    readSyncAdapterSource(source, "tRPC parser source");
+    return Object.freeze({
+        parse(value: unknown): InferSyncAdapter<TSource> {
+            const result = decodeSyncSource<InferSyncAdapter<TSource>>(source, value);
+            if (result.ok) {
+                return result.value;
+            }
+            throw new TypeSeaAssertionError(result.error);
+        }
+    });
 }
 
 /**
  * @brief to async trpc parser.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export function toAsyncTrpcParser<TSource extends AsyncDecodeSource>(
-  source: TSource
+    source: TSource
 ): AsyncTrpcParser<InferAdapter<TSource>> {
-  readAsyncAdapterSource(source, "async tRPC parser source");
-  return Object.freeze({
-    async parseAsync(value: unknown): Promise<InferAdapter<TSource>> {
-      const result = await decodeAsyncSource<InferAdapter<TSource>>(source, value);
-      if (result.ok) {
-        return result.value;
-      }
-      throw new TypeSeaAssertionError(result.error);
-    }
-  });
+    readAsyncAdapterSource(source, "async tRPC parser source");
+    return Object.freeze({
+        async parseAsync(value: unknown): Promise<InferAdapter<TSource>> {
+            const result = await decodeAsyncSource<InferAdapter<TSource>>(source, value);
+            if (result.ok) {
+                return result.value;
+            }
+            throw new TypeSeaAssertionError(result.error);
+        }
+    });
 }
 
 /**
  * @brief to fastify route schema.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export function toFastifyRouteSchema(
-  guard: Guard<unknown, Presence>,
-  options?: Partial<FastifyRouteSchemaOptions>
+    guard: Guard<unknown, Presence>,
+    options?: Partial<FastifyRouteSchemaOptions>
 ): Result<FastifyRouteSchema, readonly JsonSchemaExportIssue[]> {
-  const part = readFastifyPart(options);
-  const schema = toJsonSchema(guard, readFastifyJsonSchemaOptions(options));
-  if (!schema.ok) {
-    return schema;
-  }
-  return {
-    ok: true,
-    value: Object.freeze({
-      [part]: schema.value
-    })
-  };
+    const part = readFastifyPart(options);
+    const schema = toJsonSchema(guard, readFastifyJsonSchemaOptions(options));
+    if (!schema.ok) {
+        return schema;
+    }
+    return {
+        ok: true,
+        value: Object.freeze({
+            [part]: schema.value
+        })
+    };
 }
 
 /**
  * @brief to fastify validator compiler.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export function toFastifyValidatorCompiler(
-  source: FastifyValidatorCompilerSource
+    source: FastifyValidatorCompilerSource
 ): FastifyValidatorCompiler {
-  const readSource = readFastifyValidatorCompilerSource(source);
-  return Object.freeze((route: FastifyValidatorRoute): FastifyValidator => {
-    const selectedSource = readSource(route);
-    return (value: unknown): FastifyValidationResult => {
-      const result = decodeSyncSource<unknown>(selectedSource, value);
-      if (result.ok) {
-        return {
-          value: result.value
+    const readSource = readFastifyValidatorCompilerSource(source);
+    return Object.freeze((route: FastifyValidatorRoute): FastifyValidator => {
+        const selectedSource = readSource(route);
+        return (value: unknown): FastifyValidationResult => {
+            const result = decodeSyncSource<unknown>(selectedSource, value);
+            if (result.ok) {
+                return {
+                    value: result.value
+                };
+            }
+            return {
+                error: new TypeSeaAssertionError(result.error)
+            };
         };
-      }
-      return {
-        error: new TypeSeaAssertionError(result.error)
-      };
-    };
-  });
+    });
 }
 
 /**
  * @brief to react hook form resolver.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
  */
 export function toReactHookFormResolver<TSource extends AsyncDecodeSource>(
-  source: TSource,
-  options?: Partial<ReactHookFormResolverOptions>
+    source: TSource,
+    options?: Partial<ReactHookFormResolverOptions>
 ): ReactHookFormResolver<InferAdapter<TSource>> {
-  const config = readReactHookFormOptions(options);
-  readAsyncAdapterSource(source, "React Hook Form resolver source");
-  return async (
-    values: unknown
-  ): Promise<ReactHookFormResolverResult<InferAdapter<TSource>>> => {
-    const result = await decodeAsyncSource<InferAdapter<TSource>>(source, values);
-    if (result.ok) {
-      return Object.freeze({
-        values: result.value,
-        errors: emptyErrors
-      });
-    }
-    return Object.freeze({
-      values: emptyValues,
-      errors: issuesToReactHookFormErrors(result.error, config.messages)
-    });
-  };
+    const config = readReactHookFormOptions(options);
+    readAsyncAdapterSource(source, "React Hook Form resolver source");
+    return async (
+        values: unknown
+    ): Promise<ReactHookFormResolverResult<InferAdapter<TSource>>> => {
+        const result = await decodeAsyncSource<InferAdapter<TSource>>(source, values);
+        if (result.ok) {
+            return Object.freeze({
+                values: result.value,
+                errors: emptyErrors
+            });
+        }
+        return Object.freeze({
+            values: emptyValues,
+            errors: issuesToReactHookFormErrors(result.error, config.messages)
+        });
+    };
 }
 
 /**
- * @brief decode sync source.
+ * @brief Run a synchronous adapter source against one submitted value.
+ * @param source Guard or decoder selected for the adapter call.
+ * @param value Framework payload being validated.
+ * @returns TypeSea Result produced by the selected source.
+ * @details Decoders already own their result shape. Guard-like values are first
+ * normalized through readGuard so structural receivers cannot smuggle inherited
+ * schema or check fields into adapter execution.
  */
 function decodeSyncSource<TValue>(
-  source: unknown,
-  value: unknown
+    source: unknown,
+    value: unknown
 ): CheckResult<TValue> {
-  if (isDecoderValue(source)) {
-    return source.decode(value) as CheckResult<TValue>;
-  }
-  const guard = readGuard(source, "adapter source");
-  return guard.check(value) as CheckResult<TValue>;
+    if (isDecoderValue(source)) {
+        return source.decode(value) as CheckResult<TValue>;
+    }
+    const guard = readGuard(source, "adapter source");
+    return guard.check(value) as CheckResult<TValue>;
 }
 
 /**
- * @brief decode async source.
+ * @brief Run a possibly asynchronous adapter source.
+ * @param source Guard, decoder, or async decoder selected for the adapter call.
+ * @param value Framework payload being validated.
+ * @returns Promise resolving to a TypeSea Result.
+ * @details The ordering keeps native async decoders on their own private runner
+ * path while preserving the same hardened guard normalization used by sync
+ * adapters.
  */
 async function decodeAsyncSource<TValue>(
-  source: unknown,
-  value: unknown
+    source: unknown,
+    value: unknown
 ): Promise<CheckResult<TValue>> {
-  if (isAsyncDecoderValue(source)) {
-    return await (source as AsyncDecoder<TValue>).decodeAsync(value);
-  }
-  if (isDecoderValue(source)) {
-    return source.decode(value) as CheckResult<TValue>;
-  }
-  const guard = readGuard(source, "adapter source");
-  return guard.check(value) as CheckResult<TValue>;
+    if (isAsyncDecoderValue(source)) {
+        return await (source as AsyncDecoder<TValue>).decodeAsync(value);
+    }
+    if (isDecoderValue(source)) {
+        return source.decode(value) as CheckResult<TValue>;
+    }
+    const guard = readGuard(source, "adapter source");
+    return guard.check(value) as CheckResult<TValue>;
 }
 
 /**
- * @brief read guard.
+ * @brief Normalize a guard-like adapter source.
+ * @param value Candidate adapter source.
+ * @param label Message prefix for TypeError diagnostics.
+ * @returns Guard object safe to call through the adapter layer.
+ * @throws TypeError when schema or check are not valid guard fields.
+ * @details Constructed guards use registry identity. Structural guard support is
+ * limited to own data `schema` and `check` slots so adapter entry points do not
+ * execute prototype getters supplied by a framework payload or plugin wrapper.
  */
 function readGuard(value: unknown, label: string): Guard<unknown, Presence> {
-  if (!isRecord(value)) {
-    throw new TypeError(`${label} must be a TypeSea guard or decoder`);
-  }
-  const guard = value as Partial<Guard<unknown, Presence>>;
-  const schema = value["schema"];
-  if (!isSchemaValue(schema) || typeof guard.check !== "function") {
-    throw new TypeError(`${label} must be a TypeSea guard or decoder`);
-  }
-  return guard as Guard<unknown, Presence>;
+    if (isConstructedGuard(value)) {
+        return value;
+    }
+    if (!isRecord(value)) {
+        throw new TypeError(`${label} must be a TypeSea guard or decoder`);
+    }
+    const guard = value as Partial<Guard<unknown, Presence>>;
+    const schema = readOwnDataProperty(value, "schema");
+    const check = readOwnDataProperty(value, "check");
+    if (!isSchemaValue(schema) || typeof check !== "function") {
+        throw new TypeError(`${label} must be a TypeSea guard or decoder`);
+    }
+    return guard as Guard<unknown, Presence>;
 }
 
 /**
- * @brief read sync adapter source.
+ * @brief Validate a source accepted by sync-only adapters.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
+ * @param source Candidate guard or decoder.
+ * @param label Message prefix for TypeError diagnostics.
  */
 function readSyncAdapterSource(source: unknown, label: string): void {
-  if (isDecoderValue(source)) {
-    return;
-  }
-  readGuard(source, label);
+    if (isDecoderValue(source)) {
+        return;
+    }
+    readGuard(source, label);
 }
 
 /**
- * @brief read fastify validator compiler source.
- * @details Normalizes a single validator source or a route-part source table into one selector.
+ * @brief Normalize Fastify validator sources into a route selector.
+ * @details A single source applies to all route parts. A source map is copied
+ * into a null-prototype table so route selection cannot observe later prototype
+ * mutations or inherited body/querystring/params/headers fields.
+ * @param source Guard, decoder, or route-part source table supplied by the user.
  * @returns Source selector used by the Fastify compiler callback.
  */
 function readFastifyValidatorCompilerSource(
-  source: FastifyValidatorCompilerSource
+    source: FastifyValidatorCompilerSource
 ): (route: FastifyValidatorRoute) => SyncAdapterSource {
-  if (isDecoderValue(source) || isGuardValue(source)) {
-    readSyncAdapterSource(source, "Fastify validator source");
-    return (): SyncAdapterSource => source;
-  }
-  if (!isRecord(source)) {
-    throw new TypeError("Fastify validator source must be a TypeSea guard, decoder, or route map");
-  }
-  readFastifyCompilerMap(source);
-  return (route: FastifyValidatorRoute): SyncAdapterSource => {
-    const part = readFastifyRouteHttpPart(route);
-    const selected = source[part];
-    if (selected === undefined) {
-      throw new TypeError(`Fastify validator source is missing ${part}`);
+    if (isDecoderValue(source) || isGuardValue(source)) {
+        readSyncAdapterSource(source, "Fastify validator source");
+        return (): SyncAdapterSource => source;
     }
-    return selected;
-  };
+    if (!isRecord(source)) {
+        throw new TypeError("Fastify validator source must be a TypeSea guard, decoder, or route map");
+    }
+    /*
+     * Route maps are copied once before Fastify requests per-route validators.
+     * Later route selection reads the hardened copy, not caller-controlled
+     * prototype state.
+     */
+    const sourceMap = readFastifyCompilerMap(source);
+    return (route: FastifyValidatorRoute): SyncAdapterSource => {
+        const part = readFastifyRouteHttpPart(route);
+        const selected = sourceMap[part];
+        if (selected === undefined) {
+            throw new TypeError(`Fastify validator source is missing ${part}`);
+        }
+        return selected;
+    };
 }
 
 /**
- * @brief is guard value.
- * @details Performs the same structural guard check as `readGuard` without throwing.
+ * @brief Test whether a value is usable as a guard source.
+ * @details Performs the same structural guard check as `readGuard` without
+ * throwing, which lets the Fastify source normalizer distinguish a single guard
+ * from a route-part map.
+ * @param value Candidate source.
  * @returns True when the value is a TypeSea guard object.
  */
 function isGuardValue(value: unknown): value is Guard<unknown, Presence> {
-  if (!isRecord(value)) {
-    return false;
-  }
-  const guard = value as Partial<Guard<unknown, Presence>>;
-  return isSchemaValue(value["schema"]) && typeof guard.check === "function";
+    if (isConstructedGuard(value)) {
+        return true;
+    }
+    if (!isRecord(value)) {
+        return false;
+    }
+    const schema = readOwnDataProperty(value, "schema");
+    const check = readOwnDataProperty(value, "check");
+    return isSchemaValue(schema) && typeof check === "function";
 }
 
 /**
- * @brief read fastify compiler map.
- * @details Validates every present route-part source before Fastify starts compiling routes.
- * @post No result value is produced; malformed sources throw TypeError.
+ * @brief Copy and validate a Fastify route-part source map.
+ * @details Validates every present route-part source before Fastify starts
+ * compiling routes. The returned table is a frozen null-prototype copy owned by
+ * TypeSea.
+ * @param source Route-part source table supplied by the user.
+ * @returns Frozen null-prototype map containing only own data-property sources.
+ * @post Accessor properties are rejected without executing getters.
  */
-function readFastifyCompilerMap(source: FastifyValidatorCompilerSourceMap): void {
-  readOptionalFastifyCompilerPart(source, "body");
-  readOptionalFastifyCompilerPart(source, "querystring");
-  readOptionalFastifyCompilerPart(source, "params");
-  readOptionalFastifyCompilerPart(source, "headers");
+function readFastifyCompilerMap(
+    source: FastifyValidatorCompilerSourceMap
+): FastifyCompilerSourceLookup {
+    /*
+     * Null prototype prevents inherited body/querystring/params/headers slots
+     * from becoming validator sources during route selection.
+     */
+    const target = Object.create(null) as Record<FastifyHttpPart, SyncAdapterSource | undefined>;
+    readOptionalFastifyCompilerPart(source, target, "body");
+    readOptionalFastifyCompilerPart(source, target, "querystring");
+    readOptionalFastifyCompilerPart(source, target, "params");
+    readOptionalFastifyCompilerPart(source, target, "headers");
+    return Object.freeze(target);
 }
 
 /**
- * @brief read optional fastify compiler part.
- * @details Checks one optional source-map slot without consulting prototype state.
- * @post No result value is produced; malformed present sources throw TypeError.
+ * @brief Copy one optional Fastify route-part source.
+ * @details Copies one own data-property source without consulting prototype
+ * state. Missing parts stay undefined so route selection can fail with the
+ * concrete missing part later.
+ * @param source User supplied route-part source table.
+ * @param target Hardened lookup receiving validated sources.
+ * @param part Fastify HTTP part to copy.
+ * @post Malformed present sources throw TypeError before the compiler is returned.
  */
 function readOptionalFastifyCompilerPart(
-  source: FastifyValidatorCompilerSourceMap,
-  part: FastifyHttpPart
+    source: FastifyValidatorCompilerSourceMap,
+    target: Record<FastifyHttpPart, SyncAdapterSource | undefined>,
+    part: FastifyHttpPart
 ): void {
-  if (!Object.prototype.hasOwnProperty.call(source, part)) {
-    return;
-  }
-  const partSource = source[part];
-  if (partSource === undefined) {
-    throw new TypeError(`Fastify validator source for ${part} must be defined`);
-  }
-  readSyncAdapterSource(partSource, `Fastify validator source for ${part}`);
+    /*
+     * getOwnPropertyDescriptor observes own metadata without reading the value
+     * through the prototype chain or invoking an accessor getter.
+     */
+    const descriptor = Object.getOwnPropertyDescriptor(source, part);
+    if (descriptor === undefined) {
+        return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+        throw new TypeError(`Fastify validator source for ${part} must be a data property`);
+    }
+    const partSource: unknown = descriptor.value;
+    if (partSource === undefined) {
+        throw new TypeError(`Fastify validator source for ${part} must be defined`);
+    }
+    readSyncAdapterSource(partSource, `Fastify validator source for ${part}`);
+    target[part] = partSource as SyncAdapterSource;
 }
 
 /**
- * @brief read fastify route http part.
- * @details Converts Fastify's route descriptor slot into TypeSea's closed part union.
+ * @brief Normalize Fastify route metadata into a supported HTTP part.
+ * @details Converts Fastify's route descriptor slot into TypeSea's closed part
+ * union so one validator source is never silently reused for a different part.
+ * @param route Fastify validator route descriptor.
  * @returns Validated Fastify HTTP part.
  */
 function readFastifyRouteHttpPart(route: FastifyValidatorRoute): FastifyHttpPart {
-  switch (route.httpPart) {
-    case "body":
-    case "querystring":
-    case "params":
-    case "headers":
-      return route.httpPart;
-    default:
-      throw new TypeError("Fastify validator route httpPart is invalid");
-  }
+    switch (route.httpPart) {
+        case "body":
+        case "querystring":
+        case "params":
+        case "headers":
+            return route.httpPart;
+        default:
+            throw new TypeError("Fastify validator route httpPart is invalid");
+    }
 }
 
 /**
- * @brief read async adapter source.
+ * @brief Validate a source accepted by async-capable adapters.
+ * @param source Candidate guard, decoder, or async decoder.
+ * @param label Message prefix for TypeError diagnostics.
+ * @details Async decoders and sync decoders already prove identity through
+ * private registries. Guard-like values still pass through readGuard.
  */
 function readAsyncAdapterSource(source: unknown, label: string): void {
-  if (isAsyncDecoderValue(source) || isDecoderValue(source)) {
-    return;
-  }
-  readGuard(source, label);
+    if (isAsyncDecoderValue(source) || isDecoderValue(source)) {
+        return;
+    }
+    readGuard(source, label);
 }
 
 /**
- * @brief read fastify part.
+ * @brief Resolve the Fastify route part used for JSON Schema output.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
+ * @param options Optional Fastify route schema options.
+ * @returns The selected HTTP part, defaulting to body.
  */
 function readFastifyPart(
-  options: Partial<FastifyRouteSchemaOptions> | undefined
+    options: Partial<FastifyRouteSchemaOptions> | undefined
 ): FastifyHttpPart {
-  if (options?.part === undefined) {
-    return "body";
-  }
-  switch (options.part) {
-    case "body":
-    case "querystring":
-    case "params":
-    case "headers":
-      return options.part;
-    default:
-      throw new TypeError("Fastify schema part is invalid");
-  }
+    if (options?.part === undefined) {
+        return "body";
+    }
+    switch (options.part) {
+        case "body":
+        case "querystring":
+        case "params":
+        case "headers":
+            return options.part;
+        default:
+            throw new TypeError("Fastify schema part is invalid");
+    }
 }
 
 /**
- * @brief read fastify json schema options.
- * @details Copies only JSON Schema exporter options out of the adapter options object.
+ * @brief Extract JSON Schema exporter options from Fastify options.
+ * @details Copies only JSON Schema exporter options out of the adapter options
+ * object. The returned object avoids exact-optional undefined fields.
+ * @param options Optional Fastify route schema options.
  * @returns Partial JSON Schema options without exact-optional undefined slots.
  */
 function readFastifyJsonSchemaOptions(
-  options: Partial<FastifyRouteSchemaOptions> | undefined
+    options: Partial<FastifyRouteSchemaOptions> | undefined
 ): Partial<{
-  readonly dialect: JsonSchemaDialect;
-  readonly schemaId: string;
+    readonly dialect: JsonSchemaDialect;
+    readonly schemaId: string;
 }> {
-  const output: {
-    dialect?: JsonSchemaDialect;
-    schemaId?: string;
-  } = {};
-  if (options?.dialect !== undefined) {
-    output.dialect = options.dialect;
-  }
-  if (options?.schemaId !== undefined) {
-    output.schemaId = options.schemaId;
-  }
-  return output;
+    const output: {
+        dialect?: JsonSchemaDialect;
+        schemaId?: string;
+    } = {};
+    if (options?.dialect !== undefined) {
+        output.dialect = options.dialect;
+    }
+    if (options?.schemaId !== undefined) {
+        output.schemaId = options.schemaId;
+    }
+    return output;
 }
 
 /**
- * @brief read react hook form options.
+ * @brief Normalize React Hook Form resolver options.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
+ * @param options Optional resolver options.
+ * @returns Required options object used by the resolver.
+ * @throws TypeError when options are not object-like.
  */
 function readReactHookFormOptions(
-  options: Partial<ReactHookFormResolverOptions> | undefined
+    options: Partial<ReactHookFormResolverOptions> | undefined
 ): Required<ReactHookFormResolverOptions> {
-  if (options === undefined) {
+    if (options === undefined) {
+        return {
+            messages: undefined
+        };
+    }
+    if (!isRecord(options)) {
+        throw new TypeError("React Hook Form resolver options must be an object");
+    }
     return {
-      messages: undefined
+        messages: options.messages
     };
-  }
-  if (!isRecord(options)) {
-    throw new TypeError("React Hook Form resolver options must be an object");
-  }
-  return {
-    messages: options.messages
-  };
 }
 
 /**
- * @brief issues to react hook form errors.
+ * @brief Convert TypeSea issues into React Hook Form field errors.
+ * @param issues Frozen TypeSea issue vector.
+ * @param options Message formatting options.
+ * @returns Frozen nested FieldErrors-compatible object.
+ * @details React Hook Form resolves nested fields by object traversal, so
+ * TypeSea paths are inserted as nested branches rather than flat dotted keys.
  */
 function issuesToReactHookFormErrors(
-  issues: readonly Issue[],
-  options: Partial<IssueMessageOptions> | undefined
+    issues: readonly Issue[],
+    options: Partial<IssueMessageOptions> | undefined
 ): ReactHookFormErrors {
-  const errors = makeReactHookFormErrorBranch();
-  for (let index = 0; index < issues.length; index += 1) {
-    const issue = issues[index];
-    if (issue === undefined) {
-      continue;
+    const errors = makeReactHookFormErrorBranch();
+    for (let index = 0; index < issues.length; index += 1) {
+        const issue = issues[index];
+        if (issue === undefined) {
+            continue;
+        }
+        insertReactHookFormIssue(errors, issue, options);
     }
-    insertReactHookFormIssue(errors, issue, options);
-  }
-  return freezeReactHookFormErrors(errors);
+    return freezeReactHookFormErrors(errors);
 }
 
 /**
@@ -531,110 +669,112 @@ function issuesToReactHookFormErrors(
  * @invariant Branch objects have a null prototype; leaf error objects do not.
  */
 interface MutableReactHookFormErrors {
-  [key: string]: ReactHookFormFieldError | MutableReactHookFormErrors;
+    [key: string]: ReactHookFormFieldError | MutableReactHookFormErrors;
 }
 
 /**
- * @brief make react hook form error branch.
- * @details Allocates one null-prototype object so form field names cannot collide with inherited keys.
+ * @brief Allocate one mutable React Hook Form error branch.
+ * @details Null prototype branches keep field names such as `constructor` or
+ * `__proto__` from colliding with inherited object members.
  * @returns Mutable branch owned by the caller.
  */
 function makeReactHookFormErrorBranch(): MutableReactHookFormErrors {
-  return Object.create(null) as MutableReactHookFormErrors;
+    return Object.create(null) as MutableReactHookFormErrors;
 }
 
 /**
- * @brief insert react hook form issue.
- * @details Inserts one TypeSea issue into a nested React Hook Form error tree.
- * @param errors Borrowed output branch that receives the leaf error when absent.
- * @param issue Borrowed input issue; its path is converted into string map keys.
- * @param options Borrowed input message options used only for new leaf formatting.
+ * @brief Insert one TypeSea issue into a nested React Hook Form tree.
+ * @details Existing leaf errors are preserved because React Hook Form reports
+ * the first error for a field by default.
+ * @param errors Mutable root branch receiving the leaf error when absent.
+ * @param issue Issue whose path is converted into branch keys.
+ * @param options Message options used only when a leaf is created.
  * @post Existing first errors are preserved to match React Hook Form resolver behavior.
  */
 function insertReactHookFormIssue(
-  errors: MutableReactHookFormErrors,
-  issue: Issue,
-  options: Partial<IssueMessageOptions> | undefined
+    errors: MutableReactHookFormErrors,
+    issue: Issue,
+    options: Partial<IssueMessageOptions> | undefined
 ): void {
-  const path = issue.path.length === 0 ? rootIssuePath : issue.path;
-  let cursor = errors;
-  for (let index = 0; index < path.length - 1; index += 1) {
-    const segment = path[index];
-    if (segment === undefined) {
-      continue;
+    const path = issue.path.length === 0 ? rootIssuePath : issue.path;
+    let cursor = errors;
+    for (let index = 0; index < path.length - 1; index += 1) {
+        const segment = path[index];
+        if (segment === undefined) {
+            continue;
+        }
+        const key = reactHookFormPathKey(segment);
+        const child = cursor[key];
+        if (child === undefined) {
+            const branch = makeReactHookFormErrorBranch();
+            cursor[key] = branch;
+            cursor = branch;
+            continue;
+        }
+        if (!isReactHookFormErrorBranch(child)) {
+            return;
+        }
+        cursor = child;
     }
-    const key = reactHookFormPathKey(segment);
-    const child = cursor[key];
-    if (child === undefined) {
-      const branch = makeReactHookFormErrorBranch();
-      cursor[key] = branch;
-      cursor = branch;
-      continue;
+    const last = path[path.length - 1];
+    if (last === undefined) {
+        return;
     }
-    if (!isReactHookFormErrorBranch(child)) {
-      return;
+    const key = reactHookFormPathKey(last);
+    if (Object.prototype.hasOwnProperty.call(cursor, key)) {
+        return;
     }
-    cursor = child;
-  }
-  const last = path[path.length - 1];
-  if (last === undefined) {
-    return;
-  }
-  const key = reactHookFormPathKey(last);
-  if (Object.prototype.hasOwnProperty.call(cursor, key)) {
-    return;
-  }
-  cursor[key] = Object.freeze({
-    type: issue.code,
-    message: issue.message ?? formatIssue(issue, options)
-  });
+    cursor[key] = Object.freeze({
+        type: issue.code,
+        message: issue.message ?? formatIssue(issue, options)
+    });
 }
 
 /**
  * @brief react hook form path key.
  * @details Converts one TypeSea path segment into the object key React Hook Form traverses.
- * @param segment Borrowed input path segment.
+ * @param segment Path segment from a TypeSea issue.
  * @returns Stable string key for object or array-index lookup.
  */
 function reactHookFormPathKey(segment: PathSegment): string {
-  return typeof segment === "number" ? String(segment) : segment;
+    return typeof segment === "number" ? String(segment) : segment;
 }
 
 /**
  * @brief freeze react hook form errors.
  * @details Recursively freezes the null-prototype tree after all issues have been inserted.
- * @param errors Borrowed mutable branch that becomes immutable before publication.
+ * @param errors Mutable branch that becomes immutable before publication.
  * @returns Frozen React Hook Form error tree.
  */
 function freezeReactHookFormErrors(
-  errors: MutableReactHookFormErrors
+    errors: MutableReactHookFormErrors
 ): ReactHookFormErrors {
-  const keys = Object.keys(errors);
-  for (let index = 0; index < keys.length; index += 1) {
-    const key = keys[index];
-    if (key === undefined) {
-      continue;
+    const keys = Object.keys(errors);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined) {
+            continue;
+        }
+        const child = errors[key];
+        if (isReactHookFormErrorBranch(child)) {
+            errors[key] = freezeReactHookFormErrors(child);
+        }
     }
-    const child = errors[key];
-    if (isReactHookFormErrorBranch(child)) {
-      errors[key] = freezeReactHookFormErrors(child);
-    }
-  }
-  return Object.freeze(errors);
+    return Object.freeze(errors);
 }
 
 /**
- * @brief is react hook form error branch.
+ * @brief Test whether a React Hook Form node is an internal branch.
  * @details Distinguishes internal branch objects from frozen leaf error objects.
  * @param value Candidate branch or leaf error value.
  * @returns True when value is a null-prototype branch object.
  */
 function isReactHookFormErrorBranch(
-  value: unknown
+    value: unknown
 ): value is MutableReactHookFormErrors {
-  return typeof value === "object" &&
-    value !== null &&
-    Object.getPrototypeOf(value) === null;
+    return typeof value === "object" &&
+        value !== null &&
+        Object.getPrototypeOf(value) === null;
 }
 
 /**
@@ -645,18 +785,42 @@ function isReactHookFormErrorBranch(
 const rootIssuePath: readonly PathSegment[] = Object.freeze(["root"]);
 
 /**
- * @brief is record.
+ * @brief Check record.
+ * @details This helper keeps a local invariant explicit at the module boundary.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
- * @brief empty errors.
+ * @brief Read one own data slot from an adapter input object.
+ * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
+ * adding framework dependencies.
+ * @param value Object being normalized.
+ * @param key Field name or symbol.
+ * @returns Stored field value, or undefined when absent.
+ */
+function readOwnDataProperty(
+    value: object,
+    key: PropertyKey
+): unknown {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined ||
+        !Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+        return undefined;
+    }
+    return descriptor.value;
+}
+
+/**
+ * @brief Shared immutable success errors object for React Hook Form.
+ * @details Reusing this object avoids allocating a fresh empty tree on every
+ * successful resolver call.
  */
 const emptyErrors: ReactHookFormErrors = Object.freeze({});
 
 /**
- * @brief empty values.
+ * @brief Shared immutable values object used when resolver validation fails.
+ * @details React Hook Form expects failed resolvers to return no accepted values.
  */
 const emptyValues: Readonly<Record<string, never>> = Object.freeze({});

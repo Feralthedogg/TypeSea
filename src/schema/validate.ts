@@ -1,325 +1,421 @@
 /**
  * @file schema/validate.ts
  * @brief Runtime validators for direct schema objects.
+ * @details Schema helpers enforce construction-time invariants before values reach
+ * validation, compilation, or export.
  */
 
 import {
-  NumberCheckTag,
-  ObjectModeTag,
-  PresenceTag,
-  SchemaTag,
-  StringCheckTag
+    NumberCheckTag,
+    ObjectModeTag,
+    PresenceTag,
+    SchemaTag,
+    StringCheckTag
 } from "../kind/index.js";
 import { isLiteralValue } from "./literal.js";
 import {
-  includesString,
-  isObjectKeyLookup,
-  isPlainRegExp,
-  isRecord,
-  isStringArray,
-  isUnknownArray
+    includesString,
+    isMissingDataProperty,
+    isObjectKeyLookup,
+    isPlainRegExp,
+    isRecord,
+    isStringArray,
+    isUnknownArray,
+    readOwnDataProperty
 } from "./common.js";
 import type {
-  NumberCheck,
-  Schema,
-  StringCheck
+    NumberCheck,
+    Schema,
+    StringCheck
 } from "./types.js";
 
 /**
- * @brief is schema value.
+ * @brief Validate an unknown value as a TypeSea schema tree.
+ * @param value Candidate schema object from a public boundary.
+ * @returns True when the complete tree satisfies the internal schema layout.
+ * @details This routine is intentionally stricter than normal JavaScript object
+ * access: every record and vector must be data-only so later consumers can read
+ * fields without invoking user code.
  */
 export function isSchemaValue(value: unknown): value is Schema {
-  return isSchemaValueInner(value, {
-    validated: new WeakSet<object>(),
-    visiting: new WeakSet<object>()
-  });
+    return isSchemaValueInner(value, {
+        validated: new WeakSet<object>(),
+        visiting: new WeakSet<object>()
+    });
 }
 
 /**
- * @brief schema validation state.
+ * @brief Recursion bookkeeping for schema admission.
+ * @details `visiting` rejects cycles while a branch is still being checked.
+ * `validated` memoizes already accepted objects so shared schema subtrees do not
+ * cost quadratic time.
  */
 interface SchemaValidationState {
-  readonly validated: WeakSet<object>;
-  readonly visiting: WeakSet<object>;
+    readonly validated: WeakSet<object>;
+    readonly visiting: WeakSet<object>;
 }
 
 /**
- * @brief is schema value inner.
+ * @brief Validate one schema node with cycle protection.
+ * @details Schema helpers enforce construction-time invariants before values reach
+ * validation, compilation, or export.
+ * @param value Candidate node.
+ * @param state Recursion state shared by the root validation pass.
+ * @returns True when this node and its reachable children are well-formed.
  */
 function isSchemaValueInner(
-  value: unknown,
-  state: SchemaValidationState
+    value: unknown,
+    state: SchemaValidationState
 ): value is Schema {
-  if (!isRecord(value)) {
-    return false;
-  }
-  if (state.validated.has(value)) {
-    return true;
-  }
-  if (state.visiting.has(value)) {
-    return false;
-  }
-  state.visiting.add(value);
+    if (!isRecord(value)) {
+        return false;
+    }
+    if (state.validated.has(value)) {
+        return true;
+    }
+    if (state.visiting.has(value)) {
+        return false;
+    }
+    state.visiting.add(value);
 
-  const valid = isSchemaRecord(value, state);
-  state.visiting.delete(value);
-  if (valid) {
-    state.validated.add(value);
-  }
-  return valid;
+    /*
+     * The node is placed in `visiting` before child traversal so recursive
+     * object graphs fail closed instead of creating an infinite walk.
+     */
+    const valid = isSchemaRecord(value, state);
+    state.visiting.delete(value);
+    if (valid) {
+        state.validated.add(value);
+    }
+    return valid;
 }
 
 /**
- * @brief is schema record.
+ * @brief Dispatch validation by schema tag.
+ * @param value Data-only record already accepted by isRecord.
+ * @param state Recursion state for child schemas.
+ * @returns True when the tag-specific payload is well-formed.
+ * @details Tag and payload fields are read through readOwnDataProperty. This
+ * preserves the rule that forged schema prototypes never participate in schema
+ * admission.
  */
 function isSchemaRecord(
-  value: Readonly<Record<string, unknown>>,
-  state: SchemaValidationState
+    value: Readonly<Record<string, unknown>>,
+    state: SchemaValidationState
 ): boolean {
-  switch (value["tag"]) {
-    case SchemaTag.Unknown:
-    case SchemaTag.Never:
-    case SchemaTag.BigInt:
-    case SchemaTag.Symbol:
-    case SchemaTag.Boolean:
-      return true;
-    case SchemaTag.String:
-      return isStringChecks(value["checks"]);
-    case SchemaTag.Number:
-      return isNumberChecks(value["checks"]);
-    case SchemaTag.Literal:
-      return isLiteralValue(value["value"]);
-    case SchemaTag.Array:
-      return isSchemaValueInner(value["item"], state);
-    case SchemaTag.Tuple:
-      return isSchemaArray(value["items"], state);
-    case SchemaTag.Record:
-      return isSchemaValueInner(value["value"], state);
-    case SchemaTag.Object:
-      return isObjectSchemaValue(value, state);
-    case SchemaTag.Union:
-      return isSchemaArray(value["options"], state);
-    case SchemaTag.Intersection:
-      return isSchemaValueInner(value["left"], state) &&
-        isSchemaValueInner(value["right"], state);
-    case SchemaTag.Optional:
-    case SchemaTag.Undefinedable:
-    case SchemaTag.Nullable:
-      return isSchemaValueInner(value["inner"], state);
-    case SchemaTag.DiscriminatedUnion:
-      return isDiscriminatedUnionSchemaValue(value, state);
-    case SchemaTag.Brand:
-      return typeof value["brand"] === "string" &&
-        isSchemaValueInner(value["inner"], state);
-    case SchemaTag.Lazy:
-      return typeof value["get"] === "function";
-    case SchemaTag.Refine:
-      return typeof value["name"] === "string" &&
-        typeof value["predicate"] === "function" &&
-        isSchemaValueInner(value["inner"], state);
-    default:
-      return false;
-  }
+    const tag = readOwnDataProperty(value, "tag");
+    switch (tag) {
+        case SchemaTag.Unknown:
+        case SchemaTag.Never:
+        case SchemaTag.BigInt:
+        case SchemaTag.Symbol:
+        case SchemaTag.Boolean:
+            return true;
+        case SchemaTag.String:
+            return isStringChecks(readOwnDataProperty(value, "checks"));
+        case SchemaTag.Number:
+            return isNumberChecks(readOwnDataProperty(value, "checks"));
+        case SchemaTag.Literal: {
+            const literal = readOwnDataProperty(value, "value");
+            /*
+             * `undefined` is a legal literal payload. The sentinel distinguishes
+             * a missing `value` field from a stored undefined literal.
+             */
+            return !isMissingDataProperty(literal) && isLiteralValue(literal);
+        }
+        case SchemaTag.Array:
+            return isSchemaValueInner(readOwnDataProperty(value, "item"), state);
+        case SchemaTag.Tuple:
+            return isSchemaArray(readOwnDataProperty(value, "items"), state);
+        case SchemaTag.Record:
+            return isSchemaValueInner(readOwnDataProperty(value, "value"), state);
+        case SchemaTag.Object:
+            return isObjectSchemaValue(value, state);
+        case SchemaTag.Union:
+            return isSchemaArray(readOwnDataProperty(value, "options"), state);
+        case SchemaTag.Intersection:
+            return isSchemaValueInner(readOwnDataProperty(value, "left"), state) &&
+                isSchemaValueInner(readOwnDataProperty(value, "right"), state);
+        case SchemaTag.Optional:
+        case SchemaTag.Undefinedable:
+        case SchemaTag.Nullable:
+            return isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
+        case SchemaTag.DiscriminatedUnion:
+            return isDiscriminatedUnionSchemaValue(value, state);
+        case SchemaTag.Brand:
+            return typeof readOwnDataProperty(value, "brand") === "string" &&
+                isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
+        case SchemaTag.Lazy:
+            return typeof readOwnDataProperty(value, "get") === "function";
+        case SchemaTag.Refine:
+            return typeof readOwnDataProperty(value, "name") === "string" &&
+                typeof readOwnDataProperty(value, "predicate") === "function" &&
+                isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
+        default:
+            return false;
+    }
 }
 
 /**
- * @brief is string checks.
+ * @brief Validate the check vector attached to a string schema.
+ * @param value Candidate check vector.
+ * @returns True when every check is data-only and semantically usable.
+ * @details Bounds are constrained at admission so interpreter and codegen do not
+ * need to repeat defensive numeric checks in their hot paths.
  */
 function isStringChecks(value: unknown): value is readonly StringCheck[] {
-  if (!isUnknownArray(value)) {
-    return false;
-  }
-  for (let index = 0; index < value.length; index += 1) {
-    const check = value[index];
-    if (!isRecord(check)) {
-      return false;
-    }
-    switch (check["tag"]) {
-      case StringCheckTag.Min:
-      case StringCheckTag.Max: {
-        const bound = check["value"];
-        if (typeof bound !== "number" || !Number.isInteger(bound) || bound < 0) {
-          return false;
-        }
-        break;
-      }
-      case StringCheckTag.Regex:
-        if (!isPlainRegExp(check["regex"]) || typeof check["name"] !== "string") {
-          return false;
-        }
-        break;
-      case StringCheckTag.Uuid:
-        break;
-      default:
+    if (!isUnknownArray(value)) {
         return false;
     }
-  }
-  return true;
+    for (let index = 0; index < value.length; index += 1) {
+        const check = value[index];
+        if (!isRecord(check)) {
+            return false;
+        }
+        switch (readOwnDataProperty(check, "tag")) {
+            case StringCheckTag.Min:
+            case StringCheckTag.Max: {
+                const bound = readOwnDataProperty(check, "value");
+                if (typeof bound !== "number" || !Number.isInteger(bound) || bound < 0) {
+                    return false;
+                }
+                break;
+            }
+            case StringCheckTag.Regex:
+                /*
+                 * Regex checks carry executable engine state. Only a plain
+                 * RegExp plus a stable diagnostic name can enter the schema.
+                 */
+                if (!isPlainRegExp(readOwnDataProperty(check, "regex")) ||
+                    typeof readOwnDataProperty(check, "name") !== "string") {
+                    return false;
+                }
+                break;
+            case StringCheckTag.Uuid:
+                break;
+            default:
+                return false;
+        }
+    }
+    return true;
 }
 
 /**
- * @brief is number checks.
+ * @brief Validate the check vector attached to a number schema.
+ * @details Schema helpers enforce construction-time invariants before values reach
+ * validation, compilation, or export.
+ * @param value Candidate check vector.
+ * @returns True when all numeric bounds are finite and tag-compatible.
  */
 function isNumberChecks(value: unknown): value is readonly NumberCheck[] {
-  if (!isUnknownArray(value)) {
-    return false;
-  }
-  for (let index = 0; index < value.length; index += 1) {
-    const check = value[index];
-    if (!isRecord(check)) {
-      return false;
-    }
-    switch (check["tag"]) {
-      case NumberCheckTag.Integer:
-        break;
-      case NumberCheckTag.Gte:
-      case NumberCheckTag.Lte: {
-        const bound = check["value"];
-        if (typeof bound !== "number" || !Number.isFinite(bound)) {
-          return false;
-        }
-        break;
-      }
-      default:
+    if (!isUnknownArray(value)) {
         return false;
     }
-  }
-  return true;
+    for (let index = 0; index < value.length; index += 1) {
+        const check = value[index];
+        if (!isRecord(check)) {
+            return false;
+        }
+        switch (readOwnDataProperty(check, "tag")) {
+            case NumberCheckTag.Integer:
+                break;
+            case NumberCheckTag.Gte:
+            case NumberCheckTag.Lte: {
+                const bound = readOwnDataProperty(check, "value");
+                if (typeof bound !== "number" || !Number.isFinite(bound)) {
+                    return false;
+                }
+                break;
+            }
+            default:
+                return false;
+        }
+    }
+    return true;
 }
 
 /**
- * @brief is schema array.
+ * @brief Validate a dense vector of child schemas.
+ * @details Schema helpers enforce construction-time invariants before values reach
+ * validation, compilation, or export.
+ * @param value Candidate schema vector.
+ * @param state Recursion state shared with the parent node.
+ * @returns True when every vector slot is a valid schema.
  */
 function isSchemaArray(value: unknown, state: SchemaValidationState): boolean {
-  if (!isUnknownArray(value)) {
-    return false;
-  }
-  for (let index = 0; index < value.length; index += 1) {
-    if (!isSchemaValueInner(value[index], state)) {
-      return false;
+    if (!isUnknownArray(value)) {
+        return false;
     }
-  }
-  return true;
+    for (let index = 0; index < value.length; index += 1) {
+        if (!isSchemaValueInner(value[index], state)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /**
- * @brief is object schema value.
+ * @brief Validate object-schema payload invariants.
+ * @param value Candidate object schema record.
+ * @param state Recursion state for property schemas.
+ * @returns True when entries, key order, lookup, and presence metadata agree.
+ * @details Object validation depends on three redundant views: ordered entries
+ * for stable codegen, ordered keys for strict key checks, and lookup for fast
+ * membership. Admission rejects drift between those views.
  */
 function isObjectSchemaValue(
-  value: Readonly<Record<string, unknown>>,
-  state: SchemaValidationState
+    value: Readonly<Record<string, unknown>>,
+    state: SchemaValidationState
 ): boolean {
-  if (value["mode"] !== ObjectModeTag.Passthrough &&
-    value["mode"] !== ObjectModeTag.Strict) {
-    return false;
-  }
-  const entries = value["entries"];
-  const keys = value["keys"];
-  const keyLookup = value["keyLookup"];
-  if (!isUnknownArray(entries) || !isStringArray(keys) ||
-    !isObjectKeyLookup(keyLookup, keys) || entries.length !== keys.length) {
-    return false;
-  }
-  const seen: string[] = [];
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (!isRecord(entry) ||
-      typeof entry["key"] !== "string" ||
-      entry["key"] !== keys[index] ||
-      includesString(seen, entry["key"]) ||
-      (entry["presence"] !== PresenceTag.Required &&
-        entry["presence"] !== PresenceTag.Optional) ||
-      !isSchemaValueInner(entry["schema"], state)) {
-      return false;
+    const mode = readOwnDataProperty(value, "mode");
+    if (mode !== ObjectModeTag.Passthrough &&
+        mode !== ObjectModeTag.Strict) {
+        return false;
     }
-    seen.push(entry["key"]);
-  }
-  return true;
+    const entries = readOwnDataProperty(value, "entries");
+    const keys = readOwnDataProperty(value, "keys");
+    const keyLookup = readOwnDataProperty(value, "keyLookup");
+    if (!isUnknownArray(entries) || !isStringArray(keys) ||
+        !isObjectKeyLookup(keyLookup, keys) || entries.length !== keys.length) {
+        return false;
+    }
+    const seen: string[] = [];
+    for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (!isRecord(entry)) {
+            return false;
+        }
+        const key = readOwnDataProperty(entry, "key");
+        const presence = readOwnDataProperty(entry, "presence");
+        const schema = readOwnDataProperty(entry, "schema");
+        /*
+         * The entry key must match the parallel `keys` slot. That keeps emitted
+         * object code deterministic and prevents a lookup table from describing
+         * a different shape than the property graph.
+         */
+        if (typeof key !== "string" ||
+            key !== keys[index] ||
+            includesString(seen, key) ||
+            (presence !== PresenceTag.Required &&
+                presence !== PresenceTag.Optional) ||
+            !isSchemaValueInner(schema, state)) {
+            return false;
+        }
+        seen.push(key);
+    }
+    return true;
 }
 
 /**
- * @brief is discriminated union schema value.
+ * @brief Validate discriminated-union dispatch metadata.
+ * @param value Candidate discriminated union record.
+ * @param state Recursion state for case schemas.
+ * @returns True when each case owns a unique literal and proves the tag field.
+ * @details The case schema must require the discriminant literal. Without that
+ * proof, dispatch could choose a branch before the branch actually validates the
+ * same discriminant field.
  */
 function isDiscriminatedUnionSchemaValue(
-  value: Readonly<Record<string, unknown>>,
-  state: SchemaValidationState
+    value: Readonly<Record<string, unknown>>,
+    state: SchemaValidationState
 ): boolean {
-  const cases = value["cases"];
-  const key = value["key"];
-  if (typeof key !== "string" || !isUnknownArray(cases) || cases.length === 0) {
-    return false;
-  }
-  const literals: string[] = [];
-  for (let index = 0; index < cases.length; index += 1) {
-    const unionCase = cases[index];
-    if (!isRecord(unionCase) || typeof unionCase["literal"] !== "string" ||
-      includesString(literals, unionCase["literal"]) ||
-      !isSchemaValueInner(unionCase["schema"], state) ||
-      !caseRequiresDiscriminant(unionCase["schema"], key, unionCase["literal"])) {
-      return false;
+    const cases = readOwnDataProperty(value, "cases");
+    const key = readOwnDataProperty(value, "key");
+    if (typeof key !== "string" || !isUnknownArray(cases) || cases.length === 0) {
+        return false;
     }
-    literals.push(unionCase["literal"]);
-  }
-  return true;
+    const literals: string[] = [];
+    for (let index = 0; index < cases.length; index += 1) {
+        const unionCase = cases[index];
+        if (!isRecord(unionCase)) {
+            return false;
+        }
+        const literal = readOwnDataProperty(unionCase, "literal");
+        const schema = readOwnDataProperty(unionCase, "schema");
+        if (typeof literal !== "string" ||
+            includesString(literals, literal) ||
+            !isSchemaValueInner(schema, state) ||
+            !caseRequiresDiscriminant(schema, key, literal)) {
+            return false;
+        }
+        literals.push(literal);
+    }
+    return true;
 }
 
 /**
- * @brief case requires discriminant.
+ * @brief Prove that one case schema requires the requested discriminant value.
+ * @details Schema helpers enforce construction-time invariants before values reach
+ * validation, compilation, or export.
+ * @param schema Case schema after structural validation.
+ * @param key Discriminant property name.
+ * @param literal Required literal value for this case.
+ * @returns True when an object case contains a required matching literal field.
  */
 function caseRequiresDiscriminant(
-  schema: Schema,
-  key: string,
-  literal: string
+    schema: Schema,
+    key: string,
+    literal: string
 ): boolean {
-  const objectSchema = unwrapCaseObjectSchema(schema);
-  if (objectSchema === undefined) {
-    return false;
-  }
-  const entries = objectSchema.entries;
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (entry?.key !== key) {
-      continue;
+    const objectSchema = unwrapCaseObjectSchema(schema);
+    if (objectSchema === undefined) {
+        return false;
     }
-    return entry.presence === PresenceTag.Required &&
-      schemaRequiresLiteral(entry.schema, literal);
-  }
-  return false;
+    const entries = objectSchema.entries;
+    for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (entry?.key !== key) {
+            continue;
+        }
+        return entry.presence === PresenceTag.Required &&
+            schemaRequiresLiteral(entry.schema, literal);
+    }
+    return false;
 }
 
 /**
- * @brief unwrap case object schema.
+ * @brief Peel transparent wrappers until an object case schema is reached.
+ * @param schema Case schema.
+ * @returns The object schema used for discriminant proof, or undefined.
+ * @details Intersections and transparent wrappers can carry the object branch
+ * while still adding extra validation. Lazy and union nodes are not unwrapped
+ * here because they do not give a local, branch-stable object proof.
  */
 function unwrapCaseObjectSchema(
-  schema: Schema
+    schema: Schema
 ): Extract<Schema, { readonly tag: typeof SchemaTag.Object }> | undefined {
-  switch (schema.tag) {
-    case SchemaTag.Object:
-      return schema;
-    case SchemaTag.Intersection:
-      return unwrapCaseObjectSchema(schema.left) ?? unwrapCaseObjectSchema(schema.right);
-    case SchemaTag.Brand:
-    case SchemaTag.Refine:
-      return unwrapCaseObjectSchema(schema.inner);
-    default:
-      return undefined;
-  }
+    switch (schema.tag) {
+        case SchemaTag.Object:
+            return schema;
+        case SchemaTag.Intersection:
+            return unwrapCaseObjectSchema(schema.left) ?? unwrapCaseObjectSchema(schema.right);
+        case SchemaTag.Brand:
+        case SchemaTag.Refine:
+            return unwrapCaseObjectSchema(schema.inner);
+        default:
+            return undefined;
+    }
 }
 
 /**
- * @brief schema requires literal.
+ * @brief Check whether a schema forces one exact string literal.
+ * @details Schema helpers enforce construction-time invariants before values reach
+ * validation, compilation, or export.
+ * @param schema Property schema.
+ * @param literal Required literal value.
+ * @returns True when the schema cannot accept a different discriminant value.
  */
 function schemaRequiresLiteral(schema: Schema, literal: string): boolean {
-  switch (schema.tag) {
-    case SchemaTag.Literal:
-      return Object.is(schema.value, literal);
-    case SchemaTag.Intersection:
-      return schemaRequiresLiteral(schema.left, literal) ||
-        schemaRequiresLiteral(schema.right, literal);
-    case SchemaTag.Brand:
-    case SchemaTag.Refine:
-      return schemaRequiresLiteral(schema.inner, literal);
-    default:
-      return false;
-  }
+    switch (schema.tag) {
+        case SchemaTag.Literal:
+            return Object.is(schema.value, literal);
+        case SchemaTag.Intersection:
+            return schemaRequiresLiteral(schema.left, literal) ||
+                schemaRequiresLiteral(schema.right, literal);
+        case SchemaTag.Brand:
+        case SchemaTag.Refine:
+            return schemaRequiresLiteral(schema.inner, literal);
+        default:
+            return false;
+    }
 }

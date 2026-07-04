@@ -1,79 +1,104 @@
 /**
  * @file scalar.ts
  * @brief Primitive and literal guard builders.
+ * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
+ * with stable metadata.
  */
 
 import { SchemaTag } from "../kind/index.js";
 import {
-  BaseGuard,
-  NumberGuard,
-  StringGuard
+    BaseGuard,
+    NumberGuard,
+    StringGuard
 } from "../guard/index.js";
 import type { LiteralValue } from "../schema/index.js";
 import { isLiteralValue } from "../schema/index.js";
 
 /**
- * @brief string guard.
+ * @brief Shared string guard singleton.
+ * @details Primitive guards are immutable, so exporting one instance avoids
+ * allocation for the common `t.string` path.
  */
 export const stringGuard = new StringGuard({
-  tag: SchemaTag.String,
-  checks: []
+    tag: SchemaTag.String,
+    checks: []
 });
 
 /**
- * @brief unknown guard.
+ * @brief Shared unknown guard singleton.
+ * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
+ * with stable metadata.
  */
 export const unknownGuard = new BaseGuard<unknown>({
-  tag: SchemaTag.Unknown
+    tag: SchemaTag.Unknown
 });
 
 /**
- * @brief never guard.
+ * @brief Shared never guard singleton.
+ * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
+ * with stable metadata.
  */
 export const neverGuard = new BaseGuard<never>({
-  tag: SchemaTag.Never
+    tag: SchemaTag.Never
 });
 
 /**
- * @brief number guard.
+ * @brief Shared finite number guard singleton.
+ * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
+ * with stable metadata.
  */
 export const numberGuard = new NumberGuard({
-  tag: SchemaTag.Number,
-  checks: []
+    tag: SchemaTag.Number,
+    checks: []
 });
 
 /**
- * @brief bigint guard.
+ * @brief Shared bigint guard singleton.
+ * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
+ * with stable metadata.
  */
 export const bigintGuard = new BaseGuard<bigint>({
-  tag: SchemaTag.BigInt
+    tag: SchemaTag.BigInt
 });
 
 /**
- * @brief symbol guard.
+ * @brief Shared symbol guard singleton.
+ * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
+ * with stable metadata.
  */
 export const symbolGuard = new BaseGuard<symbol>({
-  tag: SchemaTag.Symbol
+    tag: SchemaTag.Symbol
 });
 
 /**
- * @brief boolean guard.
+ * @brief Shared boolean guard singleton.
+ * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
+ * with stable metadata.
  */
 export const booleanGuard = new BaseGuard<boolean>({
-  tag: SchemaTag.Boolean
+    tag: SchemaTag.Boolean
 });
 
 /**
- * @brief literal.
+ * @brief Build a literal guard after rejecting non-literal runtime values.
+ * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
+ * with stable metadata.
+ * @param value Literal value to match with Object.is.
+ * @returns Fresh guard for exactly the supplied literal.
+ * @throws TypeError when the value cannot be represented as a TypeSea literal.
  */
 export function literal<const TValue extends LiteralValue>(
-  value: TValue
+    value: TValue
 ): BaseGuard<TValue> {
-  if (!isLiteralValue(value)) {
-    throw new TypeError("literal value must be a primitive literal");
-  }
-  return new BaseGuard<TValue>({
-    tag: SchemaTag.Literal,
-    value
-  });
+    if (!isLiteralValue(value)) {
+        throw new TypeError("literal value must be a primitive literal");
+    }
+    /*
+     * Literal schemas store the runtime value directly. Rejecting compound input
+     * here keeps later equality checks side-effect free and serializable.
+     */
+    return new BaseGuard<TValue>({
+        tag: SchemaTag.Literal,
+        value
+    });
 }

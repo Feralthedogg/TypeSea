@@ -1,6 +1,8 @@
 /**
  * @file types.ts
  * @brief Optimized validation plan contracts.
+ * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
+ * preserving interpreter parity.
  */
 
 import type { Graph } from "../ir/index.js";
@@ -13,7 +15,7 @@ import type { Schema } from "../schema/index.js";
  * @invariant The graph is already lowered, optimized, validated, and frozen.
  */
 export interface ValidationPlan {
-  readonly schema: Schema;
-  readonly graph: Graph;
-  readonly tracksRecursion: boolean;
+    readonly schema: Schema;
+    readonly graph: Graph;
+    readonly tracksRecursion: boolean;
 }
