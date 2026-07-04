@@ -1,6 +1,7 @@
 # TypeSea
 
 [![CI](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml/badge.svg)](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml)
+[![Socket Badge](https://badge.socket.dev/npm/package/typesea/0.2.0)](https://badge.socket.dev/npm/package/typesea/0.2.0)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![TypeScript](https://img.shields.io/badge/language-TypeScript-informational)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-zero-brightgreen)

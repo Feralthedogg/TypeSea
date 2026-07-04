@@ -12,6 +12,7 @@ permissions:
 jobs:
     publish:
         name: Publish to npm
+        if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
         runs-on: ubuntu-latest
         timeout-minutes: 20
         environment: npm-publish

@@ -1,0 +1,76 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "v*"
+    workflow_dispatch:
+        inputs:
+            tag:
+                description: Release tag to publish, for example v0.2.1.
+                required: true
+                type: string
+
+permissions:
+    contents: write
+
+jobs:
+    create-release:
+        name: Create GitHub Release
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+
+        steps:
+            - name: Resolve Tag
+              id: release
+              run: |
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                      tag="${{ inputs.tag }}"
+                  else
+                      tag="${GITHUB_REF_NAME}"
+                  fi
+                  case "$tag" in
+                      v*) ;;
+                      *)
+                          echo "release tag must start with v" >&2
+                          exit 1
+                          ;;
+                  esac
+                  echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ steps.release.outputs.tag }}
+                  fetch-depth: 0
+
+            - name: Setup Node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "20.19"
+                  cache: npm
+
+            - name: Install
+              run: npm ci
+
+            - name: Verify Release Tag
+              env:
+                  GITHUB_REF_NAME: ${{ steps.release.outputs.tag }}
+              run: node scripts/verify-release-tag.mjs
+
+            - name: Release Gate
+              run: npm run release:check
+
+            - name: Create Release
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  RELEASE_TAG: ${{ steps.release.outputs.tag }}
+              run: |
+                  if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+                      echo "GitHub Release already exists for $RELEASE_TAG"
+                      exit 0
+                  fi
+                  gh release create "$RELEASE_TAG" \
+                      --verify-tag \
+                      --title "TypeSea ${RELEASE_TAG#v}" \
+                      --generate-notes
