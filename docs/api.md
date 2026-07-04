@@ -270,6 +270,28 @@ const resolver = toReactHookFormResolver(User);
 Adapters are structural and zero-dependency. TypeSea does not import tRPC,
 Fastify, or React Hook Form.
 
+Compiled guards can be passed to the same adapters. This is the preferred shape
+for hot request paths: compile once during startup, then let the adapter reuse
+the generated predicate.
+
+```ts
+const FastUser = compile(User);
+const fastParser = toTrpcParser(FastUser);
+const fastValidatorCompiler = toFastifyValidatorCompiler(FastUser);
+```
+
+Use the default compiled mode at public input boundaries. For trusted,
+already-normalized internal data, the faster modes can be wired through adapters
+the same way.
+
+```ts
+const UnsafeUser = compile(User, { mode: "unsafe" });
+const internalParser = toTrpcParser(UnsafeUser);
+
+const TrustedShapeUser = compile(User, { mode: "unchecked" });
+const internalValidatorCompiler = toFastifyValidatorCompiler(TrustedShapeUser);
+```
+
 | Adapter | Export | Behavior |
 | --- | --- | --- |
 | tRPC | `toTrpcParser`, `toAsyncTrpcParser` | Return parser objects that emit decoded values or throw `TypeSeaAssertionError`. |

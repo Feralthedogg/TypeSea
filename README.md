@@ -310,6 +310,20 @@ grouped under the `t` table.
 | Fastify | `toFastifyRouteSchema`, `toFastifyValidatorCompiler` |
 | React Hook Form | `toReactHookFormResolver` |
 
+Adapters accept compiled guards too. Compile once at startup, then pass the
+compiled guard into parser or validator-compiler adapters so framework hot paths
+reuse the generated predicate.
+
+```ts
+const FastUser = compile(User);
+const trpcParser = toTrpcParser(FastUser);
+const fastifyCompiler = toFastifyValidatorCompiler(FastUser);
+
+// Trusted normalized data only: trades hostile-input hardening for direct reads.
+const UnsafeUser = compile(User, { mode: "unsafe" });
+const internalParser = toTrpcParser(UnsafeUser);
+```
+
 > [!TIP]
 > Match the inference alias to the source kind: `Infer<>` for guards,
 > `InferDecoder<>` for decoders, `InferAsyncDecoder<>` for async decoders.
