@@ -244,6 +244,14 @@
         gap: 8px;
       }
 
+      .topbar-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+
       .topbar-links a {
         border: 1px solid var(--line);
         border-radius: 7px;
@@ -256,6 +264,65 @@
       .topbar-links a:hover {
         border-color: var(--accent);
         color: var(--accent-ink);
+      }
+
+      .language-radio {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .language-switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 2px;
+        background: var(--surface);
+      }
+
+      .language-switch label {
+        min-width: 42px;
+        border-radius: 6px;
+        padding: 3px 8px;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.45;
+        text-align: center;
+      }
+
+      .language-switch label:hover,
+      .language-switch label:focus {
+        color: var(--accent-ink);
+      }
+
+      #language-en:checked ~ .shell label[for="language-en"],
+      #language-ko:checked ~ .shell label[for="language-ko"] {
+        background: var(--accent-soft);
+        color: var(--accent-ink);
+      }
+
+      .locale-ko,
+      .i18n-ko {
+        display: none;
+      }
+
+      #language-ko:checked ~ .shell .locale-en,
+      #language-ko:checked ~ .shell .i18n-en {
+        display: none;
+      }
+
+      #language-ko:checked ~ .shell .locale-ko {
+        display: block;
+      }
+
+      #language-ko:checked ~ .shell .i18n-ko {
+        display: inline;
       }
 
       main {
@@ -654,10 +721,16 @@
         .pipeline {
           grid-template-columns: 1fr;
         }
+
+        .topbar-actions {
+          justify-content: flex-start;
+        }
       }
     </style>
   </head>
   <body>
+    <input class="language-radio" type="radio" name="docs-language" id="language-en" checked>
+    <input class="language-radio" type="radio" name="docs-language" id="language-ko">
     <div class="shell">
       <aside class="sidebar" aria-label="Documentation navigation">
         <div class="brand">
@@ -665,38 +738,100 @@
           <span class="version">v0.2.0</span>
         </div>
         <p class="brand-tagline">
-          Zero-dependency runtime narrowing for TypeScript.
-          ESM-only &middot; Node &ge; 20.19 &middot; MIT
+          <span class="i18n-en">
+            Zero-dependency runtime narrowing for TypeScript.
+            ESM-only &middot; Node &ge; 20.19 &middot; MIT
+          </span>
+          <span class="i18n-ko" lang="ko">
+            TypeScript를 위한 zero-dependency 런타임 narrowing.
+            ESM-only &middot; Node &ge; 20.19 &middot; MIT
+          </span>
         </p>
         <nav class="nav">
-          <p class="nav-group">Guide</p>
-          <a href="#overview">Overview</a>
-          <a href="#quick-start">Quick start</a>
-          <a href="#semantics">Semantics</a>
-          <p class="nav-group">Internals</p>
-          <a href="#architecture">Architecture</a>
-          <a href="#api">API map</a>
-          <a href="#adapters">Adapters</a>
-          <p class="nav-group">Quality</p>
-          <a href="#benchmarks">Benchmarks</a>
-          <a href="#release">Release gate</a>
-          <a href="#files">Reference files</a>
+          <p class="nav-group">
+            <span class="i18n-en">Guide</span>
+            <span class="i18n-ko" lang="ko">가이드</span>
+          </p>
+          <a href="#overview">
+            <span class="i18n-en">Overview</span>
+            <span class="i18n-ko" lang="ko">개요</span>
+          </a>
+          <a href="#quick-start">
+            <span class="i18n-en">Quick start</span>
+            <span class="i18n-ko" lang="ko">빠른 시작</span>
+          </a>
+          <a href="#semantics">
+            <span class="i18n-en">Semantics</span>
+            <span class="i18n-ko" lang="ko">의미론</span>
+          </a>
+          <p class="nav-group">
+            <span class="i18n-en">Internals</span>
+            <span class="i18n-ko" lang="ko">내부 구조</span>
+          </p>
+          <a href="#architecture">
+            <span class="i18n-en">Architecture</span>
+            <span class="i18n-ko" lang="ko">아키텍처</span>
+          </a>
+          <a href="#api">
+            <span class="i18n-en">API map</span>
+            <span class="i18n-ko" lang="ko">API 지도</span>
+          </a>
+          <a href="#adapters">
+            <span class="i18n-en">Adapters</span>
+            <span class="i18n-ko" lang="ko">어댑터</span>
+          </a>
+          <p class="nav-group">
+            <span class="i18n-en">Quality</span>
+            <span class="i18n-ko" lang="ko">품질</span>
+          </p>
+          <a href="#benchmarks">
+            <span class="i18n-en">Benchmarks</span>
+            <span class="i18n-ko" lang="ko">벤치마크</span>
+          </a>
+          <a href="#release">
+            <span class="i18n-en">Release gate</span>
+            <span class="i18n-ko" lang="ko">릴리스 게이트</span>
+          </a>
+          <a href="#files">
+            <span class="i18n-en">Reference files</span>
+            <span class="i18n-ko" lang="ko">참고 파일</span>
+          </a>
         </nav>
-        <p class="sidebar-foot">MIT License &middot; zero runtime dependencies</p>
+        <p class="sidebar-foot">
+          <span class="i18n-en">MIT License &middot; zero runtime dependencies</span>
+          <span class="i18n-ko" lang="ko">MIT License &middot; 런타임 의존성 0개</span>
+        </p>
       </aside>
 
       <div class="content">
         <div class="topbar">
-          <span class="topbar-crumb"><strong>TypeSea</strong> / Documentation</span>
-          <div class="topbar-links">
-            <a href="https://github.com/Feralthedogg/TypeSea">GitHub</a>
-            <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">API reference</a>
-            <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">Engine notes</a>
+          <span class="topbar-crumb">
+            <strong>TypeSea</strong> /
+            <span class="i18n-en">Documentation</span>
+            <span class="i18n-ko" lang="ko">문서</span>
+          </span>
+          <div class="topbar-actions">
+            <div class="language-switch" aria-label="Documentation language">
+              <label for="language-en">EN</label>
+              <label for="language-ko">한국어</label>
+            </div>
+            <div class="topbar-links">
+              <a href="https://github.com/Feralthedogg/TypeSea">GitHub</a>
+              <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">
+                <span class="i18n-en">API reference</span>
+                <span class="i18n-ko" lang="ko">API 참조</span>
+              </a>
+              <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">
+                <span class="i18n-en">Engine notes</span>
+                <span class="i18n-ko" lang="ko">엔진 노트</span>
+              </a>
+            </div>
           </div>
         </div>
 
         <main>
           <section id="overview" data-doc-section data-title="overview contract zero dependency esm result frozen">
+            <div class="locale-copy locale-en">
             <div class="hero">
               <div>
                 <p class="eyebrow">Overview</p>
@@ -739,9 +874,55 @@
                 </div>
               </aside>
             </div>
+            </div>
+            <div class="locale-copy locale-ko" lang="ko">
+              <div class="hero">
+                <div>
+                  <p class="eyebrow">개요</p>
+                  <h2>작은 컴파일러처럼 동작하는 런타임 타입 가드.</h2>
+                  <p class="lede">
+                    TypeSea는 검증 스키마를 프론트엔드 문법처럼 다룹니다. 각 가드는
+                    캐시된 검증 계획으로 낮아지고, 그 계획은 스키마 특화 predicate
+                    kernel과 최적화된 graph를 함께 보유합니다. 실행은 일반 계획,
+                    런타임 컴파일 validator, 또는 독립 AOT module 중에서 선택합니다.
+                  </p>
+                  <ul class="checklist">
+                    <li><strong>Zero dependencies</strong> &mdash; runtime, peer, optional, bundled package가 없고 정책으로 강제됩니다.</li>
+                    <li><strong>Hostile-input safe</strong> &mdash; descriptor read를 사용해 사용자 getter를 실행하지 않습니다.</li>
+                    <li><strong>Result-first</strong> &mdash; 예상 가능한 실패는 <code>throw</code>가 아니라 freeze된 <code>Result</code>로 반환합니다.</li>
+                    <li><strong>Allocation-aware</strong> &mdash; 성공하는 <code>is()</code> 경로는 diagnostic allocation을 피합니다.</li>
+                    <li><strong>No escape hatches</strong> &mdash; 코드베이스에서 <code>any</code>, <code>try</code>, <code>catch</code>를 금지합니다.</li>
+                  </ul>
+                </div>
+                <aside class="status-panel" aria-label="패키지 상태">
+                  <header>패키지 상태</header>
+                  <div class="status-row">
+                    <span>런타임 의존성</span>
+                    <span class="pill green">zero</span>
+                  </div>
+                  <div class="status-row">
+                    <span>실행 엔진</span>
+                    <span class="pill green">plan &middot; jit &middot; aot</span>
+                  </div>
+                  <div class="status-row">
+                    <span>모듈 형식</span>
+                    <span class="pill violet">ESM-only</span>
+                  </div>
+                  <div class="status-row">
+                    <span>Node.js</span>
+                    <span class="pill green">&ge; 20.19</span>
+                  </div>
+                  <div class="status-row">
+                    <span>어댑터</span>
+                    <span class="pill amber">structural</span>
+                  </div>
+                </aside>
+              </div>
+            </div>
           </section>
 
           <section id="quick-start" data-doc-section data-title="quick start install guard compile check json schema csp">
+            <div class="locale-copy locale-en">
             <p class="eyebrow">Quick start</p>
             <h2>Define a guard once, then choose the execution path.</h2>
             <p class="lede">
@@ -801,9 +982,68 @@ const schema = toJsonSchema(User);</code></pre>
                 FastMode object/array/record/discriminant contract where possible.
               </p>
             </div>
+            </div>
+            <div class="locale-copy locale-ko" lang="ko">
+              <p class="eyebrow">빠른 시작</p>
+              <h2>가드는 한 번 정의하고, 실행 경로는 상황에 맞게 선택합니다.</h2>
+              <p class="lede">
+                같은 가드가 <code>is()</code>로 타입을 좁히고, <code>check()</code>로
+                immutable diagnostics를 반환하며, lossless JSON Schema를 내보내고,
+                generated validator로 컴파일될 수 있습니다.
+              </p>
+              <div class="code-block">
+                <pre><code>npm install typesea</code></pre>
+              </div>
+              <div class="code-block">
+                <pre><code>import { compile, t, toJsonSchema, type Infer } from "typesea";
+
+const User = t.strictObject({
+  id: t.string.uuid(),
+  age: t.number.int().gte(0),
+  role: t.union(t.literal("admin"), t.literal("user"))
+});
+
+type User = Infer&lt;typeof User&gt;;
+
+<span class="cm">// 1) Boolean narrowing &mdash; 성공 경로에서 diagnostic allocation 없음</span>
+if (User.is(input)) {
+  input.id; <span class="cm">// narrowed</span>
+}
+
+<span class="cm">// 2) Immutable diagnostics &mdash; freeze된 Result, throw 없음</span>
+const checked = User.check(input);
+
+<span class="cm">// 3) Hot path &mdash; 생성된 validator 코드</span>
+const FastUser = compile(User, { name: "isUser" });
+
+<span class="cm">// 4) Interop &mdash; lossless-only JSON Schema export</span>
+const schema = toJsonSchema(User);</code></pre>
+              </div>
+              <div class="callout warn">
+                <span class="icon">&#9888;</span>
+                <p>
+                  <strong><code>compile()</code>은 <code>new Function</code>을 사용합니다.</strong>
+                  <code>unsafe-eval</code>을 금지하는 Content-Security-Policy 환경에서는
+                  예외가 납니다. CSP가 엄격한 환경에서는 <code>emitAotModule()</code>로
+                  validator source를 미리 생성하세요.
+                </p>
+              </div>
+              <div class="callout warn">
+                <span class="icon">&#9888;</span>
+                <p>
+                  <strong>Unsafe FastMode:</strong> <code>compile(User, { mode: "unsafe" })</code>와
+                  <code>emitAotModule(User, { mode: "unsafe" })</code>는 신뢰된 정규화 데이터에
+                  맞춰 direct property/index read와 allocation-free strict-key loop를 방출합니다.
+                  getter를 실행할 수 있고, prototype-backed value를 받을 수 있으며, strict object가
+                  symbol 또는 non-enumerable extra를 거부하지 않습니다. <code>mode: "unchecked"</code>는
+                  이미 신뢰된 object shape에서 strict extra-key loop까지 건너뜁니다.
+                </p>
+              </div>
+            </div>
           </section>
 
           <section id="semantics" data-doc-section data-title="semantics presence optional undefinedable nullable edge nan proto uuid strict">
+            <div class="locale-copy locale-en">
             <p class="eyebrow">Semantics</p>
             <h2>Explicit presence, deliberate edge behavior.</h2>
             <p class="lede">
@@ -890,9 +1130,99 @@ const schema = toJsonSchema(User);</code></pre>
                 </tbody>
               </table>
             </div>
+            </div>
+            <div class="locale-copy locale-ko" lang="ko">
+              <p class="eyebrow">의미론</p>
+              <h2>presence는 명시적으로, edge behavior는 의도적으로.</h2>
+              <p class="lede">
+                객체 key의 존재 여부는 TypeSea에서 일급 개념입니다. 일반 validator를
+                깨뜨리기 쉬운 입력도 테스트로 고정된 명시적 동작을 갖습니다.
+              </p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Wrapper</th>
+                      <th>Key 생략 가능</th>
+                      <th>값이 <code>undefined</code> 가능</th>
+                      <th>추론 타입</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><code>t.optional(inner)</code></td>
+                      <td>예</td>
+                      <td>아니오</td>
+                      <td><code>key?: T</code></td>
+                    </tr>
+                    <tr>
+                      <td><code>t.undefinedable(inner)</code></td>
+                      <td>아니오</td>
+                      <td>예</td>
+                      <td><code>key: T | undefined</code></td>
+                    </tr>
+                    <tr>
+                      <td><code>t.nullable(inner)</code></td>
+                      <td>&mdash;</td>
+                      <td><code>null</code> 허용</td>
+                      <td><code>key: T | null</code></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>입력</th>
+                      <th>동작</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><code>NaN</code>, <code>Infinity</code></td>
+                      <td><code>t.number</code>는 finite number만 받습니다. <code>t.literal(NaN)</code>은 <code>Object.is</code>로 <code>NaN</code>을 매칭합니다.</td>
+                    </tr>
+                    <tr>
+                      <td>Getter-backed properties</td>
+                      <td>실행하지 않습니다. descriptor를 통해 읽고 accessor는 missing data로 취급합니다.</td>
+                    </tr>
+                    <tr>
+                      <td><code>__proto__</code>, <code>constructor</code> keys</td>
+                      <td>null-prototype lookup을 통해 plain own key로 검증하며 pollution을 만들지 않습니다.</td>
+                    </tr>
+                    <tr>
+                      <td>Strict-object extras</td>
+                      <td><code>Reflect.ownKeys</code>로 거부합니다. symbol key와 non-enumerable property도 포함합니다.</td>
+                    </tr>
+                    <tr>
+                      <td>Sparse array holes</td>
+                      <td>accessor 실행 없이 <code>undefined</code>처럼 읽습니다.</td>
+                    </tr>
+                    <tr>
+                      <td>Global-flag regexes</td>
+                      <td>생성 시 clone하고, 매 검사 전에 <code>lastIndex</code>를 reset합니다.</td>
+                    </tr>
+                    <tr>
+                      <td>UUID strings</td>
+                      <td>RFC 9562 versions 1&ndash;8과 nil UUID를 허용합니다.</td>
+                    </tr>
+                    <tr>
+                      <td>Cyclic input values</td>
+                      <td>(value &times; schema) active-pair tracking으로 유한하게 검증합니다.</td>
+                    </tr>
+                    <tr>
+                      <td>Nesting depth</td>
+                      <td>1024 frame에서 제한합니다. 깊은 입력은 stack overflow 대신 실패합니다.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
 
           <section id="architecture" data-doc-section data-title="architecture sea of nodes ir lower optimize plan kernel graph codegen">
+            <div class="locale-copy locale-en">
             <p class="eyebrow">Architecture</p>
             <h2>Every schema lowers into a cached validation plan.</h2>
             <p class="lede">
@@ -949,9 +1279,69 @@ const schema = toJsonSchema(User);</code></pre>
                 pinned by dedicated injection-audit tests.
               </p>
             </div>
+            </div>
+            <div class="locale-copy locale-ko" lang="ko">
+              <p class="eyebrow">아키텍처</p>
+              <h2>모든 스키마는 캐시된 validation plan으로 낮아집니다.</h2>
+              <p class="lede">
+                public schema tree는 builder validation과 diagnostics를 위해 유지합니다.
+                각 schema identity는 한 번만 Sea-of-Nodes validation IR로 lowering되고,
+                최적화된 뒤 schema-specialized predicate kernel과 generated validator가
+                소비하는 optimized graph를 함께 가진 validation plan으로 캐시됩니다.
+              </p>
+              <div class="pipeline" aria-label="TypeSea validation pipeline">
+                <div class="stage">
+                  <strong>Builder</strong>
+                  <span>immutable guard가 construction input을 먼저 검증합니다.</span>
+                </div>
+                <div class="stage">
+                  <strong>Frozen schema</strong>
+                  <span>tree는 semantics와 diagnostic 구조를 보관합니다.</span>
+                </div>
+                <div class="stage alt">
+                  <strong>Sea-of-Nodes IR</strong>
+                  <span>load, predicate, keyset, discriminant dispatch를 공유합니다.</span>
+                </div>
+                <div class="stage alt">
+                  <strong>Optimize</strong>
+                  <span>folding, reachability, dense node id로 invariant를 단순하게 유지합니다.</span>
+                </div>
+                <div class="stage">
+                  <strong>Validation plan</strong>
+                  <span>schema identity마다 캐시됩니다: predicate kernel + optimized graph.</span>
+                </div>
+              </div>
+              <div class="consumers">
+                <div class="tile">
+                  <h3>Plan kernel</h3>
+                  <p><code>is()</code>와 <code>check()</code> verdict preflight를 per-node interpreter dispatch 없이 구동합니다.</p>
+                  <code>guard.is()</code>
+                </div>
+                <div class="tile">
+                  <h3>Optimized graph</h3>
+                  <p>runtime compile, AOT predicate emission, introspection의 source of truth입니다.</p>
+                  <code>compile() &middot; emitAotModule() &middot; graph()</code>
+                </div>
+                <div class="tile">
+                  <h3>Diagnostic collector</h3>
+                  <p>실패한 <code>check()</code>는 issue path와 code를 만들기 위해 schema-aware collector를 replay합니다.</p>
+                  <code>guard.check()</code>
+                </div>
+              </div>
+              <div class="callout">
+                <span class="icon">&#128274;</span>
+                <p>
+                  <strong>Injection-safe codegen:</strong> user-controlled literal, regexp,
+                  object key, keyset, dynamic schema fallback은 numeric index로 참조되는
+                  side table에 보관합니다. hostile property name이 generated source로
+                  탈출하지 못하며, dedicated injection-audit test로 고정되어 있습니다.
+                </p>
+              </div>
+            </div>
           </section>
 
           <section id="api" data-doc-section data-title="api builders decoder async messages json schema execution">
+            <div class="locale-copy locale-en">
             <p class="eyebrow">API map</p>
             <h2>Small public surface, strict contracts.</h2>
             <p class="lede">
@@ -991,9 +1381,52 @@ const schema = toJsonSchema(User);</code></pre>
                 <code>toJsonSchema</code>
               </article>
             </div>
+            </div>
+            <div class="locale-copy locale-ko" lang="ko">
+              <p class="eyebrow">API 지도</p>
+              <h2>작은 public surface, 엄격한 contract.</h2>
+              <p class="lede">
+                모든 entry point는 package root에서 export됩니다. builder는 <code>t</code>
+                table 아래에도 묶여 있습니다. 전체 signature는
+                <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md"><code>API reference</code></a>에 있습니다.
+              </p>
+              <div class="grid">
+                <article class="tile">
+                  <h3>Builders</h3>
+                  <p>scalar, literal, array, tuple, record, union, intersection, lazy recursion.</p>
+                  <code>t.strictObject</code>
+                </article>
+                <article class="tile">
+                  <h3>Object combinators</h3>
+                  <p>shape를 보존하는 <code>extend</code>, <code>pick</code>, <code>omit</code>, <code>partial</code>.</p>
+                  <code>guard.extend</code>
+                </article>
+                <article class="tile">
+                  <h3>Presence wrappers</h3>
+                  <p>key absence, undefined value, null value를 분리한 contract.</p>
+                  <code>t.optional</code>
+                </article>
+                <article class="tile">
+                  <h3>Decoders</h3>
+                  <p>Result-returning transform, pipe, coercion. async variant도 예상 실패를 <code>Result</code>로 유지합니다.</p>
+                  <code>t.pipe</code>
+                </article>
+                <article class="tile">
+                  <h3>Execution</h3>
+                  <p>optimized graph에서 runtime-compiled validator와 standalone AOT module을 생성합니다.</p>
+                  <code>compile</code>
+                </article>
+                <article class="tile">
+                  <h3>Messages &amp; export</h3>
+                  <p>영어/한국어 built-in issue formatting과 lossless JSON Schema export.</p>
+                  <code>toJsonSchema</code>
+                </article>
+              </div>
+            </div>
           </section>
 
           <section id="adapters" data-doc-section data-title="adapters trpc fastify react hook form resolver">
+            <div class="locale-copy locale-en">
             <p class="eyebrow">Ecosystem adapters</p>
             <h2>Structural adapters without importing frameworks.</h2>
             <p class="lede">
@@ -1033,9 +1466,52 @@ const schema = toJsonSchema(User);</code></pre>
                 </tbody>
               </table>
             </div>
+            </div>
+            <div class="locale-copy locale-ko" lang="ko">
+              <p class="eyebrow">생태계 어댑터</p>
+              <h2>프레임워크를 import하지 않는 structural adapter.</h2>
+              <p class="lede">
+                adapter function은 대상 생태계가 기대하는 모양의 object 또는 function을 반환합니다.
+                TypeSea는 runtime에서 tRPC, Fastify, React Hook Form을 import하지 않습니다.
+              </p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>대상</th>
+                      <th>Export</th>
+                      <th>동작</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>tRPC</td>
+                      <td><code>toTrpcParser</code> / <code>toAsyncTrpcParser</code></td>
+                      <td>decoded value를 반환하거나 <code>TypeSeaAssertionError</code>를 throw하는 parser object.</td>
+                    </tr>
+                    <tr>
+                      <td>Fastify</td>
+                      <td><code>toFastifyRouteSchema</code></td>
+                      <td>body, querystring, params, headers용 lossless JSON Schema fragment.</td>
+                    </tr>
+                    <tr>
+                      <td>Fastify</td>
+                      <td><code>toFastifyValidatorCompiler</code></td>
+                      <td><code>httpPart</code>로 route validator를 dispatch하고 <code>{ value }</code> 또는 <code>{ error }</code>를 생성합니다.</td>
+                    </tr>
+                    <tr>
+                      <td>React Hook Form</td>
+                      <td><code>toReactHookFormResolver</code></td>
+                      <td>RHF가 path로 탐색할 수 있는 nested field-error tree를 반환하는 async resolver.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
 
           <section id="benchmarks" data-doc-section data-title="benchmarks performance zod valibot ajv compiled interpreted">
+            <div class="locale-copy locale-en">
             <p class="eyebrow">Benchmarks</p>
             <h2>Measured honestly, gated on every release.</h2>
             <p class="lede">
@@ -1214,9 +1690,191 @@ const schema = toJsonSchema(User);</code></pre>
             <div class="code-block">
               <pre><code>npm run bench -- bench/ecosystem.bench.ts --run</code></pre>
             </div>
+            </div>
+            <div class="locale-copy locale-ko" lang="ko">
+              <p class="eyebrow">벤치마크</p>
+              <h2>정직하게 측정하고, 모든 릴리스에서 게이트합니다.</h2>
+              <p class="lede">
+                benchmark suite는 TypeSea runtime plan과 compiled TypeSea를 비교하고,
+                동일한 JSON-compatible strict-object contract에서 Zod, Valibot, Ajv와도
+                비교합니다. 비교 라이브러리는 development-only 측정 도구이며,
+                diagnostic path는 <code>check()</code>와 <code>safeParse</code>를 비교해
+                기준을 맞춥니다.
+              </p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Valid object path</th>
+                      <th class="num">ops/sec</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>TypeSea runtime plan <code>is()</code></td>
+                      <td class="num">513,701</td>
+                    </tr>
+                    <tr>
+                      <td>TypeSea compiled safe <code>is()</code></td>
+                      <td class="num">4,297,306</td>
+                    </tr>
+                    <tr>
+                      <td>TypeSea compiled unsafe <code>is()</code></td>
+                      <td class="num">36,297,653</td>
+                    </tr>
+                    <tr>
+                      <td>TypeSea compiled unchecked <code>is()</code></td>
+                      <td class="num"><span class="best">42,581,174</span></td>
+                    </tr>
+                    <tr>
+                      <td>Zod <code>safeParse</code></td>
+                      <td class="num">1,343,756</td>
+                    </tr>
+                    <tr>
+                      <td>Valibot <code>safeParse</code></td>
+                      <td class="num">1,406,528</td>
+                    </tr>
+                    <tr>
+                      <td>Ajv compiled</td>
+                      <td class="num">4,275,389</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Valid diagnostic path</th>
+                      <th class="num">ops/sec</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>TypeSea runtime plan <code>check()</code></td>
+                      <td class="num">503,232</td>
+                    </tr>
+                    <tr>
+                      <td>TypeSea compiled safe <code>check()</code></td>
+                      <td class="num">3,903,929</td>
+                    </tr>
+                    <tr>
+                      <td>TypeSea compiled unsafe <code>check()</code></td>
+                      <td class="num">35,568,425</td>
+                    </tr>
+                    <tr>
+                      <td>TypeSea compiled unchecked <code>check()</code></td>
+                      <td class="num"><span class="best">40,084,605</span></td>
+                    </tr>
+                    <tr>
+                      <td>Zod <code>safeParse</code></td>
+                      <td class="num">1,355,014</td>
+                    </tr>
+                    <tr>
+                      <td>Valibot <code>safeParse</code></td>
+                      <td class="num">1,378,266</td>
+                    </tr>
+                    <tr>
+                      <td>Ajv compiled</td>
+                      <td class="num">4,278,587</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Invalid object path</th>
+                      <th class="num">ops/sec</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>TypeSea runtime plan <code>is()</code></td>
+                      <td class="num">3,636,369</td>
+                    </tr>
+                    <tr>
+                      <td>TypeSea compiled safe <code>is()</code></td>
+                      <td class="num">42,080,241</td>
+                    </tr>
+                    <tr>
+                      <td>TypeSea compiled unsafe <code>is()</code></td>
+                      <td class="num">49,654,076</td>
+                    </tr>
+                    <tr>
+                      <td>TypeSea compiled unchecked <code>is()</code></td>
+                      <td class="num"><span class="best">50,482,732</span></td>
+                    </tr>
+                    <tr>
+                      <td>Zod <code>safeParse</code></td>
+                      <td class="num">84,272</td>
+                    </tr>
+                    <tr>
+                      <td>Valibot <code>safeParse</code></td>
+                      <td class="num">878,521</td>
+                    </tr>
+                    <tr>
+                      <td>Ajv compiled</td>
+                      <td class="num">27,820,643</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Invalid diagnostic path</th>
+                      <th class="num">ops/sec</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>TypeSea runtime plan <code>check()</code></td>
+                      <td class="num">420,446</td>
+                    </tr>
+                    <tr>
+                      <td>TypeSea compiled safe <code>check()</code></td>
+                      <td class="num">2,086,129</td>
+                    </tr>
+                    <tr>
+                      <td>TypeSea compiled unsafe <code>check()</code></td>
+                      <td class="num">3,077,367</td>
+                    </tr>
+                    <tr>
+                      <td>TypeSea compiled unchecked <code>check()</code></td>
+                      <td class="num">3,673,508</td>
+                    </tr>
+                    <tr>
+                      <td>Zod <code>safeParse</code></td>
+                      <td class="num">79,613</td>
+                    </tr>
+                    <tr>
+                      <td>Valibot <code>safeParse</code></td>
+                      <td class="num">887,991</td>
+                    </tr>
+                    <tr>
+                      <td>Ajv compiled</td>
+                      <td class="num"><span class="best">28,713,035</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="footnote">
+                로컬 benchmark, 2026-07-04 KST, 단일 머신 기준입니다. throughput 보장이 아니라
+                regression telemetry입니다. Safe compiled mode는 descriptor-based read,
+                strict symbol/non-enumerable key rejection, immutable diagnostics를 유지합니다.
+                Unsafe/unchecked mode는 신뢰된 정규화 데이터 전용이기 때문에 더 빠릅니다.
+              </p>
+              <div class="code-block">
+                <pre><code>npm run bench -- bench/ecosystem.bench.ts --run</code></pre>
+              </div>
+            </div>
           </section>
 
           <section id="release" data-doc-section data-title="release gate policy typecheck lint test dist api pack consumer provenance">
+            <div class="locale-copy locale-en">
             <p class="eyebrow">Release gate</p>
             <h2>Publishing requires the full local gate.</h2>
             <p class="lede">
@@ -1236,9 +1894,33 @@ const schema = toJsonSchema(User);</code></pre>
                 dependency fields before the tarball is accepted.
               </p>
             </div>
+            </div>
+            <div class="locale-copy locale-ko" lang="ko">
+              <p class="eyebrow">릴리스 게이트</p>
+              <h2>publish 전에는 전체 local gate를 통과해야 합니다.</h2>
+              <p class="lede">
+                하나의 script가 CI와 같은 검사를 실행합니다: source policy, docs smoke,
+                typecheck, lint, tests, build, dist policy, public API snapshot,
+                package contents, clean consumer install, benchmark smoke, pack dry run.
+                CI는 Node 20.19, 22, 24에서 같은 gate를 실행하고, release는 npm provenance와
+                함께 publish됩니다.
+              </p>
+              <div class="code-block">
+                <pre><code>npm run release:check</code></pre>
+              </div>
+              <div class="callout">
+                <span class="icon">&#128737;</span>
+                <p>
+                  <strong><code>prepack</code>은 전체 check를 다시 실행합니다.</strong>
+                  따라서 bare <code>npm publish</code>도 gate를 건너뛸 수 없습니다.
+                  package policy는 tarball을 받기 전에 runtime dependency field를 거부합니다.
+                </p>
+              </div>
+            </div>
           </section>
 
           <section id="files" data-doc-section data-title="reference files api engine notes github">
+            <div class="locale-copy locale-en">
             <p class="eyebrow">Reference files</p>
             <h2>Detailed contracts live in focused documents.</h2>
             <div class="grid two">
@@ -1252,6 +1934,23 @@ const schema = toJsonSchema(User);</code></pre>
                 <p>V8-facing implementation rules and Sea-of-Nodes validation IR semantics.</p>
                 <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">docs/engine-notes.md</a></code>
               </article>
+            </div>
+            </div>
+            <div class="locale-copy locale-ko" lang="ko">
+              <p class="eyebrow">참고 파일</p>
+              <h2>세부 contract는 목적별 문서에 있습니다.</h2>
+              <div class="grid two">
+                <article class="tile">
+                  <h3>API reference</h3>
+                  <p>Guard, decoder, AOT, adapter, graph, JSON Schema behavior와 edge semantics.</p>
+                  <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">docs/api.md</a></code>
+                </article>
+                <article class="tile">
+                  <h3>Engine notes</h3>
+                  <p>V8-facing implementation rule과 Sea-of-Nodes validation IR semantics.</p>
+                  <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">docs/engine-notes.md</a></code>
+                </article>
+              </div>
             </div>
           </section>
         </main>
