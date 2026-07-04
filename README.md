@@ -5,6 +5,9 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![TypeScript](https://img.shields.io/badge/language-TypeScript-informational)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-zero-brightgreen)
+![Tree-shakeable](https://img.shields.io/badge/tree--shakeable-yes-7CFF9B)
+![Side-effect free](https://img.shields.io/badge/side--effect%20free-yes-7CFF9B)
+![No dependencies](https://img.shields.io/badge/dependencies-none-7CFF9B)
 ![Module](https://img.shields.io/badge/module-ESM--only-orange)
 ![Node](https://img.shields.io/badge/node-%3E%3D20.19-yellowgreen)
 
