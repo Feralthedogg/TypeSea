@@ -185,15 +185,15 @@ Zod, Valibot, and Ajv are dev dependencies for measurement only. They are not
 imported by `src`, and package policy rejects runtime, peer, optional, or
 bundled dependency fields before release.
 
-Last local benchmark on 2026-07-04 KST reported these ecosystem paths over the
+Last local benchmark on 2026-07-05 KST reported these ecosystem paths over the
 JSON-compatible strict-object benchmark:
 
 | Case | TypeSea runtime plan | TypeSea compiled safe | TypeSea compiled unsafe | TypeSea compiled unchecked | Ajv compiled |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Valid `is()` | 513,701 hz | 4,297,306 hz | 36,297,653 hz | 42,581,174 hz | 4,275,389 hz |
-| Valid `check()` | 503,232 hz | 3,903,929 hz | 35,568,425 hz | 40,084,605 hz | 4,278,587 hz |
-| Invalid `is()` | 3,636,369 hz | 42,080,241 hz | 49,654,076 hz | 50,482,732 hz | 27,820,643 hz |
-| Invalid `check()` | 420,446 hz | 2,086,129 hz | 3,077,367 hz | 3,673,508 hz | 28,713,035 hz |
+| Valid `is()` | 478,576 hz | 5,109,602 hz | 36,777,097 hz | 42,620,570 hz | 4,238,036 hz |
+| Valid `check()` | 424,989 hz | 4,642,948 hz | 37,184,199 hz | 42,487,325 hz | 4,338,063 hz |
+| Invalid `is()` | 3,325,603 hz | 43,094,061 hz | 50,738,235 hz | 50,898,012 hz | 30,535,761 hz |
+| Invalid `check()` | 405,590 hz | 2,107,460 hz | 3,186,702 hz | 3,509,673 hz | 29,951,403 hz |
 
 Benchmark numbers are machine-local telemetry. They are useful for catching
 regressions, not for promising a fixed throughput floor. Unsafe and unchecked

@@ -5,7 +5,7 @@
 
 ## 벤치마크 요약
 
-마지막 로컬 벤치마크는 2026-07-04 KST에 실행했습니다.
+마지막 로컬 벤치마크는 2026-07-05 KST에 실행했습니다.
 명령은 `npm run bench -- bench/ecosystem.bench.ts --run`이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다.
 아래 수치는 회귀를 잡기 위한 로컬 측정값이지, 릴리스 성능 보증값은 아닙니다.
 
@@ -184,49 +184,49 @@ failed check() -> schema-aware diagnostic collector
 
 ## 성능 스냅샷
 
-마지막 로컬 벤치마크는 2026-07-04 KST에 실행했습니다.
+마지막 로컬 벤치마크는 2026-07-05 KST에 실행했습니다.
 `npm run bench -- bench/ecosystem.bench.ts --run`을 사용했고, benchmark strict-object 계약을 대상으로 했습니다.
 아래 값은 단일 머신의 초당 실행 횟수이며 릴리스 성능 보증값은 아닙니다.
 
 | 유효한 객체: boolean 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 513,701 |
-| TypeSea compiled safe `is()` | 4,297,306 |
-| TypeSea compiled unsafe `is()` | 36,297,653 |
-| TypeSea compiled unchecked `is()` | 42,581,174 |
-| Zod `safeParse` | 1,343,756 |
-| Valibot `safeParse` | 1,406,528 |
-| Ajv compiled | 4,275,389 |
+| TypeSea interpreted `is()` | 478,576 |
+| TypeSea compiled safe `is()` | 5,109,602 |
+| TypeSea compiled unsafe `is()` | 36,777,097 |
+| TypeSea compiled unchecked `is()` | 42,620,570 |
+| Zod `safeParse` | 1,400,045 |
+| Valibot `safeParse` | 1,400,599 |
+| Ajv compiled | 4,238,036 |
 
 | 유효한 객체: 진단 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 503,232 |
-| TypeSea compiled safe `check()` | 3,903,929 |
-| TypeSea compiled unsafe `check()` | 35,568,425 |
-| TypeSea compiled unchecked `check()` | 40,084,605 |
-| Zod `safeParse` | 1,355,014 |
-| Valibot `safeParse` | 1,378,266 |
-| Ajv compiled | 4,278,587 |
+| TypeSea interpreted `check()` | 424,989 |
+| TypeSea compiled safe `check()` | 4,642,948 |
+| TypeSea compiled unsafe `check()` | 37,184,199 |
+| TypeSea compiled unchecked `check()` | 42,487,325 |
+| Zod `safeParse` | 1,278,859 |
+| Valibot `safeParse` | 1,391,040 |
+| Ajv compiled | 4,338,063 |
 
 | 잘못된 객체: boolean 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 3,636,369 |
-| TypeSea compiled safe `is()` | 42,080,241 |
-| TypeSea compiled unsafe `is()` | 49,654,076 |
-| TypeSea compiled unchecked `is()` | 50,482,732 |
-| Zod `safeParse` | 84,272 |
-| Valibot `safeParse` | 878,521 |
-| Ajv compiled | 27,820,643 |
+| TypeSea interpreted `is()` | 3,325,603 |
+| TypeSea compiled safe `is()` | 43,094,061 |
+| TypeSea compiled unsafe `is()` | 50,738,235 |
+| TypeSea compiled unchecked `is()` | 50,898,012 |
+| Zod `safeParse` | 84,647 |
+| Valibot `safeParse` | 866,013 |
+| Ajv compiled | 30,535,761 |
 
 | 잘못된 객체: 진단 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 420,446 |
-| TypeSea compiled safe `check()` | 2,086,129 |
-| TypeSea compiled unsafe `check()` | 3,077,367 |
-| TypeSea compiled unchecked `check()` | 3,673,508 |
-| Zod `safeParse` | 79,613 |
-| Valibot `safeParse` | 887,991 |
-| Ajv compiled | 28,713,035 |
+| TypeSea interpreted `check()` | 405,590 |
+| TypeSea compiled safe `check()` | 2,107,460 |
+| TypeSea compiled unsafe `check()` | 3,186,702 |
+| TypeSea compiled unchecked `check()` | 3,509,673 |
+| Zod `safeParse` | 85,355 |
+| Valibot `safeParse` | 788,870 |
+| Ajv compiled | 29,951,403 |
 
 safe compiled path는 TypeSea의 적대적 입력 방어를 유지하면서 Ajv에 가깝게 동작합니다.
 descriptor 기반 property read, symbol/non-enumerable strict-key rejection, key presence semantics, immutable diagnostics, TypeScript guard inference를 유지합니다.
@@ -358,6 +358,7 @@ npm run check:consumer  # tarball install + runtime/type smoke in a temp project
 npm run bench -- --run  # benchmark smoke
 npm run pack:dry        # package contents dry run
 npm run release:check   # the full pre-publish gate
+npm run release:publish # provenance를 붙이고 lifecycle script를 무시하는 npm publish
 ```
 
 `npm run release:check`는 publish 전에 기대하는 동일한 gate를 실행합니다.
@@ -368,7 +369,7 @@ CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께
 
 1. `vX.Y.Z` 태그를 push하거나 GitHub `Release` workflow를 그 태그로 실행합니다.
 2. release workflow는 tag가 `package.json`의 version과 일치하는지 확인합니다.
-3. publish는 GitHub `Publish` workflow에서 `npm publish --provenance --access public --ignore-scripts`로 수행합니다.
+3. publish는 GitHub `Publish` workflow에서 `npm run release:publish`로 수행합니다. 이 스크립트는 `npm publish --provenance --access public --ignore-scripts`로 확장됩니다.
 
 로컬 `NPM_TOKEN` publish는 수동 복구 릴리스용입니다. 이 경우에도 먼저 `npm run release:check`를 통과해야 하며, GitHub OIDC provenance는 붙지 않습니다.
 

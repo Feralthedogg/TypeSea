@@ -17,7 +17,7 @@ runtime compilation, and AOT source generation.
 
 ## Benchmark Headline
 
-Last local benchmark on 2026-07-04 KST:
+Last local benchmark on 2026-07-05 KST:
 `npm run bench -- bench/ecosystem.bench.ts --run`, strict-object contract,
 operations per second on one machine.
 
@@ -228,50 +228,50 @@ failed check() -> schema-aware diagnostic collector
 
 ## Performance Snapshot
 
-Last local benchmark on 2026-07-04 KST, using
+Last local benchmark on 2026-07-05 KST, using
 `npm run bench -- bench/ecosystem.bench.ts --run` on the benchmark strict-object
 contract. These are operations per second on one machine, not release
 guarantees.
 
 | Valid object path | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 513,701 |
-| TypeSea compiled safe `is()` | 4,297,306 |
-| TypeSea compiled unsafe `is()` | 36,297,653 |
-| TypeSea compiled unchecked `is()` | 42,581,174 |
-| Zod `safeParse` | 1,343,756 |
-| Valibot `safeParse` | 1,406,528 |
-| Ajv compiled | 4,275,389 |
+| TypeSea interpreted `is()` | 478,576 |
+| TypeSea compiled safe `is()` | 5,109,602 |
+| TypeSea compiled unsafe `is()` | 36,777,097 |
+| TypeSea compiled unchecked `is()` | 42,620,570 |
+| Zod `safeParse` | 1,400,045 |
+| Valibot `safeParse` | 1,400,599 |
+| Ajv compiled | 4,238,036 |
 
 | Valid diagnostic path | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 503,232 |
-| TypeSea compiled safe `check()` | 3,903,929 |
-| TypeSea compiled unsafe `check()` | 35,568,425 |
-| TypeSea compiled unchecked `check()` | 40,084,605 |
-| Zod `safeParse` | 1,355,014 |
-| Valibot `safeParse` | 1,378,266 |
-| Ajv compiled | 4,278,587 |
+| TypeSea interpreted `check()` | 424,989 |
+| TypeSea compiled safe `check()` | 4,642,948 |
+| TypeSea compiled unsafe `check()` | 37,184,199 |
+| TypeSea compiled unchecked `check()` | 42,487,325 |
+| Zod `safeParse` | 1,278,859 |
+| Valibot `safeParse` | 1,391,040 |
+| Ajv compiled | 4,338,063 |
 
 | Invalid object path | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 3,636,369 |
-| TypeSea compiled safe `is()` | 42,080,241 |
-| TypeSea compiled unsafe `is()` | 49,654,076 |
-| TypeSea compiled unchecked `is()` | 50,482,732 |
-| Zod `safeParse` | 84,272 |
-| Valibot `safeParse` | 878,521 |
-| Ajv compiled | 27,820,643 |
+| TypeSea interpreted `is()` | 3,325,603 |
+| TypeSea compiled safe `is()` | 43,094,061 |
+| TypeSea compiled unsafe `is()` | 50,738,235 |
+| TypeSea compiled unchecked `is()` | 50,898,012 |
+| Zod `safeParse` | 84,647 |
+| Valibot `safeParse` | 866,013 |
+| Ajv compiled | 30,535,761 |
 
 | Invalid diagnostic path | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 420,446 |
-| TypeSea compiled safe `check()` | 2,086,129 |
-| TypeSea compiled unsafe `check()` | 3,077,367 |
-| TypeSea compiled unchecked `check()` | 3,673,508 |
-| Zod `safeParse` | 79,613 |
-| Valibot `safeParse` | 887,991 |
-| Ajv compiled | 28,713,035 |
+| TypeSea interpreted `check()` | 405,590 |
+| TypeSea compiled safe `check()` | 2,107,460 |
+| TypeSea compiled unsafe `check()` | 3,186,702 |
+| TypeSea compiled unchecked `check()` | 3,509,673 |
+| Zod `safeParse` | 85,355 |
+| Valibot `safeParse` | 788,870 |
+| Ajv compiled | 29,951,403 |
 
 The safe compiled path stays close to Ajv while retaining TypeSea hostile-input
 semantics: descriptor-based property reads, symbol/non-enumerable strict-key
@@ -413,6 +413,7 @@ npm run check:consumer  # tarball install + runtime/type smoke in a temp project
 npm run bench -- --run  # benchmark smoke
 npm run pack:dry        # package contents dry run
 npm run release:check   # the full pre-publish gate (everything above)
+npm run release:publish # npm publish with provenance and ignored lifecycle scripts
 ```
 
 `npm run release:check` runs the same gate expected before publishing:
@@ -424,7 +425,7 @@ Release path:
 
 1. Push a `vX.Y.Z` tag or run the GitHub `Release` workflow with that tag.
 2. The release workflow verifies that the tag matches `package.json`.
-3. Publishing happens from the GitHub `Publish` workflow with `npm publish --provenance --access public --ignore-scripts`.
+3. Publishing happens from the GitHub `Publish` workflow through `npm run release:publish`, which expands to `npm publish --provenance --access public --ignore-scripts`.
 
 Local publishing with `NPM_TOKEN` is reserved for manual recovery releases. It
 must still run `npm run release:check` first, and it cannot attach GitHub OIDC

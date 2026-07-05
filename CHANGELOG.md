@@ -13,7 +13,11 @@ All notable changes to TypeSea are recorded here.
   security boundary for safe, unsafe, unchecked, AOT, and dynamic compilation.
 - Added a post-publish npm registry verification step to the GitHub Publish
   workflow.
+- Added `release:publish` so the repository-owned publish command always uses
+  `npm publish --provenance --access public --ignore-scripts`.
 - Removed the version-pinned Socket badge URL from the README.
+- Refreshed the benchmark snapshot and docs graph from the 2026-07-05 local
+  `bench/ecosystem.bench.ts` run.
 - Clarified the release path: local npm publishing is allowed for emergency
   manual releases, but normal releases should go through GitHub Release so npm
   provenance is attached.

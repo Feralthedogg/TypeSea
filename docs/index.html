@@ -969,7 +969,7 @@ const schema = toJsonSchema(User);</code></pre>
 <p><a href="https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml/badge.svg">![CI</a>](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml) <span class="muted-link">![Socket Badge</span>](https://socket.dev/npm/package/typesea) <span class="muted-link">![License</span>](./LICENSE) <span class="muted-link">TypeScript</span> <span class="muted-link">Dependencies</span> <span class="muted-link">Tree-shakeable</span> <span class="muted-link">Side-effect free</span> <span class="muted-link">No dependencies</span> <span class="muted-link">Module</span> <span class="muted-link">Node</span></p>
 <p><strong>TypeSea</strong> is a <strong>zero-runtime-dependency TypeScript runtime narrowing library</strong> built around <strong>immutable guards</strong>, optimized <strong>Sea-of-Nodes validation plans</strong>, runtime compilation, and AOT source generation.</p>
 <h3 id="readme-en-benchmark-headline">Benchmark Headline</h3>
-<p>Last local benchmark on 2026-07-04 KST: <code>npm run bench -- bench/ecosystem.bench.ts --run</code>, strict-object contract, operations per second on one machine.</p>
+<p>Last local benchmark on 2026-07-05 KST: <code>npm run bench -- bench/ecosystem.bench.ts --run</code>, strict-object contract, operations per second on one machine.</p>
 <p><img class="benchmark-image" src="assets/benchmark-headline.svg" alt="TypeSea benchmark comparison"></p>
 <p>TypeSea safe compiled validators are already in Ajv's boolean hot-path class while keeping descriptor-based hostile-input semantics. Unsafe and unchecked FastMode are the bragging-rights path for trusted normalized data: direct field loads, allocation-light strict-key loops, and V8-friendly monomorphic codegen.</p>
 <blockquote><p>Goal: not &quot;probably valid&quot;, but <strong>provably parity-tested validation</strong> that never executes user code, never throws on expected failures, and never leaks mutable state across a public boundary.</p></blockquote>
@@ -1060,35 +1060,35 @@ failed check() -&gt; schema-aware diagnostic collector</code></pre>
 <aside class="admonition important"><strong class="admonition-title">IMPORTANT</strong><p>Generated validators keep <strong>user-controlled values out of source text</strong>: literals, regexps, object keys, keysets, and dynamic schema fallbacks live in <strong>side tables</strong> referenced by numeric index. Hostile property names cannot escape into generated code — this is pinned by dedicated injection-audit tests.</p></aside>
 <hr>
 <h3 id="readme-en-performance-snapshot">Performance Snapshot</h3>
-<p>Last local benchmark on 2026-07-04 KST, using <code>npm run bench -- bench/ecosystem.bench.ts --run</code> on the benchmark strict-object contract. These are operations per second on one machine, not release guarantees.</p>
-<div class="table-wrap"><table><thead><tr><th>Valid object path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>513,701</td></tr>
-<tr><td>TypeSea compiled safe <code>is()</code></td><td>4,297,306</td></tr>
-<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>36,297,653</td></tr>
-<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>42,581,174</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>1,343,756</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>1,406,528</td></tr>
-<tr><td>Ajv compiled</td><td>4,275,389</td></tr></tbody></table></div>
-<div class="table-wrap"><table><thead><tr><th>Valid diagnostic path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>503,232</td></tr>
-<tr><td>TypeSea compiled safe <code>check()</code></td><td>3,903,929</td></tr>
-<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>35,568,425</td></tr>
-<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>40,084,605</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>1,355,014</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>1,378,266</td></tr>
-<tr><td>Ajv compiled</td><td>4,278,587</td></tr></tbody></table></div>
-<div class="table-wrap"><table><thead><tr><th>Invalid object path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>3,636,369</td></tr>
-<tr><td>TypeSea compiled safe <code>is()</code></td><td>42,080,241</td></tr>
-<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>49,654,076</td></tr>
-<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>50,482,732</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>84,272</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>878,521</td></tr>
-<tr><td>Ajv compiled</td><td>27,820,643</td></tr></tbody></table></div>
-<div class="table-wrap"><table><thead><tr><th>Invalid diagnostic path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>420,446</td></tr>
-<tr><td>TypeSea compiled safe <code>check()</code></td><td>2,086,129</td></tr>
-<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>3,077,367</td></tr>
-<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>3,673,508</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>79,613</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>887,991</td></tr>
-<tr><td>Ajv compiled</td><td>28,713,035</td></tr></tbody></table></div>
+<p>Last local benchmark on 2026-07-05 KST, using <code>npm run bench -- bench/ecosystem.bench.ts --run</code> on the benchmark strict-object contract. These are operations per second on one machine, not release guarantees.</p>
+<div class="table-wrap"><table><thead><tr><th>Valid object path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>478,576</td></tr>
+<tr><td>TypeSea compiled safe <code>is()</code></td><td>5,109,602</td></tr>
+<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>36,777,097</td></tr>
+<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>42,620,570</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>1,400,045</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>1,400,599</td></tr>
+<tr><td>Ajv compiled</td><td>4,238,036</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Valid diagnostic path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>424,989</td></tr>
+<tr><td>TypeSea compiled safe <code>check()</code></td><td>4,642,948</td></tr>
+<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>37,184,199</td></tr>
+<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>42,487,325</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>1,278,859</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>1,391,040</td></tr>
+<tr><td>Ajv compiled</td><td>4,338,063</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Invalid object path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>3,325,603</td></tr>
+<tr><td>TypeSea compiled safe <code>is()</code></td><td>43,094,061</td></tr>
+<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>50,738,235</td></tr>
+<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>50,898,012</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>84,647</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>866,013</td></tr>
+<tr><td>Ajv compiled</td><td>30,535,761</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Invalid diagnostic path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>405,590</td></tr>
+<tr><td>TypeSea compiled safe <code>check()</code></td><td>2,107,460</td></tr>
+<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>3,186,702</td></tr>
+<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>3,509,673</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>85,355</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>788,870</td></tr>
+<tr><td>Ajv compiled</td><td>29,951,403</td></tr></tbody></table></div>
 <p>The safe compiled path stays close to Ajv while retaining TypeSea hostile-input semantics: descriptor-based property reads, symbol/non-enumerable strict-key rejection, presence semantics, immutable diagnostics, and TypeScript guard inference. Unsafe and unchecked compiled modes are faster because they deliberately give up parts of that hostile-input contract.</p>
 <hr>
 <h3 id="readme-en-api-reference">API Reference</h3>
@@ -1171,10 +1171,11 @@ const Node: Guard&lt;ListNode&gt; = t.lazy((): Guard&lt;ListNode&gt; =&gt;
 npm run check:consumer  # tarball install + runtime/type smoke in a temp project
 npm run bench -- --run  # benchmark smoke
 npm run pack:dry        # package contents dry run
-npm run release:check   # the full pre-publish gate (everything above)</code></pre>
+npm run release:check   # the full pre-publish gate (everything above)
+npm run release:publish # npm publish with provenance and ignored lifecycle scripts</code></pre>
 <p><code>npm run release:check</code> runs the same gate expected before publishing: typecheck, lint, tests, build, docs smoke, dist policy, public API snapshot, package contents, consumer install, benchmark smoke, and pack dry run. CI executes it on Node 20.19, 22, and 24; releases publish with npm provenance.</p>
 <p>Release path:</p>
-<ol><li>Push a <code>vX.Y.Z</code> tag or run the GitHub <code>Release</code> workflow with that tag.</li><li>The release workflow verifies that the tag matches <code>package.json</code>.</li><li>Publishing happens from the GitHub <code>Publish</code> workflow with <code>npm publish --provenance --access public --ignore-scripts</code>.</li></ol>
+<ol><li>Push a <code>vX.Y.Z</code> tag or run the GitHub <code>Release</code> workflow with that tag.</li><li>The release workflow verifies that the tag matches <code>package.json</code>.</li><li>Publishing happens from the GitHub <code>Publish</code> workflow through <code>npm run release:publish</code>, which expands to <code>npm publish --provenance --access public --ignore-scripts</code>.</li></ol>
 <p>Local publishing with <code>NPM_TOKEN</code> is reserved for manual recovery releases. It must still run <code>npm run release:check</code> first, and it cannot attach GitHub OIDC provenance.</p>
 <aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>Benchmark comparison packages (Zod, Valibot, Ajv) are dev dependencies only — package policy rejects them from every runtime dependency field. The benchmark suite reports both boolean-path and diagnostic-path (<code>check()</code> vs <code>safeParse</code>) comparisons, so numbers stay apples-to-apples.</p></aside>
 <hr>
@@ -1192,7 +1193,7 @@ npm run release:check   # the full pre-publish gate (everything above)</code></p
 <h2 id="readme-ko-typesea">TypeSea</h2>
 <p><strong>TypeSea</strong>는 런타임 의존성 없이 TypeScript 값을 검증하고 타입을 좁히는 라이브러리입니다. 불변 스키마, Sea-of-Nodes에서 영향을 받은 검증 IR, 런타임 컴파일, AOT 소스 생성을 한 흐름으로 묶는 것을 목표로 합니다.</p>
 <h3 id="readme-ko-벤치마크-요약">벤치마크 요약</h3>
-<p>마지막 로컬 벤치마크는 2026-07-04 KST에 실행했습니다. 명령은 <code>npm run bench -- bench/ecosystem.bench.ts --run</code>이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다. 아래 수치는 회귀를 잡기 위한 로컬 측정값이지, 릴리스 성능 보증값은 아닙니다.</p>
+<p>마지막 로컬 벤치마크는 2026-07-05 KST에 실행했습니다. 명령은 <code>npm run bench -- bench/ecosystem.bench.ts --run</code>이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다. 아래 수치는 회귀를 잡기 위한 로컬 측정값이지, 릴리스 성능 보증값은 아닙니다.</p>
 <p><img class="benchmark-image" src="assets/benchmark-headline.svg" alt="TypeSea benchmark comparison"></p>
 <p>TypeSea의 안전 모드 컴파일 검증기는 getter 실행 방지와 strict extra key 검사 같은 적대적 입력 방어를 유지하면서도 Ajv의 boolean hot path에 가까운 성능을 냅니다. <code>unsafe</code>와 <code>unchecked</code> FastMode는 호출자가 이미 입력을 정규화했고 객체 그래프를 신뢰할 수 있을 때 쓰는 성능 우선 경로입니다. 이 모드에서는 직접 필드 로드, 할당을 줄인 strict-key loop, V8이 inline cache를 붙이기 쉬운 코드 형태를 사용합니다.</p>
 <blockquote><p>목표는 &quot;대충 유효해 보이면 통과&quot;가 아닙니다. TypeSea의 목표는 <strong>런타임 실행, 컴파일 실행, AOT 실행이 같은 판정을 내린다는 사실을 테스트로 고정하는 검증기</strong>입니다. 사용자 코드를 실행하지 않고, 예상 가능한 실패에서 예외를 던지지 않으며, 공개 API 경계 밖으로 변경 가능한 내부 상태를 내보내지 않는 것을 기본 원칙으로 둡니다.</p></blockquote>
@@ -1272,35 +1273,35 @@ failed check() -&gt; schema-aware diagnostic collector</code></pre>
 <aside class="admonition important"><strong class="admonition-title">IMPORTANT</strong><p>generated validator는 <strong>사용자가 제어하는 값을 소스 문자열에 넣지 않습니다</strong>. literal, regexp, object key, keyset, dynamic schema fallback은 numeric index로 참조되는 <strong>side table</strong>에 둡니다. 적대적인 property name이 generated code 밖으로 탈출할 수 없으며, dedicated injection-audit test가 이 속성을 고정합니다.</p></aside>
 <hr>
 <h3 id="readme-ko-성능-스냅샷">성능 스냅샷</h3>
-<p>마지막 로컬 벤치마크는 2026-07-04 KST에 실행했습니다. <code>npm run bench -- bench/ecosystem.bench.ts --run</code>을 사용했고, benchmark strict-object 계약을 대상으로 했습니다. 아래 값은 단일 머신의 초당 실행 횟수이며 릴리스 성능 보증값은 아닙니다.</p>
-<div class="table-wrap"><table><thead><tr><th>유효한 객체: boolean 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>513,701</td></tr>
-<tr><td>TypeSea compiled safe <code>is()</code></td><td>4,297,306</td></tr>
-<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>36,297,653</td></tr>
-<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>42,581,174</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>1,343,756</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>1,406,528</td></tr>
-<tr><td>Ajv compiled</td><td>4,275,389</td></tr></tbody></table></div>
-<div class="table-wrap"><table><thead><tr><th>유효한 객체: 진단 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>503,232</td></tr>
-<tr><td>TypeSea compiled safe <code>check()</code></td><td>3,903,929</td></tr>
-<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>35,568,425</td></tr>
-<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>40,084,605</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>1,355,014</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>1,378,266</td></tr>
-<tr><td>Ajv compiled</td><td>4,278,587</td></tr></tbody></table></div>
-<div class="table-wrap"><table><thead><tr><th>잘못된 객체: boolean 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>3,636,369</td></tr>
-<tr><td>TypeSea compiled safe <code>is()</code></td><td>42,080,241</td></tr>
-<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>49,654,076</td></tr>
-<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>50,482,732</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>84,272</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>878,521</td></tr>
-<tr><td>Ajv compiled</td><td>27,820,643</td></tr></tbody></table></div>
-<div class="table-wrap"><table><thead><tr><th>잘못된 객체: 진단 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>420,446</td></tr>
-<tr><td>TypeSea compiled safe <code>check()</code></td><td>2,086,129</td></tr>
-<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>3,077,367</td></tr>
-<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>3,673,508</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>79,613</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>887,991</td></tr>
-<tr><td>Ajv compiled</td><td>28,713,035</td></tr></tbody></table></div>
+<p>마지막 로컬 벤치마크는 2026-07-05 KST에 실행했습니다. <code>npm run bench -- bench/ecosystem.bench.ts --run</code>을 사용했고, benchmark strict-object 계약을 대상으로 했습니다. 아래 값은 단일 머신의 초당 실행 횟수이며 릴리스 성능 보증값은 아닙니다.</p>
+<div class="table-wrap"><table><thead><tr><th>유효한 객체: boolean 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>478,576</td></tr>
+<tr><td>TypeSea compiled safe <code>is()</code></td><td>5,109,602</td></tr>
+<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>36,777,097</td></tr>
+<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>42,620,570</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>1,400,045</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>1,400,599</td></tr>
+<tr><td>Ajv compiled</td><td>4,238,036</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>유효한 객체: 진단 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>424,989</td></tr>
+<tr><td>TypeSea compiled safe <code>check()</code></td><td>4,642,948</td></tr>
+<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>37,184,199</td></tr>
+<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>42,487,325</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>1,278,859</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>1,391,040</td></tr>
+<tr><td>Ajv compiled</td><td>4,338,063</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>잘못된 객체: boolean 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>3,325,603</td></tr>
+<tr><td>TypeSea compiled safe <code>is()</code></td><td>43,094,061</td></tr>
+<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>50,738,235</td></tr>
+<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>50,898,012</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>84,647</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>866,013</td></tr>
+<tr><td>Ajv compiled</td><td>30,535,761</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>잘못된 객체: 진단 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>405,590</td></tr>
+<tr><td>TypeSea compiled safe <code>check()</code></td><td>2,107,460</td></tr>
+<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>3,186,702</td></tr>
+<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>3,509,673</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>85,355</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>788,870</td></tr>
+<tr><td>Ajv compiled</td><td>29,951,403</td></tr></tbody></table></div>
 <p>safe compiled path는 TypeSea의 적대적 입력 방어를 유지하면서 Ajv에 가깝게 동작합니다. descriptor 기반 property read, symbol/non-enumerable strict-key rejection, key presence semantics, immutable diagnostics, TypeScript guard inference를 유지합니다. unsafe와 unchecked compiled mode는 그 방어 계약 일부를 의도적으로 포기하기 때문에 더 빠릅니다.</p>
 <hr>
 <h3 id="readme-ko-api-레퍼런스-요약">API 레퍼런스 요약</h3>
@@ -1375,10 +1376,11 @@ const Node: Guard&lt;ListNode&gt; = t.lazy((): Guard&lt;ListNode&gt; =&gt;
 npm run check:consumer  # tarball install + runtime/type smoke in a temp project
 npm run bench -- --run  # benchmark smoke
 npm run pack:dry        # package contents dry run
-npm run release:check   # the full pre-publish gate</code></pre>
+npm run release:check   # the full pre-publish gate
+npm run release:publish # provenance를 붙이고 lifecycle script를 무시하는 npm publish</code></pre>
 <p><code>npm run release:check</code>는 publish 전에 기대하는 동일한 gate를 실행합니다. typecheck, lint, tests, build, docs smoke, dist policy, public API snapshot, package contents, consumer install, benchmark smoke, pack dry run을 포함합니다. CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께 publish합니다.</p>
 <p>릴리스 경로:</p>
-<ol><li><code>vX.Y.Z</code> 태그를 push하거나 GitHub <code>Release</code> workflow를 그 태그로 실행합니다.</li><li>release workflow는 tag가 <code>package.json</code>의 version과 일치하는지 확인합니다.</li><li>publish는 GitHub <code>Publish</code> workflow에서 <code>npm publish --provenance --access public --ignore-scripts</code>로 수행합니다.</li></ol>
+<ol><li><code>vX.Y.Z</code> 태그를 push하거나 GitHub <code>Release</code> workflow를 그 태그로 실행합니다.</li><li>release workflow는 tag가 <code>package.json</code>의 version과 일치하는지 확인합니다.</li><li>publish는 GitHub <code>Publish</code> workflow에서 <code>npm run release:publish</code>로 수행합니다. 이 스크립트는 <code>npm publish --provenance --access public --ignore-scripts</code>로 확장됩니다.</li></ol>
 <p>로컬 <code>NPM_TOKEN</code> publish는 수동 복구 릴리스용입니다. 이 경우에도 먼저 <code>npm run release:check</code>를 통과해야 하며, GitHub OIDC provenance는 붙지 않습니다.</p>
 <aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>benchmark 비교 패키지인 Zod, Valibot, Ajv는 dev dependency일 뿐입니다. package policy는 이들이 runtime dependency field에 들어가는 것을 거부합니다. benchmark suite는 boolean path와 diagnostic path(<code>check()</code> vs <code>safeParse</code>)를 모두 보고하므로 비교 기준을 맞춥니다.</p></aside>
 <hr>
@@ -1846,11 +1848,11 @@ const optimized = optimizeGraph(graph);</code></pre>
 <ul><li><code>ecosystem.bench.ts</code> compares TypeSea runtime-plan, TypeSea compiled, Zod,</li></ul>
 <p>Valibot, and Ajv over one JSON-compatible strict-object contract.</p>
 <p>Zod, Valibot, and Ajv are dev dependencies for measurement only. They are not imported by <code>src</code>, and package policy rejects runtime, peer, optional, or bundled dependency fields before release.</p>
-<p>Last local benchmark on 2026-07-04 KST reported these ecosystem paths over the JSON-compatible strict-object benchmark:</p>
-<div class="table-wrap"><table><thead><tr><th>Case</th><th>TypeSea runtime plan</th><th>TypeSea compiled safe</th><th>TypeSea compiled unsafe</th><th>TypeSea compiled unchecked</th><th>Ajv compiled</th></tr></thead><tbody><tr><td>Valid <code>is()</code></td><td>513,701 hz</td><td>4,297,306 hz</td><td>36,297,653 hz</td><td>42,581,174 hz</td><td>4,275,389 hz</td></tr>
-<tr><td>Valid <code>check()</code></td><td>503,232 hz</td><td>3,903,929 hz</td><td>35,568,425 hz</td><td>40,084,605 hz</td><td>4,278,587 hz</td></tr>
-<tr><td>Invalid <code>is()</code></td><td>3,636,369 hz</td><td>42,080,241 hz</td><td>49,654,076 hz</td><td>50,482,732 hz</td><td>27,820,643 hz</td></tr>
-<tr><td>Invalid <code>check()</code></td><td>420,446 hz</td><td>2,086,129 hz</td><td>3,077,367 hz</td><td>3,673,508 hz</td><td>28,713,035 hz</td></tr></tbody></table></div>
+<p>Last local benchmark on 2026-07-05 KST reported these ecosystem paths over the JSON-compatible strict-object benchmark:</p>
+<div class="table-wrap"><table><thead><tr><th>Case</th><th>TypeSea runtime plan</th><th>TypeSea compiled safe</th><th>TypeSea compiled unsafe</th><th>TypeSea compiled unchecked</th><th>Ajv compiled</th></tr></thead><tbody><tr><td>Valid <code>is()</code></td><td>478,576 hz</td><td>5,109,602 hz</td><td>36,777,097 hz</td><td>42,620,570 hz</td><td>4,238,036 hz</td></tr>
+<tr><td>Valid <code>check()</code></td><td>424,989 hz</td><td>4,642,948 hz</td><td>37,184,199 hz</td><td>42,487,325 hz</td><td>4,338,063 hz</td></tr>
+<tr><td>Invalid <code>is()</code></td><td>3,325,603 hz</td><td>43,094,061 hz</td><td>50,738,235 hz</td><td>50,898,012 hz</td><td>30,535,761 hz</td></tr>
+<tr><td>Invalid <code>check()</code></td><td>405,590 hz</td><td>2,107,460 hz</td><td>3,186,702 hz</td><td>3,509,673 hz</td><td>29,951,403 hz</td></tr></tbody></table></div>
 <p>Benchmark numbers are machine-local telemetry. They are useful for catching regressions, not for promising a fixed throughput floor. Unsafe and unchecked numbers are not hostile-input equivalent to safe mode.</p>
             </div>
             <div class="locale-ko" lang="ko">
@@ -1889,11 +1891,11 @@ const optimized = optimizeGraph(graph);</code></pre>
 <p>benchmark suite는 두 질문을 분리합니다.</p>
 <ul><li><code>compile.bench.ts</code>는 같은 TypeSea schema를 대상으로 TypeSea runtime-plan validator와 compiled validator를 비교합니다.</li><li><code>ecosystem.bench.ts</code>는 하나의 JSON-compatible strict-object contract를 대상으로 TypeSea runtime-plan, TypeSea compiled, Zod, Valibot, Ajv를 비교합니다.</li></ul>
 <p>Zod, Valibot, Ajv는 측정용 dev dependency입니다. <code>src</code>에서 import하지 않으며, package policy는 release 전에 runtime, peer, optional, bundled dependency field를 거부합니다.</p>
-<p>2026-07-04 KST의 마지막 로컬 벤치마크는 JSON-compatible strict-object benchmark에서 아래 ecosystem path를 보고했습니다.</p>
-<div class="table-wrap"><table><thead><tr><th>Case</th><th>TypeSea runtime plan</th><th>TypeSea compiled safe</th><th>TypeSea compiled unsafe</th><th>TypeSea compiled unchecked</th><th>Ajv compiled</th></tr></thead><tbody><tr><td>Valid <code>is()</code></td><td>513,701 hz</td><td>4,297,306 hz</td><td>36,297,653 hz</td><td>42,581,174 hz</td><td>4,275,389 hz</td></tr>
-<tr><td>Valid <code>check()</code></td><td>503,232 hz</td><td>3,903,929 hz</td><td>35,568,425 hz</td><td>40,084,605 hz</td><td>4,278,587 hz</td></tr>
-<tr><td>Invalid <code>is()</code></td><td>3,636,369 hz</td><td>42,080,241 hz</td><td>49,654,076 hz</td><td>50,482,732 hz</td><td>27,820,643 hz</td></tr>
-<tr><td>Invalid <code>check()</code></td><td>420,446 hz</td><td>2,086,129 hz</td><td>3,077,367 hz</td><td>3,673,508 hz</td><td>28,713,035 hz</td></tr></tbody></table></div>
+<p>2026-07-05 KST의 마지막 로컬 벤치마크는 JSON-compatible strict-object benchmark에서 아래 ecosystem path를 보고했습니다.</p>
+<div class="table-wrap"><table><thead><tr><th>Case</th><th>TypeSea runtime plan</th><th>TypeSea compiled safe</th><th>TypeSea compiled unsafe</th><th>TypeSea compiled unchecked</th><th>Ajv compiled</th></tr></thead><tbody><tr><td>Valid <code>is()</code></td><td>478,576 hz</td><td>5,109,602 hz</td><td>36,777,097 hz</td><td>42,620,570 hz</td><td>4,238,036 hz</td></tr>
+<tr><td>Valid <code>check()</code></td><td>424,989 hz</td><td>4,642,948 hz</td><td>37,184,199 hz</td><td>42,487,325 hz</td><td>4,338,063 hz</td></tr>
+<tr><td>Invalid <code>is()</code></td><td>3,325,603 hz</td><td>43,094,061 hz</td><td>50,738,235 hz</td><td>50,898,012 hz</td><td>30,535,761 hz</td></tr>
+<tr><td>Invalid <code>check()</code></td><td>405,590 hz</td><td>2,107,460 hz</td><td>3,186,702 hz</td><td>3,509,673 hz</td><td>29,951,403 hz</td></tr></tbody></table></div>
 <p>benchmark number는 machine-local telemetry입니다. regression을 잡는 데 유용하지만 고정된 throughput floor를 약속하지 않습니다. unsafe와 unchecked number는 safe mode와 hostile-input equivalent가 아닙니다.</p>
             </div>
           </article>

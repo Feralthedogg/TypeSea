@@ -49,6 +49,7 @@
         "policy": "node scripts/source-policy.mjs",
         "prepack": "npm run check",
         "release:check": "node scripts/release-gate.mjs",
+        "release:publish": "npm publish --provenance --access public --ignore-scripts",
         "release:verify-published": "node scripts/verify-published-version.mjs",
         "test": "vitest run",
         "typecheck": "tsc -p tsconfig.json --noEmit"

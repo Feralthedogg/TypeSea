@@ -58,92 +58,92 @@
     <circle cx="84" cy="690" r="220" fill="#38bdf8" opacity="0.07"/>
 
     <text id="headline" x="44" y="58" class="title">TypeSea benchmark comparison</text>
-    <text x="46" y="88" class="subtitle">Local run on 2026-07-04 KST, strict-object contract, ops/sec. Higher is better.</text>
+    <text x="46" y="88" class="subtitle">Local run on 2026-07-05 KST, strict-object contract, ops/sec. Higher is better.</text>
 
     <g filter="url(#shadow)">
         <rect x="44" y="118" width="322" height="108" rx="18" fill="url(#panel)" stroke="#1f2937"/>
         <text x="66" y="148" class="metric-label">Unchecked valid hot path</text>
-        <text x="66" y="188" class="metric-value">42.58M</text>
-        <text x="66" y="210" class="metric-sub">31.7x Zod, 10.0x Ajv</text>
+        <text x="66" y="188" class="metric-value">42.62M</text>
+        <text x="66" y="210" class="metric-sub">30.4x Zod, 10.1x Ajv</text>
 
         <rect x="399" y="118" width="322" height="108" rx="18" fill="url(#panel)" stroke="#1f2937"/>
         <text x="421" y="148" class="metric-label">Safe invalid fast-fail</text>
-        <text x="421" y="188" class="metric-value">42.08M</text>
-        <text x="421" y="210" class="metric-sub">1.51x Ajv, 499x Zod</text>
+        <text x="421" y="188" class="metric-value">43.09M</text>
+        <text x="421" y="210" class="metric-sub">1.41x Ajv, 509x Zod</text>
 
         <rect x="754" y="118" width="322" height="108" rx="18" fill="url(#panel)" stroke="#1f2937"/>
         <text x="776" y="148" class="metric-label">Safe valid path</text>
-        <text x="776" y="188" class="metric-value">4.30M</text>
-        <text x="776" y="210" class="metric-sub">Ajv-class while staying safe</text>
+        <text x="776" y="188" class="metric-value">5.11M</text>
+        <text x="776" y="210" class="metric-sub">1.21x Ajv while staying safe</text>
     </g>
 
     <g filter="url(#shadow)">
         <rect x="44" y="260" width="1032" height="136" rx="18" fill="url(#panel)" stroke="#1f2937"/>
         <text x="66" y="291" class="card-title">Valid object path</text>
-        <text x="230" y="291" class="card-note">linear scale to 42.58M</text>
+        <text x="230" y="291" class="card-note">linear scale to 42.62M</text>
         <line x1="270" y1="318" x2="1010" y2="318" class="axis"/>
 
         <text x="66" y="326" class="bar-label">TypeSea unchecked</text>
         <rect x="270" y="312" width="740" height="15" rx="7.5" fill="url(#unchecked)"/>
-        <text x="1024" y="326" class="bar-value">42.58M</text>
+        <text x="1024" y="326" class="bar-value">42.62M</text>
 
         <text x="66" y="350" class="bar-label">TypeSea unsafe</text>
-        <rect x="270" y="336" width="631" height="15" rx="7.5" fill="url(#unsafe)"/>
-        <text x="915" y="350" class="bar-value">36.30M</text>
+        <rect x="270" y="336" width="639" height="15" rx="7.5" fill="url(#unsafe)"/>
+        <text x="923" y="350" class="bar-value">36.78M</text>
 
         <text x="66" y="374" class="bar-label">TypeSea safe / Ajv / Zod</text>
-        <rect x="270" y="360" width="75" height="15" rx="7.5" fill="url(#safe)"/>
-        <rect x="354" y="360" width="74" height="15" rx="7.5" fill="url(#ajv)"/>
-        <rect x="437" y="360" width="24" height="15" rx="7.5" fill="url(#valibot)"/>
-        <rect x="470" y="360" width="23" height="15" rx="7.5" fill="url(#zod)"/>
-        <text x="506" y="374" class="bar-value">safe 4.30M, Ajv 4.28M, Valibot 1.41M, Zod 1.34M</text>
+        <rect x="270" y="360" width="89" height="15" rx="7.5" fill="url(#safe)"/>
+        <rect x="368" y="360" width="74" height="15" rx="7.5" fill="url(#ajv)"/>
+        <rect x="451" y="360" width="24" height="15" rx="7.5" fill="url(#valibot)"/>
+        <rect x="484" y="360" width="24" height="15" rx="7.5" fill="url(#zod)"/>
+        <text x="522" y="374" class="bar-value">safe 5.11M, Ajv 4.24M, Valibot 1.40M, Zod 1.40M</text>
     </g>
 
     <g filter="url(#shadow)">
         <rect x="44" y="418" width="1032" height="150" rx="18" fill="url(#panel)" stroke="#1f2937"/>
         <text x="66" y="449" class="card-title">Invalid object fast-fail</text>
-        <text x="268" y="449" class="card-note">linear scale to 50.48M</text>
+        <text x="268" y="449" class="card-note">linear scale to 50.90M</text>
         <line x1="270" y1="476" x2="1010" y2="476" class="axis"/>
 
         <text x="66" y="482" class="bar-label">TypeSea unchecked</text>
         <rect x="270" y="468" width="740" height="15" rx="7.5" fill="url(#unchecked)"/>
-        <text x="1024" y="482" class="bar-value">50.48M</text>
+        <text x="1024" y="482" class="bar-value">50.90M</text>
 
         <text x="66" y="506" class="bar-label">TypeSea unsafe</text>
-        <rect x="270" y="492" width="728" height="15" rx="7.5" fill="url(#unsafe)"/>
-        <text x="1024" y="506" class="bar-value">49.65M</text>
+        <rect x="270" y="492" width="738" height="15" rx="7.5" fill="url(#unsafe)"/>
+        <text x="1024" y="506" class="bar-value">50.74M</text>
 
         <text x="66" y="530" class="bar-label">TypeSea safe</text>
-        <rect x="270" y="516" width="617" height="15" rx="7.5" fill="url(#safe)"/>
-        <text x="902" y="530" class="bar-value">42.08M</text>
+        <rect x="270" y="516" width="627" height="15" rx="7.5" fill="url(#safe)"/>
+        <text x="912" y="530" class="bar-value">43.09M</text>
 
         <text x="66" y="554" class="bar-label">Ajv / Valibot / Zod</text>
-        <rect x="270" y="540" width="408" height="15" rx="7.5" fill="url(#ajv)"/>
-        <rect x="690" y="540" width="13" height="15" rx="7.5" fill="url(#valibot)"/>
-        <rect x="714" y="540" width="3" height="15" rx="1.5" fill="url(#zod)"/>
-        <text x="734" y="554" class="bar-value">Ajv 27.82M, Valibot 0.88M, Zod 0.08M</text>
+        <rect x="270" y="540" width="444" height="15" rx="7.5" fill="url(#ajv)"/>
+        <rect x="726" y="540" width="13" height="15" rx="7.5" fill="url(#valibot)"/>
+        <rect x="750" y="540" width="3" height="15" rx="1.5" fill="url(#zod)"/>
+        <text x="770" y="554" class="bar-value">Ajv 30.54M, Valibot 0.87M, Zod 0.08M</text>
     </g>
 
     <g filter="url(#shadow)">
         <rect x="44" y="576" width="1032" height="136" rx="18" fill="url(#panel)" stroke="#1f2937"/>
         <text x="66" y="607" class="card-title">Invalid diagnostic path</text>
-        <text x="270" y="607" class="card-note">linear scale to 28.71M; Ajv is a boolean baseline</text>
+        <text x="270" y="607" class="card-note">linear scale to 29.95M; Ajv is a boolean baseline</text>
         <line x1="270" y1="634" x2="1010" y2="634" class="axis"/>
 
         <text x="66" y="642" class="bar-label">Ajv compiled</text>
         <rect x="270" y="628" width="740" height="15" rx="7.5" fill="url(#ajv)"/>
-        <text x="1024" y="642" class="bar-value">28.71M</text>
+        <text x="1024" y="642" class="bar-value">29.95M</text>
 
         <text x="66" y="666" class="bar-label">TypeSea modes</text>
-        <rect x="270" y="652" width="95" height="15" rx="7.5" fill="url(#unchecked)"/>
+        <rect x="270" y="652" width="87" height="15" rx="7.5" fill="url(#unchecked)"/>
         <rect x="374" y="652" width="79" height="15" rx="7.5" fill="url(#unsafe)"/>
-        <rect x="462" y="652" width="54" height="15" rx="7.5" fill="url(#safe)"/>
-        <text x="532" y="666" class="bar-value">unchecked 3.67M, unsafe 3.08M, safe 2.09M</text>
+        <rect x="462" y="652" width="52" height="15" rx="7.5" fill="url(#safe)"/>
+        <text x="532" y="666" class="bar-value">unchecked 3.51M, unsafe 3.19M, safe 2.11M</text>
 
         <text x="66" y="690" class="bar-label">Valibot / Zod</text>
-        <rect x="270" y="676" width="23" height="15" rx="7.5" fill="url(#valibot)"/>
+        <rect x="270" y="676" width="20" height="15" rx="7.5" fill="url(#valibot)"/>
         <rect x="302" y="676" width="3" height="15" rx="1.5" fill="url(#zod)"/>
-        <text x="322" y="690" class="bar-value">Valibot 0.89M, Zod 0.08M</text>
+        <text x="322" y="690" class="bar-value">Valibot 0.79M, Zod 0.09M</text>
     </g>
 
     <g transform="translate(44 730)">

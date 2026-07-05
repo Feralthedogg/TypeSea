@@ -38,7 +38,7 @@ jobs:
               run: npm run release:check
 
             - name: Publish
-              run: npm publish --provenance --access public --ignore-scripts
+              run: npm run release:publish
               env:
                   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
