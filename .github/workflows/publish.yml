@@ -4,6 +4,12 @@ on:
     release:
         types:
             - published
+    workflow_dispatch:
+        inputs:
+            tag:
+                description: Release tag to publish.
+                required: true
+                type: string
 
 permissions:
     contents: read
@@ -12,14 +18,18 @@ permissions:
 jobs:
     publish:
         name: Publish to npm
-        if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
+        if: ${{ github.event_name == 'workflow_dispatch' || (!github.event.release.prerelease && !github.event.release.draft) }}
         runs-on: ubuntu-latest
         timeout-minutes: 20
         environment: npm-publish
+        env:
+            RELEASE_TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
 
         steps:
             - name: Checkout
               uses: actions/checkout@v4
+              with:
+                  ref: ${{ env.RELEASE_TAG_NAME }}
 
             - name: Setup Node
               uses: actions/setup-node@v4
@@ -32,7 +42,17 @@ jobs:
               run: npm ci
 
             - name: Verify Release Tag
-              run: node scripts/verify-release-tag.mjs
+              run: |
+                  node --input-type=module <<'EOF'
+                  import { readFileSync } from "node:fs";
+
+                  const metadata = JSON.parse(readFileSync("package.json", "utf8"));
+                  const expected = `v${metadata.version}`;
+                  if (process.env.RELEASE_TAG_NAME !== expected) {
+                      console.error(`release tag must be ${expected}`);
+                      process.exitCode = 1;
+                  }
+                  EOF
 
             - name: Release Gate
               run: npm run release:check
