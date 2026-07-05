@@ -3,18 +3,24 @@ import { readFile, writeFile } from "node:fs/promises";
 const sourceFiles = [
     {
         title: "README",
+        titleKo: "README",
         id: "readme",
-        path: "README.md"
+        path: "README.md",
+        koPath: "docs/ko/readme.md"
     },
     {
         title: "API Reference",
+        titleKo: "API 레퍼런스",
         id: "api-reference",
-        path: "docs/api.md"
+        path: "docs/api.md",
+        koPath: "docs/ko/api.md"
     },
     {
         title: "Engine Notes",
+        titleKo: "엔진 노트",
         id: "engine-notes",
-        path: "docs/engine-notes.md"
+        path: "docs/engine-notes.md",
+        koPath: "docs/ko/engine-notes.md"
     }
 ];
 
@@ -38,7 +44,8 @@ async function main() {
         if (file !== undefined) {
             sources.push({
                 ...file,
-                markdown: await readFile(file.path, "utf8")
+                markdown: await readFile(file.path, "utf8"),
+                koMarkdown: await readFile(file.koPath, "utf8")
             });
         }
     }
@@ -671,7 +678,7 @@ function renderSite(sources) {
         </div>
         <p class="brand-tagline">
           <span class="i18n-en">Complete docs from README.md, docs/api.md, and docs/engine-notes.md.</span>
-          <span class="i18n-ko" lang="ko">README.md, docs/api.md, docs/engine-notes.md를 포함한 전체 문서입니다.</span>
+          <span class="i18n-ko" lang="ko">README, API 레퍼런스, 엔진 노트를 한 곳에 모은 문서입니다.</span>
         </p>
         <nav class="nav">
           <p class="nav-group">
@@ -715,10 +722,19 @@ function renderSite(sources) {
             <span class="i18n-ko" lang="ko">전체 문서</span>
           </p>
           <a href="#readme">README</a>
-          <a href="#api-reference">API Reference</a>
-          <a href="#engine-notes">Engine Notes</a>
+          <a href="#api-reference">
+            <span class="i18n-en">API Reference</span>
+            <span class="i18n-ko" lang="ko">API 레퍼런스</span>
+          </a>
+          <a href="#engine-notes">
+            <span class="i18n-en">Engine Notes</span>
+            <span class="i18n-ko" lang="ko">엔진 노트</span>
+          </a>
         </nav>
-        <p class="sidebar-foot">MIT License &middot; zero runtime dependencies</p>
+        <p class="sidebar-foot">
+          <span class="i18n-en">MIT License &middot; zero runtime dependencies</span>
+          <span class="i18n-ko" lang="ko">MIT License &middot; 런타임 의존성 없음</span>
+        </p>
       </aside>
 
       <div class="content">
@@ -735,8 +751,14 @@ function renderSite(sources) {
             </div>
             <div class="topbar-links">
               <a href="https://github.com/Feralthedogg/TypeSea">GitHub</a>
-              <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">API reference</a>
-              <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">Engine notes</a>
+              <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">
+                <span class="i18n-en">API reference</span>
+                <span class="i18n-ko" lang="ko">API 레퍼런스</span>
+              </a>
+              <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">
+                <span class="i18n-en">Engine notes</span>
+                <span class="i18n-ko" lang="ko">엔진 노트</span>
+              </a>
             </div>
           </div>
         </div>
@@ -750,22 +772,31 @@ function renderSite(sources) {
             </p>
             <h2>
               <span class="i18n-en">The site below renders every maintained documentation source.</span>
-              <span class="i18n-ko" lang="ko">아래 사이트 본문은 유지보수 중인 문서 원본 전체를 렌더링합니다.</span>
+              <span class="i18n-ko" lang="ko">아래에는 현재 유지보수 중인 문서 원본 전체가 그대로 들어 있습니다.</span>
             </h2>
             <div class="grid">
               <article class="tile">
                 <h3>README.md</h3>
-                <p>Project goal, benchmark headline, quick start, API summary, edge semantics, and release workflow.</p>
+                <p>
+                  <span class="i18n-en">Project goal, benchmark headline, quick start, API summary, edge semantics, and release workflow.</span>
+                  <span class="i18n-ko" lang="ko">프로젝트 목표, 벤치마크 요약, 빠른 시작, API 개요, 경계 동작, 릴리스 흐름을 다룹니다.</span>
+                </p>
                 <code><a href="https://github.com/Feralthedogg/TypeSea">GitHub README</a></code>
               </article>
               <article class="tile">
                 <h3>docs/api.md</h3>
-                <p>Guard, builder, decoder, compile, AOT, adapter, graph, JSON Schema, edge, and Result contracts.</p>
+                <p>
+                  <span class="i18n-en">Guard, builder, decoder, compile, AOT, adapter, graph, JSON Schema, edge, and Result contracts.</span>
+                  <span class="i18n-ko" lang="ko">가드, 빌더, 디코더, 컴파일, AOT, 어댑터, 그래프, JSON Schema, 경계 조건, Result 계약을 정리합니다.</span>
+                </p>
                 <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">docs/api.md</a></code>
               </article>
               <article class="tile">
                 <h3>docs/engine-notes.md</h3>
-                <p>Hot path rules, type-system rules, Sea-of-Nodes validation IR, compiler notes, recursion, and benchmark scope.</p>
+                <p>
+                  <span class="i18n-en">Hot path rules, type-system rules, Sea-of-Nodes validation IR, compiler notes, recursion, and benchmark scope.</span>
+                  <span class="i18n-ko" lang="ko">핫패스 규칙, 타입 시스템 규칙, Sea-of-Nodes 검증 IR, 컴파일러 설계, 재귀 처리, 벤치마크 범위를 설명합니다.</span>
+                </p>
                 <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">docs/engine-notes.md</a></code>
               </article>
             </div>
@@ -793,31 +824,55 @@ function renderStartGuide() {
                 </p>
                 <h2>
                   <span class="i18n-en">Zero-dependency TypeScript validation with compiled type guards.</span>
-                  <span class="i18n-ko" lang="ko">컴파일 가능한 타입 가드를 가진 zero-dependency TypeScript validator.</span>
+                  <span class="i18n-ko" lang="ko">컴파일된 타입 가드까지 제공하는, 런타임 의존성 없는 TypeScript 검증 라이브러리.</span>
                 </h2>
                 <p class="lede">
                   <span class="i18n-en">TypeSea turns immutable schemas into runtime guards, compiled validators, AOT modules, JSON Schema exports, framework adapters, and frozen diagnostic Result values.</span>
-                  <span class="i18n-ko" lang="ko">TypeSea는 immutable schema를 runtime guard, compiled validator, AOT module, JSON Schema export, framework adapter, freeze된 diagnostic Result로 연결합니다.</span>
+                  <span class="i18n-ko" lang="ko">TypeSea는 불변 스키마를 런타임 가드, 컴파일된 검증기, AOT 모듈, JSON Schema 출력, 프레임워크 어댑터, 얼려진 진단 Result로 이어 줍니다.</span>
                 </p>
                 <ul class="checklist">
-                  <li><strong>Zero dependencies</strong> &mdash; enforced before release.</li>
-                  <li><strong>Safe by default</strong> &mdash; descriptor reads avoid getter execution.</li>
-                  <li><strong>Fast when trusted</strong> &mdash; unsafe and unchecked modes trade hardening for direct reads.</li>
-                  <li><strong>Complete references</strong> &mdash; README, API reference, and engine notes are rendered below.</li>
+                  <li>
+                    <span class="i18n-en"><strong>Zero dependencies</strong> &mdash; enforced before release.</span>
+                    <span class="i18n-ko" lang="ko"><strong>의존성 없음</strong> &mdash; 릴리스 전에 정책 게이트로 강제합니다.</span>
+                  </li>
+                  <li>
+                    <span class="i18n-en"><strong>Safe by default</strong> &mdash; descriptor reads avoid getter execution.</span>
+                    <span class="i18n-ko" lang="ko"><strong>기본값은 안전 모드</strong> &mdash; descriptor read로 getter 실행을 피합니다.</span>
+                  </li>
+                  <li>
+                    <span class="i18n-en"><strong>Fast when trusted</strong> &mdash; unsafe and unchecked modes trade hardening for direct reads.</span>
+                    <span class="i18n-ko" lang="ko"><strong>신뢰된 데이터에서는 빠르게</strong> &mdash; unsafe/unchecked 모드는 일부 방어를 direct read 성능과 맞바꿉니다.</span>
+                  </li>
+                  <li>
+                    <span class="i18n-en"><strong>Complete references</strong> &mdash; README, API reference, and engine notes are rendered below.</span>
+                    <span class="i18n-ko" lang="ko"><strong>문서 전체 포함</strong> &mdash; README, API 레퍼런스, 엔진 노트 전문을 아래에서 볼 수 있습니다.</span>
+                  </li>
                 </ul>
               </div>
               <aside class="status-panel" aria-label="Package status">
-                <header>Package status</header>
+                <header>
+                  <span class="i18n-en">Package status</span>
+                  <span class="i18n-ko" lang="ko">패키지 상태</span>
+                </header>
                 <div class="status-row">
-                  <span>Runtime dependencies</span>
+                  <span>
+                    <span class="i18n-en">Runtime dependencies</span>
+                    <span class="i18n-ko" lang="ko">런타임 의존성</span>
+                  </span>
                   <span class="pill">zero</span>
                 </div>
                 <div class="status-row">
-                  <span>Execution paths</span>
+                  <span>
+                    <span class="i18n-en">Execution paths</span>
+                    <span class="i18n-ko" lang="ko">실행 경로</span>
+                  </span>
                   <span class="pill">plan &middot; jit &middot; aot</span>
                 </div>
                 <div class="status-row">
-                  <span>Module format</span>
+                  <span>
+                    <span class="i18n-en">Module format</span>
+                    <span class="i18n-ko" lang="ko">모듈 형식</span>
+                  </span>
                   <span class="pill">ESM-only</span>
                 </div>
                 <div class="status-row">
@@ -835,7 +890,7 @@ function renderStartGuide() {
             </p>
             <h2>
               <span class="i18n-en">Install, define, narrow, compile.</span>
-              <span class="i18n-ko" lang="ko">설치하고, 정의하고, 좁히고, 컴파일합니다.</span>
+              <span class="i18n-ko" lang="ko">설치하고, 스키마를 정의하고, 타입을 좁힌 뒤, 필요한 곳만 컴파일하세요.</span>
             </h2>
             <div class="code-block">
               <pre><code>npm install typesea</code></pre>
@@ -862,17 +917,29 @@ const schema = toJsonSchema(User);</code></pre>
           </section>
 
           <section id="architecture" data-doc-section>
-            <p class="eyebrow">Architecture</p>
-            <h2>Builder -> frozen schema -> Sea-of-Nodes validation IR -> optimize -> validation plan.</h2>
+            <p class="eyebrow">
+              <span class="i18n-en">Architecture</span>
+              <span class="i18n-ko" lang="ko">아키텍처</span>
+            </p>
+            <h2>
+              <span class="i18n-en">Builder -> frozen schema -> Sea-of-Nodes validation IR -> optimize -> validation plan.</span>
+              <span class="i18n-ko" lang="ko">빌더 -> 얼려진 스키마 -> Sea-of-Nodes 검증 IR -> 최적화 -> 검증 계획.</span>
+            </h2>
             <p class="lede">
               <span class="i18n-en">The graph is the source for generated validators, while the plan-owned kernel keeps ordinary guard execution out of a generic node interpreter.</span>
-              <span class="i18n-ko" lang="ko">graph는 generated validator의 source이고, plan-owned kernel은 일반 guard 실행이 generic node interpreter를 타지 않게 합니다.</span>
+              <span class="i18n-ko" lang="ko">그래프는 생성 검증기의 원본이고, 계획이 소유한 커널은 일반 가드 실행이 범용 노드 인터프리터를 거치지 않게 합니다.</span>
             </p>
           </section>
 
           <section id="api" data-doc-section>
-            <p class="eyebrow">API map</p>
-            <h2>Core entry points.</h2>
+            <p class="eyebrow">
+              <span class="i18n-en">API map</span>
+              <span class="i18n-ko" lang="ko">API 지도</span>
+            </p>
+            <h2>
+              <span class="i18n-en">Core entry points.</span>
+              <span class="i18n-ko" lang="ko">핵심 진입점.</span>
+            </h2>
             <div class="grid">
               <article class="tile">
                 <h3>Builders</h3>
@@ -880,15 +947,24 @@ const schema = toJsonSchema(User);</code></pre>
               </article>
               <article class="tile">
                 <h3>Validation</h3>
-                <p><code>is()</code> for narrowing, <code>check()</code> for Result diagnostics, <code>assert()</code> for throwing integration boundaries.</p>
+                <p>
+                  <span class="i18n-en"><code>is()</code> for narrowing, <code>check()</code> for Result diagnostics, <code>assert()</code> for throwing integration boundaries.</span>
+                  <span class="i18n-ko" lang="ko"><code>is()</code>는 타입 좁히기, <code>check()</code>는 Result 기반 진단, <code>assert()</code>는 예외가 필요한 연동 지점에 씁니다.</span>
+                </p>
               </article>
               <article class="tile">
                 <h3>Generated validators</h3>
-                <p><code>compile()</code>, <code>emitAotModule()</code>, safe mode, unsafe mode, and unchecked mode.</p>
+                <p>
+                  <span class="i18n-en"><code>compile()</code>, <code>emitAotModule()</code>, safe mode, unsafe mode, and unchecked mode.</span>
+                  <span class="i18n-ko" lang="ko"><code>compile()</code>, <code>emitAotModule()</code>, safe/unsafe/unchecked 모드.</span>
+                </p>
               </article>
               <article class="tile">
                 <h3>Decoders</h3>
-                <p><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.coerce</code>, plus async variants.</p>
+                <p>
+                  <span class="i18n-en"><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.coerce</code>, plus async variants.</span>
+                  <span class="i18n-ko" lang="ko"><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.coerce</code>와 async 변형.</span>
+                </p>
               </article>
               <article class="tile">
                 <h3>Messages</h3>
@@ -896,14 +972,23 @@ const schema = toJsonSchema(User);</code></pre>
               </article>
               <article class="tile">
                 <h3>Export</h3>
-                <p><code>toJsonSchema</code> and <code>schemaToJsonSchema</code> succeed only when semantics are preserved.</p>
+                <p>
+                  <span class="i18n-en"><code>toJsonSchema</code> and <code>schemaToJsonSchema</code> succeed only when semantics are preserved.</span>
+                  <span class="i18n-ko" lang="ko"><code>toJsonSchema</code>와 <code>schemaToJsonSchema</code>는 의미를 보존할 수 있을 때만 성공합니다.</span>
+                </p>
               </article>
             </div>
           </section>
 
           <section id="adapters" data-doc-section>
-            <p class="eyebrow">Adapters</p>
-            <h2>Structural adapters without framework dependencies.</h2>
+            <p class="eyebrow">
+              <span class="i18n-en">Adapters</span>
+              <span class="i18n-ko" lang="ko">어댑터</span>
+            </p>
+            <h2>
+              <span class="i18n-en">Structural adapters without framework dependencies.</span>
+              <span class="i18n-ko" lang="ko">프레임워크 의존성 없이 제공되는 구조적 어댑터.</span>
+            </h2>
             <div class="grid">
               <article class="tile">
                 <h3>tRPC</h3>
@@ -921,15 +1006,30 @@ const schema = toJsonSchema(User);</code></pre>
           </section>
 
           <section id="benchmarks" data-doc-section>
-            <p class="eyebrow">Benchmarks</p>
-            <h2>Zod, Valibot, and Ajv comparisons are rendered in the README and engine notes below.</h2>
-            <p class="lede">Run <code>npm run bench -- bench/ecosystem.bench.ts --run</code> for the local benchmark suite.</p>
+            <p class="eyebrow">
+              <span class="i18n-en">Benchmarks</span>
+              <span class="i18n-ko" lang="ko">벤치마크</span>
+            </p>
+            <h2>
+              <span class="i18n-en">Zod, Valibot, and Ajv comparisons are rendered in the README and engine notes below.</span>
+              <span class="i18n-ko" lang="ko">Zod, Valibot, Ajv와의 비교는 아래 README와 엔진 노트에 포함되어 있습니다.</span>
+            </h2>
+            <p class="lede">
+              <span class="i18n-en">Run <code>npm run bench -- bench/ecosystem.bench.ts --run</code> for the local benchmark suite.</span>
+              <span class="i18n-ko" lang="ko">로컬 벤치마크는 <code>npm run bench -- bench/ecosystem.bench.ts --run</code>으로 실행합니다.</span>
+            </p>
             <img class="benchmark-image" src="assets/benchmark-headline.svg" alt="TypeSea benchmark comparison">
           </section>
 
           <section id="release" data-doc-section>
-            <p class="eyebrow">Release gate</p>
-            <h2>Use the same gate locally and in CI.</h2>
+            <p class="eyebrow">
+              <span class="i18n-en">Release gate</span>
+              <span class="i18n-ko" lang="ko">릴리스 게이트</span>
+            </p>
+            <h2>
+              <span class="i18n-en">Use the same gate locally and in CI.</span>
+              <span class="i18n-ko" lang="ko">로컬과 CI에서 같은 gate를 실행합니다.</span>
+            </h2>
             <div class="code-block">
               <pre><code>npm run release:check</code></pre>
             </div>
@@ -944,11 +1044,25 @@ const schema = toJsonSchema(User);</code></pre>
 function renderSourceDocument(source) {
     return `<article id="${source.id}" class="source-doc doc-content" data-doc-section>
             <header>
-              <p class="eyebrow">${escapeHtml(source.title)}</p>
-              <h2>${escapeHtml(source.title)}</h2>
-              <p>Rendered from <code>${escapeHtml(source.path)}</code>.</p>
+              <p class="eyebrow">
+                <span class="i18n-en">${escapeHtml(source.title)}</span>
+                <span class="i18n-ko" lang="ko">${escapeHtml(source.titleKo)}</span>
+              </p>
+              <h2>
+                <span class="i18n-en">${escapeHtml(source.title)}</span>
+                <span class="i18n-ko" lang="ko">${escapeHtml(source.titleKo)}</span>
+              </h2>
+              <p>
+                <span class="i18n-en">Rendered from <code>${escapeHtml(source.path)}</code>.</span>
+                <span class="i18n-ko" lang="ko"><code>${escapeHtml(source.koPath)}</code>에서 렌더링했습니다.</span>
+              </p>
             </header>
-${renderMarkdown(source.markdown, source.id)}
+            <div class="locale-en">
+${renderMarkdown(source.markdown, `${source.id}-en`)}
+            </div>
+            <div class="locale-ko" lang="ko">
+${renderMarkdown(source.koMarkdown, `${source.id}-ko`)}
+            </div>
           </article>`;
 }
 
@@ -1198,10 +1312,19 @@ function normalizeHref(href) {
     if (href === "docs/api.md") {
         return "#api-reference";
     }
+    if (href === "../api.md") {
+        return "#api-reference";
+    }
     if (href === "docs/engine-notes.md") {
         return "#engine-notes";
     }
+    if (href === "../engine-notes.md") {
+        return "#engine-notes";
+    }
     if (href === "./LICENSE") {
+        return "https://github.com/Feralthedogg/TypeSea/blob/main/LICENSE";
+    }
+    if (href === "../../LICENSE") {
         return "https://github.com/Feralthedogg/TypeSea/blob/main/LICENSE";
     }
     if (href.startsWith("#")) {
@@ -1223,6 +1346,7 @@ function normalizeHref(href) {
  */
 function normalizeImageSource(href) {
     if (href === "./docs/assets/benchmark-headline.svg" ||
+        href === "../assets/benchmark-headline.svg" ||
         href === "docs/assets/benchmark-headline.svg") {
         return "assets/benchmark-headline.svg";
     }

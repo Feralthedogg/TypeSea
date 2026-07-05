@@ -298,6 +298,9 @@ const expectedFiles = [
     "docs/assets/benchmark-headline.svg",
     "docs/engine-notes.md",
     "docs/index.html",
+    "docs/ko/api.md",
+    "docs/ko/engine-notes.md",
+    "docs/ko/readme.md",
     "package.json"
 ];
 
