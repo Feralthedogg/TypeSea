@@ -1,0 +1,298 @@
+{
+    "schemaVersion": 1,
+    "package": "typesea",
+    "version": "0.3.2",
+    "recordedAt": "2026-07-05T13:28:00.210Z",
+    "command": "npm run bench:record",
+    "rawOutput": "bench/results/raw.json",
+    "environment": {
+        "node": "v24.13.0",
+        "v8": "13.6.233.17-node.37",
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpu": "Apple M4",
+        "logicalCpus": 10
+    },
+    "suites": [
+        {
+            "id": "valid-is",
+            "title": "Valid object path",
+            "group": "bench/ecosystem.bench.ts > ecosystem comparison valid",
+            "rows": [
+                {
+                    "id": "typesea-interpreted",
+                    "label": "TypeSea interpreted",
+                    "sourceName": "typesea interpreted",
+                    "color": "#9ca3af",
+                    "hz": 476703.0179917968,
+                    "rme": 0.06860101398127573,
+                    "sampleCount": 238352
+                },
+                {
+                    "id": "typesea-safe",
+                    "label": "TypeSea safe compiled",
+                    "sourceName": "typesea compiled",
+                    "color": "#14b8a6",
+                    "hz": 5230755.93908,
+                    "rme": 0.6285045023592436,
+                    "sampleCount": 2615379
+                },
+                {
+                    "id": "typesea-unsafe",
+                    "label": "TypeSea unsafe compiled",
+                    "sourceName": "typesea unsafe compiled",
+                    "color": "#f97316",
+                    "hz": 36756599.19136698,
+                    "rme": 0.03570266962285852,
+                    "sampleCount": 18378300
+                },
+                {
+                    "id": "typesea-unchecked",
+                    "label": "TypeSea unchecked compiled",
+                    "sourceName": "typesea unchecked compiled",
+                    "color": "#22c55e",
+                    "hz": 42431440.47249556,
+                    "rme": 0.03993242167772,
+                    "sampleCount": 21215721
+                },
+                {
+                    "id": "zod",
+                    "label": "Zod safeParse",
+                    "sourceName": "zod safeParse",
+                    "color": "#8b5cf6",
+                    "hz": 1386236.7385242367,
+                    "rme": 0.29565600772378137,
+                    "sampleCount": 693119
+                },
+                {
+                    "id": "valibot",
+                    "label": "Valibot safeParse",
+                    "sourceName": "valibot safeParse",
+                    "color": "#ec4899",
+                    "hz": 1395969.852027303,
+                    "rme": 0.28334620015250345,
+                    "sampleCount": 697985
+                },
+                {
+                    "id": "ajv",
+                    "label": "Ajv compiled",
+                    "sourceName": "ajv compiled",
+                    "color": "#3b82f6",
+                    "hz": 4336006.456380343,
+                    "rme": 0.2730690353073249,
+                    "sampleCount": 2168004
+                }
+            ]
+        },
+        {
+            "id": "valid-check",
+            "title": "Valid diagnostic path",
+            "group": "bench/ecosystem.bench.ts > ecosystem comparison valid diagnostics",
+            "rows": [
+                {
+                    "id": "typesea-interpreted",
+                    "label": "TypeSea interpreted",
+                    "sourceName": "typesea interpreted check",
+                    "color": "#9ca3af",
+                    "hz": 466105.39126626484,
+                    "rme": 0.0265075491389213,
+                    "sampleCount": 233053
+                },
+                {
+                    "id": "typesea-safe",
+                    "label": "TypeSea safe compiled",
+                    "sourceName": "typesea compiled check",
+                    "color": "#14b8a6",
+                    "hz": 4824240.079954115,
+                    "rme": 0.23980213532142813,
+                    "sampleCount": 2412121
+                },
+                {
+                    "id": "typesea-unsafe",
+                    "label": "TypeSea unsafe compiled",
+                    "sourceName": "typesea unsafe compiled check",
+                    "color": "#f97316",
+                    "hz": 36509714.02879169,
+                    "rme": 0.036834773730294874,
+                    "sampleCount": 18254858
+                },
+                {
+                    "id": "typesea-unchecked",
+                    "label": "TypeSea unchecked compiled",
+                    "sourceName": "typesea unchecked compiled check",
+                    "color": "#22c55e",
+                    "hz": 43131347.411791906,
+                    "rme": 0.04237103751941888,
+                    "sampleCount": 21565675
+                },
+                {
+                    "id": "zod",
+                    "label": "Zod safeParse",
+                    "sourceName": "zod safeParse",
+                    "color": "#8b5cf6",
+                    "hz": 1294230.3822138666,
+                    "rme": 5.65090092137615,
+                    "sampleCount": 647116
+                },
+                {
+                    "id": "valibot",
+                    "label": "Valibot safeParse",
+                    "sourceName": "valibot safeParse",
+                    "color": "#ec4899",
+                    "hz": 1355909.945760999,
+                    "rme": 0.12331121090200302,
+                    "sampleCount": 677955
+                },
+                {
+                    "id": "ajv",
+                    "label": "Ajv compiled",
+                    "sourceName": "ajv compiled",
+                    "color": "#3b82f6",
+                    "hz": 4280363.1867244905,
+                    "rme": 0.14293949104832007,
+                    "sampleCount": 2140182
+                }
+            ]
+        },
+        {
+            "id": "invalid-is",
+            "title": "Invalid object fast-fail",
+            "group": "bench/ecosystem.bench.ts > ecosystem comparison invalid",
+            "rows": [
+                {
+                    "id": "typesea-interpreted",
+                    "label": "TypeSea interpreted",
+                    "sourceName": "typesea interpreted",
+                    "color": "#9ca3af",
+                    "hz": 3396045.3818908185,
+                    "rme": 0.12401141208632895,
+                    "sampleCount": 1698023
+                },
+                {
+                    "id": "typesea-safe",
+                    "label": "TypeSea safe compiled",
+                    "sourceName": "typesea compiled",
+                    "color": "#14b8a6",
+                    "hz": 42197735.15584974,
+                    "rme": 0.6710262882679979,
+                    "sampleCount": 21098868
+                },
+                {
+                    "id": "typesea-unsafe",
+                    "label": "TypeSea unsafe compiled",
+                    "sourceName": "typesea unsafe compiled",
+                    "color": "#f97316",
+                    "hz": 50090901.69626639,
+                    "rme": 0.07793611215216859,
+                    "sampleCount": 25045452
+                },
+                {
+                    "id": "typesea-unchecked",
+                    "label": "TypeSea unchecked compiled",
+                    "sourceName": "typesea unchecked compiled",
+                    "color": "#22c55e",
+                    "hz": 51002902.57155383,
+                    "rme": 0.043013534747870105,
+                    "sampleCount": 25501452
+                },
+                {
+                    "id": "zod",
+                    "label": "Zod safeParse",
+                    "sourceName": "zod safeParse",
+                    "color": "#8b5cf6",
+                    "hz": 83798.43430999767,
+                    "rme": 5.803218478757611,
+                    "sampleCount": 41900
+                },
+                {
+                    "id": "valibot",
+                    "label": "Valibot safeParse",
+                    "sourceName": "valibot safeParse",
+                    "color": "#ec4899",
+                    "hz": 914604.2951760984,
+                    "rme": 0.14465423557691062,
+                    "sampleCount": 457303
+                },
+                {
+                    "id": "ajv",
+                    "label": "Ajv compiled",
+                    "sourceName": "ajv compiled",
+                    "color": "#3b82f6",
+                    "hz": 28986949.88441366,
+                    "rme": 2.1774420677830175,
+                    "sampleCount": 14493475
+                }
+            ]
+        },
+        {
+            "id": "invalid-check",
+            "title": "Invalid diagnostic path",
+            "group": "bench/ecosystem.bench.ts > ecosystem comparison invalid diagnostics",
+            "rows": [
+                {
+                    "id": "typesea-interpreted",
+                    "label": "TypeSea interpreted",
+                    "sourceName": "typesea interpreted check",
+                    "color": "#9ca3af",
+                    "hz": 339575.440180592,
+                    "rme": 3.1842462915403047,
+                    "sampleCount": 169790
+                },
+                {
+                    "id": "typesea-safe",
+                    "label": "TypeSea safe compiled",
+                    "sourceName": "typesea compiled check",
+                    "color": "#14b8a6",
+                    "hz": 2145391.6996388477,
+                    "rme": 0.22445491809516527,
+                    "sampleCount": 1072696
+                },
+                {
+                    "id": "typesea-unsafe",
+                    "label": "TypeSea unsafe compiled",
+                    "sourceName": "typesea unsafe compiled check",
+                    "color": "#f97316",
+                    "hz": 3098274.655333376,
+                    "rme": 0.15508602743252853,
+                    "sampleCount": 1549138
+                },
+                {
+                    "id": "typesea-unchecked",
+                    "label": "TypeSea unchecked compiled",
+                    "sourceName": "typesea unchecked compiled check",
+                    "color": "#22c55e",
+                    "hz": 3673561.4342916613,
+                    "rme": 0.08334976485578097,
+                    "sampleCount": 1836781
+                },
+                {
+                    "id": "zod",
+                    "label": "Zod safeParse",
+                    "sourceName": "zod safeParse",
+                    "color": "#8b5cf6",
+                    "hz": 84875.67271944835,
+                    "rme": 4.826218767786619,
+                    "sampleCount": 42438
+                },
+                {
+                    "id": "valibot",
+                    "label": "Valibot safeParse",
+                    "sourceName": "valibot safeParse",
+                    "color": "#ec4899",
+                    "hz": 896022.7133131777,
+                    "rme": 0.2613255531821717,
+                    "sampleCount": 448012
+                },
+                {
+                    "id": "ajv",
+                    "label": "Ajv compiled",
+                    "sourceName": "ajv compiled",
+                    "color": "#3b82f6",
+                    "hz": 28274668.24726499,
+                    "rme": 1.173899465359584,
+                    "sampleCount": 14137335
+                }
+            ]
+        }
+    ]
+}

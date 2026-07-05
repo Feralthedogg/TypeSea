@@ -36,7 +36,7 @@ import {
     emitPatternIssue
 } from "./issue.js";
 import { stringLiteral } from "./names.js";
-import { emitUnion } from "./predicate.js";
+import { emitUnion } from "./union-preflight.js";
 import type { EmitContext } from "./types.js";
 
 /**

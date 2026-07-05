@@ -1,6 +1,6 @@
 {
     "name": "typesea",
-    "version": "0.3.1",
+    "version": "0.3.2",
     "description": "V8-friendly runtime narrowing for TypeScript with Sea-of-Nodes graph introspection.",
     "type": "module",
     "author": "feral",
@@ -29,6 +29,8 @@
     ],
     "files": [
         "dist",
+        "bench/results/latest.json",
+        "bench/results/raw.json",
         "README.md",
         "SECURITY.md",
         "CHANGELOG.md",
@@ -37,8 +39,12 @@
     "scripts": {
         "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json",
         "bench": "vitest bench",
-        "check": "npm run policy && npm run check:docs && npm run typecheck && npm run lint && npm run test && npm run build && npm run check:dist && npm run check:api && npm run check:pack",
+        "bench:compare": "node scripts/benchmark-report.mjs --compare",
+        "bench:record": "node scripts/benchmark-report.mjs --record",
+        "bench:render": "node scripts/benchmark-report.mjs --render",
+        "check": "npm run policy && npm run check:benchmarks && npm run check:docs && npm run typecheck && npm run lint && npm run test && npm run build && npm run check:dist && npm run check:api && npm run check:pack",
         "check:api": "node scripts/public-api-surface.mjs",
+        "check:benchmarks": "node scripts/benchmark-report.mjs --check",
         "check:consumer": "node scripts/consumer-smoke.mjs",
         "check:docs": "node scripts/build-docs-site.mjs --check && node scripts/docs-site-check.mjs",
         "check:dist": "node scripts/dist-policy.mjs",

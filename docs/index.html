@@ -604,7 +604,7 @@
       <aside class="sidebar" aria-label="Documentation navigation">
         <div class="brand">
           <h1>TypeSea</h1>
-          <span class="version">v0.3.1</span>
+          <span class="version">v0.3.2</span>
         </div>
         <p class="brand-tagline">
           <span class="i18n-en">Complete docs from README.md, docs/api.md, and docs/engine-notes.md.</span>
@@ -969,7 +969,7 @@ const schema = toJsonSchema(User);</code></pre>
 <p><a href="https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml/badge.svg">![CI</a>](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml) <span class="muted-link">![Socket Badge</span>](https://socket.dev/npm/package/typesea) <span class="muted-link">![License</span>](./LICENSE) <span class="muted-link">TypeScript</span> <span class="muted-link">Dependencies</span> <span class="muted-link">Tree-shakeable</span> <span class="muted-link">Side-effect free</span> <span class="muted-link">No dependencies</span> <span class="muted-link">Module</span> <span class="muted-link">Node</span></p>
 <p><strong>TypeSea</strong> is a <strong>zero-runtime-dependency TypeScript runtime narrowing library</strong> built around <strong>immutable guards</strong>, optimized <strong>Sea-of-Nodes validation plans</strong>, runtime compilation, and AOT source generation.</p>
 <h3 id="readme-en-benchmark-headline">Benchmark Headline</h3>
-<p>Last local benchmark on 2026-07-05 KST: <code>npm run bench -- bench/ecosystem.bench.ts --run</code>, strict-object contract, operations per second on one machine.</p>
+<p>Last local benchmark on 2026-07-05 KST: <code>npm run bench:record</code>, strict-object contract, operations per second on one machine. The chart is generated from [<code>bench/results/latest.json</code>](./bench/results/latest.json).</p>
 <p><img class="benchmark-image" src="assets/benchmark-headline.svg" alt="TypeSea benchmark comparison"></p>
 <p>TypeSea safe compiled validators are already in Ajv's boolean hot-path class while keeping descriptor-based hostile-input semantics. Unsafe and unchecked FastMode are the bragging-rights path for trusted normalized data: direct field loads, allocation-light strict-key loops, and V8-friendly monomorphic codegen.</p>
 <blockquote><p>Goal: not &quot;probably valid&quot;, but <strong>provably parity-tested validation</strong> that never executes user code, never throws on expected failures, and never leaks mutable state across a public boundary.</p></blockquote>
@@ -1042,6 +1042,13 @@ const FastTrustedShapeUser = compile(User, {
 <p>The default is still <code>mode: &quot;safe&quot;</code>. Unsafe mode may execute getters, may accept prototype-backed values, and strict objects do not reject symbol or non-enumerable extras. Use it only when the caller owns the object graph or has already normalized input into plain data records. Unsafe generated predicates may also embed escaped static property keys directly in source so V8 can use ordinary property-load inline caches.</p>
 <p><code>mode: &quot;unchecked&quot;</code> goes one step further: it trusts the object shape and skips strict extra-key loops entirely. That is the fastest path for already-owned DTOs, but strict objects no longer reject any extra keys.</p>
 <p>In unsafe and unchecked modes, successful compiled <code>check()</code> calls return a raw <code>{ ok: true, value }</code> object instead of freezing the success result. Failed diagnostics are still frozen. Safe mode keeps the fully frozen Result contract. FastMode diagnostic collectors also use the same trusted direct-read object shape where possible, so their issue codes can be less hostile-input-specific than safe mode for missing/accessor-backed fields and sparse/accessor-backed array or record slots. Discriminant diagnostics also read tags directly.</p>
+<div class="table-wrap"><table><thead><tr><th>Contract</th><th><code>safe</code></th><th><code>unsafe</code></th><th><code>unchecked</code></th></tr></thead><tbody><tr><td>Executes user getters</td><td>no</td><td>possible</td><td>possible</td></tr>
+<tr><td>Accepts prototype-backed fields</td><td>no</td><td>possible</td><td>possible</td></tr>
+<tr><td>Rejects enumerable extra keys in strict objects</td><td>yes</td><td>yes</td><td>no</td></tr>
+<tr><td>Rejects symbol or non-enumerable strict extras</td><td>yes</td><td>no</td><td>no</td></tr>
+<tr><td>Freezes successful compiled <code>check()</code> result</td><td>yes</td><td>no</td><td>no</td></tr>
+<tr><td>Intended input</td><td>hostile boundary data</td><td>trusted normalized records</td><td>trusted fixed-shape DTOs</td></tr></tbody></table></div>
+<p>Use <code>safe</code> at every public boundary. Use <code>unsafe</code> only after data has already been normalized into ordinary records. Use <code>unchecked</code> only when the caller owns the shape and treats extra-key rejection as unnecessary work.</p>
 <hr>
 <h3 id="readme-en-presence-semantics">Presence Semantics</h3>
 <p>Object presence is explicit — two different wrappers express two different contracts:</p>
@@ -1060,35 +1067,35 @@ failed check() -&gt; schema-aware diagnostic collector</code></pre>
 <aside class="admonition important"><strong class="admonition-title">IMPORTANT</strong><p>Generated validators keep <strong>user-controlled values out of source text</strong>: literals, regexps, object keys, keysets, and dynamic schema fallbacks live in <strong>side tables</strong> referenced by numeric index. Hostile property names cannot escape into generated code — this is pinned by dedicated injection-audit tests.</p></aside>
 <hr>
 <h3 id="readme-en-performance-snapshot">Performance Snapshot</h3>
-<p>Last local benchmark on 2026-07-05 KST, using <code>npm run bench -- bench/ecosystem.bench.ts --run</code> on the benchmark strict-object contract. These are operations per second on one machine, not release guarantees.</p>
-<div class="table-wrap"><table><thead><tr><th>Valid object path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>478,576</td></tr>
-<tr><td>TypeSea compiled safe <code>is()</code></td><td>5,109,602</td></tr>
-<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>36,777,097</td></tr>
-<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>42,620,570</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>1,400,045</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>1,400,599</td></tr>
-<tr><td>Ajv compiled</td><td>4,238,036</td></tr></tbody></table></div>
-<div class="table-wrap"><table><thead><tr><th>Valid diagnostic path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>424,989</td></tr>
-<tr><td>TypeSea compiled safe <code>check()</code></td><td>4,642,948</td></tr>
-<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>37,184,199</td></tr>
-<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>42,487,325</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>1,278,859</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>1,391,040</td></tr>
-<tr><td>Ajv compiled</td><td>4,338,063</td></tr></tbody></table></div>
-<div class="table-wrap"><table><thead><tr><th>Invalid object path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>3,325,603</td></tr>
-<tr><td>TypeSea compiled safe <code>is()</code></td><td>43,094,061</td></tr>
-<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>50,738,235</td></tr>
-<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>50,898,012</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>84,647</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>866,013</td></tr>
-<tr><td>Ajv compiled</td><td>30,535,761</td></tr></tbody></table></div>
-<div class="table-wrap"><table><thead><tr><th>Invalid diagnostic path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>405,590</td></tr>
-<tr><td>TypeSea compiled safe <code>check()</code></td><td>2,107,460</td></tr>
-<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>3,186,702</td></tr>
-<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>3,509,673</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>85,355</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>788,870</td></tr>
-<tr><td>Ajv compiled</td><td>29,951,403</td></tr></tbody></table></div>
+<p>Last local benchmark on 2026-07-05 KST, using <code>npm run bench:record</code> on the benchmark strict-object contract. The raw Vitest JSON is stored in [<code>bench/results/raw.json</code>](./bench/results/raw.json), and the stable summary used by the README graph is stored in [<code>bench/results/latest.json</code>](./bench/results/latest.json). These are operations per second on one machine, not release guarantees.</p>
+<div class="table-wrap"><table><thead><tr><th>Valid object path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>476,703</td></tr>
+<tr><td>TypeSea compiled safe <code>is()</code></td><td>5,230,756</td></tr>
+<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>36,756,599</td></tr>
+<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>42,431,440</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>1,386,237</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>1,395,970</td></tr>
+<tr><td>Ajv compiled</td><td>4,336,006</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Valid diagnostic path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>466,105</td></tr>
+<tr><td>TypeSea compiled safe <code>check()</code></td><td>4,824,240</td></tr>
+<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>36,509,714</td></tr>
+<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>43,131,347</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>1,294,230</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>1,355,910</td></tr>
+<tr><td>Ajv compiled</td><td>4,280,363</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Invalid object path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>3,396,045</td></tr>
+<tr><td>TypeSea compiled safe <code>is()</code></td><td>42,197,735</td></tr>
+<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>50,090,902</td></tr>
+<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>51,002,903</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>83,798</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>914,604</td></tr>
+<tr><td>Ajv compiled</td><td>28,986,950</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Invalid diagnostic path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>339,575</td></tr>
+<tr><td>TypeSea compiled safe <code>check()</code></td><td>2,145,392</td></tr>
+<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>3,098,275</td></tr>
+<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>3,673,561</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>84,876</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>896,023</td></tr>
+<tr><td>Ajv compiled</td><td>28,274,668</td></tr></tbody></table></div>
 <p>The safe compiled path stays close to Ajv while retaining TypeSea hostile-input semantics: descriptor-based property reads, symbol/non-enumerable strict-key rejection, presence semantics, immutable diagnostics, and TypeScript guard inference. Unsafe and unchecked compiled modes are faster because they deliberately give up parts of that hostile-input contract.</p>
 <hr>
 <h3 id="readme-en-api-reference">API Reference</h3>
@@ -1106,7 +1113,7 @@ failed check() -&gt; schema-aware diagnostic collector</code></pre>
 <tr><td>Presence wrappers</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code>, <code>t.nullish</code></td></tr>
 <tr><td>Dynamic contracts</td><td><code>t.lazy</code>, <code>t.refine</code></td></tr></tbody></table></div>
 <h4 id="readme-en-decoders">Decoders</h4>
-<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Sync decoders</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.default</code>, <code>t.defaultValue</code>, <code>t.prefault</code>, <code>t.catch</code>, <code>t.codec</code>, <code>t.coerce</code>, <code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Sync decoders</td><td><code>guard.transform</code>, <code>guard.pipe</code>, <code>guard.default</code>, <code>guard.prefault</code>, <code>guard.catch</code>, <code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.default</code>, <code>t.defaultValue</code>, <code>t.prefault</code>, <code>t.catch</code>, <code>t.codec</code>, <code>t.coerce</code>, <code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code></td></tr>
 <tr><td>Async decoders</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
 <h4 id="readme-en-execution-export">Execution &amp; Export</h4>
 <div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Guard methods</td><td><code>guard.is()</code>, <code>guard.check()</code>, <code>guard.checkFirst()</code>, <code>guard.graph()</code></td></tr>
@@ -1169,20 +1176,25 @@ const Node: Guard&lt;ListNode&gt; = t.lazy((): Guard&lt;ListNode&gt; =&gt;
 <p>Every gate that CI runs is a local npm script:</p>
 <pre><code>npm run check           # policy, docs, typecheck, lint, tests, build, dist, API snapshot, pack
 npm run check:consumer  # tarball install + runtime/type smoke in a temp project
+npm run bench:compare   # compare committed benchmark JSON against 0.3.2 floors
+npm run bench:record    # full benchmark run + committed JSON/SVG refresh
+npm run bench:render    # regenerate SVG from committed benchmark JSON
 npm run bench -- --run  # benchmark smoke
 npm run pack:dry        # package contents dry run
 npm run release:check   # the full pre-publish gate (everything above)
 npm run release:publish # npm publish with provenance and ignored lifecycle scripts</code></pre>
 <p><code>npm run release:check</code> runs the same gate expected before publishing: typecheck, lint, tests, build, docs smoke, dist policy, public API snapshot, package contents, consumer install, benchmark smoke, and pack dry run. CI executes it on Node 20.19, 22, and 24; releases publish with npm provenance.</p>
 <p>Release path:</p>
-<ol><li>Push a <code>vX.Y.Z</code> tag or run the GitHub <code>Release</code> workflow with that tag.</li><li>The release workflow verifies that the tag matches <code>package.json</code>.</li><li>Publishing happens from the GitHub <code>Publish</code> workflow through <code>npm run release:publish</code>, which expands to <code>npm publish --provenance --access public --ignore-scripts</code>.</li></ol>
+<ol><li>Push a <code>vX.Y.Z</code> tag or run the GitHub <code>Release</code> workflow with that tag.</li><li>The release workflow verifies that the tag matches <code>package.json</code>.</li><li>The same release workflow runs <code>npm run release:check</code>, then <code>npm run release:publish</code>, which expands to <code>npm publish --provenance --access public --ignore-scripts</code>.</li><li>The workflow verifies npm registry visibility and then creates the GitHub Release.</li></ol>
 <p>Local publishing with <code>NPM_TOKEN</code> is reserved for manual recovery releases. It must still run <code>npm run release:check</code> first, and it cannot attach GitHub OIDC provenance.</p>
-<aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>Benchmark comparison packages (Zod, Valibot, Ajv) are dev dependencies only — package policy rejects them from every runtime dependency field. The benchmark suite reports both boolean-path and diagnostic-path (<code>check()</code> vs <code>safeParse</code>) comparisons, so numbers stay apples-to-apples.</p></aside>
+<aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>Benchmark comparison packages (Zod, Valibot, Ajv) are dev dependencies only — package policy rejects them from every runtime dependency field. The benchmark suite reports both boolean-path and diagnostic-path (<code>check()</code> vs <code>safeParse</code>) comparisons, so numbers stay apples-to-apples. <code>check:benchmarks</code> also verifies the committed summary against the 0.3.2 performance floors for unchecked valid, safe invalid, and safe valid paths.</p></aside>
 <hr>
 <h3 id="readme-en-documentation">Documentation</h3>
 <ul><li><a href="#overview">Documentation site</a></li><li><a href="#api-reference">API reference</a></li><li><a href="#engine-notes">Engine notes</a></li><li><a href="https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md">Security policy</a></li></ul>
 <hr>
 <h3 id="readme-en-migration-notes">Migration Notes</h3>
+<h4 id="readme-en-0-3-1-to-0-3-2">0.3.1 to 0.3.2</h4>
+<p>No application code changes are required. <code>0.3.2</code> is a performance-regression hardening patch: it adds benchmark floors, pins representative generated source fingerprints, strengthens FastMode fuzz parity, and normalizes unions by flattening nested unions, removing <code>never</code>, and absorbing <code>unknown</code>.</p>
 <h4 id="readme-en-0-3-0-to-0-3-1">0.3.0 to 0.3.1</h4>
 <p>No application code changes are required. <code>0.3.1</code> is a release-hardening patch: it tightens manual release tag handling, documents npm provenance expectations, adds a security policy, and verifies that npm exposes the published version after the GitHub publish workflow completes.</p>
 <hr>
@@ -1193,7 +1205,7 @@ npm run release:publish # npm publish with provenance and ignored lifecycle scri
 <h2 id="readme-ko-typesea">TypeSea</h2>
 <p><strong>TypeSea</strong>는 런타임 의존성 없이 TypeScript 값을 검증하고 타입을 좁히는 라이브러리입니다. 불변 스키마, Sea-of-Nodes에서 영향을 받은 검증 IR, 런타임 컴파일, AOT 소스 생성을 한 흐름으로 묶는 것을 목표로 합니다.</p>
 <h3 id="readme-ko-벤치마크-요약">벤치마크 요약</h3>
-<p>마지막 로컬 벤치마크는 2026-07-05 KST에 실행했습니다. 명령은 <code>npm run bench -- bench/ecosystem.bench.ts --run</code>이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다. 아래 수치는 회귀를 잡기 위한 로컬 측정값이지, 릴리스 성능 보증값은 아닙니다.</p>
+<p>마지막 로컬 벤치마크는 2026-07-05 KST에 실행했습니다. 명령은 <code>npm run bench:record</code>이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다. 그래프는 [<code>bench/results/latest.json</code>](../../bench/results/latest.json)에서 생성합니다. 아래 수치는 회귀를 잡기 위한 로컬 측정값이지, 릴리스 성능 보증값은 아닙니다.</p>
 <p><img class="benchmark-image" src="assets/benchmark-headline.svg" alt="TypeSea benchmark comparison"></p>
 <p>TypeSea의 안전 모드 컴파일 검증기는 getter 실행 방지와 strict extra key 검사 같은 적대적 입력 방어를 유지하면서도 Ajv의 boolean hot path에 가까운 성능을 냅니다. <code>unsafe</code>와 <code>unchecked</code> FastMode는 호출자가 이미 입력을 정규화했고 객체 그래프를 신뢰할 수 있을 때 쓰는 성능 우선 경로입니다. 이 모드에서는 직접 필드 로드, 할당을 줄인 strict-key loop, V8이 inline cache를 붙이기 쉬운 코드 형태를 사용합니다.</p>
 <blockquote><p>목표는 &quot;대충 유효해 보이면 통과&quot;가 아닙니다. TypeSea의 목표는 <strong>런타임 실행, 컴파일 실행, AOT 실행이 같은 판정을 내린다는 사실을 테스트로 고정하는 검증기</strong>입니다. 사용자 코드를 실행하지 않고, 예상 가능한 실패에서 예외를 던지지 않으며, 공개 API 경계 밖으로 변경 가능한 내부 상태를 내보내지 않는 것을 기본 원칙으로 둡니다.</p></blockquote>
@@ -1255,6 +1267,13 @@ const FastTrustedShapeUser = compile(User, {
 <p>기본값은 여전히 <code>mode: &quot;safe&quot;</code>입니다. unsafe mode는 getter를 실행할 수 있고, prototype-backed value를 받아들일 수 있으며, strict object에서 symbol 또는 non-enumerable extra를 거부하지 않습니다. 호출자가 객체 그래프를 소유하고 있거나 입력을 plain data record로 이미 정규화한 경우에만 사용하세요.</p>
 <p><code>mode: &quot;unchecked&quot;</code>는 한 단계 더 나아가 object shape을 신뢰하고 strict extra-key loop 자체를 건너뜁니다. 이미 소유한 DTO에서는 가장 빠른 경로지만, strict object가 더 이상 extra key를 거부하지 않습니다.</p>
 <p>unsafe와 unchecked mode에서 successful compiled <code>check()</code>는 frozen success result 대신 raw <code>{ ok: true, value }</code> object를 반환합니다. 실패 진단은 계속 freeze됩니다. safe mode는 success와 failure 모두 frozen <code>Result</code> 계약을 유지합니다.</p>
+<div class="table-wrap"><table><thead><tr><th>계약</th><th><code>safe</code></th><th><code>unsafe</code></th><th><code>unchecked</code></th></tr></thead><tbody><tr><td>사용자 getter 실행 방지</td><td>예</td><td>아니오</td><td>아니오</td></tr>
+<tr><td>prototype-backed field 거부</td><td>예</td><td>아니오</td><td>아니오</td></tr>
+<tr><td>enumerable strict extra 거부</td><td>예</td><td>예</td><td>아니오</td></tr>
+<tr><td>symbol/non-enumerable strict extra 거부</td><td>예</td><td>아니오</td><td>아니오</td></tr>
+<tr><td>compiled <code>check()</code> 성공 Result freeze</td><td>예</td><td>아니오</td><td>아니오</td></tr>
+<tr><td>의도한 입력</td><td>외부 경계 입력</td><td>신뢰된 정규화 record</td><td>호출자가 소유한 고정 shape DTO</td></tr></tbody></table></div>
+<p>외부 입력에는 항상 <code>safe</code>를 쓰세요. <code>unsafe</code>는 이미 plain record로 정규화한 데이터에만, <code>unchecked</code>는 extra-key 거부가 필요 없는 호출자 소유 DTO에만 쓰는 모드입니다.</p>
 <hr>
 <h3 id="readme-ko-key-presence">Key Presence</h3>
 <p>객체 key 존재 여부는 명시적으로 표현합니다. 서로 다른 wrapper는 서로 다른 계약을 뜻합니다.</p>
@@ -1273,35 +1292,35 @@ failed check() -&gt; schema-aware diagnostic collector</code></pre>
 <aside class="admonition important"><strong class="admonition-title">IMPORTANT</strong><p>generated validator는 <strong>사용자가 제어하는 값을 소스 문자열에 넣지 않습니다</strong>. literal, regexp, object key, keyset, dynamic schema fallback은 numeric index로 참조되는 <strong>side table</strong>에 둡니다. 적대적인 property name이 generated code 밖으로 탈출할 수 없으며, dedicated injection-audit test가 이 속성을 고정합니다.</p></aside>
 <hr>
 <h3 id="readme-ko-성능-스냅샷">성능 스냅샷</h3>
-<p>마지막 로컬 벤치마크는 2026-07-05 KST에 실행했습니다. <code>npm run bench -- bench/ecosystem.bench.ts --run</code>을 사용했고, benchmark strict-object 계약을 대상으로 했습니다. 아래 값은 단일 머신의 초당 실행 횟수이며 릴리스 성능 보증값은 아닙니다.</p>
-<div class="table-wrap"><table><thead><tr><th>유효한 객체: boolean 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>478,576</td></tr>
-<tr><td>TypeSea compiled safe <code>is()</code></td><td>5,109,602</td></tr>
-<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>36,777,097</td></tr>
-<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>42,620,570</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>1,400,045</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>1,400,599</td></tr>
-<tr><td>Ajv compiled</td><td>4,238,036</td></tr></tbody></table></div>
-<div class="table-wrap"><table><thead><tr><th>유효한 객체: 진단 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>424,989</td></tr>
-<tr><td>TypeSea compiled safe <code>check()</code></td><td>4,642,948</td></tr>
-<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>37,184,199</td></tr>
-<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>42,487,325</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>1,278,859</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>1,391,040</td></tr>
-<tr><td>Ajv compiled</td><td>4,338,063</td></tr></tbody></table></div>
-<div class="table-wrap"><table><thead><tr><th>잘못된 객체: boolean 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>3,325,603</td></tr>
-<tr><td>TypeSea compiled safe <code>is()</code></td><td>43,094,061</td></tr>
-<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>50,738,235</td></tr>
-<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>50,898,012</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>84,647</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>866,013</td></tr>
-<tr><td>Ajv compiled</td><td>30,535,761</td></tr></tbody></table></div>
-<div class="table-wrap"><table><thead><tr><th>잘못된 객체: 진단 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>405,590</td></tr>
-<tr><td>TypeSea compiled safe <code>check()</code></td><td>2,107,460</td></tr>
-<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>3,186,702</td></tr>
-<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>3,509,673</td></tr>
-<tr><td>Zod <code>safeParse</code></td><td>85,355</td></tr>
-<tr><td>Valibot <code>safeParse</code></td><td>788,870</td></tr>
-<tr><td>Ajv compiled</td><td>29,951,403</td></tr></tbody></table></div>
+<p>마지막 로컬 벤치마크는 2026-07-05 KST에 실행했습니다. <code>npm run bench:record</code>를 사용했고, benchmark strict-object 계약을 대상으로 했습니다. raw Vitest JSON은 [<code>bench/results/raw.json</code>](../../bench/results/raw.json)에, README 그래프용 stable summary는 [<code>bench/results/latest.json</code>](../../bench/results/latest.json)에 저장합니다. 아래 값은 단일 머신의 초당 실행 횟수이며 릴리스 성능 보증값은 아닙니다.</p>
+<div class="table-wrap"><table><thead><tr><th>유효한 객체: boolean 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>476,703</td></tr>
+<tr><td>TypeSea compiled safe <code>is()</code></td><td>5,230,756</td></tr>
+<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>36,756,599</td></tr>
+<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>42,431,440</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>1,386,237</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>1,395,970</td></tr>
+<tr><td>Ajv compiled</td><td>4,336,006</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>유효한 객체: 진단 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>466,105</td></tr>
+<tr><td>TypeSea compiled safe <code>check()</code></td><td>4,824,240</td></tr>
+<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>36,509,714</td></tr>
+<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>43,131,347</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>1,294,230</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>1,355,910</td></tr>
+<tr><td>Ajv compiled</td><td>4,280,363</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>잘못된 객체: boolean 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>3,396,045</td></tr>
+<tr><td>TypeSea compiled safe <code>is()</code></td><td>42,197,735</td></tr>
+<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>50,090,902</td></tr>
+<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>51,002,903</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>83,798</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>914,604</td></tr>
+<tr><td>Ajv compiled</td><td>28,986,950</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>잘못된 객체: 진단 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>339,575</td></tr>
+<tr><td>TypeSea compiled safe <code>check()</code></td><td>2,145,392</td></tr>
+<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>3,098,275</td></tr>
+<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>3,673,561</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>84,876</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>896,023</td></tr>
+<tr><td>Ajv compiled</td><td>28,274,668</td></tr></tbody></table></div>
 <p>safe compiled path는 TypeSea의 적대적 입력 방어를 유지하면서 Ajv에 가깝게 동작합니다. descriptor 기반 property read, symbol/non-enumerable strict-key rejection, key presence semantics, immutable diagnostics, TypeScript guard inference를 유지합니다. unsafe와 unchecked compiled mode는 그 방어 계약 일부를 의도적으로 포기하기 때문에 더 빠릅니다.</p>
 <hr>
 <h3 id="readme-ko-api-레퍼런스-요약">API 레퍼런스 요약</h3>
@@ -1319,7 +1338,7 @@ failed check() -&gt; schema-aware diagnostic collector</code></pre>
 <tr><td>Presence wrapper</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code>, <code>t.nullish</code></td></tr>
 <tr><td>Dynamic contract</td><td><code>t.lazy</code>, <code>t.refine</code></td></tr></tbody></table></div>
 <h4 id="readme-ko-decoders">Decoders</h4>
-<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Sync decoder</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.default</code>, <code>t.defaultValue</code>, <code>t.prefault</code>, <code>t.catch</code>, <code>t.codec</code>, <code>t.coerce</code>, <code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Sync decoder</td><td><code>guard.transform</code>, <code>guard.pipe</code>, <code>guard.default</code>, <code>guard.prefault</code>, <code>guard.catch</code>, <code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.default</code>, <code>t.defaultValue</code>, <code>t.prefault</code>, <code>t.catch</code>, <code>t.codec</code>, <code>t.coerce</code>, <code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code></td></tr>
 <tr><td>Async decoder</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
 <h4 id="readme-ko-execution-export">Execution &amp; Export</h4>
 <div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Guard method</td><td><code>guard.is()</code>, <code>guard.check()</code>, <code>guard.checkFirst()</code>, <code>guard.graph()</code></td></tr>
@@ -1374,20 +1393,25 @@ const Node: Guard&lt;ListNode&gt; = t.lazy((): Guard&lt;ListNode&gt; =&gt;
 <p>CI가 실행하는 gate는 전부 로컬 npm script입니다.</p>
 <pre><code>npm run check           # policy, docs, typecheck, lint, tests, build, dist, API snapshot, pack
 npm run check:consumer  # tarball install + runtime/type smoke in a temp project
+npm run bench:compare   # committed benchmark JSON을 0.3.2 floor와 비교
+npm run bench:record    # full benchmark run + committed JSON/SVG refresh
+npm run bench:render    # committed benchmark JSON에서 SVG 재생성
 npm run bench -- --run  # benchmark smoke
 npm run pack:dry        # package contents dry run
 npm run release:check   # the full pre-publish gate
 npm run release:publish # provenance를 붙이고 lifecycle script를 무시하는 npm publish</code></pre>
 <p><code>npm run release:check</code>는 publish 전에 기대하는 동일한 gate를 실행합니다. typecheck, lint, tests, build, docs smoke, dist policy, public API snapshot, package contents, consumer install, benchmark smoke, pack dry run을 포함합니다. CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께 publish합니다.</p>
 <p>릴리스 경로:</p>
-<ol><li><code>vX.Y.Z</code> 태그를 push하거나 GitHub <code>Release</code> workflow를 그 태그로 실행합니다.</li><li>release workflow는 tag가 <code>package.json</code>의 version과 일치하는지 확인합니다.</li><li>publish는 GitHub <code>Publish</code> workflow에서 <code>npm run release:publish</code>로 수행합니다. 이 스크립트는 <code>npm publish --provenance --access public --ignore-scripts</code>로 확장됩니다.</li></ol>
+<ol><li><code>vX.Y.Z</code> 태그를 push하거나 GitHub <code>Release</code> workflow를 그 태그로 실행합니다.</li><li>release workflow는 tag가 <code>package.json</code>의 version과 일치하는지 확인합니다.</li><li>같은 release workflow가 <code>npm run release:check</code>를 통과한 뒤 <code>npm run release:publish</code>를 실행합니다. 이 스크립트는 <code>npm publish --provenance --access public --ignore-scripts</code>로 확장됩니다.</li><li>npm registry에서 새 버전이 보이는지 확인한 뒤 GitHub Release를 생성합니다.</li></ol>
 <p>로컬 <code>NPM_TOKEN</code> publish는 수동 복구 릴리스용입니다. 이 경우에도 먼저 <code>npm run release:check</code>를 통과해야 하며, GitHub OIDC provenance는 붙지 않습니다.</p>
-<aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>benchmark 비교 패키지인 Zod, Valibot, Ajv는 dev dependency일 뿐입니다. package policy는 이들이 runtime dependency field에 들어가는 것을 거부합니다. benchmark suite는 boolean path와 diagnostic path(<code>check()</code> vs <code>safeParse</code>)를 모두 보고하므로 비교 기준을 맞춥니다.</p></aside>
+<aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>benchmark 비교 패키지인 Zod, Valibot, Ajv는 dev dependency일 뿐입니다. package policy는 이들이 runtime dependency field에 들어가는 것을 거부합니다. benchmark suite는 boolean path와 diagnostic path(<code>check()</code> vs <code>safeParse</code>)를 모두 보고하므로 비교 기준을 맞춥니다. <code>check:benchmarks</code>는 committed summary가 0.3.2 performance floor를 넘는지도 확인합니다. 대상은 unchecked valid, safe invalid, safe valid path입니다.</p></aside>
 <hr>
 <h3 id="readme-ko-문서">문서</h3>
 <ul><li><a href="#overview">문서 사이트</a></li><li><a href="#api-reference">API 레퍼런스</a></li><li><a href="#engine-notes">엔진 노트</a></li><li><a href="https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md">보안 정책</a></li></ul>
 <hr>
 <h3 id="readme-ko-마이그레이션-노트">마이그레이션 노트</h3>
+<h4 id="readme-ko-0-3-1에서-0-3-2">0.3.1에서 0.3.2</h4>
+<p>애플리케이션 코드 변경은 필요하지 않습니다. <code>0.3.2</code>는 performance regression hardening patch입니다. benchmark floor를 추가하고, 대표 generated source fingerprint를 고정하며, FastMode fuzz parity를 강화하고, nested union flatten / <code>never</code> 제거 / <code>unknown</code> 흡수 union normalization을 적용합니다.</p>
 <h4 id="readme-ko-0-3-0에서-0-3-1">0.3.0에서 0.3.1</h4>
 <p>애플리케이션 코드 변경은 필요하지 않습니다. <code>0.3.1</code>은 release hardening patch입니다. manual release tag 처리를 더 엄격하게 만들고, npm provenance 기대치를 문서화하며, security policy를 추가하고, GitHub publish workflow가 끝난 뒤 npm에 새 버전이 실제로 보이는지 확인합니다.</p>
 <hr>
@@ -1430,12 +1454,19 @@ npm run release:publish # provenance를 붙이고 lifecycle script를 무시하�
   checkFirst(value: unknown): CheckResult&lt;T&gt;;
   assert(value: unknown): asserts value is T;
   graph(): Graph;
+  transform&lt;U&gt;(mapper: (value: T) =&gt; U): Decoder&lt;U&gt;;
+  pipe(next: Guard&lt;unknown&gt; | Decoder&lt;unknown&gt;): Decoder&lt;unknown&gt;;
+  default(value: T | (() =&gt; T)): Decoder&lt;T&gt;;
+  prefault(value: unknown): Decoder&lt;T&gt;;
+  catch(value: T | (() =&gt; T)): Decoder&lt;T&gt;;
 }</code></pre>
 <div class="table-wrap"><table><thead><tr><th>Method</th><th>Use it for</th><th>Contract</th></tr></thead><tbody><tr><td><code>is</code></td><td>Hot boolean narrowing</td><td>Avoids diagnostic allocation on the success path.</td></tr>
 <tr><td><code>check</code></td><td>Validation with issues</td><td>Returns frozen <code>Result&lt;T, Issue[]&gt;</code> containers.</td></tr>
 <tr><td><code>checkFirst</code></td><td>Hot rejection diagnostics</td><td>Returns the same frozen <code>Result</code> shape, but failure contains at most one issue. Compiled and AOT guards use a dedicated first-fault collector.</td></tr>
 <tr><td><code>assert</code></td><td>Throwing integration boundaries</td><td>Throws <code>TypeSeaAssertionError</code> with copied, frozen issues.</td></tr>
-<tr><td><code>graph</code></td><td>Runtime plan introspection</td><td>Returns the validated, optimized, frozen Sea-of-Nodes graph held by the validation plan.</td></tr></tbody></table></div>
+<tr><td><code>graph</code></td><td>Runtime plan introspection</td><td>Returns the validated, optimized, frozen Sea-of-Nodes graph held by the validation plan.</td></tr>
+<tr><td><code>transform</code> / <code>pipe</code></td><td>Output-producing decode pipelines</td><td>Return decoders. The source guard's <code>is()</code> semantics do not change.</td></tr>
+<tr><td><code>default</code> / <code>prefault</code> / <code>catch</code></td><td>Zod-style decode recovery</td><td>Return decoders. Fallbacks are applied only by <code>decode()</code>, never by <code>is()</code>.</td></tr></tbody></table></div>
 <p>Diagnostic paths contain only object keys and zero-based array or tuple indexes. Public diagnostic validators reject malformed path segments before diagnostics cross the API boundary.</p>
 <h3 id="api-reference-en-builder-families">Builder Families</h3>
 <div class="table-wrap"><table><thead><tr><th>Family</th><th>Builders</th></tr></thead><tbody><tr><td>Scalars</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.date</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code>, <code>t.null</code>, <code>t.undefined</code>, <code>t.void</code></td></tr>
@@ -1450,7 +1481,7 @@ npm run release:publish # provenance를 붙이고 lifecycle script를 무시하�
 <tr><td>Composition</td><td><code>t.union</code>, <code>t.discriminatedUnion</code>, <code>t.intersect</code>, <code>guard.intersect</code></td></tr>
 <tr><td>Presence</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code>, <code>t.nullish</code></td></tr>
 <tr><td>Dynamic guards</td><td><code>t.lazy</code>, <code>t.refine</code></td></tr>
-<tr><td>Decoders</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.default</code>, <code>t.defaultValue</code>, <code>t.prefault</code>, <code>t.catch</code>, <code>t.codec</code>, <code>t.coerce</code>, <code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code></td></tr>
+<tr><td>Decoders</td><td><code>guard.transform</code>, <code>guard.pipe</code>, <code>guard.default</code>, <code>guard.prefault</code>, <code>guard.catch</code>, <code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.default</code>, <code>t.defaultValue</code>, <code>t.prefault</code>, <code>t.catch</code>, <code>t.codec</code>, <code>t.coerce</code>, <code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code></td></tr>
 <tr><td>Async decoders</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
 <p>Builder functions validate inputs before a schema can enter the validation plan, compiler, AOT emitter, diagnostic collector, or JSON Schema exporter. Forged guard-like values, invalid schema tags, invalid predicates, invalid bounds, malformed regexps, and invalid discriminated union case sets are rejected during construction.</p>
 <p>Accepted schemas are frozen before storage. Public schema collection fields use frozen arrays and frozen key lookup records instead of mutable collection objects.</p>
@@ -1489,6 +1520,8 @@ const Node: Guard&lt;ListNode&gt; = t.lazy((): Guard&lt;ListNode&gt; =&gt;
 <pre><code>const Count = t.pipe(t.coerce.number(), t.number.int().gte(0));
 const result = Count.decode(&quot;42&quot;);
 
+const Port = t.number.int().gte(0).lte(65535).default(3000);
+const SafePort = t.number.int().gte(0).lte(65535).catch(3000);
 const Name = t.default(t.string.min(1), &quot;anonymous&quot;);
 const NormalizedName = t.string
   .trim()
@@ -1505,7 +1538,9 @@ const NumberText = t.codec(
   }
 );</code></pre>
 <p>Decoders are for output-producing operations. They return <code>Result</code> from <code>decode()</code> and do not expose <code>is()</code> predicates, because the decoded output may not be the same runtime value as the input.</p>
-<ul><li><code>t.transform(source, mapper)</code> decodes <code>source</code>, then maps the decoded value.</li><li><code>t.pipe(source, next)</code> feeds a successful decoded value into the next guard or decoder.</li><li><code>t.default(source, value)</code> returns a fallback output for <code>undefined</code> input.</li><li><code>t.prefault(source, value)</code> feeds a fallback input through the source.</li><li><code>t.catch(source, value)</code> returns a fallback output after a failed decode.</li><li><code>t.codec(input, output, mapping)</code> validates both sides of a bidirectional decode/encode pair.</li><li><code>t.coerce.string</code>, <code>t.coerce.number</code>, and <code>t.coerce.boolean</code> provide explicit</li></ul>
+<ul><li><code>t.transform(source, mapper)</code> decodes <code>source</code>, then maps the decoded value.</li><li><code>t.pipe(source, next)</code> feeds a successful decoded value into the next guard or decoder.</li><li><code>t.default(source, value)</code> returns a fallback output for <code>undefined</code> input.</li><li><code>t.prefault(source, value)</code> feeds a fallback input through the source.</li><li><code>t.catch(source, value)</code> returns a fallback output after a failed decode.</li><li>Guard methods <code>guard.transform</code>, <code>guard.pipe</code>, <code>guard.default</code>,</li></ul>
+<p><code>guard.prefault</code>, and <code>guard.catch</code> are shorthand for the same decoder helpers. They do not change <code>guard.is()</code>.</p>
+<ul><li><code>t.codec(input, output, mapping)</code> validates both sides of a bidirectional decode/encode pair.</li><li><code>t.coerce.string</code>, <code>t.coerce.number</code>, and <code>t.coerce.boolean</code> provide explicit</li></ul>
 <p>primitive coercion.</p>
 <ul><li><code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, and <code>t.string.toUpperCase()</code></li></ul>
 <p>are decoder helpers. They validate the string first, then return transformed output from <code>decode()</code>.</p>
@@ -1543,6 +1578,12 @@ FastUser.check(input);</code></pre>
 <p>This may execute getters, may accept prototype-backed values, and does not reject symbol or non-enumerable extras on strict objects. Because compiled <code>check()</code> first trusts the generated predicate verdict, an unsafe predicate that returns <code>true</code> also returns a successful <code>check()</code> result. Use unsafe mode only after the input has crossed a trusted normalization boundary.</p>
 <p>Unsafe mode may embed escaped static property keys directly into generated predicate source so V8 can attach ordinary property-load inline caches. Safe mode keeps property keys in side tables.</p>
 <p>Unchecked mode uses the unsafe direct-read shape and also skips strict-object extra-key loops. It is only for input whose object shape has already been trusted or normalized; strict objects no longer reject extra keys in this mode. Unsafe and unchecked compiled <code>check()</code> calls also return raw successful Result objects without <code>Object.freeze()</code>. Failure diagnostics remain frozen. Safe mode keeps frozen success and failure Result objects. FastMode diagnostic collectors use direct field reads and FastMode strict-key rules for object diagnostics where possible, so missing/accessor issue codes are not guaranteed to match safe mode. Array and tuple diagnostics also use direct indexed reads in fast modes, so sparse slots are diagnosed from the loaded <code>undefined</code> value. Record diagnostics use direct <code>record[key]</code> reads; unchecked mode also visits inherited enumerable keys. Discriminant diagnostics read the tag directly and compare string cases with <code>===</code>.</p>
+<div class="table-wrap"><table><thead><tr><th>Contract</th><th><code>safe</code></th><th><code>unsafe</code></th><th><code>unchecked</code></th></tr></thead><tbody><tr><td>Avoids user getter execution</td><td>yes</td><td>no</td><td>no</td></tr>
+<tr><td>Rejects prototype-backed fields</td><td>yes</td><td>no</td><td>no</td></tr>
+<tr><td>Rejects enumerable strict extras</td><td>yes</td><td>yes</td><td>no</td></tr>
+<tr><td>Rejects symbol and non-enumerable strict extras</td><td>yes</td><td>no</td><td>no</td></tr>
+<tr><td>Freezes successful compiled <code>check()</code> result</td><td>yes</td><td>no</td><td>no</td></tr></tbody></table></div>
+<p>The practical rule is: public boundary data uses <code>safe</code>; trusted normalized records may use <code>unsafe</code>; caller-owned fixed-shape DTOs may use <code>unchecked</code>.</p>
 <h3 id="api-reference-en-aot-emit">AOT Emit</h3>
 <pre><code>const emitted = emitAotModule(User, { name: &quot;aotUser&quot; });
 const unsafeEmitted = emitAotModule(User, {
@@ -1626,12 +1667,19 @@ const optimized = optimizeGraph(graph);</code></pre>
   checkFirst(value: unknown): CheckResult&lt;T&gt;;
   assert(value: unknown): asserts value is T;
   graph(): Graph;
+  transform&lt;U&gt;(mapper: (value: T) =&gt; U): Decoder&lt;U&gt;;
+  pipe(next: Guard&lt;unknown&gt; | Decoder&lt;unknown&gt;): Decoder&lt;unknown&gt;;
+  default(value: T | (() =&gt; T)): Decoder&lt;T&gt;;
+  prefault(value: unknown): Decoder&lt;T&gt;;
+  catch(value: T | (() =&gt; T)): Decoder&lt;T&gt;;
 }</code></pre>
 <div class="table-wrap"><table><thead><tr><th>메서드</th><th>용도</th><th>계약</th></tr></thead><tbody><tr><td><code>is</code></td><td>빠른 boolean narrowing</td><td>성공 경로에서 진단 객체를 만들지 않습니다.</td></tr>
 <tr><td><code>check</code></td><td>실패 이유가 필요한 검증</td><td>동결된 <code>Result&lt;T, Issue[]&gt;</code> container를 반환합니다.</td></tr>
 <tr><td><code>checkFirst</code></td><td>hot path의 단일 실패 진단</td><td>같은 <code>Result</code> 형태를 반환하되 실패 시 issue를 최대 하나만 담습니다. compiled/AOT guard는 전용 first-fault collector를 사용합니다.</td></tr>
 <tr><td><code>assert</code></td><td>예외가 필요한 연동 지점</td><td>복사되고 동결된 issue를 담은 <code>TypeSeaAssertionError</code>를 던집니다.</td></tr>
-<tr><td><code>graph</code></td><td>검증 계획 introspection</td><td>validation plan이 보유한 validated, optimized, frozen Sea-of-Nodes graph를 반환합니다.</td></tr></tbody></table></div>
+<tr><td><code>graph</code></td><td>검증 계획 introspection</td><td>validation plan이 보유한 validated, optimized, frozen Sea-of-Nodes graph를 반환합니다.</td></tr>
+<tr><td><code>transform</code> / <code>pipe</code></td><td>값을 생성하는 decode pipeline</td><td>decoder를 반환합니다. 원래 guard의 <code>is()</code> 의미는 바뀌지 않습니다.</td></tr>
+<tr><td><code>default</code> / <code>prefault</code> / <code>catch</code></td><td>Zod 스타일 decode fallback</td><td>decoder를 반환합니다. fallback은 <code>decode()</code>에서만 적용되고 <code>is()</code>에는 적용되지 않습니다.</td></tr></tbody></table></div>
 <p>diagnostic path에는 object key와 0부터 시작하는 array 또는 tuple index만 들어갑니다. 공개 diagnostic validator는 잘못된 path segment를 거부한 뒤 diagnostic을 API 밖으로 내보냅니다.</p>
 <h3 id="api-reference-ko-builder-계열">Builder 계열</h3>
 <div class="table-wrap"><table><thead><tr><th>계열</th><th>Builder</th></tr></thead><tbody><tr><td>Scalar</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.date</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code>, <code>t.null</code>, <code>t.undefined</code>, <code>t.void</code></td></tr>
@@ -1646,7 +1694,7 @@ const optimized = optimizeGraph(graph);</code></pre>
 <tr><td>Composition</td><td><code>t.union</code>, <code>t.discriminatedUnion</code>, <code>t.intersect</code>, <code>guard.intersect</code></td></tr>
 <tr><td>Presence</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code>, <code>t.nullish</code></td></tr>
 <tr><td>Dynamic guard</td><td><code>t.lazy</code>, <code>t.refine</code></td></tr>
-<tr><td>Decoder</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.default</code>, <code>t.defaultValue</code>, <code>t.prefault</code>, <code>t.catch</code>, <code>t.codec</code>, <code>t.coerce</code>, <code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code></td></tr>
+<tr><td>Decoder</td><td><code>guard.transform</code>, <code>guard.pipe</code>, <code>guard.default</code>, <code>guard.prefault</code>, <code>guard.catch</code>, <code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.default</code>, <code>t.defaultValue</code>, <code>t.prefault</code>, <code>t.catch</code>, <code>t.codec</code>, <code>t.coerce</code>, <code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code></td></tr>
 <tr><td>Async decoder</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
 <p>builder function은 schema가 validation plan, compiler, AOT emitter, diagnostic collector, JSON Schema exporter로 들어가기 전에 입력을 검증합니다. 위조된 guard-like value, 잘못된 schema tag, 잘못된 predicate, 잘못된 bound, malformed regexp, 잘못된 discriminated union case set은 construction 중 거부됩니다.</p>
 <p>허용된 schema는 저장 전에 freeze됩니다. 공개 schema collection field는 변경 가능한 collection object 대신 frozen array와 frozen key lookup record를 사용합니다.</p>
@@ -1682,6 +1730,8 @@ const Node: Guard&lt;ListNode&gt; = t.lazy((): Guard&lt;ListNode&gt; =&gt;
 <pre><code>const Count = t.pipe(t.coerce.number(), t.number.int().gte(0));
 const result = Count.decode(&quot;42&quot;);
 
+const Port = t.number.int().gte(0).lte(65535).default(3000);
+const SafePort = t.number.int().gte(0).lte(65535).catch(3000);
 const Name = t.default(t.string.min(1), &quot;anonymous&quot;);
 const NormalizedName = t.string
   .trim()
@@ -1698,7 +1748,7 @@ const NumberText = t.codec(
   }
 );</code></pre>
 <p>decoder는 output을 생성하는 작업에 씁니다. <code>decode()</code>에서 <code>Result</code>를 반환하며 <code>is()</code> predicate를 노출하지 않습니다. decoded output이 input과 같은 runtime value가 아닐 수 있기 때문입니다.</p>
-<ul><li><code>t.transform(source, mapper)</code>는 <code>source</code>를 decode한 뒤 decoded value를 map합니다.</li><li><code>t.pipe(source, next)</code>는 성공한 decoded value를 다음 guard 또는 decoder에 넘깁니다.</li><li><code>t.default(source, value)</code>는 input이 <code>undefined</code>일 때 fallback output을 바로 반환합니다.</li><li><code>t.prefault(source, value)</code>는 input이 <code>undefined</code>일 때 fallback input을 source에 다시 통과시킵니다.</li><li><code>t.catch(source, value)</code>는 decode 실패 시 fallback output을 반환합니다.</li><li><code>t.codec(input, output, mapping)</code>은 bidirectional decode/encode 양쪽을 모두 검증합니다.</li><li><code>t.coerce.string</code>, <code>t.coerce.number</code>, <code>t.coerce.boolean</code>은 명시적 primitive coercion을 제공합니다.</li><li><code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code>는 decoder helper입니다. 먼저 string을 검증한 뒤 <code>decode()</code> 결과로 변환된 값을 반환합니다.</li><li><code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code>는 <code>decodeAsync()</code>에서 <code>Promise&lt;Result&lt;T, Issue[]&gt;&gt;</code>를 반환합니다.</li></ul>
+<ul><li><code>t.transform(source, mapper)</code>는 <code>source</code>를 decode한 뒤 decoded value를 map합니다.</li><li><code>t.pipe(source, next)</code>는 성공한 decoded value를 다음 guard 또는 decoder에 넘깁니다.</li><li><code>t.default(source, value)</code>는 input이 <code>undefined</code>일 때 fallback output을 바로 반환합니다.</li><li><code>t.prefault(source, value)</code>는 input이 <code>undefined</code>일 때 fallback input을 source에 다시 통과시킵니다.</li><li><code>t.catch(source, value)</code>는 decode 실패 시 fallback output을 반환합니다.</li><li><code>guard.transform</code>, <code>guard.pipe</code>, <code>guard.default</code>, <code>guard.prefault</code>, <code>guard.catch</code>는 같은 decoder helper의 method shorthand입니다. <code>guard.is()</code> 의미를 바꾸지는 않습니다.</li><li><code>t.codec(input, output, mapping)</code>은 bidirectional decode/encode 양쪽을 모두 검증합니다.</li><li><code>t.coerce.string</code>, <code>t.coerce.number</code>, <code>t.coerce.boolean</code>은 명시적 primitive coercion을 제공합니다.</li><li><code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code>는 decoder helper입니다. 먼저 string을 검증한 뒤 <code>decode()</code> 결과로 변환된 값을 반환합니다.</li><li><code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code>는 <code>decodeAsync()</code>에서 <code>Promise&lt;Result&lt;T, Issue[]&gt;&gt;</code>를 반환합니다.</li></ul>
 <p>예상 가능한 async validation 실패도 <code>Result</code>로 반환됩니다.</p>
 <h3 id="api-reference-ko-message">Message</h3>
 <pre><code>const checked = withMessages(User.check(input), {
@@ -1729,6 +1779,12 @@ FastUser.check(input);</code></pre>
 <p>unsafe mode는 escaped static property key를 generated predicate source에 직접 넣을 수 있습니다. 그래야 V8이 ordinary property-load inline cache를 붙이기 쉽습니다. safe mode는 property key를 side table에 유지합니다.</p>
 <p>unchecked mode는 unsafe direct-read shape을 사용하고 strict-object extra-key loop도 건너뜁니다. object shape이 이미 신뢰되거나 정규화된 input에만 사용해야 합니다. 이 모드에서는 strict object가 더 이상 extra key를 거부하지 않습니다.</p>
 <p>unsafe와 unchecked compiled <code>check()</code>는 successful Result object를 <code>Object.freeze()</code> 없이 raw object로 반환합니다. failure diagnostic은 계속 freeze됩니다. safe mode는 success와 failure 모두 frozen Result object를 유지합니다. FastMode diagnostic collector는 가능한 경우 direct field read와 FastMode strict-key rule을 사용합니다. 따라서 missing/accessor issue code는 safe mode와 일치한다고 보장하지 않습니다. array와 tuple diagnostic도 fast mode에서는 direct indexed read를 쓰므로 sparse slot은 loaded <code>undefined</code> value 기준으로 진단됩니다. record diagnostic은 direct <code>record[key]</code> read를 사용합니다. unchecked mode는 inherited enumerable key도 방문합니다. discriminant diagnostic은 tag를 직접 읽고 string case를 <code>===</code>로 비교합니다.</p>
+<div class="table-wrap"><table><thead><tr><th>계약</th><th><code>safe</code></th><th><code>unsafe</code></th><th><code>unchecked</code></th></tr></thead><tbody><tr><td>사용자 getter 실행 방지</td><td>예</td><td>아니오</td><td>아니오</td></tr>
+<tr><td>prototype-backed field 거부</td><td>예</td><td>아니오</td><td>아니오</td></tr>
+<tr><td>enumerable strict extra 거부</td><td>예</td><td>예</td><td>아니오</td></tr>
+<tr><td>symbol/non-enumerable strict extra 거부</td><td>예</td><td>아니오</td><td>아니오</td></tr>
+<tr><td>compiled <code>check()</code> 성공 Result freeze</td><td>예</td><td>아니오</td><td>아니오</td></tr></tbody></table></div>
+<p>실전 규칙은 단순합니다. public boundary data는 <code>safe</code>, 신뢰된 정규화 record는 <code>unsafe</code>, 호출자가 소유한 fixed-shape DTO는 <code>unchecked</code>를 씁니다.</p>
 <h3 id="api-reference-ko-aot-모듈-생성">AOT 모듈 생성</h3>
 <pre><code>const emitted = emitAotModule(User, { name: &quot;aotUser&quot; });
 const unsafeEmitted = emitAotModule(User, {
@@ -1832,6 +1888,13 @@ const optimized = optimizeGraph(graph);</code></pre>
 <p>Unsafe array, tuple, record, and discriminant paths also prefer direct loads. Strict objects use a <code>for...in</code> own-enumerable key loop instead of allocating own-key arrays. Object keys that are ASCII identifier names emit as dot-property loads such as <code>value.id</code>; other keys emit as escaped string-literal bracket loads. That is intentionally not hostile-input equivalent: getters can execute, prototype-backed values can be accepted, symbol or non-enumerable strict extras are not rejected, and static property names may appear in unsafe generated predicate source.</p>
 <p><code>mode: &quot;unchecked&quot;</code> keeps the unsafe direct-read shape and removes strict extra-key loops. It is a trusted-shape path for objects already normalized by the caller; strict objects no longer reject any extra keys there.</p>
 <p>Fast modes also remove <code>Object.freeze()</code> from successful compiled <code>check()</code> results. The returned object keeps the same <code>{ ok: true, value }</code> shape, but it is intentionally not frozen. Failed diagnostics stay frozen because those objects are off the success hot path and are often retained for reporting. Object diagnostics in fast modes are generated from the same direct-read contract as predicates. Required fields load through <code>value.key</code>, optional fields use direct load plus an own-key fallback for <code>undefined</code>, unsafe strict objects scan own enumerable string keys, and unchecked strict objects skip the strict-key diagnostic scan. Array and tuple diagnostics in fast modes read items through direct indexes instead of descriptor probes. Record diagnostics read through <code>record[key]</code>; unchecked mode intentionally keeps inherited enumerable keys visible. Discriminant diagnostics read the tag directly and compare literal string cases with strict equality.</p>
+<p>FastMode is therefore an engine contract, not a security default:</p>
+<div class="table-wrap"><table><thead><tr><th>Contract</th><th><code>safe</code></th><th><code>unsafe</code></th><th><code>unchecked</code></th></tr></thead><tbody><tr><td>Getter execution avoided</td><td>yes</td><td>no</td><td>no</td></tr>
+<tr><td>Prototype-backed fields rejected</td><td>yes</td><td>no</td><td>no</td></tr>
+<tr><td>Enumerable strict extras rejected</td><td>yes</td><td>yes</td><td>no</td></tr>
+<tr><td>Symbol and non-enumerable strict extras rejected</td><td>yes</td><td>no</td><td>no</td></tr>
+<tr><td>Successful compiled <code>check()</code> result frozen</td><td>yes</td><td>no</td><td>no</td></tr></tbody></table></div>
+<p>The intended rule is simple: boundary data uses <code>safe</code>; trusted normalized records may use <code>unsafe</code>; fixed-shape DTOs owned by the caller may use <code>unchecked</code>.</p>
 <h3 id="engine-notes-en-recursion">Recursion</h3>
 <p>Lazy schemas resolve their getter once per guard instance. Recursive validation therefore sees stable schema identity, and repeated validations do not rebuild the recursive schema graph.</p>
 <p>Recursive validation uses a root-local active pair table keyed by runtime object identity and schema identity. Re-entering the same schema/value pair short-circuits that edge, which lets cyclic object graphs validate finitely while still checking the original object fields on the outer frame.</p>
@@ -1848,11 +1911,11 @@ const optimized = optimizeGraph(graph);</code></pre>
 <ul><li><code>ecosystem.bench.ts</code> compares TypeSea runtime-plan, TypeSea compiled, Zod,</li></ul>
 <p>Valibot, and Ajv over one JSON-compatible strict-object contract.</p>
 <p>Zod, Valibot, and Ajv are dev dependencies for measurement only. They are not imported by <code>src</code>, and package policy rejects runtime, peer, optional, or bundled dependency fields before release.</p>
-<p>Last local benchmark on 2026-07-05 KST reported these ecosystem paths over the JSON-compatible strict-object benchmark:</p>
-<div class="table-wrap"><table><thead><tr><th>Case</th><th>TypeSea runtime plan</th><th>TypeSea compiled safe</th><th>TypeSea compiled unsafe</th><th>TypeSea compiled unchecked</th><th>Ajv compiled</th></tr></thead><tbody><tr><td>Valid <code>is()</code></td><td>478,576 hz</td><td>5,109,602 hz</td><td>36,777,097 hz</td><td>42,620,570 hz</td><td>4,238,036 hz</td></tr>
-<tr><td>Valid <code>check()</code></td><td>424,989 hz</td><td>4,642,948 hz</td><td>37,184,199 hz</td><td>42,487,325 hz</td><td>4,338,063 hz</td></tr>
-<tr><td>Invalid <code>is()</code></td><td>3,325,603 hz</td><td>43,094,061 hz</td><td>50,738,235 hz</td><td>50,898,012 hz</td><td>30,535,761 hz</td></tr>
-<tr><td>Invalid <code>check()</code></td><td>405,590 hz</td><td>2,107,460 hz</td><td>3,186,702 hz</td><td>3,509,673 hz</td><td>29,951,403 hz</td></tr></tbody></table></div>
+<p>Last local benchmark on 2026-07-05 KST reported these ecosystem paths over the JSON-compatible strict-object benchmark. The committed source of truth is <code>bench/results/latest.json</code>; <code>npm run bench:record</code> refreshes that summary and the README SVG from raw Vitest JSON. <code>npm run bench:compare</code> checks the committed summary against 0.3.2 regression floors for unchecked valid hot path, safe invalid fast-fail, and safe valid throughput. <code>check:benchmarks</code> runs the same floor check after verifying the SVG is fresh.</p>
+<div class="table-wrap"><table><thead><tr><th>Case</th><th>TypeSea runtime plan</th><th>TypeSea compiled safe</th><th>TypeSea compiled unsafe</th><th>TypeSea compiled unchecked</th><th>Ajv compiled</th></tr></thead><tbody><tr><td>Valid <code>is()</code></td><td>476,703 hz</td><td>5,230,756 hz</td><td>36,756,599 hz</td><td>42,431,440 hz</td><td>4,336,006 hz</td></tr>
+<tr><td>Valid <code>check()</code></td><td>466,105 hz</td><td>4,824,240 hz</td><td>36,509,714 hz</td><td>43,131,347 hz</td><td>4,280,363 hz</td></tr>
+<tr><td>Invalid <code>is()</code></td><td>3,396,045 hz</td><td>42,197,735 hz</td><td>50,090,902 hz</td><td>51,002,903 hz</td><td>28,986,950 hz</td></tr>
+<tr><td>Invalid <code>check()</code></td><td>339,575 hz</td><td>2,145,392 hz</td><td>3,098,275 hz</td><td>3,673,561 hz</td><td>28,274,668 hz</td></tr></tbody></table></div>
 <p>Benchmark numbers are machine-local telemetry. They are useful for catching regressions, not for promising a fixed throughput floor. Unsafe and unchecked numbers are not hostile-input equivalent to safe mode.</p>
             </div>
             <div class="locale-ko" lang="ko">
@@ -1878,6 +1941,13 @@ const optimized = optimizeGraph(graph);</code></pre>
 <p>unsafe array, tuple, record, discriminant path도 direct load를 선호합니다. strict object는 own-key array를 할당하는 대신 <code>for...in</code> own-enumerable key loop를 사용합니다. ASCII identifier object key는 <code>value.id</code> 같은 dot-property load로 emit되고, 나머지는 escaped string-literal bracket load로 emit됩니다. 이는 의도적으로 safe mode와 같은 적대적 입력 방어가 아닙니다. getter가 실행될 수 있고, prototype-backed value가 accepted될 수 있으며, symbol 또는 non-enumerable strict extra가 거부되지 않고, static property name이 unsafe generated predicate source에 나타날 수 있습니다.</p>
 <p><code>mode: &quot;unchecked&quot;</code>는 unsafe direct-read shape을 유지하면서 strict extra-key loop를 제거합니다. caller가 이미 정규화한 object를 위한 trusted-shape path입니다. 이 모드에서 strict object는 더 이상 extra key를 거부하지 않습니다.</p>
 <p>fast mode는 successful compiled <code>check()</code> result에서 <code>Object.freeze()</code>도 제거합니다. 반환 object는 동일한 <code>{ ok: true, value }</code> shape을 유지하지만 의도적으로 freeze되지 않습니다. failed diagnostic은 success hot path 밖에 있고 reporting을 위해 보존되는 일이 많으므로 계속 freeze됩니다. fast mode의 object diagnostic은 predicate와 같은 direct-read contract에서 생성됩니다. required field는 <code>value.key</code>로 읽고, optional field는 direct load 뒤 <code>undefined</code>일 때 own-key fallback을 사용하며, unsafe strict object는 own enumerable string key를 scan하고, unchecked strict object는 strict-key diagnostic scan을 건너뜁니다. fast mode의 array와 tuple diagnostic은 descriptor probe 대신 direct index로 item을 읽습니다. record diagnostic은 <code>record[key]</code>로 읽습니다. unchecked mode는 inherited enumerable key를 의도적으로 보이게 둡니다. discriminant diagnostic은 tag를 직접 읽고 literal string case를 strict equality로 비교합니다.</p>
+<p>FastMode는 보안 기본값이 아니라 엔진 계약입니다.</p>
+<div class="table-wrap"><table><thead><tr><th>계약</th><th><code>safe</code></th><th><code>unsafe</code></th><th><code>unchecked</code></th></tr></thead><tbody><tr><td>getter 실행 방지</td><td>예</td><td>아니오</td><td>아니오</td></tr>
+<tr><td>prototype-backed field 거부</td><td>예</td><td>아니오</td><td>아니오</td></tr>
+<tr><td>enumerable strict extra 거부</td><td>예</td><td>예</td><td>아니오</td></tr>
+<tr><td>symbol/non-enumerable strict extra 거부</td><td>예</td><td>아니오</td><td>아니오</td></tr>
+<tr><td>compiled <code>check()</code> 성공 Result freeze</td><td>예</td><td>아니오</td><td>아니오</td></tr></tbody></table></div>
+<p>규칙은 단순합니다. boundary data는 <code>safe</code>, 신뢰된 정규화 record는 <code>unsafe</code>, 호출자가 shape을 소유한 DTO는 <code>unchecked</code>를 씁니다.</p>
 <h3 id="engine-notes-ko-재귀">재귀</h3>
 <p>lazy schema는 guard instance마다 getter를 한 번 resolve합니다. 따라서 recursive validation은 stable schema identity를 보고, 반복 validation이 recursive schema graph를 다시 만들지 않습니다.</p>
 <p>recursive validation은 root-local active pair table을 사용합니다. key는 runtime object identity와 schema identity의 pair입니다. 같은 schema/value pair에 다시 들어오면 그 edge를 short-circuit합니다. 이 방식으로 cyclic object graph도 유한하게 검증하면서, outer frame에서는 원래 object field를 계속 검사합니다.</p>
@@ -1891,11 +1961,11 @@ const optimized = optimizeGraph(graph);</code></pre>
 <p>benchmark suite는 두 질문을 분리합니다.</p>
 <ul><li><code>compile.bench.ts</code>는 같은 TypeSea schema를 대상으로 TypeSea runtime-plan validator와 compiled validator를 비교합니다.</li><li><code>ecosystem.bench.ts</code>는 하나의 JSON-compatible strict-object contract를 대상으로 TypeSea runtime-plan, TypeSea compiled, Zod, Valibot, Ajv를 비교합니다.</li></ul>
 <p>Zod, Valibot, Ajv는 측정용 dev dependency입니다. <code>src</code>에서 import하지 않으며, package policy는 release 전에 runtime, peer, optional, bundled dependency field를 거부합니다.</p>
-<p>2026-07-05 KST의 마지막 로컬 벤치마크는 JSON-compatible strict-object benchmark에서 아래 ecosystem path를 보고했습니다.</p>
-<div class="table-wrap"><table><thead><tr><th>Case</th><th>TypeSea runtime plan</th><th>TypeSea compiled safe</th><th>TypeSea compiled unsafe</th><th>TypeSea compiled unchecked</th><th>Ajv compiled</th></tr></thead><tbody><tr><td>Valid <code>is()</code></td><td>478,576 hz</td><td>5,109,602 hz</td><td>36,777,097 hz</td><td>42,620,570 hz</td><td>4,238,036 hz</td></tr>
-<tr><td>Valid <code>check()</code></td><td>424,989 hz</td><td>4,642,948 hz</td><td>37,184,199 hz</td><td>42,487,325 hz</td><td>4,338,063 hz</td></tr>
-<tr><td>Invalid <code>is()</code></td><td>3,325,603 hz</td><td>43,094,061 hz</td><td>50,738,235 hz</td><td>50,898,012 hz</td><td>30,535,761 hz</td></tr>
-<tr><td>Invalid <code>check()</code></td><td>405,590 hz</td><td>2,107,460 hz</td><td>3,186,702 hz</td><td>3,509,673 hz</td><td>29,951,403 hz</td></tr></tbody></table></div>
+<p>2026-07-05 KST의 마지막 로컬 벤치마크는 JSON-compatible strict-object benchmark에서 아래 ecosystem path를 보고했습니다. 커밋된 기준 데이터는 <code>bench/results/latest.json</code>이며, <code>npm run bench:record</code>가 raw Vitest JSON에서 summary와 README SVG를 다시 생성합니다. <code>npm run bench:compare</code>는 committed summary를 0.3.2 regression floor와 비교합니다. 대상은 unchecked valid hot path, safe invalid fast-fail, safe valid throughput입니다. <code>check:benchmarks</code>는 SVG freshness를 확인한 뒤 같은 floor check를 실행합니다.</p>
+<div class="table-wrap"><table><thead><tr><th>Case</th><th>TypeSea runtime plan</th><th>TypeSea compiled safe</th><th>TypeSea compiled unsafe</th><th>TypeSea compiled unchecked</th><th>Ajv compiled</th></tr></thead><tbody><tr><td>Valid <code>is()</code></td><td>476,703 hz</td><td>5,230,756 hz</td><td>36,756,599 hz</td><td>42,431,440 hz</td><td>4,336,006 hz</td></tr>
+<tr><td>Valid <code>check()</code></td><td>466,105 hz</td><td>4,824,240 hz</td><td>36,509,714 hz</td><td>43,131,347 hz</td><td>4,280,363 hz</td></tr>
+<tr><td>Invalid <code>is()</code></td><td>3,396,045 hz</td><td>42,197,735 hz</td><td>50,090,902 hz</td><td>51,002,903 hz</td><td>28,986,950 hz</td></tr>
+<tr><td>Invalid <code>check()</code></td><td>339,575 hz</td><td>2,145,392 hz</td><td>3,098,275 hz</td><td>3,673,561 hz</td><td>28,274,668 hz</td></tr></tbody></table></div>
 <p>benchmark number는 machine-local telemetry입니다. regression을 잡는 데 유용하지만 고정된 throughput floor를 약속하지 않습니다. unsafe와 unchecked number는 safe mode와 hostile-input equivalent가 아닙니다.</p>
             </div>
           </article>

@@ -2,7 +2,28 @@
 
 All notable changes to TypeSea are recorded here.
 
-## 0.3.1 - Unreleased
+## 0.3.2 - Unreleased
+
+### Added
+
+- Added `bench:compare` and wired benchmark floor checks into
+  `check:benchmarks`. The committed benchmark summary now fails the local gate
+  if unchecked valid hot path, safe invalid fast-fail, or safe valid throughput
+  drops below the 0.3.2 floor.
+- Added generated-source fingerprint tests for the representative strict-object
+  hot path across safe, unsafe, and unchecked compile modes.
+
+### Changed
+
+- Normalized union construction conservatively by flattening nested unions,
+  removing `never` branches, and letting `unknown` absorb the whole union.
+  Runtime branch ordering and dispatch heuristics are otherwise unchanged.
+- Strengthened FastMode fuzz parity so trusted schema-shaped values must produce
+  the same boolean and diagnostic verdicts in safe, unsafe, and unchecked modes.
+- Refreshed benchmark JSON, README tables, docs tables, and the generated SVG
+  from the restored 2026-07-05 benchmark run.
+
+## 0.3.1 - 2026-07-05
 
 ### Changed
 

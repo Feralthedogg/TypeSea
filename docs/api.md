@@ -30,6 +30,11 @@ interface Guard<T> {
   checkFirst(value: unknown): CheckResult<T>;
   assert(value: unknown): asserts value is T;
   graph(): Graph;
+  transform<U>(mapper: (value: T) => U): Decoder<U>;
+  pipe(next: Guard<unknown> | Decoder<unknown>): Decoder<unknown>;
+  default(value: T | (() => T)): Decoder<T>;
+  prefault(value: unknown): Decoder<T>;
+  catch(value: T | (() => T)): Decoder<T>;
 }
 ```
 
@@ -40,6 +45,8 @@ interface Guard<T> {
 | `checkFirst` | Hot rejection diagnostics | Returns the same frozen `Result` shape, but failure contains at most one issue. Compiled and AOT guards use a dedicated first-fault collector. |
 | `assert` | Throwing integration boundaries | Throws `TypeSeaAssertionError` with copied, frozen issues. |
 | `graph` | Runtime plan introspection | Returns the validated, optimized, frozen Sea-of-Nodes graph held by the validation plan. |
+| `transform` / `pipe` | Output-producing decode pipelines | Return decoders. The source guard's `is()` semantics do not change. |
+| `default` / `prefault` / `catch` | Zod-style decode recovery | Return decoders. Fallbacks are applied only by `decode()`, never by `is()`. |
 
 Diagnostic paths contain only object keys and zero-based array or tuple indexes.
 Public diagnostic validators reject malformed path segments before diagnostics
@@ -61,7 +68,7 @@ cross the API boundary.
 | Composition | `t.union`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect` |
 | Presence | `t.optional`, `t.undefinedable`, `t.nullable`, `t.nullish` |
 | Dynamic guards | `t.lazy`, `t.refine` |
-| Decoders | `t.decoder`, `t.transform`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()` |
+| Decoders | `guard.transform`, `guard.pipe`, `guard.default`, `guard.prefault`, `guard.catch`, `t.decoder`, `t.transform`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()` |
 | Async decoders | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
 
 Builder functions validate inputs before a schema can enter the validation plan,
@@ -147,6 +154,8 @@ lazy chain must eventually resolve to a concrete non-lazy schema.
 const Count = t.pipe(t.coerce.number(), t.number.int().gte(0));
 const result = Count.decode("42");
 
+const Port = t.number.int().gte(0).lte(65535).default(3000);
+const SafePort = t.number.int().gte(0).lte(65535).catch(3000);
 const Name = t.default(t.string.min(1), "anonymous");
 const NormalizedName = t.string
   .trim()
@@ -173,6 +182,9 @@ not be the same runtime value as the input.
 - `t.default(source, value)` returns a fallback output for `undefined` input.
 - `t.prefault(source, value)` feeds a fallback input through the source.
 - `t.catch(source, value)` returns a fallback output after a failed decode.
+- Guard methods `guard.transform`, `guard.pipe`, `guard.default`,
+  `guard.prefault`, and `guard.catch` are shorthand for the same decoder
+  helpers. They do not change `guard.is()`.
 - `t.codec(input, output, mapping)` validates both sides of a bidirectional decode/encode pair.
 - `t.coerce.string`, `t.coerce.number`, and `t.coerce.boolean` provide explicit
   primitive coercion.
@@ -280,6 +292,17 @@ direct indexed reads in fast modes, so sparse slots are diagnosed from the
 loaded `undefined` value. Record diagnostics use direct `record[key]` reads;
 unchecked mode also visits inherited enumerable keys. Discriminant diagnostics
 read the tag directly and compare string cases with `===`.
+
+| Contract | `safe` | `unsafe` | `unchecked` |
+| --- | --- | --- | --- |
+| Avoids user getter execution | yes | no | no |
+| Rejects prototype-backed fields | yes | no | no |
+| Rejects enumerable strict extras | yes | yes | no |
+| Rejects symbol and non-enumerable strict extras | yes | no | no |
+| Freezes successful compiled `check()` result | yes | no | no |
+
+The practical rule is: public boundary data uses `safe`; trusted normalized
+records may use `unsafe`; caller-owned fixed-shape DTOs may use `unchecked`.
 
 ## AOT Emit
 

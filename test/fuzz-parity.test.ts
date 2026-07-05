@@ -105,13 +105,12 @@ describe("deterministic schema fuzzing", () => {
                 const value = trustedValues[valueIndex];
                 const label = `${name} trusted value ${String(valueIndex)}`;
                 const safeIs = safe.is(value);
+                const safeCheckOk = safe.check(value).ok;
 
                 expect(unsafe.is(value), label).toBe(safeIs);
-                expect(unsafe.check(value).ok, label).toBe(safe.check(value).ok);
-                if (safeIs) {
-                    expect(unchecked.is(value), label).toBe(true);
-                    expect(unchecked.check(value).ok, label).toBe(true);
-                }
+                expect(unsafe.check(value).ok, label).toBe(safeCheckOk);
+                expect(unchecked.is(value), label).toBe(safeIs);
+                expect(unchecked.check(value).ok, label).toBe(safeCheckOk);
             }
         }
     });

@@ -20,6 +20,7 @@ import type {
     DiscriminatedUnionCase,
     Schema
 } from "../schema/index.js";
+import { normalizeUnionSchema } from "../schema/index.js";
 import { isRecord, readGuardSchema } from "../internal/index.js";
 import type {
     DiscriminatedUnionCases,
@@ -154,10 +155,7 @@ export function union<const TGuards extends UnionInput>(
         const guard = guards[index];
         options[index] = readGuardSchema(guard, `union option ${String(index)}`);
     }
-    return new BaseGuard<Infer<TGuards[number]>>({
-        tag: SchemaTag.Union,
-        options
-    });
+    return new BaseGuard<Infer<TGuards[number]>>(normalizeUnionSchema(options));
 }
 
 /**

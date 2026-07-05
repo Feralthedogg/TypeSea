@@ -140,6 +140,20 @@ read through `record[key]`; unchecked mode intentionally keeps inherited
 enumerable keys visible. Discriminant diagnostics read the tag directly and
 compare literal string cases with strict equality.
 
+FastMode is therefore an engine contract, not a security default:
+
+| Contract | `safe` | `unsafe` | `unchecked` |
+| --- | --- | --- | --- |
+| Getter execution avoided | yes | no | no |
+| Prototype-backed fields rejected | yes | no | no |
+| Enumerable strict extras rejected | yes | yes | no |
+| Symbol and non-enumerable strict extras rejected | yes | no | no |
+| Successful compiled `check()` result frozen | yes | no | no |
+
+The intended rule is simple: boundary data uses `safe`; trusted normalized
+records may use `unsafe`; fixed-shape DTOs owned by the caller may use
+`unchecked`.
+
 ## Recursion
 
 Lazy schemas resolve their getter once per guard instance. Recursive validation
@@ -186,14 +200,20 @@ imported by `src`, and package policy rejects runtime, peer, optional, or
 bundled dependency fields before release.
 
 Last local benchmark on 2026-07-05 KST reported these ecosystem paths over the
-JSON-compatible strict-object benchmark:
+JSON-compatible strict-object benchmark. The committed source of truth is
+`bench/results/latest.json`; `npm run bench:record` refreshes that summary and
+the README SVG from raw Vitest JSON.
+`npm run bench:compare` checks the committed summary against 0.3.2 regression
+floors for unchecked valid hot path, safe invalid fast-fail, and safe valid
+throughput. `check:benchmarks` runs the same floor check after verifying the SVG
+is fresh.
 
 | Case | TypeSea runtime plan | TypeSea compiled safe | TypeSea compiled unsafe | TypeSea compiled unchecked | Ajv compiled |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Valid `is()` | 478,576 hz | 5,109,602 hz | 36,777,097 hz | 42,620,570 hz | 4,238,036 hz |
-| Valid `check()` | 424,989 hz | 4,642,948 hz | 37,184,199 hz | 42,487,325 hz | 4,338,063 hz |
-| Invalid `is()` | 3,325,603 hz | 43,094,061 hz | 50,738,235 hz | 50,898,012 hz | 30,535,761 hz |
-| Invalid `check()` | 405,590 hz | 2,107,460 hz | 3,186,702 hz | 3,509,673 hz | 29,951,403 hz |
+| Valid `is()` | 476,703 hz | 5,230,756 hz | 36,756,599 hz | 42,431,440 hz | 4,336,006 hz |
+| Valid `check()` | 466,105 hz | 4,824,240 hz | 36,509,714 hz | 43,131,347 hz | 4,280,363 hz |
+| Invalid `is()` | 3,396,045 hz | 42,197,735 hz | 50,090,902 hz | 51,002,903 hz | 28,986,950 hz |
+| Invalid `check()` | 339,575 hz | 2,145,392 hz | 3,098,275 hz | 3,673,561 hz | 28,274,668 hz |
 
 Benchmark numbers are machine-local telemetry. They are useful for catching
 regressions, not for promising a fixed throughput floor. Unsafe and unchecked

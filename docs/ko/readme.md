@@ -6,7 +6,8 @@
 ## 벤치마크 요약
 
 마지막 로컬 벤치마크는 2026-07-05 KST에 실행했습니다.
-명령은 `npm run bench -- bench/ecosystem.bench.ts --run`이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다.
+명령은 `npm run bench:record`이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다.
+그래프는 [`bench/results/latest.json`](../../bench/results/latest.json)에서 생성합니다.
 아래 수치는 회귀를 잡기 위한 로컬 측정값이지, 릴리스 성능 보증값은 아닙니다.
 
 ![TypeSea benchmark comparison](../assets/benchmark-headline.svg)
@@ -139,6 +140,18 @@ unsafe와 unchecked mode에서 successful compiled `check()`는 frozen success r
 실패 진단은 계속 freeze됩니다.
 safe mode는 success와 failure 모두 frozen `Result` 계약을 유지합니다.
 
+| 계약 | `safe` | `unsafe` | `unchecked` |
+| --- | --- | --- | --- |
+| 사용자 getter 실행 방지 | 예 | 아니오 | 아니오 |
+| prototype-backed field 거부 | 예 | 아니오 | 아니오 |
+| enumerable strict extra 거부 | 예 | 예 | 아니오 |
+| symbol/non-enumerable strict extra 거부 | 예 | 아니오 | 아니오 |
+| compiled `check()` 성공 Result freeze | 예 | 아니오 | 아니오 |
+| 의도한 입력 | 외부 경계 입력 | 신뢰된 정규화 record | 호출자가 소유한 고정 shape DTO |
+
+외부 입력에는 항상 `safe`를 쓰세요.
+`unsafe`는 이미 plain record로 정규화한 데이터에만, `unchecked`는 extra-key 거부가 필요 없는 호출자 소유 DTO에만 쓰는 모드입니다.
+
 ---
 
 ## Key Presence
@@ -185,48 +198,49 @@ failed check() -> schema-aware diagnostic collector
 ## 성능 스냅샷
 
 마지막 로컬 벤치마크는 2026-07-05 KST에 실행했습니다.
-`npm run bench -- bench/ecosystem.bench.ts --run`을 사용했고, benchmark strict-object 계약을 대상으로 했습니다.
+`npm run bench:record`를 사용했고, benchmark strict-object 계약을 대상으로 했습니다.
+raw Vitest JSON은 [`bench/results/raw.json`](../../bench/results/raw.json)에, README 그래프용 stable summary는 [`bench/results/latest.json`](../../bench/results/latest.json)에 저장합니다.
 아래 값은 단일 머신의 초당 실행 횟수이며 릴리스 성능 보증값은 아닙니다.
 
 | 유효한 객체: boolean 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 478,576 |
-| TypeSea compiled safe `is()` | 5,109,602 |
-| TypeSea compiled unsafe `is()` | 36,777,097 |
-| TypeSea compiled unchecked `is()` | 42,620,570 |
-| Zod `safeParse` | 1,400,045 |
-| Valibot `safeParse` | 1,400,599 |
-| Ajv compiled | 4,238,036 |
+| TypeSea interpreted `is()` | 476,703 |
+| TypeSea compiled safe `is()` | 5,230,756 |
+| TypeSea compiled unsafe `is()` | 36,756,599 |
+| TypeSea compiled unchecked `is()` | 42,431,440 |
+| Zod `safeParse` | 1,386,237 |
+| Valibot `safeParse` | 1,395,970 |
+| Ajv compiled | 4,336,006 |
 
 | 유효한 객체: 진단 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 424,989 |
-| TypeSea compiled safe `check()` | 4,642,948 |
-| TypeSea compiled unsafe `check()` | 37,184,199 |
-| TypeSea compiled unchecked `check()` | 42,487,325 |
-| Zod `safeParse` | 1,278,859 |
-| Valibot `safeParse` | 1,391,040 |
-| Ajv compiled | 4,338,063 |
+| TypeSea interpreted `check()` | 466,105 |
+| TypeSea compiled safe `check()` | 4,824,240 |
+| TypeSea compiled unsafe `check()` | 36,509,714 |
+| TypeSea compiled unchecked `check()` | 43,131,347 |
+| Zod `safeParse` | 1,294,230 |
+| Valibot `safeParse` | 1,355,910 |
+| Ajv compiled | 4,280,363 |
 
 | 잘못된 객체: boolean 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 3,325,603 |
-| TypeSea compiled safe `is()` | 43,094,061 |
-| TypeSea compiled unsafe `is()` | 50,738,235 |
-| TypeSea compiled unchecked `is()` | 50,898,012 |
-| Zod `safeParse` | 84,647 |
-| Valibot `safeParse` | 866,013 |
-| Ajv compiled | 30,535,761 |
+| TypeSea interpreted `is()` | 3,396,045 |
+| TypeSea compiled safe `is()` | 42,197,735 |
+| TypeSea compiled unsafe `is()` | 50,090,902 |
+| TypeSea compiled unchecked `is()` | 51,002,903 |
+| Zod `safeParse` | 83,798 |
+| Valibot `safeParse` | 914,604 |
+| Ajv compiled | 28,986,950 |
 
 | 잘못된 객체: 진단 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 405,590 |
-| TypeSea compiled safe `check()` | 2,107,460 |
-| TypeSea compiled unsafe `check()` | 3,186,702 |
-| TypeSea compiled unchecked `check()` | 3,509,673 |
-| Zod `safeParse` | 85,355 |
-| Valibot `safeParse` | 788,870 |
-| Ajv compiled | 29,951,403 |
+| TypeSea interpreted `check()` | 339,575 |
+| TypeSea compiled safe `check()` | 2,145,392 |
+| TypeSea compiled unsafe `check()` | 3,098,275 |
+| TypeSea compiled unchecked `check()` | 3,673,561 |
+| Zod `safeParse` | 84,876 |
+| Valibot `safeParse` | 896,023 |
+| Ajv compiled | 28,274,668 |
 
 safe compiled path는 TypeSea의 적대적 입력 방어를 유지하면서 Ajv에 가깝게 동작합니다.
 descriptor 기반 property read, symbol/non-enumerable strict-key rejection, key presence semantics, immutable diagnostics, TypeScript guard inference를 유지합니다.
@@ -259,7 +273,7 @@ builder는 `t` table 아래에도 묶여 있습니다.
 
 | 영역 | Entry points |
 | --- | --- |
-| Sync decoder | `t.decoder`, `t.transform`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()` |
+| Sync decoder | `guard.transform`, `guard.pipe`, `guard.default`, `guard.prefault`, `guard.catch`, `t.decoder`, `t.transform`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()` |
 | Async decoder | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
 
 ### Execution & Export
@@ -355,6 +369,9 @@ CI가 실행하는 gate는 전부 로컬 npm script입니다.
 ```sh
 npm run check           # policy, docs, typecheck, lint, tests, build, dist, API snapshot, pack
 npm run check:consumer  # tarball install + runtime/type smoke in a temp project
+npm run bench:compare   # committed benchmark JSON을 0.3.2 floor와 비교
+npm run bench:record    # full benchmark run + committed JSON/SVG refresh
+npm run bench:render    # committed benchmark JSON에서 SVG 재생성
 npm run bench -- --run  # benchmark smoke
 npm run pack:dry        # package contents dry run
 npm run release:check   # the full pre-publish gate
@@ -369,7 +386,8 @@ CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께
 
 1. `vX.Y.Z` 태그를 push하거나 GitHub `Release` workflow를 그 태그로 실행합니다.
 2. release workflow는 tag가 `package.json`의 version과 일치하는지 확인합니다.
-3. publish는 GitHub `Publish` workflow에서 `npm run release:publish`로 수행합니다. 이 스크립트는 `npm publish --provenance --access public --ignore-scripts`로 확장됩니다.
+3. 같은 release workflow가 `npm run release:check`를 통과한 뒤 `npm run release:publish`를 실행합니다. 이 스크립트는 `npm publish --provenance --access public --ignore-scripts`로 확장됩니다.
+4. npm registry에서 새 버전이 보이는지 확인한 뒤 GitHub Release를 생성합니다.
 
 로컬 `NPM_TOKEN` publish는 수동 복구 릴리스용입니다. 이 경우에도 먼저 `npm run release:check`를 통과해야 하며, GitHub OIDC provenance는 붙지 않습니다.
 
@@ -377,6 +395,8 @@ CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께
 > benchmark 비교 패키지인 Zod, Valibot, Ajv는 dev dependency일 뿐입니다.
 > package policy는 이들이 runtime dependency field에 들어가는 것을 거부합니다.
 > benchmark suite는 boolean path와 diagnostic path(`check()` vs `safeParse`)를 모두 보고하므로 비교 기준을 맞춥니다.
+> `check:benchmarks`는 committed summary가 0.3.2 performance floor를 넘는지도 확인합니다.
+> 대상은 unchecked valid, safe invalid, safe valid path입니다.
 
 ---
 
@@ -390,6 +410,12 @@ CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께
 ---
 
 ## 마이그레이션 노트
+
+### 0.3.1에서 0.3.2
+
+애플리케이션 코드 변경은 필요하지 않습니다.
+`0.3.2`는 performance regression hardening patch입니다.
+benchmark floor를 추가하고, 대표 generated source fingerprint를 고정하며, FastMode fuzz parity를 강화하고, nested union flatten / `never` 제거 / `unknown` 흡수 union normalization을 적용합니다.
 
 ### 0.3.0에서 0.3.1
 

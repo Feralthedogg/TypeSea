@@ -22,7 +22,7 @@ import {
 } from "./check-scalar.js";
 import { pushSchema } from "./context.js";
 import { emitIssue } from "./issue.js";
-import { emitUnion } from "./predicate.js";
+import { emitUnion } from "./union-preflight.js";
 import type { EmitContext, FunctionSource } from "./types.js";
 
 /**

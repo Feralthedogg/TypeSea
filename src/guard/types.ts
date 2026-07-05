@@ -6,6 +6,11 @@
  */
 
 import type { CheckResult } from "../issue/index.js";
+import type {
+    BaseDecoder,
+    DecodeSource,
+    InferDecoder
+} from "../decoder/index.js";
 import type { Graph } from "../ir/index.js";
 import type { Schema } from "../schema/index.js";
 import type { BaseGuard } from "./base.js";
@@ -175,6 +180,53 @@ export interface Guard<TValue, TPresence extends Presence = "required"> {
         predicate: (value: RuntimeValue<TValue, TPresence>) => boolean,
         name: string
     ): BaseGuard<TValue, TPresence>;
+
+    /**
+     * @brief Decode this guard and map the accepted value.
+     * @details The returned decoder owns output production. The guard predicate
+     * remains a pure validation/narrowing contract.
+     * @param mapper Function applied only after validation succeeds.
+     * @returns Decoder for the mapped output type.
+     */
+    transform<TNext>(
+        mapper: (value: RuntimeValue<TValue, TPresence>) => TNext
+    ): BaseDecoder<TNext>;
+
+    /**
+     * @brief Decode this guard and then validate or decode through another source.
+     * @param next Downstream guard or decoder.
+     * @returns Decoder for the downstream output type.
+     */
+    pipe<TNext extends DecodeSource>(
+        next: TNext
+    ): BaseDecoder<InferDecoder<TNext>>;
+
+    /**
+     * @brief Return a fallback output when input is undefined.
+     * @param fallback Output value or zero-argument producer.
+     * @returns Decoder that short-circuits undefined input to the fallback.
+     */
+    default(
+        fallback: RuntimeValue<TValue, TPresence> |
+            (() => RuntimeValue<TValue, TPresence>)
+    ): BaseDecoder<RuntimeValue<TValue, TPresence>>;
+
+    /**
+     * @brief Substitute an input before validation when input is undefined.
+     * @param fallback Input value passed through this guard.
+     * @returns Decoder that validates either the original input or fallback.
+     */
+    prefault(fallback: unknown): BaseDecoder<RuntimeValue<TValue, TPresence>>;
+
+    /**
+     * @brief Return a fallback output after validation failure.
+     * @param fallback Output value or zero-argument producer.
+     * @returns Decoder that converts failed validation into fallback success.
+     */
+    catch(
+        fallback: RuntimeValue<TValue, TPresence> |
+            (() => RuntimeValue<TValue, TPresence>)
+    ): BaseDecoder<RuntimeValue<TValue, TPresence>>;
 
     /**
      * @brief Build a union with another guard.

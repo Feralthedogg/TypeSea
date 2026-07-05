@@ -1,7 +1,40 @@
+import { createHash } from "node:crypto";
 import { describe, expect, test } from "vitest";
 import { compile, t } from "../src/index.js";
 
 describe("compiled source audit", () => {
+    test("pins representative hot path generated source fingerprints", () => {
+        const User = t.strictObject({
+            id: t.string.uuid(),
+            name: t.string.min(1).max(80),
+            age: t.number.int().gte(0).lte(150),
+            tags: t.array(t.string.min(1)),
+            meta: t.record(t.union(t.string, t.number.int(), t.boolean))
+        });
+        const SafeUser = compile(User, { name: "snapshotUser" });
+        const UnsafeUser = compile(User, {
+            name: "snapshotUserUnsafe",
+            mode: "unsafe"
+        });
+        const UncheckedUser = compile(User, {
+            name: "snapshotUserUnchecked",
+            mode: "unchecked"
+        });
+
+        expect(readSourceFingerprint(SafeUser.source)).toEqual({
+            length: 9560,
+            sha256: "2bca65fec6729b4aa867687a1d8fca968f10f12ea9fcfbe3c9274a5c3ba399c9"
+        });
+        expect(readSourceFingerprint(UnsafeUser.source)).toEqual({
+            length: 6430,
+            sha256: "4048bbef87fe4dd9a4f87143f4598543909abf99625817f06a0d4afd74e8d207"
+        });
+        expect(readSourceFingerprint(UncheckedUser.source)).toEqual({
+            length: 5670,
+            sha256: "2936cfd706e0e11d6d9c1622fe1c17039b67aef4848a5f29d5491111b8392896"
+        });
+    });
+
     test("keeps runtime values in side tables instead of generated code text", () => {
         const escapedKey = "slot\"];globalThis.__TYPESEA_SOURCE_ESCAPE=1;//";
         const literalPayload = "typesea_literal_escape_payload";
@@ -1257,6 +1290,22 @@ describe("compiled source audit", () => {
         }).ok).toBe(false);
     });
 });
+
+/**
+ * @brief Read stable generated source fingerprint.
+ * @details The fingerprint is intentionally exact: if codegen shape changes,
+ * the source audit should force a deliberate review before benchmark baselines
+ * are refreshed.
+ */
+function readSourceFingerprint(source: string): {
+    readonly length: number;
+    readonly sha256: string;
+} {
+    return {
+        length: source.length,
+        sha256: createHash("sha256").update(source).digest("hex")
+    };
+}
 
 /**
  * @brief Read generated function source.

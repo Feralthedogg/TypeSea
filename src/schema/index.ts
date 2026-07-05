@@ -78,3 +78,4 @@ export { isSchemaValue } from "./validate.js";
 export { freezeSchema } from "./freeze.js";
 export { resolveLazySchema } from "./lazy.js";
 export { schemaCanAcceptUndefined } from "./undefined.js";
+export { normalizeUnionSchema } from "./union.js";

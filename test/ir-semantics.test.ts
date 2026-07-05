@@ -11,7 +11,8 @@ import {
     ArrayCheckTag,
     NodeTag,
     ObjectModeTag,
-    PresenceTag
+    PresenceTag,
+    SchemaTag
 } from "../src/kind/index.js";
 import { lowerSchema } from "../src/lower/index.js";
 import { optimizeGraph } from "../src/optimize/index.js";
@@ -489,24 +490,16 @@ describe("Sea-of-Nodes graph semantics", () => {
         }
     });
 
-    test("preserves lowered schema semantics while folding identities", () => {
+    test("normalizes union identities before lowering", () => {
         const Guard = t.union(t.never, t.literal("x"));
         const raw = lowerSchema(Guard.schema);
         const optimized = optimizeGraph(raw);
         const values: readonly unknown[] = ["x", "y", undefined, null];
 
         assertDenseGraph(optimized);
-        expect(raw.nodes.some((node) => node.tag === NodeTag.PrimitiveUnion)).toBe(true);
+        expect(Guard.schema.tag).toBe(SchemaTag.Literal);
+        expect(raw.nodes.some((node) => node.tag === NodeTag.PrimitiveUnion)).toBe(false);
         expect(optimized.nodes.some((node) => node.tag === NodeTag.Or)).toBe(false);
-        const primitive = optimized.nodes.find(
-            (node) => node.tag === NodeTag.PrimitiveUnion
-        );
-        expect(primitive?.tag).toBe(NodeTag.PrimitiveUnion);
-        if (primitive?.tag === NodeTag.PrimitiveUnion) {
-            expect(primitive.graphs).toHaveLength(1);
-            expect(primitive.masks).toHaveLength(1);
-            expect(primitive.masks[0]).not.toBe(0);
-        }
 
         for (let index = 0; index < values.length; index += 1) {
             const value = values[index];
@@ -515,6 +508,28 @@ describe("Sea-of-Nodes graph semantics", () => {
             expect(evaluateGraph(optimized, value), `guard ${String(index)}`)
                 .toBe(Guard.is(value));
         }
+    });
+
+    test("flattens nested unions and lets unknown absorb union options", () => {
+        const Flattened = t.union(
+            t.union(t.string, t.never),
+            t.union(t.number, t.boolean)
+        );
+        const Absorbed = t.string.or(t.union(t.never, t.unknown));
+        const graph = Flattened.graph();
+
+        expect(Flattened.schema.tag).toBe(SchemaTag.Union);
+        if (Flattened.schema.tag === SchemaTag.Union) {
+            expect(Flattened.schema.options).toHaveLength(3);
+        }
+        expect(Absorbed.schema.tag).toBe(SchemaTag.Unknown);
+        expect(graph.nodes.some((node) => node.tag === NodeTag.PrimitiveUnion))
+            .toBe(true);
+        expect(Flattened.is("x")).toBe(true);
+        expect(Flattened.is(1)).toBe(true);
+        expect(Flattened.is(false)).toBe(true);
+        expect(Flattened.is(null)).toBe(false);
+        expect(Absorbed.is(null)).toBe(true);
     });
 
     test("collapses union dispatches with only dead arms", () => {

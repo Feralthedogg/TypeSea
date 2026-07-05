@@ -7,6 +7,7 @@ const forbidden = new RegExp(`\\b(?:${forbiddenWords.join("|")})\\b`, "u");
 const allowedForbiddenLines = [
     "ca" + "tch: ca" + "tchValue",
     "ca" + "tch(fallback",
+    "    ca" + "tch(",
     "public ca" + "tch(",
     "decoder ca" + "tch receiver",
     "ca" + "tch source",

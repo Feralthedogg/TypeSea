@@ -6,12 +6,22 @@
  */
 
 import { SchemaTag } from "../kind/index.js";
+import {
+    catchValue,
+    defaultValue,
+    pipe as pipeDecoder,
+    prefault as prefaultDecoder,
+    transform as transformDecoder,
+    type BaseDecoder,
+    type DecodeSource,
+    type InferDecoder
+} from "../decoder/index.js";
 import { checkSchema, isSchema } from "../evaluate/index.js";
 import { makeValidationPlan } from "../plan/index.js";
 import { freezeIssueArray, type CheckResult, type Issue } from "../issue/index.js";
 import type { Graph } from "../ir/index.js";
 import { err } from "../result/index.js";
-import type { Schema } from "../schema/index.js";
+import { normalizeUnionSchema, type Schema } from "../schema/index.js";
 import { TypeSeaAssertionError } from "./error.js";
 import {
     checkRefinementInput,
@@ -33,6 +43,11 @@ import type {
 
 type ArraySchemaRecord = Extract<Schema, { readonly tag: typeof SchemaTag.Array }>;
 type ArrayGuardFactory = <TItem>(schema: ArraySchemaRecord) => ArrayGuard<TItem>;
+type GuardRuntimeValue<TValue, TPresence extends Presence> =
+    RuntimeValue<TValue, TPresence>;
+type GuardDefaultInput<TValue, TPresence extends Presence> =
+    GuardRuntimeValue<TValue, TPresence> |
+    (() => GuardRuntimeValue<TValue, TPresence>);
 
 let arrayGuardFactory: ArrayGuardFactory | undefined;
 
@@ -268,9 +283,69 @@ export class BaseGuard<
     }
 
     /**
+     * @brief Decode this guard and map the accepted value.
+     * @details Validation remains separate from value production: `is()` keeps
+     * returning a boolean, while transforms produce explicit Result values from
+     * `decode()`.
+     * @param mapper Pure mapper applied after this guard accepts the input.
+     * @returns Decoder whose output is the mapper result.
+     */
+    public transform<TNext>(
+        mapper: (value: RuntimeValue<TValue, TPresence>) => TNext
+    ): BaseDecoder<TNext> {
+        return transformDecoder(readThisGuard(this), mapper);
+    }
+
+    /**
+     * @brief Feed this guard's accepted value into another guard or decoder.
+     * @param next Downstream guard or decoder.
+     * @returns Decoder for the downstream output type.
+     */
+    public pipe<TNext extends DecodeSource>(
+        next: TNext
+    ): BaseDecoder<InferDecoder<TNext>> {
+        return pipeDecoder(readThisGuard(this), next);
+    }
+
+    /**
+     * @brief Return a fallback output when the input is undefined.
+     * @details This matches Zod's default ergonomics without weakening guard
+     * predicates: defaults live only on decoder `decode()` paths.
+     * @param fallback Output value or zero-argument producer.
+     * @returns Decoder that short-circuits undefined input to the fallback.
+     */
+    public default(
+        fallback: GuardDefaultInput<TValue, TPresence>
+    ): BaseDecoder<RuntimeValue<TValue, TPresence>> {
+        return defaultValue(readThisGuard(this), fallback);
+    }
+
+    /**
+     * @brief Substitute an input before validation when the input is undefined.
+     * @param fallback Input value passed through this guard.
+     * @returns Decoder that validates either the original input or fallback.
+     */
+    public prefault(
+        fallback: unknown
+    ): BaseDecoder<RuntimeValue<TValue, TPresence>> {
+        return prefaultDecoder(readThisGuard(this), fallback);
+    }
+
+    /**
+     * @brief Return a fallback output after validation failure.
+     * @param fallback Output value or zero-argument producer.
+     * @returns Decoder that converts failed validation into fallback success.
+     */
+    public catch(
+        fallback: GuardDefaultInput<TValue, TPresence>
+    ): BaseDecoder<RuntimeValue<TValue, TPresence>> {
+        return catchValue(readThisGuard(this), fallback);
+    }
+
+    /**
      * @brief Build a union of this guard and another guard.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
+     * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
+     * existing guard instance.
      * @param other Right-hand guard.
      * @returns Fresh union guard preserving both runtime schemas.
      */
@@ -279,13 +354,10 @@ export class BaseGuard<
     ): BaseGuard<RuntimeValue<TValue, TPresence> | Infer<TOther>> {
         return new BaseGuard<
             RuntimeValue<TValue, TPresence> | Infer<TOther>
-        >({
-            tag: SchemaTag.Union,
-            options: [
-                readGuardSchema(this, "union option 0"),
-                readGuardSchema(other, "union option 1")
-            ]
-        });
+        >(normalizeUnionSchema([
+            readGuardSchema(this, "union option 0"),
+            readGuardSchema(other, "union option 1")
+        ]));
     }
 
     /**
@@ -332,6 +404,17 @@ export class BaseGuard<
             value: readGuardSchema(value, "property value")
         });
     }
+}
+
+/**
+ * @brief Narrow a BaseGuard receiver for decoder helper inference.
+ * @param guard Guard instance after method dispatch.
+ * @returns The same receiver as a public Guard source.
+ */
+function readThisGuard<TValue, TPresence extends Presence>(
+    guard: BaseGuard<TValue, TPresence>
+): Guard<TValue, TPresence> {
+    return guard;
 }
 
 /**

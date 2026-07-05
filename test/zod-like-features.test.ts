@@ -173,6 +173,47 @@ describe("Zod-like public features", () => {
         });
     });
 
+    test("supports guard-level decoder sugar without changing is semantics", () => {
+        const Name = t.string.min(1)
+            .transform((value) => value.trim())
+            .pipe(t.string.min(1))
+            .default("anonymous")
+            .catch("anonymous");
+        const Count = t.number.int()
+            .nonnegative()
+            .default(0)
+            .catch(() => 0);
+        const Prefaulted = t.string.min(1).prefault("fallback");
+
+        expectTypeOf<InferDecoder<typeof Name>>().toEqualTypeOf<string>();
+        expect(t.string.min(1).is(undefined)).toBe(false);
+        expect(t.number.int().nonnegative().is(undefined)).toBe(false);
+        expect(Name.decode(" Ada ")).toEqual({
+            ok: true,
+            value: "Ada"
+        });
+        expect(Name.decode(undefined)).toEqual({
+            ok: true,
+            value: "anonymous"
+        });
+        expect(Name.decode("   ")).toEqual({
+            ok: true,
+            value: "anonymous"
+        });
+        expect(Count.decode(undefined)).toEqual({
+            ok: true,
+            value: 0
+        });
+        expect(Count.decode(-1)).toEqual({
+            ok: true,
+            value: 0
+        });
+        expect(Prefaulted.decode(undefined)).toEqual({
+            ok: true,
+            value: "fallback"
+        });
+    });
+
     test("validates exclusive number bounds and convenience aliases", () => {
         const Score = t.number.gt(0).lt(10).int();
         const Positive = t.number.positive();

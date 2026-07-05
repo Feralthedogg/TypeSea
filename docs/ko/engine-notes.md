@@ -106,6 +106,19 @@ record diagnostic은 `record[key]`로 읽습니다.
 unchecked mode는 inherited enumerable key를 의도적으로 보이게 둡니다.
 discriminant diagnostic은 tag를 직접 읽고 literal string case를 strict equality로 비교합니다.
 
+FastMode는 보안 기본값이 아니라 엔진 계약입니다.
+
+| 계약 | `safe` | `unsafe` | `unchecked` |
+| --- | --- | --- | --- |
+| getter 실행 방지 | 예 | 아니오 | 아니오 |
+| prototype-backed field 거부 | 예 | 아니오 | 아니오 |
+| enumerable strict extra 거부 | 예 | 예 | 아니오 |
+| symbol/non-enumerable strict extra 거부 | 예 | 아니오 | 아니오 |
+| compiled `check()` 성공 Result freeze | 예 | 아니오 | 아니오 |
+
+규칙은 단순합니다.
+boundary data는 `safe`, 신뢰된 정규화 record는 `unsafe`, 호출자가 shape을 소유한 DTO는 `unchecked`를 씁니다.
+
 ## 재귀
 
 lazy schema는 guard instance마다 getter를 한 번 resolve합니다.
@@ -143,13 +156,17 @@ Zod, Valibot, Ajv는 측정용 dev dependency입니다.
 `src`에서 import하지 않으며, package policy는 release 전에 runtime, peer, optional, bundled dependency field를 거부합니다.
 
 2026-07-05 KST의 마지막 로컬 벤치마크는 JSON-compatible strict-object benchmark에서 아래 ecosystem path를 보고했습니다.
+커밋된 기준 데이터는 `bench/results/latest.json`이며, `npm run bench:record`가 raw Vitest JSON에서 summary와 README SVG를 다시 생성합니다.
+`npm run bench:compare`는 committed summary를 0.3.2 regression floor와 비교합니다.
+대상은 unchecked valid hot path, safe invalid fast-fail, safe valid throughput입니다.
+`check:benchmarks`는 SVG freshness를 확인한 뒤 같은 floor check를 실행합니다.
 
 | Case | TypeSea runtime plan | TypeSea compiled safe | TypeSea compiled unsafe | TypeSea compiled unchecked | Ajv compiled |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Valid `is()` | 478,576 hz | 5,109,602 hz | 36,777,097 hz | 42,620,570 hz | 4,238,036 hz |
-| Valid `check()` | 424,989 hz | 4,642,948 hz | 37,184,199 hz | 42,487,325 hz | 4,338,063 hz |
-| Invalid `is()` | 3,325,603 hz | 43,094,061 hz | 50,738,235 hz | 50,898,012 hz | 30,535,761 hz |
-| Invalid `check()` | 405,590 hz | 2,107,460 hz | 3,186,702 hz | 3,509,673 hz | 29,951,403 hz |
+| Valid `is()` | 476,703 hz | 5,230,756 hz | 36,756,599 hz | 42,431,440 hz | 4,336,006 hz |
+| Valid `check()` | 466,105 hz | 4,824,240 hz | 36,509,714 hz | 43,131,347 hz | 4,280,363 hz |
+| Invalid `is()` | 3,396,045 hz | 42,197,735 hz | 50,090,902 hz | 51,002,903 hz | 28,986,950 hz |
+| Invalid `check()` | 339,575 hz | 2,145,392 hz | 3,098,275 hz | 3,673,561 hz | 28,274,668 hz |
 
 benchmark number는 machine-local telemetry입니다.
 regression을 잡는 데 유용하지만 고정된 throughput floor를 약속하지 않습니다.

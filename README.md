@@ -18,8 +18,9 @@ runtime compilation, and AOT source generation.
 ## Benchmark Headline
 
 Last local benchmark on 2026-07-05 KST:
-`npm run bench -- bench/ecosystem.bench.ts --run`, strict-object contract,
-operations per second on one machine.
+`npm run bench:record`, strict-object contract, operations per second on one
+machine. The chart is generated from
+[`bench/results/latest.json`](./bench/results/latest.json).
 
 ![TypeSea benchmark comparison](./docs/assets/benchmark-headline.svg)
 
@@ -179,6 +180,19 @@ shape where possible, so their issue codes can be less hostile-input-specific
 than safe mode for missing/accessor-backed fields and sparse/accessor-backed
 array or record slots. Discriminant diagnostics also read tags directly.
 
+| Contract | `safe` | `unsafe` | `unchecked` |
+| --- | --- | --- | --- |
+| Executes user getters | no | possible | possible |
+| Accepts prototype-backed fields | no | possible | possible |
+| Rejects enumerable extra keys in strict objects | yes | yes | no |
+| Rejects symbol or non-enumerable strict extras | yes | no | no |
+| Freezes successful compiled `check()` result | yes | no | no |
+| Intended input | hostile boundary data | trusted normalized records | trusted fixed-shape DTOs |
+
+Use `safe` at every public boundary. Use `unsafe` only after data has already
+been normalized into ordinary records. Use `unchecked` only when the caller owns
+the shape and treats extra-key rejection as unnecessary work.
+
 ---
 
 ## Presence Semantics
@@ -229,49 +243,51 @@ failed check() -> schema-aware diagnostic collector
 ## Performance Snapshot
 
 Last local benchmark on 2026-07-05 KST, using
-`npm run bench -- bench/ecosystem.bench.ts --run` on the benchmark strict-object
-contract. These are operations per second on one machine, not release
-guarantees.
+`npm run bench:record` on the benchmark strict-object contract. The raw Vitest
+JSON is stored in [`bench/results/raw.json`](./bench/results/raw.json), and the
+stable summary used by the README graph is stored in
+[`bench/results/latest.json`](./bench/results/latest.json). These are
+operations per second on one machine, not release guarantees.
 
 | Valid object path | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 478,576 |
-| TypeSea compiled safe `is()` | 5,109,602 |
-| TypeSea compiled unsafe `is()` | 36,777,097 |
-| TypeSea compiled unchecked `is()` | 42,620,570 |
-| Zod `safeParse` | 1,400,045 |
-| Valibot `safeParse` | 1,400,599 |
-| Ajv compiled | 4,238,036 |
+| TypeSea interpreted `is()` | 476,703 |
+| TypeSea compiled safe `is()` | 5,230,756 |
+| TypeSea compiled unsafe `is()` | 36,756,599 |
+| TypeSea compiled unchecked `is()` | 42,431,440 |
+| Zod `safeParse` | 1,386,237 |
+| Valibot `safeParse` | 1,395,970 |
+| Ajv compiled | 4,336,006 |
 
 | Valid diagnostic path | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 424,989 |
-| TypeSea compiled safe `check()` | 4,642,948 |
-| TypeSea compiled unsafe `check()` | 37,184,199 |
-| TypeSea compiled unchecked `check()` | 42,487,325 |
-| Zod `safeParse` | 1,278,859 |
-| Valibot `safeParse` | 1,391,040 |
-| Ajv compiled | 4,338,063 |
+| TypeSea interpreted `check()` | 466,105 |
+| TypeSea compiled safe `check()` | 4,824,240 |
+| TypeSea compiled unsafe `check()` | 36,509,714 |
+| TypeSea compiled unchecked `check()` | 43,131,347 |
+| Zod `safeParse` | 1,294,230 |
+| Valibot `safeParse` | 1,355,910 |
+| Ajv compiled | 4,280,363 |
 
 | Invalid object path | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 3,325,603 |
-| TypeSea compiled safe `is()` | 43,094,061 |
-| TypeSea compiled unsafe `is()` | 50,738,235 |
-| TypeSea compiled unchecked `is()` | 50,898,012 |
-| Zod `safeParse` | 84,647 |
-| Valibot `safeParse` | 866,013 |
-| Ajv compiled | 30,535,761 |
+| TypeSea interpreted `is()` | 3,396,045 |
+| TypeSea compiled safe `is()` | 42,197,735 |
+| TypeSea compiled unsafe `is()` | 50,090,902 |
+| TypeSea compiled unchecked `is()` | 51,002,903 |
+| Zod `safeParse` | 83,798 |
+| Valibot `safeParse` | 914,604 |
+| Ajv compiled | 28,986,950 |
 
 | Invalid diagnostic path | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 405,590 |
-| TypeSea compiled safe `check()` | 2,107,460 |
-| TypeSea compiled unsafe `check()` | 3,186,702 |
-| TypeSea compiled unchecked `check()` | 3,509,673 |
-| Zod `safeParse` | 85,355 |
-| Valibot `safeParse` | 788,870 |
-| Ajv compiled | 29,951,403 |
+| TypeSea interpreted `check()` | 339,575 |
+| TypeSea compiled safe `check()` | 2,145,392 |
+| TypeSea compiled unsafe `check()` | 3,098,275 |
+| TypeSea compiled unchecked `check()` | 3,673,561 |
+| Zod `safeParse` | 84,876 |
+| Valibot `safeParse` | 896,023 |
+| Ajv compiled | 28,274,668 |
 
 The safe compiled path stays close to Ajv while retaining TypeSea hostile-input
 semantics: descriptor-based property reads, symbol/non-enumerable strict-key
@@ -306,7 +322,7 @@ grouped under the `t` table.
 
 | Area | Entry points |
 | --- | --- |
-| Sync decoders | `t.decoder`, `t.transform`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()` |
+| Sync decoders | `guard.transform`, `guard.pipe`, `guard.default`, `guard.prefault`, `guard.catch`, `t.decoder`, `t.transform`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()` |
 | Async decoders | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
 
 ### Execution & Export
@@ -410,6 +426,9 @@ Every gate that CI runs is a local npm script:
 ```sh
 npm run check           # policy, docs, typecheck, lint, tests, build, dist, API snapshot, pack
 npm run check:consumer  # tarball install + runtime/type smoke in a temp project
+npm run bench:compare   # compare committed benchmark JSON against 0.3.2 floors
+npm run bench:record    # full benchmark run + committed JSON/SVG refresh
+npm run bench:render    # regenerate SVG from committed benchmark JSON
 npm run bench -- --run  # benchmark smoke
 npm run pack:dry        # package contents dry run
 npm run release:check   # the full pre-publish gate (everything above)
@@ -425,7 +444,8 @@ Release path:
 
 1. Push a `vX.Y.Z` tag or run the GitHub `Release` workflow with that tag.
 2. The release workflow verifies that the tag matches `package.json`.
-3. Publishing happens from the GitHub `Publish` workflow through `npm run release:publish`, which expands to `npm publish --provenance --access public --ignore-scripts`.
+3. The same release workflow runs `npm run release:check`, then `npm run release:publish`, which expands to `npm publish --provenance --access public --ignore-scripts`.
+4. The workflow verifies npm registry visibility and then creates the GitHub Release.
 
 Local publishing with `NPM_TOKEN` is reserved for manual recovery releases. It
 must still run `npm run release:check` first, and it cannot attach GitHub OIDC
@@ -436,6 +456,8 @@ provenance.
 > package policy rejects them from every runtime dependency field. The
 > benchmark suite reports both boolean-path and diagnostic-path
 > (`check()` vs `safeParse`) comparisons, so numbers stay apples-to-apples.
+> `check:benchmarks` also verifies the committed summary against the 0.3.2
+> performance floors for unchecked valid, safe invalid, and safe valid paths.
 
 ---
 
@@ -449,6 +471,13 @@ provenance.
 ---
 
 ## Migration Notes
+
+### 0.3.1 to 0.3.2
+
+No application code changes are required. `0.3.2` is a performance-regression
+hardening patch: it adds benchmark floors, pins representative generated source
+fingerprints, strengthens FastMode fuzz parity, and normalizes unions by
+flattening nested unions, removing `never`, and absorbing `unknown`.
 
 ### 0.3.0 to 0.3.1
 

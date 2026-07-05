@@ -35,7 +35,7 @@ import {
     stringRef
 } from "./context.js";
 import { stringLiteral } from "./names.js";
-import { emitUnion } from "./predicate.js";
+import { emitUnion } from "./union-preflight.js";
 import type { EmitContext, FunctionSource } from "./types.js";
 
 /**
