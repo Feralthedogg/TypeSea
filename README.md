@@ -1,7 +1,7 @@
 # TypeSea
 
 [![CI](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml/badge.svg)](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml)
-[![Socket Badge](https://badge.socket.dev/npm/package/typesea/0.3.0)](https://badge.socket.dev/npm/package/typesea/0.3.0)
+[![Socket Badge](https://badge.socket.dev/npm/package/typesea)](https://socket.dev/npm/package/typesea)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![TypeScript](https://img.shields.io/badge/language-TypeScript-informational)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-zero-brightgreen)
@@ -39,6 +39,12 @@ loads, allocation-light strict-key loops, and V8-friendly monomorphic codegen.
 > `lastIndex`-reset, and cyclic inputs validate finitely. Expected failures
 > return frozen `Result` values — `any`, `try`, and `catch` are banned from the
 > entire codebase and enforced by policy gates.
+
+> [!WARNING]
+> `unsafe` and `unchecked` are **not public-boundary modes**. They are for
+> trusted, already-normalized data where the caller accepts getter execution,
+> prototype-backed values, and weaker strict-extra-key guarantees. Use the
+> default safe mode for external input.
 
 ---
 
@@ -437,6 +443,18 @@ provenance.
 - [Documentation site](https://feralthedogg.github.io/TypeSea/)
 - [API reference](docs/api.md)
 - [Engine notes](docs/engine-notes.md)
+- [Security policy](https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md)
+
+---
+
+## Migration Notes
+
+### 0.3.0 to 0.3.1
+
+No application code changes are required. `0.3.1` is a release-hardening patch:
+it tightens manual release tag handling, documents npm provenance expectations,
+adds a security policy, and verifies that npm exposes the published version after
+the GitHub publish workflow completes.
 
 ---
 

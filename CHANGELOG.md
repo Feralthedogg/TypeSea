@@ -9,6 +9,11 @@ All notable changes to TypeSea are recorded here.
 - Hardened the manual GitHub Release workflow so `workflow_dispatch` tag input
   is passed through environment variables and validated as a release tag before
   it reaches shell output.
+- Added `SECURITY.md` with supported versions, reporting guidance, and the
+  security boundary for safe, unsafe, unchecked, AOT, and dynamic compilation.
+- Added a post-publish npm registry verification step to the GitHub Publish
+  workflow.
+- Removed the version-pinned Socket badge URL from the README.
 - Clarified the release path: local npm publishing is allowed for emergency
   manual releases, but normal releases should go through GitHub Release so npm
   provenance is attached.

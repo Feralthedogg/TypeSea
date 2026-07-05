@@ -26,6 +26,12 @@ TypeSea의 안전 모드 컴파일 검증기는 getter 실행 방지와 strict e
 > 예상 가능한 실패는 동결된 `Result`로 반환합니다.
 > 불명확한 타입 탈출과 암묵적 예외 흐름에 기대지 않도록 코드베이스 전체에 정책 게이트를 둡니다.
 
+> [!WARNING]
+> `unsafe`와 `unchecked`는 **public boundary용 모드가 아닙니다**.
+> 이미 신뢰 가능한 plain data로 정규화된 입력에서만 사용하세요.
+> 이 모드에서는 getter 실행, prototype-backed value 수용, 더 약한 strict extra-key 보장을 호출자가 받아들이는 것입니다.
+> 외부 입력에는 기본 safe mode를 쓰는 것이 TypeSea의 보안 계약입니다.
+
 ---
 
 ## 왜 만들었나
@@ -378,6 +384,17 @@ CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께
 - [문서 사이트](https://feralthedogg.github.io/TypeSea/)
 - [API 레퍼런스](../api.md)
 - [엔진 노트](../engine-notes.md)
+- [보안 정책](https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md)
+
+---
+
+## 마이그레이션 노트
+
+### 0.3.0에서 0.3.1
+
+애플리케이션 코드 변경은 필요하지 않습니다.
+`0.3.1`은 release hardening patch입니다.
+manual release tag 처리를 더 엄격하게 만들고, npm provenance 기대치를 문서화하며, security policy를 추가하고, GitHub publish workflow가 끝난 뒤 npm에 새 버전이 실제로 보이는지 확인합니다.
 
 ---
 

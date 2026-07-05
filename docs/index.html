@@ -966,7 +966,7 @@ const schema = toJsonSchema(User);</code></pre>
             </header>
             <div class="locale-en">
 <h2 id="readme-en-typesea">TypeSea</h2>
-<p><a href="https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml/badge.svg">![CI</a>](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml) <span class="muted-link">![Socket Badge</span>](https://badge.socket.dev/npm/package/typesea/0.3.0) <span class="muted-link">![License</span>](./LICENSE) <span class="muted-link">TypeScript</span> <span class="muted-link">Dependencies</span> <span class="muted-link">Tree-shakeable</span> <span class="muted-link">Side-effect free</span> <span class="muted-link">No dependencies</span> <span class="muted-link">Module</span> <span class="muted-link">Node</span></p>
+<p><a href="https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml/badge.svg">![CI</a>](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml) <span class="muted-link">![Socket Badge</span>](https://socket.dev/npm/package/typesea) <span class="muted-link">![License</span>](./LICENSE) <span class="muted-link">TypeScript</span> <span class="muted-link">Dependencies</span> <span class="muted-link">Tree-shakeable</span> <span class="muted-link">Side-effect free</span> <span class="muted-link">No dependencies</span> <span class="muted-link">Module</span> <span class="muted-link">Node</span></p>
 <p><strong>TypeSea</strong> is a <strong>zero-runtime-dependency TypeScript runtime narrowing library</strong> built around <strong>immutable guards</strong>, optimized <strong>Sea-of-Nodes validation plans</strong>, runtime compilation, and AOT source generation.</p>
 <h3 id="readme-en-benchmark-headline">Benchmark Headline</h3>
 <p>Last local benchmark on 2026-07-04 KST: <code>npm run bench -- bench/ecosystem.bench.ts --run</code>, strict-object contract, operations per second on one machine.</p>
@@ -974,6 +974,7 @@ const schema = toJsonSchema(User);</code></pre>
 <p>TypeSea safe compiled validators are already in Ajv's boolean hot-path class while keeping descriptor-based hostile-input semantics. Unsafe and unchecked FastMode are the bragging-rights path for trusted normalized data: direct field loads, allocation-light strict-key loops, and V8-friendly monomorphic codegen.</p>
 <blockquote><p>Goal: not &quot;probably valid&quot;, but <strong>provably parity-tested validation</strong> that never executes user code, never throws on expected failures, and never leaks mutable state across a public boundary.</p></blockquote>
 <aside class="admonition important"><strong class="admonition-title">IMPORTANT</strong><p>TypeSea is designed for <strong>hostile boundary data</strong>: property reads go through descriptors so <strong>user getters never execute</strong>, <code>__proto__</code>/<code>constructor</code> keys are handled with null-prototype lookups, user regexes are cloned and <code>lastIndex</code>-reset, and cyclic inputs validate finitely. Expected failures return frozen <code>Result</code> values — <code>any</code>, <code>try</code>, and <code>catch</code> are banned from the entire codebase and enforced by policy gates.</p></aside>
+<aside class="admonition warning"><strong class="admonition-title">WARNING</strong><p><code>unsafe</code> and <code>unchecked</code> are <strong>not public-boundary modes</strong>. They are for trusted, already-normalized data where the caller accepts getter execution, prototype-backed values, and weaker strict-extra-key guarantees. Use the default safe mode for external input.</p></aside>
 <hr>
 <h3 id="readme-en-why">Why</h3>
 <p>Many validation libraries fall short when you care about:</p>
@@ -1178,7 +1179,11 @@ npm run release:check   # the full pre-publish gate (everything above)</code></p
 <aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>Benchmark comparison packages (Zod, Valibot, Ajv) are dev dependencies only — package policy rejects them from every runtime dependency field. The benchmark suite reports both boolean-path and diagnostic-path (<code>check()</code> vs <code>safeParse</code>) comparisons, so numbers stay apples-to-apples.</p></aside>
 <hr>
 <h3 id="readme-en-documentation">Documentation</h3>
-<ul><li><a href="#overview">Documentation site</a></li><li><a href="#api-reference">API reference</a></li><li><a href="#engine-notes">Engine notes</a></li></ul>
+<ul><li><a href="#overview">Documentation site</a></li><li><a href="#api-reference">API reference</a></li><li><a href="#engine-notes">Engine notes</a></li><li><a href="https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md">Security policy</a></li></ul>
+<hr>
+<h3 id="readme-en-migration-notes">Migration Notes</h3>
+<h4 id="readme-en-0-3-0-to-0-3-1">0.3.0 to 0.3.1</h4>
+<p>No application code changes are required. <code>0.3.1</code> is a release-hardening patch: it tightens manual release tag handling, documents npm provenance expectations, adds a security policy, and verifies that npm exposes the published version after the GitHub publish workflow completes.</p>
 <hr>
 <h3 id="readme-en-license">License</h3>
 <p>MIT License. See <a href="https://github.com/Feralthedogg/TypeSea/blob/main/LICENSE">LICENSE</a>.</p>
@@ -1192,6 +1197,7 @@ npm run release:check   # the full pre-publish gate (everything above)</code></p
 <p>TypeSea의 안전 모드 컴파일 검증기는 getter 실행 방지와 strict extra key 검사 같은 적대적 입력 방어를 유지하면서도 Ajv의 boolean hot path에 가까운 성능을 냅니다. <code>unsafe</code>와 <code>unchecked</code> FastMode는 호출자가 이미 입력을 정규화했고 객체 그래프를 신뢰할 수 있을 때 쓰는 성능 우선 경로입니다. 이 모드에서는 직접 필드 로드, 할당을 줄인 strict-key loop, V8이 inline cache를 붙이기 쉬운 코드 형태를 사용합니다.</p>
 <blockquote><p>목표는 &quot;대충 유효해 보이면 통과&quot;가 아닙니다. TypeSea의 목표는 <strong>런타임 실행, 컴파일 실행, AOT 실행이 같은 판정을 내린다는 사실을 테스트로 고정하는 검증기</strong>입니다. 사용자 코드를 실행하지 않고, 예상 가능한 실패에서 예외를 던지지 않으며, 공개 API 경계 밖으로 변경 가능한 내부 상태를 내보내지 않는 것을 기본 원칙으로 둡니다.</p></blockquote>
 <aside class="admonition important"><strong class="admonition-title">IMPORTANT</strong><p>TypeSea는 <strong>적대적인 경계 입력</strong>을 전제로 설계했습니다. 속성 읽기는 descriptor를 통하므로 <strong>사용자 getter를 실행하지 않습니다</strong>. <code>__proto__</code>와 <code>constructor</code> key는 null-prototype lookup으로 처리하고, 사용자 regexp는 복제한 뒤 <code>lastIndex</code>를 reset하며, 순환 입력도 유한하게 검증합니다. 예상 가능한 실패는 동결된 <code>Result</code>로 반환합니다. 불명확한 타입 탈출과 암묵적 예외 흐름에 기대지 않도록 코드베이스 전체에 정책 게이트를 둡니다.</p></aside>
+<aside class="admonition warning"><strong class="admonition-title">WARNING</strong><p><code>unsafe</code>와 <code>unchecked</code>는 <strong>public boundary용 모드가 아닙니다</strong>. 이미 신뢰 가능한 plain data로 정규화된 입력에서만 사용하세요. 이 모드에서는 getter 실행, prototype-backed value 수용, 더 약한 strict extra-key 보장을 호출자가 받아들이는 것입니다. 외부 입력에는 기본 safe mode를 쓰는 것이 TypeSea의 보안 계약입니다.</p></aside>
 <hr>
 <h3 id="readme-ko-왜-만들었나">왜 만들었나</h3>
 <p>검증 라이브러리를 실제 경계 입력에 쓰다 보면 다음 조건을 동시에 만족시키기 어렵습니다.</p>
@@ -1377,7 +1383,11 @@ npm run release:check   # the full pre-publish gate</code></pre>
 <aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>benchmark 비교 패키지인 Zod, Valibot, Ajv는 dev dependency일 뿐입니다. package policy는 이들이 runtime dependency field에 들어가는 것을 거부합니다. benchmark suite는 boolean path와 diagnostic path(<code>check()</code> vs <code>safeParse</code>)를 모두 보고하므로 비교 기준을 맞춥니다.</p></aside>
 <hr>
 <h3 id="readme-ko-문서">문서</h3>
-<ul><li><a href="#overview">문서 사이트</a></li><li><a href="#api-reference">API 레퍼런스</a></li><li><a href="#engine-notes">엔진 노트</a></li></ul>
+<ul><li><a href="#overview">문서 사이트</a></li><li><a href="#api-reference">API 레퍼런스</a></li><li><a href="#engine-notes">엔진 노트</a></li><li><a href="https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md">보안 정책</a></li></ul>
+<hr>
+<h3 id="readme-ko-마이그레이션-노트">마이그레이션 노트</h3>
+<h4 id="readme-ko-0-3-0에서-0-3-1">0.3.0에서 0.3.1</h4>
+<p>애플리케이션 코드 변경은 필요하지 않습니다. <code>0.3.1</code>은 release hardening patch입니다. manual release tag 처리를 더 엄격하게 만들고, npm provenance 기대치를 문서화하며, security policy를 추가하고, GitHub publish workflow가 끝난 뒤 npm에 새 버전이 실제로 보이는지 확인합니다.</p>
 <hr>
 <h3 id="readme-ko-라이선스">라이선스</h3>
 <p>MIT License. 자세한 내용은 <a href="https://github.com/Feralthedogg/TypeSea/blob/main/LICENSE">LICENSE</a>를 보세요.</p>
