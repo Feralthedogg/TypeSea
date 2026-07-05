@@ -707,7 +707,7 @@
                 </h2>
                 <p class="lede">
                   <span class="i18n-en">TypeSea turns immutable schemas into runtime guards, compiled validators, AOT modules, JSON Schema exports, framework adapters, and frozen diagnostic Result values.</span>
-                  <span class="i18n-ko" lang="ko">TypeSea는 불변 스키마를 런타임 가드, 컴파일된 검증기, AOT 모듈, JSON Schema 출력, 프레임워크 어댑터, 얼려진 진단 Result로 이어 줍니다.</span>
+                  <span class="i18n-ko" lang="ko">TypeSea는 불변 스키마를 런타임 가드, 컴파일된 검증기, AOT 모듈, JSON Schema 출력, 프레임워크 어댑터, 동결된 진단 Result로 연결합니다.</span>
                 </p>
                 <ul class="checklist">
                   <li>
@@ -802,7 +802,7 @@ const schema = toJsonSchema(User);</code></pre>
             </p>
             <h2>
               <span class="i18n-en">Builder -> frozen schema -> Sea-of-Nodes validation IR -> optimize -> validation plan.</span>
-              <span class="i18n-ko" lang="ko">빌더 -> 얼려진 스키마 -> Sea-of-Nodes 검증 IR -> 최적화 -> 검증 계획.</span>
+              <span class="i18n-ko" lang="ko">빌더 -> 동결된 스키마 -> Sea-of-Nodes 검증 IR -> 최적화 -> 검증 계획.</span>
             </h2>
             <p class="lede">
               <span class="i18n-en">The graph is the source for generated validators, while the plan-owned kernel keeps ordinary guard execution out of a generic node interpreter.</span>
@@ -1169,22 +1169,22 @@ npm run release:check   # the full pre-publish gate (everything above)</code></p
             </div>
             <div class="locale-ko" lang="ko">
 <h2 id="readme-ko-typesea">TypeSea</h2>
-<p><strong>TypeSea</strong>는 런타임 의존성이 없는 TypeScript 검증 라이브러리입니다. 불변 가드, 최적화된 Sea-of-Nodes 검증 계획, 런타임 컴파일, AOT 소스 생성을 중심으로 설계했습니다.</p>
+<p><strong>TypeSea</strong>는 런타임 의존성 없이 TypeScript 값을 검증하고 타입을 좁히는 라이브러리입니다. 불변 스키마, Sea-of-Nodes에서 영향을 받은 검증 IR, 런타임 컴파일, AOT 소스 생성을 한 흐름으로 묶는 것을 목표로 합니다.</p>
 <h3 id="readme-ko-벤치마크-요약">벤치마크 요약</h3>
-<p>마지막 로컬 벤치마크는 2026-07-04 KST에 실행했습니다. 명령은 <code>npm run bench -- bench/ecosystem.bench.ts --run</code>이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다. 릴리스 성능 보증값은 아닙니다.</p>
+<p>마지막 로컬 벤치마크는 2026-07-04 KST에 실행했습니다. 명령은 <code>npm run bench -- bench/ecosystem.bench.ts --run</code>이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다. 아래 수치는 회귀를 잡기 위한 로컬 측정값이지, 릴리스 성능 보증값은 아닙니다.</p>
 <p><img class="benchmark-image" src="assets/benchmark-headline.svg" alt="TypeSea benchmark comparison"></p>
-<p>TypeSea의 안전 모드 컴파일 검증기는 적대적 입력을 방어하는 descriptor 기반 의미를 유지하면서도 Ajv의 boolean 핫패스에 가까운 성능을 냅니다. unsafe와 unchecked FastMode는 신뢰된 정규화 데이터에서 쓰는 성능 우선 경로입니다. 직접 필드 로드, 할당을 줄인 strict-key loop, V8이 최적화하기 쉬운 monomorphic codegen을 사용합니다.</p>
-<blockquote><p>목표는 &quot;아마 유효할 것&quot;이 아닙니다. TypeSea의 목표는 <strong>여러 실행 경로가 같은 판정을 내린다는 사실을 테스트로 증명하는 검증기</strong>입니다. 사용자 코드를 실행하지 않고, 예상 가능한 실패에서 예외를 던지지 않으며, 공개 경계 밖으로 변경 가능한 상태를 흘리지 않는 것을 기준으로 삼습니다.</p></blockquote>
-<aside class="admonition important"><strong class="admonition-title">IMPORTANT</strong><p>TypeSea는 <strong>적대적인 경계 입력</strong>을 전제로 설계했습니다. 속성 읽기는 descriptor를 통하므로 <strong>사용자 getter가 실행되지 않습니다</strong>. <code>__proto__</code>와 <code>constructor</code> key는 null-prototype lookup으로 처리하고, 사용자 regexp는 복제한 뒤 <code>lastIndex</code>를 reset하며, 순환 입력도 유한하게 검증합니다. 예상 가능한 실패는 얼려진 <code>Result</code>로 반환합니다. 불명확한 타입 탈출과 예외 흐름에 의존하지 않도록 코드베이스 전체에 정책 게이트를 둡니다.</p></aside>
+<p>TypeSea의 안전 모드 컴파일 검증기는 getter 실행 방지와 strict extra key 검사 같은 적대적 입력 방어를 유지하면서도 Ajv의 boolean hot path에 가까운 성능을 냅니다. <code>unsafe</code>와 <code>unchecked</code> FastMode는 호출자가 이미 입력을 정규화했고 객체 그래프를 신뢰할 수 있을 때 쓰는 성능 우선 경로입니다. 이 모드에서는 직접 필드 로드, 할당을 줄인 strict-key loop, V8이 inline cache를 붙이기 쉬운 코드 형태를 사용합니다.</p>
+<blockquote><p>목표는 &quot;대충 유효해 보이면 통과&quot;가 아닙니다. TypeSea의 목표는 <strong>런타임 실행, 컴파일 실행, AOT 실행이 같은 판정을 내린다는 사실을 테스트로 고정하는 검증기</strong>입니다. 사용자 코드를 실행하지 않고, 예상 가능한 실패에서 예외를 던지지 않으며, 공개 API 경계 밖으로 변경 가능한 내부 상태를 내보내지 않는 것을 기본 원칙으로 둡니다.</p></blockquote>
+<aside class="admonition important"><strong class="admonition-title">IMPORTANT</strong><p>TypeSea는 <strong>적대적인 경계 입력</strong>을 전제로 설계했습니다. 속성 읽기는 descriptor를 통하므로 <strong>사용자 getter를 실행하지 않습니다</strong>. <code>__proto__</code>와 <code>constructor</code> key는 null-prototype lookup으로 처리하고, 사용자 regexp는 복제한 뒤 <code>lastIndex</code>를 reset하며, 순환 입력도 유한하게 검증합니다. 예상 가능한 실패는 동결된 <code>Result</code>로 반환합니다. 불명확한 타입 탈출과 암묵적 예외 흐름에 기대지 않도록 코드베이스 전체에 정책 게이트를 둡니다.</p></aside>
 <hr>
 <h3 id="readme-ko-왜-만들었나">왜 만들었나</h3>
-<p>검증 라이브러리를 쓰다 보면 다음 조건을 동시에 만족시키기 어렵습니다.</p>
-<ul><li>getter 부작용, prototype pollution key, 위조된 schema object, revoked proxy처럼 검증에 저항하는 신뢰할 수 없는 입력</li><li>runtime plan, compiled validator, AOT-generated validator 사이의 동일한 판정</li><li><code>throw</code> 대신 <code>Result</code>를 쓰는 명시적 진단</li><li>공개 경계마다 유지되는 불변성</li></ul>
+<p>검증 라이브러리를 실제 경계 입력에 쓰다 보면 다음 조건을 동시에 만족시키기 어렵습니다.</p>
+<ul><li>getter 부작용, prototype pollution key, 위조된 schema object, revoked proxy처럼 검증 자체에 저항하는 입력</li><li>런타임 계획, 컴파일된 검증기, AOT로 생성한 검증기 사이의 동일한 판정</li><li><code>throw</code> 대신 <code>Result</code>로 표현되는 명시적 실패</li><li>공개 API 경계를 지날 때마다 유지되는 불변성</li></ul>
 <p>TypeSea는 아래 원칙에 집중합니다.</p>
-<ul><li>검증 중 사용자 코드 실행 금지</li><li>runtime plan, compiled, AOT의 판정 일치를 seeded generative fuzzer로 검증</li><li>injection-safe code generation: string interpolation 대신 side table 사용</li><li><code>optional</code>과 <code>undefinedable</code>을 분리하는 명시적 presence semantics</li></ul>
+<ul><li>검증 중 사용자 코드 실행 금지</li><li>런타임, 컴파일, AOT 실행 경로의 판정 일치를 seeded fuzzer로 검증</li><li>코드 생성 시 사용자 입력을 소스 문자열에 직접 삽입하지 않기</li><li><code>optional</code>과 <code>undefinedable</code>을 분리하는 명시적 key presence 규칙</li></ul>
 <hr>
 <h3 id="readme-ko-핵심-속성">핵심 속성</h3>
-<ul><li><strong>의존성 없음</strong>: runtime, peer, optional, bundled dependency가 없습니다. 릴리스 전 package policy가 이를 기계적으로 검증합니다.</li><li><strong>세 엔진, 하나의 의미</strong>: <code>is()</code>와 <code>check()</code>는 cached validation plan을 실행하고, <code>compile()</code>은 optimized IR에서 runtime predicate를 방출하며, <code>emitAotModule()</code>은 standalone validator source를 생성합니다. runtime plan은 graph와 schema-specialized kernel을 함께 소유합니다. graph는 generated validator의 기준 원본이고, 일반 <code>is()</code>는 per-node interpreter를 타지 않습니다. sparse array, accessor property, symbol key, non-enumerable extra까지 포함해 parity fuzz test를 돌립니다.</li><li><strong>얼려진 공개 표면</strong>: guard, schema, graph, diagnostic, JSON Schema payload는 public API boundary를 넘기 전에 freeze됩니다.</li><li><strong>손실 없는 export만 허용</strong>: JSON Schema와 AOT export는 의미 손실이 없을 때만 성공합니다. runtime-only contract는 schema를 약화시키지 않고 typed issue를 반환합니다.</li></ul>
+<ul><li><strong>런타임 의존성 없음</strong>: runtime, peer, optional, bundled dependency가 없습니다. 릴리스 전에 package policy가 이를 기계적으로 검증합니다.</li><li><strong>세 실행 경로, 하나의 의미</strong>: <code>is()</code>와 <code>check()</code>는 cached validation plan을 실행하고, <code>compile()</code>은 최적화된 IR에서 런타임 predicate를 생성하며, <code>emitAotModule()</code>은 standalone validator source를 만듭니다. 일반 <code>is()</code>는 per-node interpreter를 타지 않고 schema-specialized kernel을 사용합니다. sparse array, accessor property, symbol key, non-enumerable extra까지 포함해 parity fuzz test를 돌립니다.</li><li><strong>동결된 공개 표면</strong>: guard, schema, graph, diagnostic, JSON Schema payload는 공개 API 경계를 넘기 전에 freeze됩니다.</li><li><strong>손실 없는 export만 허용</strong>: JSON Schema와 AOT export는 TypeSea 계약을 의미 손실 없이 표현할 수 있을 때만 성공합니다. 런타임 전용 계약은 schema를 약화시키지 않고 typed issue를 반환합니다.</li></ul>
 <aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>TypeSea는 <strong>ESM-only</strong> 패키지입니다. <code>&quot;type&quot;: &quot;module&quot;</code>만 제공하며 CommonJS build는 없습니다. Node.js <code>&gt;= 20.19</code>에서는 <code>default</code> export condition을 통해 <code>require(esm)</code> 로드도 가능합니다.</p></aside>
 <hr>
 <h3 id="readme-ko-빠른-시작">빠른 시작</h3>
@@ -1198,24 +1198,24 @@ const User = t.strictObject({
 
 type User = Infer&lt;typeof User&gt;;
 
-// 1) Boolean narrowing: 성공 경로에서 진단 할당을 피합니다.
+// 1) Boolean narrowing: 성공 경로에서 진단 객체를 만들지 않습니다.
 if (User.is(input)) {
   input.id; // narrowed
 }
 
-// 2) Immutable diagnostics: 얼려진 Result를 반환하고, 예상 가능한 실패에서 throw하지 않습니다.
+// 2) Immutable diagnostics: 예상 가능한 실패는 Result로 받습니다.
 const checked = User.check(input);
 if (!checked.ok) {
-  console.log(checked.error); // 경로가 포함된 얼려진 issue 목록
+  console.log(checked.error); // path가 포함된 동결 issue 목록
 }
 
-// 3) Hot path: 생성된 검증기 코드
+// 3) Hot path: 검증 코드를 생성합니다.
 const FastUser = compile(User, { name: &quot;isUser&quot; });
 
-// 4) Interop: 의미 손실 없는 JSON Schema export
+// 4) Interop: 의미 손실이 없을 때만 JSON Schema로 내보냅니다.
 const schema = toJsonSchema(User);</code></pre>
-<p><code>is()</code>는 할당이 적은 boolean 경로에 씁니다. 호출자가 불변 진단 정보를 필요로 하면 <code>check()</code>를 씁니다. 스키마가 안정적이고 핫패스에 있다면 <code>compile()</code> 또는 <code>emitAotModule()</code>을 씁니다.</p>
-<aside class="admonition caution"><strong class="admonition-title">CAUTION</strong><p><code>compile()</code>은 <code>new Function</code>으로 검증기를 생성합니다. <code>unsafe-eval</code>을 금지하는 Content-Security-Policy 환경에서는 예외가 납니다. CSP 제한 환경에서는 <code>emitAotModule()</code>로 build time에 validator source를 생성하세요.</p></aside>
+<p><code>is()</code>는 할당이 적은 boolean 경로에 씁니다. 호출자가 실패 이유와 path를 필요로 하면 <code>check()</code>를 씁니다. 스키마가 안정적이고 호출 빈도가 높다면 <code>compile()</code> 또는 <code>emitAotModule()</code>을 씁니다.</p>
+<aside class="admonition caution"><strong class="admonition-title">CAUTION</strong><p><code>compile()</code>은 <code>new Function</code>으로 검증기를 생성합니다. <code>unsafe-eval</code>을 금지하는 Content-Security-Policy 환경에서는 사용할 수 없습니다. CSP 제한 환경에서는 <code>emitAotModule()</code>로 빌드 시점에 validator source를 생성하세요.</p></aside>
 <h4 id="readme-ko-unsafe-fastmode">Unsafe FastMode</h4>
 <pre><code>const FastButLooseUser = compile(User, {
   name: &quot;isUserFast&quot;,
@@ -1226,29 +1226,29 @@ const FastTrustedShapeUser = compile(User, {
   name: &quot;isUserTrustedShape&quot;,
   mode: &quot;unchecked&quot;
 });</code></pre>
-<p><code>compile(..., { mode: &quot;unsafe&quot; })</code>와 <code>emitAotModule(..., { mode: &quot;unsafe&quot; })</code>는 TypeSea가 생성할 수 있는 가장 V8 친화적인 predicate를 방출합니다. required object field는 direct bracket access로 읽고, array와 tuple은 direct indexed load를 쓰며, discriminant는 descriptor read를 피합니다. strict-object extra는 allocation-free <code>for...in</code> loop로 검사합니다. 이 모드는 신뢰할 수 있고 이미 정규화된 데이터를 극단적인 핫패스에서 다룰 때만 사용합니다.</p>
-<p>기본값은 여전히 <code>mode: &quot;safe&quot;</code>입니다. unsafe mode는 getter를 실행할 수 있고, prototype-backed value를 받아들일 수 있으며, strict object에서 symbol 또는 non-enumerable extra를 거부하지 않습니다. 호출자가 object graph를 소유하고 있거나 input을 plain data record로 이미 정규화한 경우에만 사용하세요. unsafe generated predicate는 V8 inline cache가 일반 property load를 잡을 수 있도록 escaped static property key를 source에 직접 넣을 수도 있습니다.</p>
-<p><code>mode: &quot;unchecked&quot;</code>는 한 단계 더 나아가 object shape을 신뢰하고 strict extra-key loop 자체를 건너뜁니다. 이미 소유한 DTO에서 가장 빠른 경로지만, strict object가 더 이상 extra key를 거부하지 않습니다.</p>
-<p>unsafe와 unchecked mode에서 successful compiled <code>check()</code>는 frozen success result 대신 raw <code>{ ok: true, value }</code> object를 반환합니다. 실패 진단은 여전히 freeze됩니다. safe mode는 success와 failure 모두 fully frozen <code>Result</code> contract를 유지합니다. FastMode diagnostic collector도 가능한 곳에서는 trusted direct-read object shape을 사용합니다. 따라서 missing/accessor-backed field, sparse/accessor-backed array, record slot, discriminant diagnostic의 issue code는 safe mode와 다를 수 있습니다.</p>
+<p><code>compile(..., { mode: &quot;unsafe&quot; })</code>와 <code>emitAotModule(..., { mode: &quot;unsafe&quot; })</code>는 TypeSea가 생성할 수 있는 가장 V8 친화적인 predicate를 방출합니다. required object field는 direct bracket access로 읽고, array와 tuple은 direct indexed load를 쓰며, discriminant는 descriptor read를 피합니다. strict-object extra는 allocation-free <code>for...in</code> loop로 검사합니다.</p>
+<p>기본값은 여전히 <code>mode: &quot;safe&quot;</code>입니다. unsafe mode는 getter를 실행할 수 있고, prototype-backed value를 받아들일 수 있으며, strict object에서 symbol 또는 non-enumerable extra를 거부하지 않습니다. 호출자가 객체 그래프를 소유하고 있거나 입력을 plain data record로 이미 정규화한 경우에만 사용하세요.</p>
+<p><code>mode: &quot;unchecked&quot;</code>는 한 단계 더 나아가 object shape을 신뢰하고 strict extra-key loop 자체를 건너뜁니다. 이미 소유한 DTO에서는 가장 빠른 경로지만, strict object가 더 이상 extra key를 거부하지 않습니다.</p>
+<p>unsafe와 unchecked mode에서 successful compiled <code>check()</code>는 frozen success result 대신 raw <code>{ ok: true, value }</code> object를 반환합니다. 실패 진단은 계속 freeze됩니다. safe mode는 success와 failure 모두 frozen <code>Result</code> 계약을 유지합니다.</p>
 <hr>
-<h3 id="readme-ko-presence-semantics">Presence Semantics</h3>
-<p>object의 key presence는 명시적입니다. 서로 다른 wrapper는 서로 다른 계약을 뜻합니다.</p>
+<h3 id="readme-ko-key-presence">Key Presence</h3>
+<p>객체 key 존재 여부는 명시적으로 표현합니다. 서로 다른 wrapper는 서로 다른 계약을 뜻합니다.</p>
 <div class="table-wrap"><table><thead><tr><th>Wrapper</th><th>key 생략 허용</th><th>value <code>undefined</code> 허용</th><th>추론 타입</th></tr></thead><tbody><tr><td><code>t.optional(inner)</code></td><td>yes</td><td>no</td><td><code>key?: T</code></td></tr>
 <tr><td><code>t.undefinedable(inner)</code></td><td>no</td><td>yes</td><td><code>key: T | undefined</code></td></tr>
 <tr><td><code>t.nullable(inner)</code></td><td>-</td><td>value may be <code>null</code></td><td><code>key: T | null</code></td></tr></tbody></table></div>
-<aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>presence는 wrapper composition을 지나도 유지됩니다. <code>t.nullable(t.optional(x))</code>는 여전히 &quot;key가 없어도 된다&quot;는 뜻입니다. <code>exactOptionalPropertyTypes</code> 아래에서 타입 추론과 runtime 동작이 같은 의미를 가집니다.</p></aside>
+<aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>presence는 wrapper composition을 지나도 유지됩니다. <code>t.nullable(t.optional(x))</code>는 여전히 &quot;key가 없어도 된다&quot;는 뜻입니다. <code>exactOptionalPropertyTypes</code> 아래에서 타입 추론과 런타임 동작은 같은 의미를 가집니다.</p></aside>
 <hr>
-<h3 id="readme-ko-execution-model">Execution Model</h3>
-<p>TypeSea는 builder validation과 diagnostic을 위해 public schema tree를 유지합니다. 그 뒤 각 schema identity를 cached validation plan으로 낮춥니다. plan은 optimized Sea-of-Nodes graph와 schema-specialized predicate kernel을 소유합니다. <code>Guard.is()</code>는 per-node interpreter dispatch를 피하려고 kernel을 사용하고, <code>compile()</code>과 <code>emitAotModule()</code>은 optimized graph에서 predicate를 방출합니다. <code>check()</code>는 먼저 같은 plan으로 판정을 얻고, 실패한 값만 schema-aware diagnostic collector로 replay해서 issue path와 code를 만듭니다.</p>
+<h3 id="readme-ko-실행-모델">실행 모델</h3>
+<p>TypeSea는 builder validation과 diagnostic을 위해 public schema tree를 유지합니다. 그 뒤 각 schema identity를 cached validation plan으로 낮춥니다. plan은 최적화된 Sea-of-Nodes graph와 schema-specialized predicate kernel을 소유합니다. <code>Guard.is()</code>는 per-node interpreter dispatch를 피하려고 kernel을 사용하고, <code>compile()</code>과 <code>emitAotModule()</code>은 optimized graph에서 predicate를 방출합니다. <code>check()</code>는 먼저 같은 plan으로 판정을 얻고, 실패한 값만 schema-aware diagnostic collector로 replay해서 issue path와 code를 만듭니다.</p>
 <pre><code>builder -&gt; frozen schema -&gt; lower -&gt; Sea-of-Nodes IR -&gt; optimize
 optimize -&gt; ValidationPlan { graph, schema kernel }
 schema kernel -&gt; Guard.is() / check() preflight
 graph -&gt; compile() predicate / emitAotModule() predicate / Guard.graph()
 failed check() -&gt; schema-aware diagnostic collector</code></pre>
-<aside class="admonition important"><strong class="admonition-title">IMPORTANT</strong><p>generated validator는 <strong>사용자가 제어하는 값을 source text에 넣지 않습니다</strong>. literal, regexp, object key, keyset, dynamic schema fallback은 numeric index로 참조되는 <strong>side table</strong>에 둡니다. 적대적인 property name이 generated code 밖으로 탈출할 수 없으며, dedicated injection-audit test가 이 속성을 고정합니다.</p></aside>
+<aside class="admonition important"><strong class="admonition-title">IMPORTANT</strong><p>generated validator는 <strong>사용자가 제어하는 값을 소스 문자열에 넣지 않습니다</strong>. literal, regexp, object key, keyset, dynamic schema fallback은 numeric index로 참조되는 <strong>side table</strong>에 둡니다. 적대적인 property name이 generated code 밖으로 탈출할 수 없으며, dedicated injection-audit test가 이 속성을 고정합니다.</p></aside>
 <hr>
-<h3 id="readme-ko-performance-snapshot">Performance Snapshot</h3>
-<p>마지막 로컬 벤치마크는 2026-07-04 KST에 실행했습니다. <code>npm run bench -- bench/ecosystem.bench.ts --run</code>을 사용했고, benchmark strict-object 계약을 대상으로 했습니다. 아래 값은 단일 머신의 초당 연산 수이며 릴리스 성능 보증값은 아닙니다.</p>
+<h3 id="readme-ko-성능-스냅샷">성능 스냅샷</h3>
+<p>마지막 로컬 벤치마크는 2026-07-04 KST에 실행했습니다. <code>npm run bench -- bench/ecosystem.bench.ts --run</code>을 사용했고, benchmark strict-object 계약을 대상으로 했습니다. 아래 값은 단일 머신의 초당 실행 횟수이며 릴리스 성능 보증값은 아닙니다.</p>
 <div class="table-wrap"><table><thead><tr><th>유효한 객체: boolean 경로</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>513,701</td></tr>
 <tr><td>TypeSea compiled safe <code>is()</code></td><td>4,297,306</td></tr>
 <tr><td>TypeSea compiled unsafe <code>is()</code></td><td>36,297,653</td></tr>
@@ -1277,26 +1277,26 @@ failed check() -&gt; schema-aware diagnostic collector</code></pre>
 <tr><td>Zod <code>safeParse</code></td><td>79,613</td></tr>
 <tr><td>Valibot <code>safeParse</code></td><td>887,991</td></tr>
 <tr><td>Ajv compiled</td><td>28,713,035</td></tr></tbody></table></div>
-<p>안전 모드 컴파일 경로는 TypeSea의 적대적 입력 방어 의미를 유지하면서 Ajv에 가깝게 동작합니다. descriptor 기반 property read, symbol/non-enumerable strict-key rejection, presence semantics, immutable diagnostic, TypeScript guard inference를 유지합니다. unsafe와 unchecked compiled mode는 그 방어 계약 일부를 의도적으로 포기하기 때문에 더 빠릅니다.</p>
+<p>safe compiled path는 TypeSea의 적대적 입력 방어를 유지하면서 Ajv에 가깝게 동작합니다. descriptor 기반 property read, symbol/non-enumerable strict-key rejection, key presence semantics, immutable diagnostics, TypeScript guard inference를 유지합니다. unsafe와 unchecked compiled mode는 그 방어 계약 일부를 의도적으로 포기하기 때문에 더 빠릅니다.</p>
 <hr>
-<h3 id="readme-ko-api-레퍼런스">API 레퍼런스</h3>
+<h3 id="readme-ko-api-레퍼런스-요약">API 레퍼런스 요약</h3>
 <p>모든 공개 진입점은 package root에서 export됩니다. builder는 <code>t</code> table 아래에도 묶여 있습니다.</p>
 <h4 id="readme-ko-builders">Builders</h4>
-<div class="table-wrap"><table><thead><tr><th>영역</th><th>진입점</th></tr></thead><tbody><tr><td>Scalar guard</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Scalar guard</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code></td></tr>
 <tr><td>Literal과 container</td><td><code>t.literal</code>, <code>t.array</code>, <code>t.tuple</code>, <code>t.record</code></td></tr>
 <tr><td>Object</td><td><code>t.object</code>, <code>t.strictObject</code>, <code>extend</code>, <code>pick</code>, <code>omit</code>, <code>partial</code></td></tr>
-<tr><td>합성</td><td><code>t.union</code>, <code>t.discriminatedUnion</code>, <code>t.intersect</code>, <code>guard.intersect</code></td></tr>
+<tr><td>Composition</td><td><code>t.union</code>, <code>t.discriminatedUnion</code>, <code>t.intersect</code>, <code>guard.intersect</code></td></tr>
 <tr><td>Presence wrapper</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code></td></tr>
-<tr><td>동적 계약</td><td><code>t.lazy</code>, <code>t.refine</code></td></tr></tbody></table></div>
+<tr><td>Dynamic contract</td><td><code>t.lazy</code>, <code>t.refine</code></td></tr></tbody></table></div>
 <h4 id="readme-ko-decoders">Decoders</h4>
-<div class="table-wrap"><table><thead><tr><th>영역</th><th>진입점</th></tr></thead><tbody><tr><td>동기 decoder</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.coerce</code></td></tr>
-<tr><td>비동기 decoder</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Sync decoder</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.coerce</code></td></tr>
+<tr><td>Async decoder</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
 <h4 id="readme-ko-execution-export">Execution &amp; Export</h4>
-<div class="table-wrap"><table><thead><tr><th>영역</th><th>진입점</th></tr></thead><tbody><tr><td>Guard method</td><td><code>guard.is()</code>, <code>guard.check()</code>, <code>guard.graph()</code></td></tr>
-<tr><td>생성 검증기</td><td><code>compile</code>, <code>emitAotModule</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Guard method</td><td><code>guard.is()</code>, <code>guard.check()</code>, <code>guard.graph()</code></td></tr>
+<tr><td>Generated validator</td><td><code>compile</code>, <code>emitAotModule</code></td></tr>
 <tr><td>JSON Schema</td><td><code>toJsonSchema</code></td></tr></tbody></table></div>
 <h4 id="readme-ko-messages-adapters">Messages &amp; Adapters</h4>
-<div class="table-wrap"><table><thead><tr><th>영역</th><th>진입점</th></tr></thead><tbody><tr><td>Message / i18n</td><td><code>formatIssue</code>, <code>formatIssues</code>, <code>withMessages</code>, <code>defineMessages</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Messages / i18n</td><td><code>formatIssue</code>, <code>formatIssues</code>, <code>withMessages</code>, <code>defineMessages</code></td></tr>
 <tr><td>tRPC</td><td><code>toTrpcParser</code>, <code>toAsyncTrpcParser</code></td></tr>
 <tr><td>Fastify</td><td><code>toFastifyRouteSchema</code>, <code>toFastifyValidatorCompiler</code></td></tr>
 <tr><td>React Hook Form</td><td><code>toReactHookFormResolver</code></td></tr></tbody></table></div>
@@ -1538,8 +1538,8 @@ const optimized = optimizeGraph(graph);</code></pre>
             </div>
             <div class="locale-ko" lang="ko">
 <h2 id="api-reference-ko-typesea-api-레퍼런스">TypeSea API 레퍼런스</h2>
-<p>TypeSea는 신뢰할 수 없는 입력을 <code>unknown</code>으로 받고, 불변 가드 값을 통해 타입을 좁힙니다. 공개 API는 의도적으로 작게 유지합니다. 복잡한 동작은 builder validation, graph introspection, diagnostics, export check 내부에 숨겨져 있습니다.</p>
-<h3 id="api-reference-ko-import">Import</h3>
+<p>TypeSea는 신뢰할 수 없는 값을 <code>unknown</code>으로 받고, 불변 guard를 통해 타입을 좁힙니다. 공개 API는 작게 유지하고, 복잡한 검증 로직은 builder validation, graph introspection, diagnostics, export check 내부에 둡니다.</p>
+<h3 id="api-reference-ko-가져오기">가져오기</h3>
 <pre><code>import {
   compile,
   emitAotModule,
@@ -1556,15 +1556,15 @@ const optimized = optimizeGraph(graph);</code></pre>
   assert(value: unknown): asserts value is T;
   graph(): Graph;
 }</code></pre>
-<div class="table-wrap"><table><thead><tr><th>메서드</th><th>용도</th><th>계약</th></tr></thead><tbody><tr><td><code>is</code></td><td>hot boolean narrowing</td><td>성공 경로에서 진단 할당을 피합니다.</td></tr>
-<tr><td><code>check</code></td><td>issue가 필요한 validation</td><td>얼려진 <code>Result&lt;T, Issue[]&gt;</code> container를 반환합니다.</td></tr>
-<tr><td><code>assert</code></td><td>throw가 필요한 연동 지점</td><td>복사되고 얼려진 issue를 가진 <code>TypeSeaAssertionError</code>를 던집니다.</td></tr>
-<tr><td><code>graph</code></td><td>runtime plan introspection</td><td>validation plan이 보유한 validated, optimized, frozen Sea-of-Nodes graph를 반환합니다.</td></tr></tbody></table></div>
-<p>diagnostic path에는 object key와 0부터 시작하는 array 또는 tuple index만 들어갑니다. 공개 diagnostic validator는 잘못된 path segment를 거부한 뒤 diagnostic을 API boundary 밖으로 내보냅니다.</p>
+<div class="table-wrap"><table><thead><tr><th>메서드</th><th>용도</th><th>계약</th></tr></thead><tbody><tr><td><code>is</code></td><td>빠른 boolean narrowing</td><td>성공 경로에서 진단 객체를 만들지 않습니다.</td></tr>
+<tr><td><code>check</code></td><td>실패 이유가 필요한 검증</td><td>동결된 <code>Result&lt;T, Issue[]&gt;</code> container를 반환합니다.</td></tr>
+<tr><td><code>assert</code></td><td>예외가 필요한 연동 지점</td><td>복사되고 동결된 issue를 담은 <code>TypeSeaAssertionError</code>를 던집니다.</td></tr>
+<tr><td><code>graph</code></td><td>검증 계획 introspection</td><td>validation plan이 보유한 validated, optimized, frozen Sea-of-Nodes graph를 반환합니다.</td></tr></tbody></table></div>
+<p>diagnostic path에는 object key와 0부터 시작하는 array 또는 tuple index만 들어갑니다. 공개 diagnostic validator는 잘못된 path segment를 거부한 뒤 diagnostic을 API 밖으로 내보냅니다.</p>
 <h3 id="api-reference-ko-builder-계열">Builder 계열</h3>
 <div class="table-wrap"><table><thead><tr><th>계열</th><th>Builder</th></tr></thead><tbody><tr><td>Scalar</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code></td></tr>
 <tr><td>Literal과 container</td><td><code>t.literal(value)</code>, <code>t.array(item)</code>, <code>t.tuple([a, b])</code>, <code>t.record(value)</code></td></tr>
-<tr><td>Objects</td><td><code>t.object(shape)</code>, <code>t.strictObject(shape)</code></td></tr>
+<tr><td>Object</td><td><code>t.object(shape)</code>, <code>t.strictObject(shape)</code></td></tr>
 <tr><td>Object transform</td><td><code>t.extend</code>, <code>t.pick</code>, <code>t.omit</code>, <code>t.partial</code>, and matching object guard methods</td></tr>
 <tr><td>Composition</td><td><code>t.union</code>, <code>t.discriminatedUnion</code>, <code>t.intersect</code>, <code>guard.intersect</code></td></tr>
 <tr><td>Presence</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code></td></tr>
@@ -1573,19 +1573,19 @@ const optimized = optimizeGraph(graph);</code></pre>
 <tr><td>Async decoder</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
 <p>builder function은 schema가 validation plan, compiler, AOT emitter, diagnostic collector, JSON Schema exporter로 들어가기 전에 입력을 검증합니다. 위조된 guard-like value, 잘못된 schema tag, 잘못된 predicate, 잘못된 bound, malformed regexp, 잘못된 discriminated union case set은 construction 중 거부됩니다.</p>
 <p>허용된 schema는 저장 전에 freeze됩니다. 공개 schema collection field는 변경 가능한 collection object 대신 frozen array와 frozen key lookup record를 사용합니다.</p>
-<h3 id="api-reference-ko-object-presence">Object Presence</h3>
-<p>TypeSea는 key presence와 value domain을 분리합니다.</p>
+<h3 id="api-reference-ko-객체-key-존재-규칙">객체 key 존재 규칙</h3>
+<p>TypeSea는 key가 존재하는지와 value domain을 분리합니다.</p>
 <pre><code>const Shape = t.object({
   name: t.optional(t.string),
   nickname: t.undefinedable(t.string)
 });</code></pre>
-<ul><li><code>name</code>은 없어도 됩니다. 존재한다면 값은 string이어야 합니다.</li><li><code>nickname</code>은 반드시 존재해야 합니다. 값은 string 또는 <code>undefined</code>일 수 있습니다.</li><li><code>t.nullable(inner)</code>는 value domain에 <code>null</code>을 추가합니다.</li><li><code>nullable</code>, <code>undefinedable</code>, <code>brand</code>, <code>refine</code>을 지나도 presence-preserving wrapper는 optional-key semantics를 유지합니다.</li></ul>
+<ul><li><code>name</code>은 없어도 됩니다. 존재한다면 값은 string이어야 합니다.</li><li><code>nickname</code>은 반드시 존재해야 합니다. 값은 string 또는 <code>undefined</code>일 수 있습니다.</li><li><code>t.nullable(inner)</code>는 value domain에 <code>null</code>을 추가합니다.</li><li><code>nullable</code>, <code>undefinedable</code>, <code>brand</code>, <code>refine</code>을 지나도 optional-key 의미는 보존됩니다.</li></ul>
 <p>object combinator는 object mode를 보존합니다. strict object guard는 <code>extend</code>, <code>pick</code>, <code>omit</code>, <code>partial</code> 이후에도 strict를 유지하고, passthrough object guard는 unknown key 허용을 유지합니다.</p>
-<h3 id="api-reference-ko-composition">Composition</h3>
+<h3 id="api-reference-ko-합성">합성</h3>
 <p><code>t.union(a, b)</code>는 적어도 한 branch를 만족하는 값을 허용합니다.</p>
 <p><code>t.discriminatedUnion(&quot;kind&quot;, cases)</code>는 string case key를 요구합니다. 각 case는 static하게 inspect할 수 있는 object case여야 하며, dispatch key는 case name과 일치하는 required string literal이어야 합니다.</p>
 <p><code>t.intersect(a, b)</code>와 <code>guard.intersect(other)</code>는 같은 input value가 두 guard를 모두 만족해야 합니다. <code>check()</code>는 양쪽 diagnostic을 모두 수집합니다.</p>
-<h3 id="api-reference-ko-recursion">Recursion</h3>
+<h3 id="api-reference-ko-재귀">재귀</h3>
 <p>recursive contract는 반드시 <code>t.lazy</code>를 사용해야 합니다.</p>
 <pre><code>interface ListNode {
   readonly value: string;
@@ -1613,8 +1613,8 @@ const result = Count.decode(&quot;42&quot;);</code></pre>
   })
 });</code></pre>
 <p><code>formatIssue</code>, <code>formatIssues</code>, <code>withMessages</code>는 validation이 끝난 뒤 diagnostic을 렌더링합니다. 따라서 <code>is()</code>와 일반 <code>check()</code> path에서는 message allocation이 발생하지 않습니다.</p>
-<p>built-in locale은 <code>en</code>과 <code>ko</code>입니다. custom catalog는 <code>{path}</code>, <code>{code}</code>, <code>{expected}</code>, <code>{actual}</code> string template 또는 formatter callback을 쓸 수 있습니다. <code>withMessages(result, options)</code>는 successful result를 그대로 보존하고, failed <code>Result</code>에는 복사되고 얼려진 issue에 <code>message</code> field를 채워 새로 반환합니다.</p>
-<h3 id="api-reference-ko-runtime-compile">Runtime Compile</h3>
+<p>built-in locale은 <code>en</code>과 <code>ko</code>입니다. custom catalog는 <code>{path}</code>, <code>{code}</code>, <code>{expected}</code>, <code>{actual}</code> string template 또는 formatter callback을 쓸 수 있습니다. <code>withMessages(result, options)</code>는 successful result를 그대로 보존하고, failed <code>Result</code>에는 복사되고 동결된 issue에 <code>message</code> field를 채워 새로 반환합니다.</p>
+<h3 id="api-reference-ko-런타임-컴파일">런타임 컴파일</h3>
 <pre><code>const FastUser = compile(User, { name: &quot;isUser&quot; });
 
 FastUser.is(input);
@@ -1622,7 +1622,7 @@ FastUser.check(input);</code></pre>
 <p><code>compile</code>은 optimized Sea-of-Nodes validation graph에서 generated predicate function과 failed value용 diagnostic collector를 방출합니다. static scalar, object, array, record, union, strict-key node는 가능한 경우 straight-line JavaScript 또는 indexed loop로 낮아집니다. <code>lazy</code>, <code>refine</code> 같은 dynamic schema edge는 ordinary guard execution과 같은 IR-backed runtime fallback을 사용해 의미를 유지합니다.</p>
 <p>선택적 <code>name</code>은 debugging과 profiling을 위한 hint입니다. TypeSea는 이를 strict-mode-safe JavaScript function name으로 normalize하고, reserved name에는 prefix를 붙이며, generated name 길이에 cap을 둡니다. 직접 compiled guard construction은 predicate, collector, source argument를 검증합니다. collector diagnostic은 <code>check()</code> 반환 전에 validate, copy, freeze됩니다.</p>
 <p>generated source는 사용자가 제어하는 값을 직접 interpolate하지 않습니다. literal, regexp, property key, keyset, dynamic schema fallback은 side table에 capture되고 numeric index로 참조됩니다.</p>
-<h4 id="api-reference-ko-unsafe-compile-mode">Unsafe Compile Mode</h4>
+<h4 id="api-reference-ko-unsafe-컴파일-모드">Unsafe 컴파일 모드</h4>
 <pre><code>const FastButLooseUser = compile(User, {
   name: &quot;isUserFast&quot;,
   mode: &quot;unsafe&quot;
@@ -1632,8 +1632,9 @@ FastUser.check(input);</code></pre>
 <ul><li>field schema가 <code>undefined</code>를 거부하는 required object field는 <code>value[key]</code>로 읽습니다.</li><li>discriminant dispatch는 tag를 direct bracket access로 읽습니다.</li><li>array와 tuple은 direct indexed load를 사용합니다.</li><li>strict-object extra-key rejection은 allocation-free own-enumerable <code>for...in</code> loop를 사용합니다.</li></ul>
 <p>이 모드는 getter를 실행할 수 있고, prototype-backed value를 받아들일 수 있으며, strict object에서 symbol 또는 non-enumerable extra를 거부하지 않습니다. compiled <code>check()</code>는 먼저 generated predicate의 판정을 신뢰하므로, unsafe predicate가 <code>true</code>를 반환하면 <code>check()</code>도 successful result를 반환합니다. input이 trusted normalization boundary를 지난 뒤에만 unsafe mode를 사용하세요.</p>
 <p>unsafe mode는 escaped static property key를 generated predicate source에 직접 넣을 수 있습니다. 그래야 V8이 ordinary property-load inline cache를 붙이기 쉽습니다. safe mode는 property key를 side table에 유지합니다.</p>
-<p>unchecked mode는 unsafe direct-read shape을 사용하고 strict-object extra-key loop도 건너뜁니다. object shape이 이미 신뢰되거나 정규화된 input에만 사용해야 합니다. 이 모드에서는 strict object가 더 이상 extra key를 거부하지 않습니다. unsafe와 unchecked compiled <code>check()</code>는 successful Result object를 <code>Object.freeze()</code> 없이 raw object로 반환합니다. failure diagnostic은 계속 freeze됩니다. safe mode는 success와 failure 모두 frozen Result object를 유지합니다. FastMode diagnostic collector는 가능한 경우 direct field read와 FastMode strict-key rule을 사용합니다. 따라서 missing/accessor issue code는 safe mode와 일치한다고 보장하지 않습니다. array와 tuple diagnostic도 fast mode에서는 direct indexed read를 쓰므로 sparse slot은 loaded <code>undefined</code> value 기준으로 진단됩니다. record diagnostic은 direct <code>record[key]</code> read를 사용합니다. unchecked mode는 inherited enumerable key도 방문합니다. discriminant diagnostic은 tag를 직접 읽고 string case를 <code>===</code>로 비교합니다.</p>
-<h3 id="api-reference-ko-aot-emit">AOT Emit</h3>
+<p>unchecked mode는 unsafe direct-read shape을 사용하고 strict-object extra-key loop도 건너뜁니다. object shape이 이미 신뢰되거나 정규화된 input에만 사용해야 합니다. 이 모드에서는 strict object가 더 이상 extra key를 거부하지 않습니다.</p>
+<p>unsafe와 unchecked compiled <code>check()</code>는 successful Result object를 <code>Object.freeze()</code> 없이 raw object로 반환합니다. failure diagnostic은 계속 freeze됩니다. safe mode는 success와 failure 모두 frozen Result object를 유지합니다. FastMode diagnostic collector는 가능한 경우 direct field read와 FastMode strict-key rule을 사용합니다. 따라서 missing/accessor issue code는 safe mode와 일치한다고 보장하지 않습니다. array와 tuple diagnostic도 fast mode에서는 direct indexed read를 쓰므로 sparse slot은 loaded <code>undefined</code> value 기준으로 진단됩니다. record diagnostic은 direct <code>record[key]</code> read를 사용합니다. unchecked mode는 inherited enumerable key도 방문합니다. discriminant diagnostic은 tag를 직접 읽고 string case를 <code>===</code>로 비교합니다.</p>
+<h3 id="api-reference-ko-aot-모듈-생성">AOT 모듈 생성</h3>
 <pre><code>const emitted = emitAotModule(User, { name: &quot;aotUser&quot; });
 const unsafeEmitted = emitAotModule(User, {
   name: &quot;aotUserFast&quot;,
@@ -1645,7 +1646,7 @@ const uncheckedEmitted = emitAotModule(User, {
 });</code></pre>
 <p><code>emitAotModule</code>은 <code>Result&lt;AotModule, AotIssue[]&gt;</code>를 반환합니다. successful result에는 standalone ESM validator source와 declaration source가 들어 있습니다. generated module은 module load time에 dynamic source compilation을 요구하지 않고 <code>is</code>, <code>check</code>, <code>assert</code>, default frozen guard-like object를 export합니다.</p>
 <p>AOT generation은 lossless-only입니다. runtime callback 또는 serialize할 수 없는 identity가 필요한 schema는 명시적 AOT issue를 반환합니다.</p>
-<h3 id="api-reference-ko-ecosystem-adapter">Ecosystem Adapter</h3>
+<h3 id="api-reference-ko-framework-adapter">Framework Adapter</h3>
 <pre><code>const parser = toTrpcParser(User);
 const routeSchema = toFastifyRouteSchema(User);
 const validatorCompiler = toFastifyValidatorCompiler(User);
@@ -1671,7 +1672,7 @@ const optimized = optimizeGraph(graph);</code></pre>
 <p><code>Guard.graph()</code>는 runtime validation plan이 보유한 optimized Sea-of-Nodes validation graph를 반환합니다. 같은 plan은 <code>is()</code>가 사용하는 specialized predicate kernel도 소유합니다. graph는 <code>compile()</code>과 <code>emitAotModule()</code>의 source이고, kernel은 ordinary guard execution이 generic per-node interpreter를 타지 않게 합니다. 공개 graph value는 validate, dependency-check, dense compaction, freeze를 거쳐 반환됩니다.</p>
 <p><code>optimizeGraph(graph)</code>는 직접 전달된 graph input을 validate한 뒤 optimize합니다. regex graph node는 plain <code>RegExp</code> value만 받으며, graph가 freeze되기 전에 extensible input을 clone해서 non-extensible regexp로 저장합니다.</p>
 <p><code>SchemaCheck</code>는 <code>lazy</code>나 <code>refine</code>처럼 dynamic runtime schema logic을 기록합니다. callback-backed edge를 static primitive인 척하지 않고, runtime semantics가 필요하다는 사실을 IR에 정확히 남깁니다.</p>
-<h3 id="api-reference-ko-json-schema">JSON Schema</h3>
+<h3 id="api-reference-ko-json-schema-내보내기">JSON Schema 내보내기</h3>
 <pre><code>const result = toJsonSchema(User);</code></pre>
 <p><code>toJsonSchema</code>는 <code>Result&lt;JsonSchema, JsonSchemaExportIssue[]&gt;</code>를 반환합니다. TypeSea가 JSON-compatible input value 위에서 contract를 의미 손실 없이 표현할 수 있을 때만 성공합니다.</p>
 <p>runtime-only concept는 명시적 export issue를 반환합니다.</p>
@@ -1691,11 +1692,11 @@ const optimized = optimizeGraph(graph);</code></pre>
             <header>
               <p class="eyebrow">
                 <span class="i18n-en">Engine Notes</span>
-                <span class="i18n-ko" lang="ko">엔진 노트</span>
+                <span class="i18n-ko" lang="ko">엔진 설계 노트</span>
               </p>
               <h2>
                 <span class="i18n-en">Engine Notes</span>
-                <span class="i18n-ko" lang="ko">엔진 노트</span>
+                <span class="i18n-ko" lang="ko">엔진 설계 노트</span>
               </h2>
               <p>
                 <span class="i18n-en">Rendered from <code>docs/engine-notes.md</code>.</span>
@@ -1759,8 +1760,8 @@ const optimized = optimizeGraph(graph);</code></pre>
 <p>Benchmark numbers are machine-local telemetry. They are useful for catching regressions, not for promising a fixed throughput floor. Unsafe and unchecked numbers are not hostile-input equivalent to safe mode.</p>
             </div>
             <div class="locale-ko" lang="ko">
-<h2 id="engine-notes-ko-엔진-노트">엔진 노트</h2>
-<p>TypeSea는 TypeScript가 JavaScript를 emit한 뒤의 실행 특성을 예측 가능하게 만들기 위해 작성했습니다. 목표는 난해한 코드가 아닙니다. object shape, allocation site, branch behavior, validation contract가 코드에서 드러나게 만드는 것이 목표입니다.</p>
+<h2 id="engine-notes-ko-엔진-설계-노트">엔진 설계 노트</h2>
+<p>TypeSea는 TypeScript가 JavaScript를 emit한 뒤의 실행 특성을 예측 가능하게 만들기 위해 작성했습니다. 목표는 난해한 코드가 아닙니다. object shape, allocation site, branch behavior, validation contract가 코드에서 드러나도록 만드는 것이 목표입니다.</p>
 <h3 id="engine-notes-ko-hot-path-규칙">Hot Path 규칙</h3>
 <ul><li>per-instance method closure 대신 prototype method를 사용합니다.</li><li>schema, check, issue, IR node variant에는 numeric tag를 씁니다.</li><li>class field는 모든 constructor에서 같은 순서로 초기화합니다.</li><li>successful <code>is()</code> validation은 diagnostic allocation을 만들지 않습니다.</li><li><code>Issue</code> object와 path array는 diagnostic이 요청될 때만 할당합니다.</li><li>recursive validation path에서는 indexed loop를 선호합니다.</li><li>object-entry array는 schema construction 중 미리 계산합니다.</li><li>required object field가 data-property descriptor임을 증명한 뒤에는 missing-property fallback을 다시 검사하지 않고 descriptor value를 직접 읽습니다.</li><li>모든 field가 required인 strict object는 field validation 뒤 own string name과 own symbol 수를 세어 extra를 거부합니다. optional strict object는 전체 key membership scan을 유지합니다.</li><li><code>compile()</code>과 <code>emitAotModule()</code>은 safe가 기본입니다. unsafe mode는 명시적 opt-in이며, caller가 getter, prototype, symbol-extra risk를 받아들였을 때 direct property/index load와 own-enumerable strict-key loop를 쓸 수 있습니다.</li><li>constructed guard는 out-of-band로 표시합니다. 정상 receiver는 반복 schema validation을 피하고, forged receiver는 structural check로 fallback합니다.</li><li>object guard 뒤에는 <code>Readonly&lt;Record&lt;string, unknown&gt;&gt;</code>을 사용합니다.</li><li>generated-validator literal, regexp, keyset, dynamic fallback은 사용자가 제어하는 값을 source text에 interpolate하지 않고 side table에 저장합니다.</li></ul>
 <h3 id="engine-notes-ko-타입-시스템-규칙">타입 시스템 규칙</h3>
@@ -1778,7 +1779,7 @@ const optimized = optimizeGraph(graph);</code></pre>
 <p>array와 record IR node는 indexed loop를 emit합니다. static child schema는 optimized graph에서 해당 loop 안으로 inline됩니다. 작은 scalar 또는 union element contract에서 function-call boundary를 피하기 위해서입니다. tuple node는 descriptor-based element access를 보존하고, dynamic edge는 ordinary guard execution과 같은 IR-backed runtime fallback을 사용합니다. 따라서 <code>lazy</code>와 <code>refine</code>의 동작이 유지됩니다.</p>
 <p>strict object IR은 두 가지 shape으로 emit됩니다. 모든 declared key가 required이면 generated validator는 field descriptor read보다 먼저 strict-key count를 실행합니다. <code>Object.getOwnPropertyNames(value).length</code>를 declared key count와 비교하고, <code>Object.getOwnPropertySymbols(value).length === 0</code>을 요구합니다. V8은 generic <code>Reflect.ownKeys</code> count보다 이 count-only path를 더 잘 최적화하고, obvious extra-key object를 field descriptor를 만지기 전에 거부할 수 있습니다. optional strict object는 missing optional key를 final key count만으로 구분할 수 없으므로 full own-key membership scan을 emit합니다.</p>
 <p><code>compile(..., { mode: &quot;unsafe&quot; })</code>와 <code>emitAotModule(..., { mode: &quot;unsafe&quot; })</code>는 generated predicate를 trusted-data code shape으로 전환합니다. schema가 <code>undefined</code>를 거부하는 required object field는 descriptor 또는 own-key check 없이 direct <code>value[key]</code> load를 사용합니다. <code>undefined</code>를 허용할 수 있는 required field는 missing required key가 valid <code>undefined</code> value로 collapse되지 않도록 own-key presence guard를 유지합니다. optional field는 present non-<code>undefined</code> value에 direct-load fast path를 쓰고, ambiguous <code>undefined</code> case에서만 own-key check로 fallback합니다.</p>
-<p>unsafe array, tuple, record, discriminant path도 direct load를 선호합니다. strict object는 own-key array를 할당하는 대신 <code>for...in</code> own-enumerable key loop를 사용합니다. ASCII identifier object key는 <code>value.id</code> 같은 dot-property load로 emit되고, 나머지는 escaped string-literal bracket load로 emit됩니다. 이는 의도적으로 hostile-input equivalent가 아닙니다. getter가 실행될 수 있고, prototype-backed value가 accepted될 수 있으며, symbol 또는 non-enumerable strict extra가 거부되지 않고, static property name이 unsafe generated predicate source에 나타날 수 있습니다.</p>
+<p>unsafe array, tuple, record, discriminant path도 direct load를 선호합니다. strict object는 own-key array를 할당하는 대신 <code>for...in</code> own-enumerable key loop를 사용합니다. ASCII identifier object key는 <code>value.id</code> 같은 dot-property load로 emit되고, 나머지는 escaped string-literal bracket load로 emit됩니다. 이는 의도적으로 safe mode와 같은 적대적 입력 방어가 아닙니다. getter가 실행될 수 있고, prototype-backed value가 accepted될 수 있으며, symbol 또는 non-enumerable strict extra가 거부되지 않고, static property name이 unsafe generated predicate source에 나타날 수 있습니다.</p>
 <p><code>mode: &quot;unchecked&quot;</code>는 unsafe direct-read shape을 유지하면서 strict extra-key loop를 제거합니다. caller가 이미 정규화한 object를 위한 trusted-shape path입니다. 이 모드에서 strict object는 더 이상 extra key를 거부하지 않습니다.</p>
 <p>fast mode는 successful compiled <code>check()</code> result에서 <code>Object.freeze()</code>도 제거합니다. 반환 object는 동일한 <code>{ ok: true, value }</code> shape을 유지하지만 의도적으로 freeze되지 않습니다. failed diagnostic은 success hot path 밖에 있고 reporting을 위해 보존되는 일이 많으므로 계속 freeze됩니다. fast mode의 object diagnostic은 predicate와 같은 direct-read contract에서 생성됩니다. required field는 <code>value.key</code>로 읽고, optional field는 direct load 뒤 <code>undefined</code>일 때 own-key fallback을 사용하며, unsafe strict object는 own enumerable string key를 scan하고, unchecked strict object는 strict-key diagnostic scan을 건너뜁니다. fast mode의 array와 tuple diagnostic은 descriptor probe 대신 direct index로 item을 읽습니다. record diagnostic은 <code>record[key]</code>로 읽습니다. unchecked mode는 inherited enumerable key를 의도적으로 보이게 둡니다. discriminant diagnostic은 tag를 직접 읽고 literal string case를 strict equality로 비교합니다.</p>
 <h3 id="engine-notes-ko-재귀">재귀</h3>

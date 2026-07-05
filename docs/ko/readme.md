@@ -1,57 +1,57 @@
 # TypeSea
 
-**TypeSea**는 런타임 의존성이 없는 TypeScript 검증 라이브러리입니다.
-불변 가드, 최적화된 Sea-of-Nodes 검증 계획, 런타임 컴파일, AOT 소스 생성을 중심으로 설계했습니다.
+**TypeSea**는 런타임 의존성 없이 TypeScript 값을 검증하고 타입을 좁히는 라이브러리입니다.
+불변 스키마, Sea-of-Nodes에서 영향을 받은 검증 IR, 런타임 컴파일, AOT 소스 생성을 한 흐름으로 묶는 것을 목표로 합니다.
 
 ## 벤치마크 요약
 
 마지막 로컬 벤치마크는 2026-07-04 KST에 실행했습니다.
 명령은 `npm run bench -- bench/ecosystem.bench.ts --run`이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다.
-릴리스 성능 보증값은 아닙니다.
+아래 수치는 회귀를 잡기 위한 로컬 측정값이지, 릴리스 성능 보증값은 아닙니다.
 
 ![TypeSea benchmark comparison](../assets/benchmark-headline.svg)
 
-TypeSea의 안전 모드 컴파일 검증기는 적대적 입력을 방어하는 descriptor 기반 의미를 유지하면서도 Ajv의 boolean 핫패스에 가까운 성능을 냅니다.
-unsafe와 unchecked FastMode는 신뢰된 정규화 데이터에서 쓰는 성능 우선 경로입니다.
-직접 필드 로드, 할당을 줄인 strict-key loop, V8이 최적화하기 쉬운 monomorphic codegen을 사용합니다.
+TypeSea의 안전 모드 컴파일 검증기는 getter 실행 방지와 strict extra key 검사 같은 적대적 입력 방어를 유지하면서도 Ajv의 boolean hot path에 가까운 성능을 냅니다.
+`unsafe`와 `unchecked` FastMode는 호출자가 이미 입력을 정규화했고 객체 그래프를 신뢰할 수 있을 때 쓰는 성능 우선 경로입니다.
+이 모드에서는 직접 필드 로드, 할당을 줄인 strict-key loop, V8이 inline cache를 붙이기 쉬운 코드 형태를 사용합니다.
 
-> 목표는 "아마 유효할 것"이 아닙니다.
-> TypeSea의 목표는 **여러 실행 경로가 같은 판정을 내린다는 사실을 테스트로 증명하는 검증기**입니다.
-> 사용자 코드를 실행하지 않고, 예상 가능한 실패에서 예외를 던지지 않으며, 공개 경계 밖으로 변경 가능한 상태를 흘리지 않는 것을 기준으로 삼습니다.
+> 목표는 "대충 유효해 보이면 통과"가 아닙니다.
+> TypeSea의 목표는 **런타임 실행, 컴파일 실행, AOT 실행이 같은 판정을 내린다는 사실을 테스트로 고정하는 검증기**입니다.
+> 사용자 코드를 실행하지 않고, 예상 가능한 실패에서 예외를 던지지 않으며, 공개 API 경계 밖으로 변경 가능한 내부 상태를 내보내지 않는 것을 기본 원칙으로 둡니다.
 
 > [!IMPORTANT]
 > TypeSea는 **적대적인 경계 입력**을 전제로 설계했습니다.
-> 속성 읽기는 descriptor를 통하므로 **사용자 getter가 실행되지 않습니다**.
+> 속성 읽기는 descriptor를 통하므로 **사용자 getter를 실행하지 않습니다**.
 > `__proto__`와 `constructor` key는 null-prototype lookup으로 처리하고, 사용자 regexp는 복제한 뒤 `lastIndex`를 reset하며, 순환 입력도 유한하게 검증합니다.
-> 예상 가능한 실패는 얼려진 `Result`로 반환합니다.
-> 불명확한 타입 탈출과 예외 흐름에 의존하지 않도록 코드베이스 전체에 정책 게이트를 둡니다.
+> 예상 가능한 실패는 동결된 `Result`로 반환합니다.
+> 불명확한 타입 탈출과 암묵적 예외 흐름에 기대지 않도록 코드베이스 전체에 정책 게이트를 둡니다.
 
 ---
 
 ## 왜 만들었나
 
-검증 라이브러리를 쓰다 보면 다음 조건을 동시에 만족시키기 어렵습니다.
+검증 라이브러리를 실제 경계 입력에 쓰다 보면 다음 조건을 동시에 만족시키기 어렵습니다.
 
-- getter 부작용, prototype pollution key, 위조된 schema object, revoked proxy처럼 검증에 저항하는 신뢰할 수 없는 입력
-- runtime plan, compiled validator, AOT-generated validator 사이의 동일한 판정
-- `throw` 대신 `Result`를 쓰는 명시적 진단
-- 공개 경계마다 유지되는 불변성
+- getter 부작용, prototype pollution key, 위조된 schema object, revoked proxy처럼 검증 자체에 저항하는 입력
+- 런타임 계획, 컴파일된 검증기, AOT로 생성한 검증기 사이의 동일한 판정
+- `throw` 대신 `Result`로 표현되는 명시적 실패
+- 공개 API 경계를 지날 때마다 유지되는 불변성
 
 TypeSea는 아래 원칙에 집중합니다.
 
 - 검증 중 사용자 코드 실행 금지
-- runtime plan, compiled, AOT의 판정 일치를 seeded generative fuzzer로 검증
-- injection-safe code generation: string interpolation 대신 side table 사용
-- `optional`과 `undefinedable`을 분리하는 명시적 presence semantics
+- 런타임, 컴파일, AOT 실행 경로의 판정 일치를 seeded fuzzer로 검증
+- 코드 생성 시 사용자 입력을 소스 문자열에 직접 삽입하지 않기
+- `optional`과 `undefinedable`을 분리하는 명시적 key presence 규칙
 
 ---
 
 ## 핵심 속성
 
-- **의존성 없음**: runtime, peer, optional, bundled dependency가 없습니다. 릴리스 전 package policy가 이를 기계적으로 검증합니다.
-- **세 엔진, 하나의 의미**: `is()`와 `check()`는 cached validation plan을 실행하고, `compile()`은 optimized IR에서 runtime predicate를 방출하며, `emitAotModule()`은 standalone validator source를 생성합니다. runtime plan은 graph와 schema-specialized kernel을 함께 소유합니다. graph는 generated validator의 기준 원본이고, 일반 `is()`는 per-node interpreter를 타지 않습니다. sparse array, accessor property, symbol key, non-enumerable extra까지 포함해 parity fuzz test를 돌립니다.
-- **얼려진 공개 표면**: guard, schema, graph, diagnostic, JSON Schema payload는 public API boundary를 넘기 전에 freeze됩니다.
-- **손실 없는 export만 허용**: JSON Schema와 AOT export는 의미 손실이 없을 때만 성공합니다. runtime-only contract는 schema를 약화시키지 않고 typed issue를 반환합니다.
+- **런타임 의존성 없음**: runtime, peer, optional, bundled dependency가 없습니다. 릴리스 전에 package policy가 이를 기계적으로 검증합니다.
+- **세 실행 경로, 하나의 의미**: `is()`와 `check()`는 cached validation plan을 실행하고, `compile()`은 최적화된 IR에서 런타임 predicate를 생성하며, `emitAotModule()`은 standalone validator source를 만듭니다. 일반 `is()`는 per-node interpreter를 타지 않고 schema-specialized kernel을 사용합니다. sparse array, accessor property, symbol key, non-enumerable extra까지 포함해 parity fuzz test를 돌립니다.
+- **동결된 공개 표면**: guard, schema, graph, diagnostic, JSON Schema payload는 공개 API 경계를 넘기 전에 freeze됩니다.
+- **손실 없는 export만 허용**: JSON Schema와 AOT export는 TypeSea 계약을 의미 손실 없이 표현할 수 있을 때만 성공합니다. 런타임 전용 계약은 schema를 약화시키지 않고 typed issue를 반환합니다.
 
 > [!NOTE]
 > TypeSea는 **ESM-only** 패키지입니다.
@@ -73,32 +73,32 @@ const User = t.strictObject({
 
 type User = Infer<typeof User>;
 
-// 1) Boolean narrowing: 성공 경로에서 진단 할당을 피합니다.
+// 1) Boolean narrowing: 성공 경로에서 진단 객체를 만들지 않습니다.
 if (User.is(input)) {
   input.id; // narrowed
 }
 
-// 2) Immutable diagnostics: 얼려진 Result를 반환하고, 예상 가능한 실패에서 throw하지 않습니다.
+// 2) Immutable diagnostics: 예상 가능한 실패는 Result로 받습니다.
 const checked = User.check(input);
 if (!checked.ok) {
-  console.log(checked.error); // 경로가 포함된 얼려진 issue 목록
+  console.log(checked.error); // path가 포함된 동결 issue 목록
 }
 
-// 3) Hot path: 생성된 검증기 코드
+// 3) Hot path: 검증 코드를 생성합니다.
 const FastUser = compile(User, { name: "isUser" });
 
-// 4) Interop: 의미 손실 없는 JSON Schema export
+// 4) Interop: 의미 손실이 없을 때만 JSON Schema로 내보냅니다.
 const schema = toJsonSchema(User);
 ```
 
 `is()`는 할당이 적은 boolean 경로에 씁니다.
-호출자가 불변 진단 정보를 필요로 하면 `check()`를 씁니다.
-스키마가 안정적이고 핫패스에 있다면 `compile()` 또는 `emitAotModule()`을 씁니다.
+호출자가 실패 이유와 path를 필요로 하면 `check()`를 씁니다.
+스키마가 안정적이고 호출 빈도가 높다면 `compile()` 또는 `emitAotModule()`을 씁니다.
 
 > [!CAUTION]
 > `compile()`은 `new Function`으로 검증기를 생성합니다.
-> `unsafe-eval`을 금지하는 Content-Security-Policy 환경에서는 예외가 납니다.
-> CSP 제한 환경에서는 `emitAotModule()`로 build time에 validator source를 생성하세요.
+> `unsafe-eval`을 금지하는 Content-Security-Policy 환경에서는 사용할 수 없습니다.
+> CSP 제한 환경에서는 `emitAotModule()`로 빌드 시점에 validator source를 생성하세요.
 
 ### Unsafe FastMode
 
@@ -117,27 +117,23 @@ const FastTrustedShapeUser = compile(User, {
 `compile(..., { mode: "unsafe" })`와 `emitAotModule(..., { mode: "unsafe" })`는 TypeSea가 생성할 수 있는 가장 V8 친화적인 predicate를 방출합니다.
 required object field는 direct bracket access로 읽고, array와 tuple은 direct indexed load를 쓰며, discriminant는 descriptor read를 피합니다.
 strict-object extra는 allocation-free `for...in` loop로 검사합니다.
-이 모드는 신뢰할 수 있고 이미 정규화된 데이터를 극단적인 핫패스에서 다룰 때만 사용합니다.
 
 기본값은 여전히 `mode: "safe"`입니다.
 unsafe mode는 getter를 실행할 수 있고, prototype-backed value를 받아들일 수 있으며, strict object에서 symbol 또는 non-enumerable extra를 거부하지 않습니다.
-호출자가 object graph를 소유하고 있거나 input을 plain data record로 이미 정규화한 경우에만 사용하세요.
-unsafe generated predicate는 V8 inline cache가 일반 property load를 잡을 수 있도록 escaped static property key를 source에 직접 넣을 수도 있습니다.
+호출자가 객체 그래프를 소유하고 있거나 입력을 plain data record로 이미 정규화한 경우에만 사용하세요.
 
 `mode: "unchecked"`는 한 단계 더 나아가 object shape을 신뢰하고 strict extra-key loop 자체를 건너뜁니다.
-이미 소유한 DTO에서 가장 빠른 경로지만, strict object가 더 이상 extra key를 거부하지 않습니다.
+이미 소유한 DTO에서는 가장 빠른 경로지만, strict object가 더 이상 extra key를 거부하지 않습니다.
 
 unsafe와 unchecked mode에서 successful compiled `check()`는 frozen success result 대신 raw `{ ok: true, value }` object를 반환합니다.
-실패 진단은 여전히 freeze됩니다.
-safe mode는 success와 failure 모두 fully frozen `Result` contract를 유지합니다.
-FastMode diagnostic collector도 가능한 곳에서는 trusted direct-read object shape을 사용합니다.
-따라서 missing/accessor-backed field, sparse/accessor-backed array, record slot, discriminant diagnostic의 issue code는 safe mode와 다를 수 있습니다.
+실패 진단은 계속 freeze됩니다.
+safe mode는 success와 failure 모두 frozen `Result` 계약을 유지합니다.
 
 ---
 
-## Presence Semantics
+## Key Presence
 
-object의 key presence는 명시적입니다.
+객체 key 존재 여부는 명시적으로 표현합니다.
 서로 다른 wrapper는 서로 다른 계약을 뜻합니다.
 
 | Wrapper | key 생략 허용 | value `undefined` 허용 | 추론 타입 |
@@ -149,15 +145,15 @@ object의 key presence는 명시적입니다.
 > [!NOTE]
 > presence는 wrapper composition을 지나도 유지됩니다.
 > `t.nullable(t.optional(x))`는 여전히 "key가 없어도 된다"는 뜻입니다.
-> `exactOptionalPropertyTypes` 아래에서 타입 추론과 runtime 동작이 같은 의미를 가집니다.
+> `exactOptionalPropertyTypes` 아래에서 타입 추론과 런타임 동작은 같은 의미를 가집니다.
 
 ---
 
-## Execution Model
+## 실행 모델
 
 TypeSea는 builder validation과 diagnostic을 위해 public schema tree를 유지합니다.
 그 뒤 각 schema identity를 cached validation plan으로 낮춥니다.
-plan은 optimized Sea-of-Nodes graph와 schema-specialized predicate kernel을 소유합니다.
+plan은 최적화된 Sea-of-Nodes graph와 schema-specialized predicate kernel을 소유합니다.
 `Guard.is()`는 per-node interpreter dispatch를 피하려고 kernel을 사용하고, `compile()`과 `emitAotModule()`은 optimized graph에서 predicate를 방출합니다.
 `check()`는 먼저 같은 plan으로 판정을 얻고, 실패한 값만 schema-aware diagnostic collector로 replay해서 issue path와 code를 만듭니다.
 
@@ -170,17 +166,17 @@ failed check() -> schema-aware diagnostic collector
 ```
 
 > [!IMPORTANT]
-> generated validator는 **사용자가 제어하는 값을 source text에 넣지 않습니다**.
+> generated validator는 **사용자가 제어하는 값을 소스 문자열에 넣지 않습니다**.
 > literal, regexp, object key, keyset, dynamic schema fallback은 numeric index로 참조되는 **side table**에 둡니다.
 > 적대적인 property name이 generated code 밖으로 탈출할 수 없으며, dedicated injection-audit test가 이 속성을 고정합니다.
 
 ---
 
-## Performance Snapshot
+## 성능 스냅샷
 
 마지막 로컬 벤치마크는 2026-07-04 KST에 실행했습니다.
 `npm run bench -- bench/ecosystem.bench.ts --run`을 사용했고, benchmark strict-object 계약을 대상으로 했습니다.
-아래 값은 단일 머신의 초당 연산 수이며 릴리스 성능 보증값은 아닙니다.
+아래 값은 단일 머신의 초당 실행 횟수이며 릴리스 성능 보증값은 아닙니다.
 
 | 유효한 객체: boolean 경로 | hz |
 | --- | ---: |
@@ -222,48 +218,48 @@ failed check() -> schema-aware diagnostic collector
 | Valibot `safeParse` | 887,991 |
 | Ajv compiled | 28,713,035 |
 
-안전 모드 컴파일 경로는 TypeSea의 적대적 입력 방어 의미를 유지하면서 Ajv에 가깝게 동작합니다.
-descriptor 기반 property read, symbol/non-enumerable strict-key rejection, presence semantics, immutable diagnostic, TypeScript guard inference를 유지합니다.
+safe compiled path는 TypeSea의 적대적 입력 방어를 유지하면서 Ajv에 가깝게 동작합니다.
+descriptor 기반 property read, symbol/non-enumerable strict-key rejection, key presence semantics, immutable diagnostics, TypeScript guard inference를 유지합니다.
 unsafe와 unchecked compiled mode는 그 방어 계약 일부를 의도적으로 포기하기 때문에 더 빠릅니다.
 
 ---
 
-## API 레퍼런스
+## API 레퍼런스 요약
 
 모든 공개 진입점은 package root에서 export됩니다.
 builder는 `t` table 아래에도 묶여 있습니다.
 
 ### Builders
 
-| 영역 | 진입점 |
+| 영역 | Entry points |
 | --- | --- |
 | Scalar guard | `t.unknown`, `t.never`, `t.string`, `t.number`, `t.bigint`, `t.symbol`, `t.boolean` |
 | Literal과 container | `t.literal`, `t.array`, `t.tuple`, `t.record` |
 | Object | `t.object`, `t.strictObject`, `extend`, `pick`, `omit`, `partial` |
-| 합성 | `t.union`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect` |
+| Composition | `t.union`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect` |
 | Presence wrapper | `t.optional`, `t.undefinedable`, `t.nullable` |
-| 동적 계약 | `t.lazy`, `t.refine` |
+| Dynamic contract | `t.lazy`, `t.refine` |
 
 ### Decoders
 
-| 영역 | 진입점 |
+| 영역 | Entry points |
 | --- | --- |
-| 동기 decoder | `t.decoder`, `t.transform`, `t.pipe`, `t.coerce` |
-| 비동기 decoder | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
+| Sync decoder | `t.decoder`, `t.transform`, `t.pipe`, `t.coerce` |
+| Async decoder | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
 
 ### Execution & Export
 
-| 영역 | 진입점 |
+| 영역 | Entry points |
 | --- | --- |
 | Guard method | `guard.is()`, `guard.check()`, `guard.graph()` |
-| 생성 검증기 | `compile`, `emitAotModule` |
+| Generated validator | `compile`, `emitAotModule` |
 | JSON Schema | `toJsonSchema` |
 
 ### Messages & Adapters
 
-| 영역 | 진입점 |
+| 영역 | Entry points |
 | --- | --- |
-| Message / i18n | `formatIssue`, `formatIssues`, `withMessages`, `defineMessages` |
+| Messages / i18n | `formatIssue`, `formatIssues`, `withMessages`, `defineMessages` |
 | tRPC | `toTrpcParser`, `toAsyncTrpcParser` |
 | Fastify | `toFastifyRouteSchema`, `toFastifyValidatorCompiler` |
 | React Hook Form | `toReactHookFormResolver` |

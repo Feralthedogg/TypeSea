@@ -17,7 +17,7 @@ const sourceFiles = [
     },
     {
         title: "Engine Notes",
-        titleKo: "엔진 노트",
+        titleKo: "엔진 설계 노트",
         id: "engine-notes",
         path: "docs/engine-notes.md",
         koPath: "docs/ko/engine-notes.md"
@@ -828,7 +828,7 @@ function renderStartGuide() {
                 </h2>
                 <p class="lede">
                   <span class="i18n-en">TypeSea turns immutable schemas into runtime guards, compiled validators, AOT modules, JSON Schema exports, framework adapters, and frozen diagnostic Result values.</span>
-                  <span class="i18n-ko" lang="ko">TypeSea는 불변 스키마를 런타임 가드, 컴파일된 검증기, AOT 모듈, JSON Schema 출력, 프레임워크 어댑터, 얼려진 진단 Result로 이어 줍니다.</span>
+                  <span class="i18n-ko" lang="ko">TypeSea는 불변 스키마를 런타임 가드, 컴파일된 검증기, AOT 모듈, JSON Schema 출력, 프레임워크 어댑터, 동결된 진단 Result로 연결합니다.</span>
                 </p>
                 <ul class="checklist">
                   <li>
@@ -923,7 +923,7 @@ const schema = toJsonSchema(User);</code></pre>
             </p>
             <h2>
               <span class="i18n-en">Builder -> frozen schema -> Sea-of-Nodes validation IR -> optimize -> validation plan.</span>
-              <span class="i18n-ko" lang="ko">빌더 -> 얼려진 스키마 -> Sea-of-Nodes 검증 IR -> 최적화 -> 검증 계획.</span>
+              <span class="i18n-ko" lang="ko">빌더 -> 동결된 스키마 -> Sea-of-Nodes 검증 IR -> 최적화 -> 검증 계획.</span>
             </h2>
             <p class="lede">
               <span class="i18n-en">The graph is the source for generated validators, while the plan-owned kernel keeps ordinary guard execution out of a generic node interpreter.</span>
