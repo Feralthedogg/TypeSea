@@ -414,6 +414,16 @@ typecheck, lint, tests, build, docs smoke, dist policy, public API snapshot,
 package contents, consumer install, benchmark smoke, and pack dry run.
 CI executes it on Node 20.19, 22, and 24; releases publish with npm provenance.
 
+Release path:
+
+1. Push a `vX.Y.Z` tag or run the GitHub `Release` workflow with that tag.
+2. The release workflow verifies that the tag matches `package.json`.
+3. Publishing happens from the GitHub `Publish` workflow with `npm publish --provenance --access public --ignore-scripts`.
+
+Local publishing with `NPM_TOKEN` is reserved for manual recovery releases. It
+must still run `npm run release:check` first, and it cannot attach GitHub OIDC
+provenance.
+
 > [!NOTE]
 > Benchmark comparison packages (Zod, Valibot, Ajv) are dev dependencies only —
 > package policy rejects them from every runtime dependency field. The

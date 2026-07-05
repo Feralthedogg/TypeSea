@@ -1,6 +1,6 @@
 {
     "name": "typesea",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "V8-friendly runtime narrowing for TypeScript with Sea-of-Nodes graph introspection.",
     "type": "module",
     "author": "feral",

@@ -358,6 +358,14 @@ npm run release:check   # the full pre-publish gate
 typecheck, lint, tests, build, docs smoke, dist policy, public API snapshot, package contents, consumer install, benchmark smoke, pack dry run을 포함합니다.
 CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께 publish합니다.
 
+릴리스 경로:
+
+1. `vX.Y.Z` 태그를 push하거나 GitHub `Release` workflow를 그 태그로 실행합니다.
+2. release workflow는 tag가 `package.json`의 version과 일치하는지 확인합니다.
+3. publish는 GitHub `Publish` workflow에서 `npm publish --provenance --access public --ignore-scripts`로 수행합니다.
+
+로컬 `NPM_TOKEN` publish는 수동 복구 릴리스용입니다. 이 경우에도 먼저 `npm run release:check`를 통과해야 하며, GitHub OIDC provenance는 붙지 않습니다.
+
 > [!NOTE]
 > benchmark 비교 패키지인 Zod, Valibot, Ajv는 dev dependency일 뿐입니다.
 > package policy는 이들이 runtime dependency field에 들어가는 것을 거부합니다.

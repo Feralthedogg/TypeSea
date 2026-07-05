@@ -604,7 +604,7 @@
       <aside class="sidebar" aria-label="Documentation navigation">
         <div class="brand">
           <h1>TypeSea</h1>
-          <span class="version">v0.3.0</span>
+          <span class="version">v0.3.1</span>
         </div>
         <p class="brand-tagline">
           <span class="i18n-en">Complete docs from README.md, docs/api.md, and docs/engine-notes.md.</span>
@@ -1172,6 +1172,9 @@ npm run bench -- --run  # benchmark smoke
 npm run pack:dry        # package contents dry run
 npm run release:check   # the full pre-publish gate (everything above)</code></pre>
 <p><code>npm run release:check</code> runs the same gate expected before publishing: typecheck, lint, tests, build, docs smoke, dist policy, public API snapshot, package contents, consumer install, benchmark smoke, and pack dry run. CI executes it on Node 20.19, 22, and 24; releases publish with npm provenance.</p>
+<p>Release path:</p>
+<ol><li>Push a <code>vX.Y.Z</code> tag or run the GitHub <code>Release</code> workflow with that tag.</li><li>The release workflow verifies that the tag matches <code>package.json</code>.</li><li>Publishing happens from the GitHub <code>Publish</code> workflow with <code>npm publish --provenance --access public --ignore-scripts</code>.</li></ol>
+<p>Local publishing with <code>NPM_TOKEN</code> is reserved for manual recovery releases. It must still run <code>npm run release:check</code> first, and it cannot attach GitHub OIDC provenance.</p>
 <aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>Benchmark comparison packages (Zod, Valibot, Ajv) are dev dependencies only — package policy rejects them from every runtime dependency field. The benchmark suite reports both boolean-path and diagnostic-path (<code>check()</code> vs <code>safeParse</code>) comparisons, so numbers stay apples-to-apples.</p></aside>
 <hr>
 <h3 id="readme-en-documentation">Documentation</h3>
@@ -1368,6 +1371,9 @@ npm run bench -- --run  # benchmark smoke
 npm run pack:dry        # package contents dry run
 npm run release:check   # the full pre-publish gate</code></pre>
 <p><code>npm run release:check</code>는 publish 전에 기대하는 동일한 gate를 실행합니다. typecheck, lint, tests, build, docs smoke, dist policy, public API snapshot, package contents, consumer install, benchmark smoke, pack dry run을 포함합니다. CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께 publish합니다.</p>
+<p>릴리스 경로:</p>
+<ol><li><code>vX.Y.Z</code> 태그를 push하거나 GitHub <code>Release</code> workflow를 그 태그로 실행합니다.</li><li>release workflow는 tag가 <code>package.json</code>의 version과 일치하는지 확인합니다.</li><li>publish는 GitHub <code>Publish</code> workflow에서 <code>npm publish --provenance --access public --ignore-scripts</code>로 수행합니다.</li></ol>
+<p>로컬 <code>NPM_TOKEN</code> publish는 수동 복구 릴리스용입니다. 이 경우에도 먼저 <code>npm run release:check</code>를 통과해야 하며, GitHub OIDC provenance는 붙지 않습니다.</p>
 <aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>benchmark 비교 패키지인 Zod, Valibot, Ajv는 dev dependency일 뿐입니다. package policy는 이들이 runtime dependency field에 들어가는 것을 거부합니다. benchmark suite는 boolean path와 diagnostic path(<code>check()</code> vs <code>safeParse</code>)를 모두 보고하므로 비교 기준을 맞춥니다.</p></aside>
 <hr>
 <h3 id="readme-ko-문서">문서</h3>
@@ -1472,6 +1478,12 @@ const Node: Guard&lt;ListNode&gt; = t.lazy((): Guard&lt;ListNode&gt; =&gt;
 const result = Count.decode(&quot;42&quot;);
 
 const Name = t.default(t.string.min(1), &quot;anonymous&quot;);
+const NormalizedName = t.string
+  .trim()
+  .pipe(t.string.min(1))
+  .transform((value) =&gt; value.toLowerCase())
+  .default(&quot;anonymous&quot;)
+  .catch(&quot;anonymous&quot;);
 const NumberText = t.codec(
   t.string.regex(/^\d+$/u, &quot;digits&quot;),
   t.number.int().nonnegative(),
@@ -1481,11 +1493,7 @@ const NumberText = t.codec(
   }
 );</code></pre>
 <p>Decoders are for output-producing operations. They return <code>Result</code> from <code>decode()</code> and do not expose <code>is()</code> predicates, because the decoded output may not be the same runtime value as the input.</p>
-<ul><li><code>t.transform(source, mapper)</code> decodes <code>source</code>, then maps the decoded value.</li><li><code>t.pipe(source, next)</code> feeds a successful decoded value into the next guard or</li></ul>
-<p>decoder.</p>
-<ul><li><code>t.default(source, value)</code> returns a fallback output for <code>undefined</code> input.</li><li><code>t.prefault(source, value)</code> feeds a fallback input through the source.</li><li><code>t.codec(input, output, mapping)</code> validates both sides of a bidirectional</li></ul>
-<p>decode/encode pair.</p>
-<ul><li><code>t.coerce.string</code>, <code>t.coerce.number</code>, and <code>t.coerce.boolean</code> provide explicit</li></ul>
+<ul><li><code>t.transform(source, mapper)</code> decodes <code>source</code>, then maps the decoded value.</li><li><code>t.pipe(source, next)</code> feeds a successful decoded value into the next guard or decoder.</li><li><code>t.default(source, value)</code> returns a fallback output for <code>undefined</code> input.</li><li><code>t.prefault(source, value)</code> feeds a fallback input through the source.</li><li><code>t.catch(source, value)</code> returns a fallback output after a failed decode.</li><li><code>t.codec(input, output, mapping)</code> validates both sides of a bidirectional decode/encode pair.</li><li><code>t.coerce.string</code>, <code>t.coerce.number</code>, and <code>t.coerce.boolean</code> provide explicit</li></ul>
 <p>primitive coercion.</p>
 <ul><li><code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, and <code>t.string.toUpperCase()</code></li></ul>
 <p>are decoder helpers. They validate the string first, then return transformed output from <code>decode()</code>.</p>
@@ -1545,7 +1553,7 @@ const resolver = toReactHookFormResolver(User);</code></pre>
 <pre><code>const FastUser = compile(User);
 const fastParser = toTrpcParser(FastUser);
 const fastValidatorCompiler = toFastifyValidatorCompiler(FastUser);</code></pre>
-<p>Use the default compiled mode at public input boundaries. For trusted, already-normalized internal data, the faster modes can be wired through adapters the same way.</p>
+<p>Use the default compiled mode at public input boundaries. It keeps the safe descriptor-read contract even when an adapter hides the direct <code>is()</code> call. For trusted, already-normalized internal data, the faster modes can be wired through adapters the same way.</p>
 <pre><code>const UnsafeUser = compile(User, { mode: &quot;unsafe&quot; });
 const internalParser = toTrpcParser(UnsafeUser);
 
@@ -1663,6 +1671,12 @@ const Node: Guard&lt;ListNode&gt; = t.lazy((): Guard&lt;ListNode&gt; =&gt;
 const result = Count.decode(&quot;42&quot;);
 
 const Name = t.default(t.string.min(1), &quot;anonymous&quot;);
+const NormalizedName = t.string
+  .trim()
+  .pipe(t.string.min(1))
+  .transform((value) =&gt; value.toLowerCase())
+  .default(&quot;anonymous&quot;)
+  .catch(&quot;anonymous&quot;);
 const NumberText = t.codec(
   t.string.regex(/^\d+$/u, &quot;digits&quot;),
   t.number.int().nonnegative(),
@@ -1672,7 +1686,7 @@ const NumberText = t.codec(
   }
 );</code></pre>
 <p>decoder는 output을 생성하는 작업에 씁니다. <code>decode()</code>에서 <code>Result</code>를 반환하며 <code>is()</code> predicate를 노출하지 않습니다. decoded output이 input과 같은 runtime value가 아닐 수 있기 때문입니다.</p>
-<ul><li><code>t.transform(source, mapper)</code>는 <code>source</code>를 decode한 뒤 decoded value를 map합니다.</li><li><code>t.pipe(source, next)</code>는 성공한 decoded value를 다음 guard 또는 decoder에 넘깁니다.</li><li><code>t.default(source, value)</code>는 input이 <code>undefined</code>일 때 fallback output을 바로 반환합니다.</li><li><code>t.prefault(source, value)</code>는 input이 <code>undefined</code>일 때 fallback input을 source에 다시 통과시킵니다.</li><li><code>t.codec(input, output, mapping)</code>은 bidirectional decode/encode 양쪽을 모두 검증합니다.</li><li><code>t.coerce.string</code>, <code>t.coerce.number</code>, <code>t.coerce.boolean</code>은 명시적 primitive coercion을 제공합니다.</li><li><code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code>는 decoder helper입니다. 먼저 string을 검증한 뒤 <code>decode()</code> 결과로 변환된 값을 반환합니다.</li><li><code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code>는 <code>decodeAsync()</code>에서 <code>Promise&lt;Result&lt;T, Issue[]&gt;&gt;</code>를 반환합니다.</li></ul>
+<ul><li><code>t.transform(source, mapper)</code>는 <code>source</code>를 decode한 뒤 decoded value를 map합니다.</li><li><code>t.pipe(source, next)</code>는 성공한 decoded value를 다음 guard 또는 decoder에 넘깁니다.</li><li><code>t.default(source, value)</code>는 input이 <code>undefined</code>일 때 fallback output을 바로 반환합니다.</li><li><code>t.prefault(source, value)</code>는 input이 <code>undefined</code>일 때 fallback input을 source에 다시 통과시킵니다.</li><li><code>t.catch(source, value)</code>는 decode 실패 시 fallback output을 반환합니다.</li><li><code>t.codec(input, output, mapping)</code>은 bidirectional decode/encode 양쪽을 모두 검증합니다.</li><li><code>t.coerce.string</code>, <code>t.coerce.number</code>, <code>t.coerce.boolean</code>은 명시적 primitive coercion을 제공합니다.</li><li><code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code>는 decoder helper입니다. 먼저 string을 검증한 뒤 <code>decode()</code> 결과로 변환된 값을 반환합니다.</li><li><code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code>는 <code>decodeAsync()</code>에서 <code>Promise&lt;Result&lt;T, Issue[]&gt;&gt;</code>를 반환합니다.</li></ul>
 <p>예상 가능한 async validation 실패도 <code>Result</code>로 반환됩니다.</p>
 <h3 id="api-reference-ko-message">Message</h3>
 <pre><code>const checked = withMessages(User.check(input), {
@@ -1725,7 +1739,7 @@ const resolver = toReactHookFormResolver(User);</code></pre>
 <pre><code>const FastUser = compile(User);
 const fastParser = toTrpcParser(FastUser);
 const fastValidatorCompiler = toFastifyValidatorCompiler(FastUser);</code></pre>
-<p>public input boundary에서는 기본 compiled mode를 쓰세요. 신뢰된, 이미 정규화된 내부 데이터에서는 더 빠른 mode를 같은 방식으로 adapter에 연결할 수 있습니다.</p>
+<p>public input boundary에서는 기본 compiled mode를 쓰세요. adapter가 직접 <code>is()</code> 호출을 숨기더라도 safe descriptor-read 계약은 유지됩니다. 신뢰된, 이미 정규화된 내부 데이터에서는 더 빠른 mode를 같은 방식으로 adapter에 연결할 수 있습니다.</p>
 <pre><code>const UnsafeUser = compile(User, { mode: &quot;unsafe&quot; });
 const internalParser = toTrpcParser(UnsafeUser);
 

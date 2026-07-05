@@ -2,6 +2,19 @@
 
 All notable changes to TypeSea are recorded here.
 
+## 0.3.1 - Unreleased
+
+### Changed
+
+- Hardened the manual GitHub Release workflow so `workflow_dispatch` tag input
+  is passed through environment variables and validated as a release tag before
+  it reaches shell output.
+- Clarified the release path: local npm publishing is allowed for emergency
+  manual releases, but normal releases should go through GitHub Release so npm
+  provenance is attached.
+- Expanded decoder documentation around method chaining with `transform`,
+  `default`, `prefault`, and `catch`.
+
 ## 0.3.0 - 2026-07-05
 
 ### Added

@@ -148,6 +148,12 @@ const Count = t.pipe(t.coerce.number(), t.number.int().gte(0));
 const result = Count.decode("42");
 
 const Name = t.default(t.string.min(1), "anonymous");
+const NormalizedName = t.string
+  .trim()
+  .pipe(t.string.min(1))
+  .transform((value) => value.toLowerCase())
+  .default("anonymous")
+  .catch("anonymous");
 const NumberText = t.codec(
   t.string.regex(/^\d+$/u, "digits"),
   t.number.int().nonnegative(),
@@ -163,12 +169,11 @@ Decoders are for output-producing operations. They return `Result` from
 not be the same runtime value as the input.
 
 - `t.transform(source, mapper)` decodes `source`, then maps the decoded value.
-- `t.pipe(source, next)` feeds a successful decoded value into the next guard or
-  decoder.
+- `t.pipe(source, next)` feeds a successful decoded value into the next guard or decoder.
 - `t.default(source, value)` returns a fallback output for `undefined` input.
 - `t.prefault(source, value)` feeds a fallback input through the source.
-- `t.codec(input, output, mapping)` validates both sides of a bidirectional
-  decode/encode pair.
+- `t.catch(source, value)` returns a fallback output after a failed decode.
+- `t.codec(input, output, mapping)` validates both sides of a bidirectional decode/encode pair.
 - `t.coerce.string`, `t.coerce.number`, and `t.coerce.boolean` provide explicit
   primitive coercion.
 - `t.string.trim()`, `t.string.toLowerCase()`, and `t.string.toUpperCase()`
@@ -320,9 +325,10 @@ const fastParser = toTrpcParser(FastUser);
 const fastValidatorCompiler = toFastifyValidatorCompiler(FastUser);
 ```
 
-Use the default compiled mode at public input boundaries. For trusted,
-already-normalized internal data, the faster modes can be wired through adapters
-the same way.
+Use the default compiled mode at public input boundaries. It keeps the safe
+descriptor-read contract even when an adapter hides the direct `is()` call. For
+trusted, already-normalized internal data, the faster modes can be wired through
+adapters the same way.
 
 ```ts
 const UnsafeUser = compile(User, { mode: "unsafe" });
