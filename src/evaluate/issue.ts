@@ -32,3 +32,24 @@ export function pushIssue(
      */
     issues.push(makeIssue(path.slice(), code, expected, actual, undefined));
 }
+
+/**
+ * @brief Append one runtime validation issue at a precomputed path.
+ * @param path Final path for the failing validation point.
+ * @param issues Output issue buffer.
+ * @param code Stable issue code.
+ * @param expected Human-readable expected value, when available.
+ * @param actual Human-readable actual value, when available.
+ * @param message Pre-rendered message supplied by a callback, when available.
+ * @post Stores a copied path so callers can mutate their temporary arrays.
+ */
+export function pushIssueAtPath(
+    path: readonly PathSegment[],
+    issues: Issue[],
+    code: Issue["code"],
+    expected: string | undefined,
+    actual: string | undefined,
+    message: string | undefined
+): void {
+    issues.push(makeIssue(path.slice(), code, expected, actual, message));
+}

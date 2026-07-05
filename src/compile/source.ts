@@ -8,6 +8,7 @@
 import type { Schema } from "../schema/index.js";
 import { emitCheckFunction, emitCheckFunctions } from "./check.js";
 import { createEmitContext } from "./context.js";
+import { formatDebugSource } from "./debug-source.js";
 import { emitFirstFunction, emitFirstFunctions } from "./first.js";
 import { emitGraphFunction, emitGraphFunctions } from "./graph-predicate.js";
 import { safeFunctionName } from "./names.js";
@@ -25,7 +26,8 @@ import type { CompileMode, CompiledSourceBundle } from "./types.js";
 export function emitCompiledSourceBundle(
     schema: Schema,
     name: string,
-    mode: CompileMode = "safe"
+    mode: CompileMode = "safe",
+    debugSource = false
 ): CompiledSourceBundle {
     const context = createEmitContext(mode);
     const functionName = safeFunctionName(name);
@@ -46,7 +48,7 @@ export function emitCompiledSourceBundle(
     const firstFunctionName = `${functionName}_first`;
     const isProperty = directRoot
         ? `is:${root}`
-        : `is:function ${functionName}(x){return ${root}(x);}`;
+        : `is:function(x){return ${root}(x);}`;
     const graphFunctions = emitGraphFunctions(context);
     const checkFunctions = emitCheckFunctions(context);
     const firstFunctions = emitFirstFunctions(context);
@@ -61,17 +63,98 @@ export function emitCompiledSourceBundle(
     const issueCollector = `check:function ${checkFunctionName}(x){if(${root}(x))return;const s=[];${checkRoot}(x,${rootPath},s);return s;}`;
     const resultCollector = `result:function ${resultFunctionName}(x){if(${root}(x))return ${emitSuccessResult(mode, "x")};const s=[];${checkRoot}(x,${rootPath},s);return Object.freeze({ok:false,error:Object.freeze(s)});}`;
     const firstCollector = `first:function ${firstFunctionName}(x){if(${root}(x))return ${emitSuccessResult(mode, "x")};const e=${firstRoot}(x,${firstPath});if(e===undefined)return ${emitSuccessResult(mode, "x")};return Object.freeze({ok:false,error:Object.freeze([e])});}`;
+    const runtimeBundle = `return {${isProperty},${issueCollector},${resultCollector},${firstCollector}};`;
     const body = [
         graphFunctions,
         checkFunctions,
         firstFunctions,
-        `return {${isProperty},${issueCollector},${resultCollector},${firstCollector}};`
+        runtimeBundle
     ].join("");
-    const source = [
+    const helperPrelude = emitHelperPrelude(body, rootPathIsFrozen);
+    const compactSource = [
         "\"use strict\";",
-        emitHelperPrelude(body, rootPathIsFrozen),
+        helperPrelude,
         body
     ].join("");
+    const source = debugSource
+        ? formatDebugSource(
+            [
+                "\"use strict\";",
+                "/* TypeSea helper prelude: shared runtime helpers and side-table readers. */",
+                helperPrelude,
+                "/* TypeSea boolean predicates emitted from optimized IR. */",
+                graphFunctions,
+                "/* TypeSea diagnostic collectors used by check(). */",
+                checkFunctions,
+                "/* TypeSea first-fault collectors used by checkFirst(). */",
+                firstFunctions,
+                "/* TypeSea public runtime bundle returned to CompiledBaseGuard. */",
+                runtimeBundle
+            ].join(""),
+            functionName,
+            mode
+        )
+        : compactSource;
+    return {
+        source,
+        literals: context.literals,
+        regexps: context.regexps,
+        keysets: context.keysets,
+        strings: context.strings,
+        dynamicSchemas: context.schemas
+    };
+}
+
+/**
+ * @brief Emit a predicate-only compiled source bundle.
+ * @param schema Root schema to compile.
+ * @param name Requested public predicate name.
+ * @param mode Compile mode controlling safety and allocation tradeoffs.
+ * @param debugSource Whether to emit readable source formatting.
+ * @returns Generated factory source that returns only the boolean predicate.
+ * @details This path intentionally skips diagnostic collector emission. It is
+ * the fail-fast contract for callers that need only true/false.
+ */
+export function emitCompiledBooleanSourceBundle(
+    schema: Schema,
+    name: string,
+    mode: CompileMode = "safe",
+    debugSource = false
+): CompiledSourceBundle {
+    const context = createEmitContext(mode);
+    const functionName = safeFunctionName(name);
+    const root = emitGraphFunction(
+        schema,
+        context,
+        canUseDirectRootFunctionName(functionName) ? functionName : undefined
+    );
+    const graphFunctions = emitGraphFunctions(context);
+    const runtimeBundle = `return ${root};`;
+    const body = [
+        graphFunctions,
+        runtimeBundle
+    ].join("");
+    const helperPrelude = emitHelperPrelude(body, true);
+    const compactSource = [
+        "\"use strict\";",
+        helperPrelude,
+        body
+    ].join("");
+    const source = debugSource
+        ? formatDebugSource(
+            [
+                "\"use strict\";",
+                "/* TypeSea helper prelude: shared runtime helpers and side-table readers. */",
+                helperPrelude,
+                "/* TypeSea boolean predicate emitted from optimized IR. */",
+                graphFunctions,
+                "/* TypeSea predicate-only runtime bundle. */",
+                runtimeBundle
+            ].join(""),
+            functionName,
+            mode
+        )
+        : compactSource;
     return {
         source,
         literals: context.literals,
@@ -157,7 +240,7 @@ function isGeneratedFunctionName(name: string): boolean {
         return false;
     }
     const first = name.charCodeAt(0);
-    if (first !== 99 && first !== 112) {
+    if (first !== 99 && first !== 102 && first !== 112) {
         return false;
     }
     for (let index = 1; index < name.length; index += 1) {
@@ -191,11 +274,13 @@ function emitHelperPrelude(body: string, rootPathIsFrozen: boolean): string {
     pushHelper(chunks, needed, "hd", "const hd=function(v,k){if(!ph(v))return false;const d=gp(v,k);return d!==undefined&&h.call(d,\"value\");};");
     pushHelper(chunks, needed, "fn", "const fn=function(v){return typeof v===\"number\"&&Number.isFinite(v);};");
     pushHelper(chunks, needed, "nc", "const nc=function(x,y,gte){return typeof x===\"number\"&&typeof y===\"number\"&&(gte?x>=y:x<=y);};");
-    pushHelper(chunks, needed, "dg", "const __tg=Date.prototype.getTime;const dg=function(v){return v instanceof Date&&Number.isFinite(__tg.call(v));};const dt=function(v){return __tg.call(v);};");
+    pushHelper(chunks, needed, "dg", "const __tg=Date.prototype.getTime;const dg=function(v){if(!(v instanceof Date))return false;tr" +
+        "y{return Number.isFinite(__tg.call(v));}ca" +
+        "tch{return false;}};const dt=function(v){return __tg.call(v);};");
     pushHelper(chunks, needed, "sb", "const sb=function(v,b,min){return typeof v===\"string\"&&(min?v.length>=b:v.length<=b);};");
     pushHelper(chunks, needed, "rx", "const rx=function(v,re){if(typeof v!==\"string\")return false;re.lastIndex=0;const ok=re.test(v);re.lastIndex=0;return ok;};");
     pushHelper(chunks, needed, "ai", "const ai=function(k,n){if(k.length===0||k===\"length\")return false;const i=Number(k);return Number.isInteger(i)&&i>=0&&i<=4294967294&&i<n&&String(i)===k;};");
-    pushHelper(chunks, needed, "ea", "const ea=function(v,f){if(!Array.isArray(v))return false;for(let i=0;i<v.length;i+=1){const d=gp(v,i);if(!f(d===undefined?undefined:d.value))return false;}return true;};");
+    pushHelper(chunks, needed, "ea", "const ea=function(v,f){if(!Array.isArray(v))return false;for(let i=0;i<v.length;i+=1){const d=gp(v,i);if(d===undefined||!h.call(d,\"value\")||!f(d.value))return false;}return true;};");
     pushHelper(chunks, needed, "eu", "const eu=function(v,f){if(!Array.isArray(v))return false;const xs=Object.getOwnPropertyNames(v);for(let i=0;i<xs.length;i+=1){const k=xs[i];if(!ai(k,v.length))continue;const d=gp(v,k);if(d!==undefined&&!h.call(d,\"value\"))return false;if(d!==undefined&&!f(d.value))return false;}return true;};");
     pushHelper(chunks, needed, "ev", "const ev=function(v,i,f){const d=gp(v,i);if(d!==undefined&&!h.call(d,\"value\"))return false;return f(d===undefined?undefined:d.value);};");
     pushHelper(chunks, needed, "er", "const er=function(v,f){if(!o(v))return false;for(const key in v){if(!h.call(v,key))continue;const d=gp(v,key);if(d===undefined||!h.call(d,\"value\")||!f(d.value))return false;}return true;};");

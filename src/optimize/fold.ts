@@ -141,6 +141,8 @@ function foldNode(
             return keep(node);
         case NodeTag.UnionDispatch:
             return keep(node);
+        case NodeTag.PresenceDispatch:
+            return keep(node);
         case NodeTag.PrimitiveUnion:
             return keep(node);
         case NodeTag.SchemaCheck:

@@ -35,6 +35,7 @@ export {
     strict,
     strictObject,
     strip,
+    superRefine,
     symbolGuard,
     tuple,
     union,
@@ -78,15 +79,28 @@ export {
     type GuardValue,
     type Infer,
     type Presence,
-    type RuntimeValue
+    type RuntimeValue,
+    type SuperRefineContext,
+    type SuperRefineIssueInput
 } from "./guard/index.js";
 
 export {
     CompiledBaseGuard,
+    CompiledBooleanBaseGuard,
     compile,
+    compileBoolean,
+    compileCached,
+    createCompileCache,
+    warmup,
+    type CompileCache,
+    type CompiledBooleanGuard,
     type CompileMode,
     type CompileOptions,
-    type CompiledGuard
+    type CompileSourceMode,
+    type CompiledGuard,
+    type WarmupEntry,
+    type WarmupInput,
+    type WarmupOptions
 } from "./compile/index.js";
 
 export {
@@ -137,6 +151,15 @@ export {
 } from "./async/index.js";
 
 export {
+    checkAsync,
+    compileAsync,
+    isAsync,
+    type AsyncCompiledGuard,
+    type AsyncValidationOptions,
+    type CompileAsyncOptions
+} from "./async-validation/index.js";
+
+export {
     BaseCodec,
     BaseDecoder,
     catchValue,
@@ -169,6 +192,27 @@ export {
     type JsonSchemaPrimitive,
     type JsonSchemaTypeName
 } from "./json-schema/index.js";
+
+export {
+    createTypeSeaEsbuildPlugin,
+    createTypeSeaRollupPlugin,
+    createTypeSeaVitePlugin,
+    type TypeSeaAotPluginEntry,
+    type TypeSeaAotPluginOptions,
+    type TypeSeaEsbuildBuild,
+    type TypeSeaEsbuildFilter,
+    type TypeSeaEsbuildLoadArgs,
+    type TypeSeaEsbuildLoadFilter,
+    type TypeSeaEsbuildLoadResult,
+    type TypeSeaEsbuildLoader,
+    type TypeSeaEsbuildPlugin,
+    type TypeSeaEsbuildResolveArgs,
+    type TypeSeaEsbuildResolveResult,
+    type TypeSeaPluginReadFile,
+    type TypeSeaRollupPlugin,
+    type TypeSeaTransformResult,
+    type TypeSeaVitePlugin
+} from "./plugin/index.js";
 
 export {
     defineMessages,

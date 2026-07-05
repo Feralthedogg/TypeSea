@@ -37,7 +37,9 @@ import {
     isPlainRecord,
     ordinaryHasInstance,
     readDateTime,
+    readMapEntries,
     readOwnDataProperty,
+    readSetValues,
     type DataPropertyDescriptor
 } from "../evaluate/shared.js";
 import type { ValidationState } from "../evaluate/state.js";
@@ -552,11 +554,10 @@ function isMapSchema(
     state: ValidationState,
     runChild: ChildPredicateRunner
 ): boolean {
-    if (!(value instanceof Map)) {
+    const iterator = readMapEntries(value);
+    if (iterator === undefined) {
         return false;
     }
-    const iterator = Map.prototype.entries.call(value) as
-        IterableIterator<[unknown, unknown]>;
     for (;;) {
         const step = iterator.next();
         if (step.done === true) {
@@ -584,10 +585,10 @@ function isSetSchema(
     state: ValidationState,
     runChild: ChildPredicateRunner
 ): boolean {
-    if (!(value instanceof Set)) {
+    const iterator = readSetValues(value);
+    if (iterator === undefined) {
         return false;
     }
-    const iterator = Set.prototype.values.call(value) as IterableIterator<unknown>;
     for (;;) {
         const step = iterator.next();
         if (step.done === true) {

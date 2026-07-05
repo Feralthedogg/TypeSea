@@ -22,16 +22,16 @@ describe("compiled source audit", () => {
         });
 
         expect(readSourceFingerprint(SafeUser.source)).toEqual({
-            length: 9560,
-            sha256: "2bca65fec6729b4aa867687a1d8fca968f10f12ea9fcfbe3c9274a5c3ba399c9"
+            length: 9644,
+            sha256: "2aa67201f52038c88275a31e984dbab4622361169be0aec45b418bfb4adf113a"
         });
         expect(readSourceFingerprint(UnsafeUser.source)).toEqual({
-            length: 6430,
-            sha256: "4048bbef87fe4dd9a4f87143f4598543909abf99625817f06a0d4afd74e8d207"
+            length: 6514,
+            sha256: "635205ba12b14059fed65c3ae289b255687cf8cd785cc55efaa95b2378eabd4e"
         });
         expect(readSourceFingerprint(UncheckedUser.source)).toEqual({
-            length: 5670,
-            sha256: "2936cfd706e0e11d6d9c1622fe1c17039b67aef4848a5f29d5491111b8392896"
+            length: 5754,
+            sha256: "e6f50a917d5bcac6e21d4dc138431a81a5265eed53bffa236f15571244c2a4cc"
         });
     });
 
@@ -179,6 +179,53 @@ describe("compiled source audit", () => {
         expect(FastString.check(1)).toEqual(t.string.check(1));
     });
 
+    test("emits readable debug source only when requested", () => {
+        const User = t.object({
+            id: t.string,
+            age: t.number.int()
+        });
+        const CompactUser = compile(User, { name: "debuggableUser" });
+        const DebugUser = compile(User, {
+            name: "debuggableUser",
+            debugSource: true
+        });
+
+        expect(CompactUser.source).not.toContain("TypeSea generated validator");
+        expect(DebugUser.source).toContain("TypeSea generated validator");
+        expect(DebugUser.source).toContain("TypeSea helper prelude");
+        expect(DebugUser.source).toContain("TypeSea boolean predicates");
+        expect(DebugUser.source).toContain("TypeSea diagnostic collectors");
+        expect(DebugUser.source).toContain("sourceURL=typesea-debuggableUser.generated.js");
+        expect(DebugUser.source).toContain("\n    ");
+        expect(DebugUser.is({ id: "u1", age: 37 })).toBe(true);
+        expect(DebugUser.check({ id: "u1", age: 1.5 }))
+            .toEqual(User.check({ id: "u1", age: 1.5 }));
+    });
+
+    test("warns in development when compile repeatedly code-generates per callsite", () => {
+        const previousEnv = process.env["NODE_ENV"];
+        const previousWarn = console.warn;
+        const messages: string[] = [];
+
+        process.env["NODE_ENV"] = "development";
+        console.warn = (message?: unknown): void => {
+            messages.push(String(message));
+        };
+        for (let index = 0; index < 32; index += 1) {
+            compile(t.object({ id: t.string }), { name: "coldStartAudit" });
+        }
+        console.warn = previousWarn;
+        if (previousEnv === undefined) {
+            delete process.env["NODE_ENV"];
+        } else {
+            process.env["NODE_ENV"] = previousEnv;
+        }
+
+        expect(messages).toHaveLength(1);
+        expect(messages[0]).toContain("TypeSea warning: compile() was called 32 times");
+        expect(messages[0]).toContain("compileCached()/createCompileCache()");
+    });
+
     test("does not retain helpers because of public function name text", () => {
         const names = ["foo", "g", "h", "o"] as const;
 
@@ -189,7 +236,12 @@ describe("compiled source audit", () => {
             }
             const FastString = compile(t.string, { name });
 
-            expect(FastString.source).toContain(`function ${name}(`);
+            if (name === "foo") {
+                expect(FastString.source).toContain(`function ${name}(`);
+            } else {
+                expect(FastString.source).toContain("is:function(x){return p0(x);}");
+                expect(FastString.source).not.toContain(`function ${name}(`);
+            }
             expect(FastString.source).not.toContain("const g=function");
             expect(FastString.source).not.toContain("const h=Object.prototype.hasOwnProperty");
             expect(FastString.source).not.toContain("const o=function");
@@ -367,6 +419,57 @@ describe("compiled source audit", () => {
         expect(FastUser.is({ id: "u1", age: 1.5 })).toBe(false);
         expect(FastUser.check({ id: "u1", age: 1.5 }))
             .toEqual(User.check({ id: "u1", age: 1.5 }));
+    });
+
+    test("emits distinct safe and unsafe presence-dispatch gates", () => {
+        const Operators = t.object({
+            eq: t.optional(t.string),
+            gt: t.optional(t.number)
+        });
+        const Query = t.union(
+            t.object({ and: t.array(t.unknown).min(1) }),
+            t.object({ or: t.array(t.unknown).min(1) }),
+            t.object({ not: t.unknown }),
+            t.object({ path: t.string, eq: t.optional(t.string) }),
+            t.record(Operators)
+        );
+        const SafeQuery = compile(Query, { name: "safePresenceAudit" });
+        const UnsafeQuery = compile(Query, {
+            name: "unsafePresenceAudit",
+            mode: "unsafe"
+        });
+        const safeSource = readGeneratedFunctionSource(
+            SafeQuery.source,
+            "safePresenceAudit"
+        );
+        const unsafeSource = readGeneratedFunctionSource(
+            UnsafeQuery.source,
+            "unsafePresenceAudit"
+        );
+        let reads = 0;
+        const accessor: { readonly and?: readonly unknown[] } = {};
+
+        Object.defineProperty(accessor, "and", {
+            enumerable: true,
+            get(): readonly unknown[] {
+                reads += 1;
+                return [1];
+            }
+        });
+
+        expect(safeSource).toContain("gp(v,u[0])");
+        expect(safeSource).toContain("if(d1===undefined)break pb0");
+        expect(safeSource).toContain("!h.call");
+        expect(safeSource).not.toContain("if(h.call(v,\"and\"))");
+        expect(unsafeSource).toContain("if(h.call(v,\"and\"))");
+        expect(unsafeSource).toContain("const v1=v.and;");
+        expect(unsafeSource).not.toContain("gp(v,u[0])");
+        expect(SafeQuery.is({ and: [1] })).toBe(true);
+        expect(UnsafeQuery.is({ and: [1] })).toBe(true);
+        expect(SafeQuery.is(accessor)).toBe(false);
+        expect(reads).toBe(0);
+        expect(UnsafeQuery.is(accessor)).toBe(true);
+        expect(reads).toBe(1);
     });
 
     test("escapes unsafe static property keys in generated source", () => {
@@ -592,7 +695,9 @@ describe("compiled source audit", () => {
         expect(FastTuple.source).toContain("gp(v,1)");
         expect(FastTuple.source).not.toContain("ev(v,0");
         expect(FastTuple.source).not.toContain("ev(v,1");
-        expect(predicateSource).toContain("===undefined)return false");
+        expect(predicateSource).toContain("if(d0===undefined)return false");
+        expect(predicateSource).toContain("if(d2===undefined)return false");
+        expect(predicateSource).not.toContain("===undefined||!h.call");
         expect(predicateSource).toContain(".value;");
         expect(predicateSource).not.toContain("===undefined?undefined");
         expect(FastTuple.is(["point", 1])).toBe(true);
@@ -608,13 +713,27 @@ describe("compiled source audit", () => {
             "p0"
         );
         const sparse = new Array<unknown>(1);
+        const accessor = [] as unknown[];
+        let reads = 0;
 
-        expect(predicateSource).toContain("===undefined)return false");
-        expect(predicateSource).not.toContain("||!h.call");
+        Object.defineProperty(accessor, "0", {
+            configurable: true,
+            enumerable: true,
+            get(): string {
+                reads += 1;
+                return "x";
+            }
+        });
+        accessor.length = 1;
+
+        expect(predicateSource).toContain("if(d1===undefined)return false");
+        expect(predicateSource).not.toContain("===undefined||!h.call");
         expect(predicateSource).toContain(".value;");
         expect(predicateSource).not.toContain("===undefined?undefined");
         expect(FastValues.is(["x"])).toBe(true);
         expect(FastValues.is(sparse)).toBe(false);
+        expect(FastValues.is(accessor)).toBe(false);
+        expect(reads).toBe(0);
         expect(FastValues.check(sparse)).toEqual(Values.check(sparse));
     });
 
@@ -1135,6 +1254,38 @@ describe("compiled source audit", () => {
         expect(FastValue.check(["x", 1])).toEqual(Value.check(["x", 1]));
     });
 
+    test("emits presence-gated object union branches", () => {
+        const Operators = t.object({
+            eq: t.optional(t.string),
+            gt: t.optional(t.number)
+        });
+        const Query = t.union(
+            t.object({ and: t.array(t.unknown).min(1) }),
+            t.object({ or: t.array(t.unknown).min(1) }),
+            t.object({ not: t.unknown }),
+            t.object({ path: t.string, eq: t.optional(t.string) }),
+            t.record(Operators)
+        );
+        const FastQuery = compile(Query, { name: "presenceUnionAudit" });
+        const predicateSource = readGeneratedFunctionSource(
+            FastQuery.source,
+            "presenceUnionAudit"
+        );
+
+        expect(predicateSource).toContain("pb");
+        expect(predicateSource).toContain("break pb");
+        expect(countOccurrences(predicateSource, "gp(v,u[")).toBeGreaterThanOrEqual(4);
+        expect(predicateSource).toContain("if(d1===undefined)break pb0");
+        expect(predicateSource).toContain("if(d17===undefined||!h.call(d17,\"value\"))break pb16");
+        expect(predicateSource).not.toContain("p1(v)");
+        expect(FastQuery.is({ and: [{}] })).toBe(true);
+        expect(FastQuery.is({ and: [] })).toBe(false);
+        expect(FastQuery.is({ "user.age": { gt: 30 } })).toBe(true);
+        expect(FastQuery.is({ "user.age": { gt: "old" } })).toBe(false);
+        expect(FastQuery.check({ "user.age": { gt: "old" } }))
+            .toEqual(Query.check({ "user.age": { gt: "old" } }));
+    });
+
     test("emits number union arms with typeof-refined finite checks", () => {
         const Value = t.union(
             t.number.gte(0),
@@ -1247,7 +1398,7 @@ describe("compiled source audit", () => {
         expect(predicateSource).not.toContain("Object.keys");
         expect(predicateSource).not.toMatch(/p\d+\(v\d+\)/u);
         expect(checkSource).toContain("Number.isInteger(rv)");
-        expect(checkSource).not.toContain("Number.isFinite(rv)");
+        expect(checkSource).toContain("Number.isFinite(rv)");
         expect(checkSource).toContain("q1(s,p,key,\"expected_union\"");
         expect(checkSource).not.toContain("p.push(key);");
         expect(checkSource).not.toContain("c1(");

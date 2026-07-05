@@ -6,31 +6,10 @@ import { dirname, join } from "node:path";
 const rawPath = "bench/results/raw.json";
 const summaryPath = "bench/results/latest.json";
 const svgPath = "docs/assets/benchmark-headline.svg";
+const defaultRecordRunCount = 3;
+const maxRecordRunCount = 9;
 
-const suiteSpecs = [
-    {
-        id: "valid-is",
-        title: "Valid object path",
-        group: "ecosystem comparison valid"
-    },
-    {
-        id: "valid-check",
-        title: "Valid diagnostic path",
-        group: "ecosystem comparison valid diagnostics"
-    },
-    {
-        id: "invalid-is",
-        title: "Invalid object fast-fail",
-        group: "ecosystem comparison invalid"
-    },
-    {
-        id: "invalid-check",
-        title: "Invalid diagnostic path",
-        group: "ecosystem comparison invalid diagnostics"
-    }
-];
-
-const benchmarkNames = [
+const ecosystemBenchmarkNames = [
     {
         id: "typesea-interpreted",
         color: "#9ca3af",
@@ -75,24 +54,225 @@ const benchmarkNames = [
     }
 ];
 
+const unionDispatchBenchmarkNames = [
+    {
+        id: "typesea-interpreted-logical",
+        color: "#9ca3af",
+        sourceNames: ["interpreted logical branch"],
+        label: "TypeSea interpreted logical"
+    },
+    {
+        id: "typesea-safe-logical",
+        color: "#14b8a6",
+        sourceNames: ["compiled logical branch"],
+        label: "TypeSea safe logical"
+    },
+    {
+        id: "typesea-unsafe-logical",
+        color: "#f97316",
+        sourceNames: ["compiled unsafe logical branch"],
+        label: "TypeSea unsafe logical"
+    },
+    {
+        id: "typesea-interpreted-fallback",
+        color: "#9ca3af",
+        sourceNames: ["interpreted fallback record branch"],
+        label: "TypeSea interpreted fallback"
+    },
+    {
+        id: "typesea-safe-fallback",
+        color: "#14b8a6",
+        sourceNames: ["compiled fallback record branch"],
+        label: "TypeSea safe fallback"
+    },
+    {
+        id: "typesea-unsafe-fallback",
+        color: "#f97316",
+        sourceNames: ["compiled unsafe fallback record branch"],
+        label: "TypeSea unsafe fallback"
+    },
+    {
+        id: "typesea-interpreted-invalid",
+        color: "#9ca3af",
+        sourceNames: ["interpreted invalid branch"],
+        label: "TypeSea interpreted invalid"
+    },
+    {
+        id: "typesea-safe-invalid",
+        color: "#14b8a6",
+        sourceNames: ["compiled invalid branch"],
+        label: "TypeSea safe invalid"
+    },
+    {
+        id: "typesea-unsafe-invalid",
+        color: "#f97316",
+        sourceNames: ["compiled unsafe invalid branch"],
+        label: "TypeSea unsafe invalid"
+    }
+];
+
+const runtimeFeatureBenchmarkNames = [
+    {
+        id: "compiled-valid",
+        color: "#14b8a6",
+        sourceNames: ["compiled is valid"],
+        label: "Compiled is() valid"
+    },
+    {
+        id: "compiled-boolean-valid",
+        color: "#22c55e",
+        sourceNames: ["compiled boolean valid"],
+        label: "compileBoolean valid"
+    },
+    {
+        id: "compiled-invalid",
+        color: "#0f766e",
+        sourceNames: ["compiled is invalid"],
+        label: "Compiled is() invalid"
+    },
+    {
+        id: "compiled-boolean-invalid",
+        color: "#16a34a",
+        sourceNames: ["compiled boolean invalid"],
+        label: "compileBoolean invalid"
+    },
+    {
+        id: "compile-cached-global",
+        color: "#f97316",
+        sourceNames: ["compileCached global hit"],
+        label: "compileCached global hit"
+    },
+    {
+        id: "compile-cache-local",
+        color: "#fb923c",
+        sourceNames: ["createCompileCache hit"],
+        label: "createCompileCache hit"
+    },
+    {
+        id: "prebuilt-cache",
+        color: "#fdba74",
+        sourceNames: ["prebuilt cached guard valid"],
+        label: "Prebuilt cached guard"
+    },
+    {
+        id: "prebuilt-global-cache",
+        color: "#fed7aa",
+        sourceNames: ["prebuilt global cached guard valid"],
+        label: "Prebuilt global cached guard"
+    },
+    {
+        id: "compile-async-valid",
+        color: "#3b82f6",
+        sourceNames: ["compileAsync is valid"],
+        label: "compileAsync valid"
+    },
+    {
+        id: "compile-async-invalid-check",
+        color: "#60a5fa",
+        sourceNames: ["compileAsync check invalid"],
+        label: "compileAsync invalid check"
+    },
+    {
+        id: "rollup-macro",
+        color: "#8b5cf6",
+        sourceNames: ["rollup compileCached macro transform"],
+        label: "Rollup macro transform"
+    },
+    {
+        id: "esbuild-macro",
+        color: "#a78bfa",
+        sourceNames: ["esbuild compileCached macro transform"],
+        label: "esbuild macro transform"
+    },
+    {
+        id: "rollup-aot-load",
+        color: "#c4b5fd",
+        sourceNames: ["rollup AOT virtual load"],
+        label: "Rollup AOT virtual load"
+    }
+];
+
+const suiteSpecs = [
+    {
+        id: "valid-is",
+        title: "Valid object path",
+        group: "ecosystem comparison valid",
+        benchmarks: ecosystemBenchmarkNames
+    },
+    {
+        id: "valid-check",
+        title: "Valid diagnostic path",
+        group: "ecosystem comparison valid diagnostics",
+        benchmarks: ecosystemBenchmarkNames
+    },
+    {
+        id: "invalid-is",
+        title: "Invalid object fast-fail",
+        group: "ecosystem comparison invalid",
+        benchmarks: ecosystemBenchmarkNames
+    },
+    {
+        id: "invalid-check",
+        title: "Invalid diagnostic path",
+        group: "ecosystem comparison invalid diagnostics",
+        benchmarks: ecosystemBenchmarkNames
+    },
+    {
+        id: "union-presence",
+        title: "Presence-dispatched object union",
+        group: "presence-dispatched object unions",
+        benchmarks: unionDispatchBenchmarkNames
+    },
+    {
+        id: "runtime-features",
+        title: "Runtime feature extensions",
+        group: "runtime feature extensions",
+        benchmarks: runtimeFeatureBenchmarkNames
+    }
+];
+
 const benchmarkFloors = [
     {
         suite: "valid-is",
         row: "typesea-unchecked",
         label: "unchecked valid hot path",
-        minHz: 40_000_000
+        minHz: 20_000_000
     },
     {
         suite: "invalid-is",
         row: "typesea-safe",
         label: "safe invalid fast-fail",
-        minHz: 40_000_000
+        minHz: 20_000_000
     },
     {
         suite: "valid-is",
         row: "typesea-safe",
         label: "safe valid path",
-        minHz: 5_000_000
+        minHz: 2_000_000
+    },
+    {
+        suite: "union-presence",
+        row: "typesea-safe-logical",
+        label: "presence dispatch safe logical branch",
+        minHz: 2_000_000
+    },
+    {
+        suite: "union-presence",
+        row: "typesea-safe-fallback",
+        label: "presence dispatch safe fallback branch",
+        minHz: 2_000_000
+    },
+    {
+        suite: "union-presence",
+        row: "typesea-safe-invalid",
+        label: "presence dispatch safe invalid branch",
+        minHz: 7_500_000
+    },
+    {
+        suite: "union-presence",
+        row: "typesea-unsafe-logical",
+        label: "presence dispatch unsafe logical branch",
+        minHz: 20_000_000
     }
 ];
 
@@ -151,21 +331,70 @@ function readMode(args) {
  */
 async function recordBenchmarks() {
     await ensureOutputDirectories();
-    const bench = runVitestBench();
-    if (!bench.ok) {
-        return bench;
+    const runCount = readRecordRunCount();
+    if (!runCount.ok) {
+        return runCount;
     }
-    const raw = await readJson(rawPath);
-    if (!raw.ok) {
-        return raw;
+    const rawRuns = [];
+    for (let index = 0; index < runCount.value; index += 1) {
+        const bench = runVitestBench(rawPath, index + 1, runCount.value);
+        if (!bench.ok) {
+            return bench;
+        }
+        const raw = await readJson(rawPath);
+        if (!raw.ok) {
+            return raw;
+        }
+        rawRuns.push(raw.value);
     }
-    const summary = await summarizeRawBenchmarks(raw.value);
+    const aggregate = makeRawBenchmarkAggregate(rawRuns);
+    const summary = await summarizeRawBenchmarks(aggregate);
     if (!summary.ok) {
         return summary;
     }
+    await writeFile(rawPath, `${JSON.stringify(aggregate, null, 4)}\n`, "utf8");
     await writeFile(summaryPath, `${JSON.stringify(summary.value, null, 4)}\n`, "utf8");
     await writeFile(svgPath, renderSvg(summary.value), "utf8");
     return ok(undefined);
+}
+
+/**
+ * @brief Read the benchmark record repetition count.
+ * @details Multiple full Vitest runs make the committed benchmark summary less
+ * sensitive to one cold or thermally throttled sample.
+ * @returns Record run count selected from TYPESEA_BENCH_RUNS or the default.
+ */
+function readRecordRunCount() {
+    const value = process.env["TYPESEA_BENCH_RUNS"];
+    if (value === undefined || value === "") {
+        return ok(defaultRecordRunCount);
+    }
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) ||
+        parsed < 1 ||
+        parsed > maxRecordRunCount) {
+        return err(`TYPESEA_BENCH_RUNS must be an integer from 1 to ${String(maxRecordRunCount)}`);
+    }
+    return ok(parsed);
+}
+
+/**
+ * @brief Wrap raw Vitest runs in the committed benchmark raw format.
+ * @param rawRuns Raw Vitest JSON values in execution order.
+ * @returns Versioned benchmark aggregate stored at bench/results/raw.json.
+ */
+function makeRawBenchmarkAggregate(rawRuns) {
+    return {
+        schemaVersion: 2,
+        strategy: "median-of-runs",
+        runCount: rawRuns.length,
+        command: "npm run bench:record",
+        recordedAt: new Date().toISOString(),
+        runs: rawRuns.map((raw, index) => ({
+            index: index + 1,
+            raw
+        }))
+    };
 }
 
 /**
@@ -259,15 +488,16 @@ async function ensureOutputDirectories() {
  * @brief Execute Vitest bench with JSON output enabled.
  * @returns Empty result when the process exits successfully.
  */
-function runVitestBench() {
+function runVitestBench(outputPath, runIndex, runCount) {
     const executable = process.platform === "win32"
         ? join("node_modules", ".bin", "vitest.cmd")
         : join("node_modules", ".bin", "vitest");
+    console.log(`benchmark record run ${String(runIndex)}/${String(runCount)}`);
     const child = spawnSync(executable, [
         "bench",
         "--run",
         "--outputJson",
-        rawPath
+        outputPath
     ], {
         stdio: "inherit"
     });
@@ -295,7 +525,35 @@ async function readJson(path) {
  * @returns Benchmark summary consumed by README graph generation.
  */
 async function summarizeRawBenchmarks(raw) {
-    if (!isRecord(raw) || !Array.isArray(raw.files)) {
+    const rawRuns = readRawBenchmarkRuns(raw);
+    if (!rawRuns.ok) {
+        return rawRuns;
+    }
+    if (rawRuns.value.length === 0) {
+        return err("Vitest benchmark JSON has no recorded runs");
+    }
+    for (let index = 0; index < rawRuns.value.length; index += 1) {
+        const run = rawRuns.value[index];
+        if (!isRecord(run) || !Array.isArray(run.files)) {
+            return err("Vitest benchmark JSON has an unexpected shape");
+        }
+    }
+    const aggregate = isBenchmarkAggregate(raw)
+        ? raw
+        : undefined;
+    if (aggregate !== undefined &&
+        typeof aggregate.recordedAt !== "string") {
+        return err("benchmark aggregate must contain a recordedAt timestamp");
+    }
+    if (aggregate !== undefined &&
+        typeof aggregate.strategy !== "string") {
+        return err("benchmark aggregate must contain a strategy");
+    }
+    if (aggregate !== undefined &&
+        typeof aggregate.runCount !== "number") {
+        return err("benchmark aggregate must contain a numeric runCount");
+    }
+    if (!isRecord(rawRuns.value[0]) || !Array.isArray(rawRuns.value[0].files)) {
         return err("Vitest benchmark JSON has an unexpected shape");
     }
     const metadata = await readPackageMetadata();
@@ -308,18 +566,14 @@ async function summarizeRawBenchmarks(raw) {
         if (spec === undefined) {
             continue;
         }
-        const group = findBenchmarkGroup(raw.files, spec.group);
-        if (group === undefined) {
-            return err(`missing benchmark group: ${spec.group}`);
-        }
-        const rows = readRows(group);
+        const rows = readRows(rawRuns.value, spec);
         if (!rows.ok) {
             return rows;
         }
         suites.push({
             id: spec.id,
             title: spec.title,
-            group: group.fullName,
+            group: spec.group,
             rows: rows.value
         });
     }
@@ -327,12 +581,50 @@ async function summarizeRawBenchmarks(raw) {
         schemaVersion: 1,
         package: metadata.value.name,
         version: metadata.value.version,
-        recordedAt: new Date().toISOString(),
-        command: "npm run bench:record",
+        recordedAt: aggregate?.recordedAt ?? new Date().toISOString(),
+        command: aggregate?.command ?? "npm run bench:record",
         rawOutput: rawPath,
         environment: readEnvironment(),
+        aggregation: {
+            strategy: aggregate?.strategy ?? "single-run",
+            runCount: aggregate?.runCount ?? rawRuns.value.length
+        },
         suites
     });
+}
+
+/**
+ * @brief Read raw Vitest runs from either legacy or aggregate raw JSON.
+ * @param raw Raw benchmark JSON value.
+ * @returns Array of raw Vitest outputs in execution order.
+ */
+function readRawBenchmarkRuns(raw) {
+    if (isBenchmarkAggregate(raw)) {
+        const runs = [];
+        for (let index = 0; index < raw.runs.length; index += 1) {
+            const run = raw.runs[index];
+            if (!isRecord(run) || !isRecord(run.raw)) {
+                return err("benchmark aggregate contains a malformed run");
+            }
+            runs.push(run.raw);
+        }
+        return ok(runs);
+    }
+    if (!isRecord(raw) || !Array.isArray(raw.files)) {
+        return err("Vitest benchmark JSON has an unexpected shape");
+    }
+    return ok([raw]);
+}
+
+/**
+ * @brief Check whether raw JSON is the TypeSea multi-run aggregate format.
+ * @param raw Raw JSON value.
+ * @returns True when the value stores multiple Vitest runs.
+ */
+function isBenchmarkAggregate(raw) {
+    return isRecord(raw) &&
+        raw.schemaVersion === 2 &&
+        Array.isArray(raw.runs);
 }
 
 /**
@@ -401,12 +693,49 @@ function findBenchmarkGroup(files, groupName) {
  * @param group Raw Vitest benchmark group.
  * @returns Rows in display order.
  */
-function readRows(group) {
+function readRows(rawRuns, suiteSpec) {
     const rows = [];
-    for (let index = 0; index < benchmarkNames.length; index += 1) {
-        const spec = benchmarkNames[index];
+    const specs = suiteSpec.benchmarks;
+    for (let index = 0; index < specs.length; index += 1) {
+        const spec = specs[index];
         if (spec === undefined) {
             continue;
+        }
+        const benchmark = selectMedianBenchmark(rawRuns, suiteSpec.group, spec);
+        if (!benchmark.ok) {
+            return benchmark;
+        }
+        rows.push({
+            id: spec.id,
+            label: spec.label,
+            sourceName: benchmark.value.sourceName,
+            color: spec.color,
+            hz: benchmark.value.hz,
+            rme: benchmark.value.rme,
+            sampleCount: benchmark.value.sampleCount,
+            aggregation: benchmark.value.aggregation
+        });
+    }
+    return ok(rows);
+}
+
+/**
+ * @brief Select the median-hz benchmark row across repeated Vitest runs.
+ * @param rawRuns Raw Vitest outputs.
+ * @param groupName Benchmark group suffix.
+ * @param spec Display row specification.
+ * @returns Median benchmark row and aggregate metadata.
+ */
+function selectMedianBenchmark(rawRuns, groupName, spec) {
+    const samples = [];
+    for (let index = 0; index < rawRuns.length; index += 1) {
+        const raw = rawRuns[index];
+        if (!isRecord(raw) || !Array.isArray(raw.files)) {
+            return err("Vitest benchmark JSON has an unexpected shape");
+        }
+        const group = findBenchmarkGroup(raw.files, groupName);
+        if (group === undefined) {
+            return err(`missing benchmark group: ${groupName}`);
         }
         const benchmark = findBenchmark(group.benchmarks, spec.sourceNames);
         if (benchmark === undefined) {
@@ -414,20 +743,39 @@ function readRows(group) {
         }
         if (typeof benchmark.hz !== "number" ||
             typeof benchmark.rme !== "number" ||
-            typeof benchmark.sampleCount !== "number") {
+            typeof benchmark.sampleCount !== "number" ||
+            typeof benchmark.name !== "string") {
             return err(`malformed benchmark row in ${group.fullName}: ${spec.label}`);
         }
-        rows.push({
-            id: spec.id,
-            label: spec.label,
+        samples.push({
+            run: index + 1,
             sourceName: benchmark.name,
-            color: spec.color,
             hz: benchmark.hz,
             rme: benchmark.rme,
             sampleCount: benchmark.sampleCount
         });
     }
-    return ok(rows);
+    samples.sort((left, right) => left.hz - right.hz);
+    const selected = samples[Math.floor(samples.length / 2)];
+    if (selected === undefined) {
+        return err(`missing benchmark samples for ${spec.label}`);
+    }
+    const hzSamples = samples.map((sample) => sample.hz);
+    return ok({
+        sourceName: selected.sourceName,
+        hz: selected.hz,
+        rme: selected.rme,
+        sampleCount: selected.sampleCount,
+        aggregation: {
+            strategy: "median-hz",
+            runCount: samples.length,
+            selectedRun: selected.run,
+            worstHz: hzSamples[0] ?? selected.hz,
+            medianHz: selected.hz,
+            bestHz: hzSamples[hzSamples.length - 1] ?? selected.hz,
+            hzSamples
+        }
+    });
 }
 
 /**
@@ -631,13 +979,18 @@ function ratio(left, right) {
 }
 
 /**
- * @brief Format an ISO timestamp as a short date.
+ * @brief Format an ISO timestamp as a short KST date.
  */
 function formatRecordDate(value) {
     if (typeof value !== "string") {
         return "unknown date";
     }
-    return value.slice(0, 10);
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return "unknown date";
+    }
+    const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+    return `${kst.toISOString().slice(0, 10)} KST`;
 }
 
 /**

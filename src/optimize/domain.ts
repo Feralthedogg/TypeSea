@@ -167,6 +167,16 @@ function specializeChildDomains(
                 graphs
             };
         }
+        case NodeTag.PresenceDispatch: {
+            const graphs = specializeGraphsForMasks(node.graphs, node.masks);
+            if (graphs === node.graphs) {
+                return node;
+            }
+            return {
+                ...node,
+                graphs
+            };
+        }
         case NodeTag.PrimitiveUnion: {
             const graphs = specializeGraphsForMasks(node.graphs, node.masks);
             if (graphs === node.graphs) {
@@ -539,6 +549,7 @@ function specializeNodeForMask(
         case NodeTag.RecordEvery:
         case NodeTag.ObjectShape:
         case NodeTag.DiscriminantDispatch:
+        case NodeTag.PresenceDispatch:
         case NodeTag.StrictKeys:
             return specializeValueDomain(node, nodes, aliases, mask, DomainMask.Object);
         default:

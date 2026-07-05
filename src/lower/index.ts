@@ -382,12 +382,62 @@ function lowerUnion(
             lowerUnionMasks(options)
         );
     }
+    const presenceKeys = inferObjectUnionPresenceKeys(options);
+    if (presenceKeys !== undefined) {
+        /*
+         * Plain object unions without a literal discriminant can still avoid
+         * expensive branch probes when a branch has a required field. The
+         * emitted dispatch preserves branch order and only skips arms that are
+         * statically impossible for the candidate object's own keys.
+         */
+        return builder.presenceDispatch(
+            value,
+            presenceKeys,
+            options,
+            lowerChildGraphs(options),
+            lowerUnionMasks(options)
+        );
+    }
     return builder.unionDispatch(
         value,
         options,
         lowerChildGraphs(options),
         lowerUnionMasks(options)
     );
+}
+
+/**
+ * @brief Infer required-key gates for a plain object union.
+ * @details The presence vector is index-aligned with union options. Undefined
+ * entries become ordinary fallback branches; string entries let codegen skip
+ * that branch when the own data key is absent.
+ * @param options Union option schemas.
+ * @returns Presence-key vector, or undefined when the optimization is unsafe.
+ */
+function inferObjectUnionPresenceKeys(
+    options: readonly Schema[]
+): readonly (string | undefined)[] | undefined {
+    if (options.length < 2) {
+        return undefined;
+    }
+    const keys = new Array<string | undefined>(options.length);
+    let gated = 0;
+    for (let index = 0; index < options.length; index += 1) {
+        const option = options[index];
+        if (option === undefined) {
+            keys[index] = undefined;
+            continue;
+        }
+        if (schemaUnionMask(option) !== UnionMask.Object) {
+            return undefined;
+        }
+        const key = readObjectRequiredPresenceKey(option);
+        keys[index] = key;
+        if (key !== undefined) {
+            gated += 1;
+        }
+    }
+    return gated === 0 ? undefined : keys;
 }
 
 /**
@@ -725,6 +775,28 @@ function readObjectDiscriminantLiteral(
         const entry = entries[index];
         if (entry?.key === key) {
             return readRequiredStringLiteral(entry);
+        }
+    }
+    return undefined;
+}
+
+/**
+ * @brief Read a required object key usable as a presence gate.
+ * @details Only plain object schemas expose enough field-presence metadata for
+ * this proof. Object-shaped fallback schemas such as records remain ungated so
+ * union order and semantics stay intact.
+ * @param schema Union branch schema.
+ * @returns First required field key, or undefined when no safe gate exists.
+ */
+function readObjectRequiredPresenceKey(schema: Schema): string | undefined {
+    if (schema.tag !== SchemaTag.Object) {
+        return undefined;
+    }
+    const entries = schema.entries;
+    for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (entry?.presence === PresenceTag.Required) {
+            return entry.key;
         }
     }
     return undefined;

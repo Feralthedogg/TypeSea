@@ -2,7 +2,47 @@
 
 All notable changes to TypeSea are recorded here.
 
-## 0.3.2 - Unreleased
+## 0.4.0 - 2026-07-06
+
+### Added
+
+- Added `t.superRefine` and `guard.superRefine` for callback-style semantic
+  checks that report failure through `context.addIssue()`.
+- Added custom `superRefine` issue payloads. `context.addIssue()` can now attach
+  a message and a relative path to the emitted `expected_refinement` issue.
+- Added a presence-dispatched object-union IR node. Object union branches with
+  required keys can now skip impossible branches before entering their child
+  graphs while preserving declaration order.
+- Added `bench/union-dispatch.bench.ts` to track AST/query-shaped object union
+  performance.
+- Added `compileCached`, `createCompileCache`, and `warmup` to move runtime
+  compilation out of request paths and serverless first-hit latency.
+- Added `compileBoolean` for predicate-only fail-fast validators that emit no
+  diagnostic collectors.
+- Added cooperative async validation through `isAsync`, `checkAsync`, and
+  `compileAsync`, with `yieldEvery` and `yieldTimeout` controls for large input
+  graphs.
+- Added zero-dependency AOT bundler plugin helpers for Vite, Rollup, and
+  esbuild. Vite, Rollup, and esbuild can rewrite static
+  `compileCached("id", ...)` calls into `typesea:aot/<id>` virtual module
+  imports.
+- Added dedicated runtime feature benchmarks for `compileBoolean`, compile
+  cache hits, cooperative async validation, and AOT plugin transforms.
+
+### Changed
+
+- Specialized union lowering now chooses between literal discriminant dispatch,
+  primitive dispatch, required-key presence dispatch, and root-kind branch
+  probing.
+- Runtime `compile()` now caches repeated compilation of the same guard instance
+  and can emit debug-formatted generated source with a sourceURL marker.
+- Development builds now warn when repeated code generation comes from the same
+  callsite, pointing users toward module-scope schemas, `compileCached`, or
+  `warmup`.
+- `checkAsync()` and `compileAsync().check()` now return full diagnostics after
+  a failed cooperative boolean pass instead of first-fault diagnostics.
+
+## 0.3.2 - 2026-07-05
 
 ### Added
 

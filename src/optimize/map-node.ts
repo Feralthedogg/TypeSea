@@ -221,6 +221,19 @@ export function mapNodeIds(
                 masks: node.masks
             };
         }
+        case NodeTag.PresenceDispatch: {
+            const value = mapId(node.value);
+            return {
+                id,
+                tag: node.tag,
+                deps: [value],
+                value,
+                keys: node.keys,
+                options: node.options,
+                graphs: node.graphs,
+                masks: node.masks
+            };
+        }
         case NodeTag.PrimitiveUnion: {
             const value = mapId(node.value);
             return {

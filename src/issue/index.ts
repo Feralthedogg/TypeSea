@@ -230,6 +230,9 @@ export function isIssueCodeValue(value: unknown): value is IssueCode {
         case "expected_never":
         case "expected_literal":
         case "expected_array":
+        case "expected_map":
+        case "expected_set":
+        case "expected_instance":
         case "expected_tuple":
         case "expected_tuple_length":
         case "expected_object":

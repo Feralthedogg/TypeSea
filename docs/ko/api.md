@@ -65,7 +65,7 @@ diagnostic path에는 object key와 0부터 시작하는 array 또는 tuple inde
 | Runtime object contract | `t.instanceOf(Ctor)`, `t.property(base, key, value)`, `guard.property(key, value)` |
 | Composition | `t.union`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect` |
 | Presence | `t.optional`, `t.undefinedable`, `t.nullable`, `t.nullish` |
-| Dynamic guard | `t.lazy`, `t.refine` |
+| Dynamic guard | `t.lazy`, `t.refine`, `t.superRefine`, `guard.superRefine` |
 | Decoder | `guard.transform`, `guard.pipe`, `guard.default`, `guard.prefault`, `guard.catch`, `t.decoder`, `t.transform`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()` |
 | Async decoder | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
 
@@ -90,7 +90,7 @@ const Shape = t.object({
 - `nickname`은 반드시 존재해야 합니다. 값은 string 또는 `undefined`일 수 있습니다.
 - `t.nullable(inner)`는 value domain에 `null`을 추가합니다.
 - `t.nullish(inner)`는 nullable value와 optional key 의미를 함께 제공합니다.
-- `nullable`, `undefinedable`, `brand`, `refine`을 지나도 optional-key 의미는 보존됩니다.
+- `nullable`, `undefinedable`, `brand`, `refine`, `superRefine`을 지나도 optional-key 의미는 보존됩니다.
 
 object combinator는 object mode를 보존합니다.
 strict object guard는 `extend`, `pick`, `omit`, `partial` 이후에도 strict를 유지하고, passthrough object guard는 unknown key 허용을 유지합니다.
@@ -106,6 +106,26 @@ lazy와 refinement schema는 callback 의미를 보존하기 위해 semantic bar
 ## 합성
 
 `t.union(a, b)`는 적어도 한 branch를 만족하는 값을 허용합니다.
+
+`refine`과 `superRefine`은 구조 검증이 끝난 뒤 의미 검증을 붙입니다.
+조건 하나면 `refine`이 간단하고, 여러 줄의 검사 로직에서 실패를 표시하고
+싶다면 `superRefine`에서 `context.addIssue()`를 호출하면 됩니다.
+`addIssue()`는 인자를 생략하면 기본 refinement issue를 냅니다.
+문자열을 넘기면 message shorthand로 쓰고, `{ path, message }`를 넘기면 현재 refinement 위치를 기준으로 한 상대 path와 message를 직접 지정할 수 있습니다.
+
+```ts
+const Range = t.object({
+  min: t.number,
+  max: t.number
+}).superRefine((value, context) => {
+  if (value.min > value.max) {
+    context.addIssue({
+      path: ["max"],
+      message: "max는 min보다 크거나 같아야 합니다"
+    });
+  }
+}, "ordered_range");
+```
 
 `t.discriminatedUnion("kind", cases)`는 string case key를 요구합니다.
 각 case는 static하게 inspect할 수 있는 object case여야 하며, dispatch key는 case name과 일치하는 required string literal이어야 합니다.
@@ -207,7 +227,8 @@ FastUser.check(input);
 
 `compile`은 optimized Sea-of-Nodes validation graph에서 generated predicate function과 failed value용 diagnostic collector를 방출합니다.
 static scalar, object, array, record, union, strict-key node는 가능한 경우 straight-line JavaScript 또는 indexed loop로 낮아집니다.
-`lazy`, `refine` 같은 dynamic schema edge는 ordinary guard execution과 같은 IR-backed runtime fallback을 사용해 의미를 유지합니다.
+union은 literal discriminant, primitive domain, required-key presence, root-kind mask 순서로 특화한 뒤 그래도 남는 경우에만 선언 순서대로 branch를 검사합니다.
+`lazy`, `refine`, `superRefine` 같은 dynamic schema edge는 ordinary guard execution과 같은 IR-backed runtime fallback을 사용해 의미를 유지합니다.
 
 선택적 `name`은 debugging과 profiling을 위한 hint입니다.
 TypeSea는 이를 strict-mode-safe JavaScript function name으로 normalize하고, reserved name에는 prefix를 붙이며, generated name 길이에 cap을 둡니다.
@@ -216,6 +237,114 @@ collector diagnostic은 `check()` 반환 전에 validate, copy, freeze됩니다.
 
 generated source는 사용자가 제어하는 값을 직접 interpolate하지 않습니다.
 literal, regexp, property key, keyset, dynamic schema fallback은 side table에 capture되고 numeric index로 참조됩니다.
+
+### 컴파일 캐시와 warmup
+
+```ts
+const FastUser = compileCached("user:v1", () => User, { name: "isUser" });
+
+warmup([
+  User,
+  {
+    key: "user:v1",
+    guard: User,
+    options: { name: "isUser" }
+  }
+], {
+  namePrefix: "boot_"
+});
+```
+
+`compileCached(key, factory, options)`는 프로세스 안의 명시적 캐시를 사용합니다.
+`createCompileCache()`는 테스트, worker, multi-tenant server처럼 캐시를 분리해야 하는 곳에서 독립 캐시를 만듭니다.
+캐시 key에는 caller가 넘긴 key, compile mode, generated function name, debug-source flag가 함께 들어갑니다.
+
+`warmup()`은 service startup이나 serverless module initialization 단계에서 guard를 미리 compile합니다.
+그냥 guard를 넘기면 guard instance 기반 WeakMap cache가 채워지고, `key`가 있는 entry는 explicit cache를 채웁니다.
+따라서 첫 실제 request가 schema construction이나 codegen 비용을 떠안지 않습니다.
+
+### Boolean-only와 async validation
+
+```ts
+const BooleanUser = compileBoolean(User, { name: "isUserBoolean" });
+const AsyncUsers = compileAsync(t.array(User), {
+  name: "isUsersAsync",
+  yieldEvery: 4096,
+  yieldTimeout: 5
+});
+
+BooleanUser.is(input);
+await AsyncUsers.is(largePayload);
+```
+
+`compileBoolean()`은 fail-fast 전용 표면입니다.
+predicate와 generated source만 만들고, `check`, `assert`, diagnostic collector는 만들지 않습니다.
+호출자가 true/false 판정만 필요로 하는 hot path에서 쓰세요.
+
+`isAsync()`, `checkAsync()`, `compileAsync()`는 event loop를 막지 않도록 협력적으로 검증합니다.
+큰 array, tuple, record, map, set, union, object loop에서 Node.js라면 `setImmediate()`, 그 외에는 `setTimeout(0)`으로 한 번씩 양보합니다.
+`yieldEvery`는 node count 기준 burst를 제한하고, `yieldTimeout`은 wall-clock 기준 burst를 millisecond 단위로 제한합니다.
+diagnostic은 여전히 실패 뒤에만 수집합니다.
+`checkAsync()`와 `compileAsync().check()`는 `check()`와 같은 full diagnostic result를 반환합니다.
+cooperative boolean verdict만 필요한 hot path라면 `isAsync()`를 쓰세요.
+
+### AOT bundler plugin
+
+```ts
+export default createTypeSeaVitePlugin({
+  entries: [
+    {
+      id: "user:v1",
+      guard: User,
+      options: { name: "isUser", mode: "unsafe" }
+    }
+  ],
+  transformCompileCached: true
+});
+```
+
+`createTypeSeaVitePlugin`, `createTypeSeaRollupPlugin`, `createTypeSeaEsbuildPlugin`은 런타임 의존성이 없는 structural plugin factory입니다.
+`typesea:aot/user:v1` 같은 virtual module을 제공하고, build time에 `emitAotModule()`을 실행합니다.
+Vite, Rollup, esbuild는 정적인 `compileCached("user:v1", ...)` 호출을 그 virtual module의 default import로 치환할 수 있습니다.
+이렇게 하면 production bundle에서 해당 guard의 schema factory와 runtime compiler를 제거할 수 있습니다.
+esbuild source read는 optional `readFile` hook을 쓰거나 plugin `setup()` 내부에서 동적 `node:fs/promises` import를 사용합니다.
+
+### Union schema 작성법
+
+TypeSea는 object union의 각 branch가 고유한 required own key를 드러낼 때 가장 잘 최적화됩니다.
+`and`, `or`, `not`, `path`, `elemMatch`처럼 shape가 key로 갈리는 AST 계열 schema는 presence dispatch로 낮아집니다.
+compiled predicate는 먼저 required key가 있는지만 보고, 맞을 수 없는 branch는 실행하지 않습니다.
+
+```ts
+const Query = t.union(
+  t.object({ and: t.array(t.unknown).min(1) }),
+  t.object({ or: t.array(t.unknown).min(1) }),
+  t.object({ not: t.unknown }),
+  t.object({ path: t.string, eq: t.optional(t.string) })
+);
+```
+
+"operator가 하나 이상 있어야 한다"는 규칙을 표현하려고 optional field가 많은 비슷한 object를 여러 union branch로 쪼개지 마세요.
+그 shape는 branch마다 같은 property walk를 반복해서, 재귀적인 query validation에서 비용이 크게 불어납니다.
+구조 검증은 하나의 object schema로 끝내고, operator 존재 여부 같은 의미 규칙은 `superRefine`으로 붙이는 편이 낫습니다.
+
+```ts
+const Operators = t.object({
+  eq: t.optional(t.string),
+  neq: t.optional(t.string),
+  exists: t.optional(t.boolean),
+  gt: t.optional(t.number),
+  between: t.optional(t.tuple([t.number, t.number]))
+}).superRefine((value, context) => {
+  if (!("eq" in value) &&
+      !("neq" in value) &&
+      !("exists" in value) &&
+      !("gt" in value) &&
+      !("between" in value)) {
+    context.addIssue();
+  }
+}, "at_least_one_operator");
+```
 
 ### Unsafe 컴파일 모드
 
@@ -348,7 +477,7 @@ graph는 `compile()`과 `emitAotModule()`의 source이고, kernel은 ordinary gu
 `optimizeGraph(graph)`는 직접 전달된 graph input을 validate한 뒤 optimize합니다.
 regex graph node는 plain `RegExp` value만 받으며, graph가 freeze되기 전에 extensible input을 clone해서 non-extensible regexp로 저장합니다.
 
-`SchemaCheck`는 `lazy`나 `refine`처럼 dynamic runtime schema logic을 기록합니다.
+`SchemaCheck`는 `lazy`, `refine`, `superRefine`처럼 dynamic runtime schema logic을 기록합니다.
 callback-backed edge를 static primitive인 척하지 않고, runtime semantics가 필요하다는 사실을 IR에 정확히 남깁니다.
 
 ## JSON Schema 내보내기
@@ -368,6 +497,7 @@ runtime-only concept는 명시적 export issue를 반환합니다.
 - JavaScript `Date`, `Map`, `Set`, `instanceOf`, `property` contract
 - `lazy`
 - `refine`
+- `superRefine`
 - decoder transforms
 - async validation
 - flag가 있는 regexp

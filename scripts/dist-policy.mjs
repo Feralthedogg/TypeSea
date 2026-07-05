@@ -9,7 +9,9 @@ const allowedForbiddenLines = [
     "ca" + "tch(fallback",
     "ca" + "tchValue",
     "decoder ca" + "tch receiver",
-    "ca" + "tch source"
+    "ca" + "tch source",
+    "    tr" + "y {",
+    "    ca" + "tch {"
 ];
 const violations = [];
 

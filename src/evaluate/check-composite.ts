@@ -14,10 +14,14 @@ import {
 import type { Issue, PathSegment } from "../issue/index.js";
 import type {
     DiscriminatedUnionCase,
+    RefinementIssueCollector,
     Schema
 } from "../schema/index.js";
 import { schemaCanAcceptUndefined } from "../schema/index.js";
-import { pushIssue } from "./issue.js";
+import {
+    pushIssue,
+    pushIssueAtPath
+} from "./issue.js";
 import {
     actualType,
     findDiscriminatedUnionCase,
@@ -28,7 +32,9 @@ import {
     isStrictTrue,
     literalToExpected,
     ordinaryHasInstance,
+    readMapEntries,
     readOwnDataProperty,
+    readSetValues,
     type DataPropertyDescriptor
 } from "./shared.js";
 import type { ValidationState } from "./state.js";
@@ -385,12 +391,11 @@ export function collectMapIssues(
     state: ValidationState,
     collectChild: IssueCollector
 ): void {
-    if (!(value instanceof Map)) {
+    const iterator = readMapEntries(value);
+    if (iterator === undefined) {
         pushIssue(path, issues, "expected_map", "Map", actualType(value));
         return;
     }
-    const iterator = Map.prototype.entries.call(value) as
-        IterableIterator<[unknown, unknown]>;
     let index = 0;
     for (;;) {
         const step = iterator.next();
@@ -427,11 +432,11 @@ export function collectSetIssues(
     state: ValidationState,
     collectChild: IssueCollector
 ): void {
-    if (!(value instanceof Set)) {
+    const iterator = readSetValues(value);
+    if (iterator === undefined) {
         pushIssue(path, issues, "expected_set", "Set", actualType(value));
         return;
     }
-    const iterator = Set.prototype.values.call(value) as IterableIterator<unknown>;
     let index = 0;
     for (;;) {
         const step = iterator.next();
@@ -697,6 +702,7 @@ export function collectDiscriminatedUnionIssues(
 export function collectRefineIssues(
     inner: Schema,
     predicate: (value: unknown) => boolean,
+    collect: RefinementIssueCollector | undefined,
     name: string,
     value: unknown,
     path: PathSegment[],
@@ -706,12 +712,55 @@ export function collectRefineIssues(
 ): void {
     const before = issues.length;
     collectChild(inner, value, path, issues, state);
-    if (issues.length === before && !isStrictTrue(predicate(value))) {
-        /*
-         * Refinement predicates run only after the inner schema produced no new
-         * issues. That keeps structural failures more specific than predicate
-         * failures.
-         */
+    if (issues.length !== before) {
+        return;
+    }
+    /*
+     * Refinement predicates run only after the inner schema produced no new
+     * issues. That keeps structural failures more specific than predicate
+     * failures.
+     */
+    if (collect !== undefined) {
+        const reported = collect(value);
+        if (reported !== undefined && reported.length !== 0) {
+            pushRefinementIssues(path, issues, name, actualType(value), reported);
+        }
+        return;
+    }
+    if (!isStrictTrue(predicate(value))) {
         pushIssue(path, issues, "expected_refinement", name, actualType(value));
+    }
+}
+
+/**
+ * @brief Append callback-supplied refinement diagnostics.
+ * @param basePath Path of the refinement node.
+ * @param issues Output issue buffer.
+ * @param name Refinement name used as expected label.
+ * @param actual Actual type label for the refined value.
+ * @param reported Relative issues emitted by the callback.
+ */
+function pushRefinementIssues(
+    basePath: readonly PathSegment[],
+    issues: Issue[],
+    name: string,
+    actual: string,
+    reported: readonly {
+        readonly path: readonly PathSegment[];
+        readonly message: string | undefined;
+    }[]
+): void {
+    for (let index = 0; index < reported.length; index += 1) {
+        const issue = reported[index];
+        if (issue !== undefined) {
+            pushIssueAtPath(
+                basePath.concat(issue.path),
+                issues,
+                "expected_refinement",
+                name,
+                actual,
+                issue.message
+            );
+        }
     }
 }

@@ -247,6 +247,7 @@ function collectIssuesInner(
             collectRefineIssues(
                 schema.inner,
                 schema.predicate,
+                schema.collect,
                 schema.name,
                 value,
                 path,

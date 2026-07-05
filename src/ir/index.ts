@@ -25,6 +25,7 @@ export type {
     ObjectShapeNode,
     NumericCompareNode,
     ParamNode,
+    PresenceDispatchNode,
     PrimitiveUnionNode,
     RecordEveryNode,
     RegexNode,

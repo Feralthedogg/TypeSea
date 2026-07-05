@@ -14,6 +14,7 @@ import {
     SchemaTag,
     StringCheckTag
 } from "../kind/index.js";
+import type { PathSegment } from "../issue/index.js";
 
 export type LiteralValue =
     | string
@@ -345,6 +346,24 @@ export interface LazySchema {
 }
 
 /**
+ * @brief Diagnostic payload emitted by callback-style refinements.
+ * @details The path is relative to the refinement node. Diagnostic collectors
+ * prepend their current path before publishing the final immutable Issue.
+ */
+export interface RefinementIssue {
+    readonly path: readonly PathSegment[];
+    readonly message: string | undefined;
+}
+
+/**
+ * @brief Callback-style refinement diagnostic collector.
+ * @details Boolean predicates stay allocation-light; collectors are called only
+ * on diagnostic paths after the inner schema has accepted the value.
+ */
+export type RefinementIssueCollector =
+    (value: unknown) => readonly RefinementIssue[] | undefined;
+
+/**
  * @brief User predicate fallback.
  * @details Refinements are intentionally opaque to IR optimization; codegen can
  * only call the predicate after the inner schema succeeds.
@@ -353,6 +372,7 @@ export interface RefineSchema {
     readonly tag: typeof SchemaTag.Refine;
     readonly inner: Schema;
     readonly predicate: (value: unknown) => boolean;
+    readonly collect?: RefinementIssueCollector;
     readonly name: string;
 }
 

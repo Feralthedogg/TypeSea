@@ -20,6 +20,7 @@ import type {
     NodeId,
     ObjectShapeEntry,
     ObjectShapeNode,
+    PresenceDispatchNode,
     PrimitiveUnionNode,
     UnionDispatchNode
 } from "../ir/index.js";
@@ -27,6 +28,7 @@ import { makeValidationPlan } from "../plan/index.js";
 import {
     type ArrayCheck,
     schemaCanAcceptUndefined,
+    schemaMustRejectUndefined,
     type LiteralValue,
     type Schema
 } from "../schema/index.js";
@@ -320,6 +322,15 @@ function emitGraphReturn(
                 state
             );
             return;
+        case NodeTag.PresenceDispatch:
+            emitPresenceDispatchReturn(
+                graph,
+                node,
+                value,
+                context,
+                state
+            );
+            return;
         case NodeTag.PrimitiveUnion:
             emitPrimitiveUnionReturn(
                 graph,
@@ -448,6 +459,10 @@ function emitFalseCheck(
         emitPrimitiveUnionCheck(graph, node, value, context, state);
         return;
     }
+    if (node?.tag === NodeTag.PresenceDispatch) {
+        emitPresenceDispatchCheck(graph, node, value, context, state);
+        return;
+    }
     if (node?.tag === NodeTag.HasOwnData) {
         emitHasDataCheck(graph, node.object, node.key, value, context, state);
         return;
@@ -566,7 +581,7 @@ function emitArrayEveryCheck(
     state.chunks.push(
         `for(let ${index}=0;${index}<${arrayExpression}.length;${index}+=1){`,
         `const ${descriptor}=gp(${arrayExpression},${index});`,
-        `if(${descriptor}===undefined)${failStatement(state)}`
+        `if(${descriptor}===undefined${descriptorNeedsValueProof(item) ? `||!h.call(${descriptor},"value")` : ""})${failStatement(state)}`
     );
     if (itemConstant !== true) {
         const itemValue = `v${String(state.temp)}`;
@@ -761,7 +776,7 @@ function emitTupleItemsCheck(
             );
         } else {
             state.chunks.push(
-                `if(${descriptor}===undefined)${failStatement(state)}`
+                `if(${descriptor}===undefined${descriptorNeedsValueProof(item) ? `||!h.call(${descriptor},"value")` : ""})${failStatement(state)}`
             );
         }
         if (itemConstant !== true) {
@@ -844,7 +859,6 @@ function emitRecordEveryCheck(
     const descriptor = `d${String(state.temp)}`;
     state.temp += 1;
     const itemConstant = readGraphResultBoolean(itemGraph);
-    const rejectsUndefined = !schemaCanAcceptUndefined(item);
     emitObjectGuard(recordExpression, state);
     if (itemConstant === false) {
         state.chunks.push(
@@ -858,9 +872,7 @@ function emitRecordEveryCheck(
         `for(const ${key} in ${recordExpression}){`,
         `if(!h.call(${recordExpression},${key}))continue;`,
         `const ${descriptor}=gp(${recordExpression},${key});`,
-        rejectsUndefined
-            ? `if(${descriptor}===undefined)${failStatement(state)}`
-            : `if(${descriptor}===undefined||!h.call(${descriptor},"value"))${failStatement(state)}`
+        `if(${descriptor}===undefined${descriptorNeedsValueProof(item) ? `||!h.call(${descriptor},"value")` : ""})${failStatement(state)}`
     );
     if (itemConstant !== true) {
         const itemValue = `v${String(state.temp)}`;
@@ -1361,6 +1373,152 @@ function emitUnionDispatchTail(
             }
         }
         index = end;
+    }
+    state.chunks.push(failStatement(state));
+}
+
+/**
+ * @brief emit presence dispatch return.
+ * @details Presence dispatch keeps source union order but avoids entering object
+ * branches whose required key is absent.
+ */
+function emitPresenceDispatchReturn(
+    graph: Graph,
+    node: PresenceDispatchNode,
+    value: string,
+    context: EmitContext,
+    state: GraphEmitState
+): void {
+    const subjectExpression = emitGraphExpression(
+        graph,
+        node.value,
+        value,
+        context,
+        state
+    );
+    const subject = emitSubjectAlias(subjectExpression, state);
+    emitPresenceDispatchTail(node, subject, context, state, "return true;");
+}
+
+/**
+ * @brief emit presence dispatch check.
+ * @details Nested presence dispatch uses a success label so failure still
+ * behaves like an ordinary predicate check.
+ */
+function emitPresenceDispatchCheck(
+    graph: Graph,
+    node: PresenceDispatchNode,
+    value: string,
+    context: EmitContext,
+    state: GraphEmitState
+): void {
+    const success = `ps${String(state.temp)}`;
+    state.temp += 1;
+    const subjectExpression = emitGraphExpression(
+        graph,
+        node.value,
+        value,
+        context,
+        state
+    );
+    const subject = emitSubjectAlias(subjectExpression, state);
+    state.chunks.push(`${success}:{`);
+    emitPresenceDispatchTail(
+        node,
+        subject,
+        context,
+        state,
+        `break ${success};`
+    );
+    state.chunks.push("}");
+}
+
+/**
+ * @brief emit presence dispatch function.
+ * @details Expression-mode callers use a generated helper while return/check
+ * paths inline the same branch-gated loop.
+ */
+function emitPresenceDispatchFunction(
+    node: PresenceDispatchNode,
+    context: EmitContext
+): string {
+    const name = `p${String(context.functions.length)}`;
+    const source: FunctionSource = {
+        name,
+        body: ""
+    };
+    context.functions.push(source);
+    const state = makeGraphEmitState();
+    emitPresenceDispatchTail(node, "v", context, state, "return true;");
+    source.body = state.chunks.join("");
+    return name;
+}
+
+/**
+ * @brief emit presence dispatch tail.
+ * @details Branches remain in declaration order. A key gate can only skip a
+ * branch after lowering proved that branch cannot accept objects missing that
+ * own data field.
+ */
+function emitPresenceDispatchTail(
+    node: PresenceDispatchNode,
+    value: string,
+    context: EmitContext,
+    state: GraphEmitState,
+    successStatement: string
+): void {
+    emitObjectGuard(value, state);
+    for (let index = 0; index < node.graphs.length; index += 1) {
+        const childGraph = node.graphs[index];
+        if (childGraph === undefined || readGraphResultBoolean(childGraph) === false) {
+            continue;
+        }
+        const label = `pb${String(state.temp)}`;
+        state.temp += 1;
+        const key = node.keys[index];
+        const branch = makeFailureBranchEmitState(state, label);
+        markKnownObject(value, branch);
+        if (typeof key === "string" && !isUnsafeMode(context)) {
+            const descriptor = `d${String(state.temp)}`;
+            state.temp += 1;
+            branch.temp = state.temp;
+            const needsValueProof = !branchKeyMustRejectUndefined(
+                node.options[index],
+                key
+            );
+            branch.chunks.push(`const ${descriptor}=gp(${value},${stringRef(context, key)});`);
+            branch.chunks.push(`if(${descriptor}===undefined${needsValueProof ? `||!h.call(${descriptor},"value")` : ""})break ${label};`);
+            const param = findParamNode(childGraph);
+            if (param !== undefined) {
+                seedDataSlot(
+                    branch,
+                    param,
+                    key,
+                    value,
+                    descriptor,
+                    `${descriptor}.value`,
+                    undefined
+                );
+            }
+        }
+        emitFalseCheck(childGraph, childGraph.result, value, context, branch);
+        const branchChunks = branch.chunks.length === 0
+            ? [successStatement]
+            : [`${label}:{`, ...branch.chunks, successStatement, "}"];
+        if (typeof key === "string" && isUnsafeMode(context)) {
+            state.chunks.push(
+                `if(h.call(${value},${unsafeStringLiteralExpression(key)})){`,
+                ...branchChunks,
+                "}"
+            );
+        } else if (typeof key === "string") {
+            state.chunks.push(...branchChunks);
+        } else {
+            state.chunks.push(...branchChunks);
+        }
+        if (branch.temp > state.temp) {
+            state.temp = branch.temp;
+        }
     }
     state.chunks.push(failStatement(state));
 }
@@ -1998,6 +2156,14 @@ function emitGraphExpression(
                 context,
                 state
             )})`;
+        case NodeTag.PresenceDispatch:
+            return `${emitPresenceDispatchFunction(node, context)}(${emitGraphExpression(
+                graph,
+                node.value,
+                value,
+                context,
+                state
+            )})`;
         case NodeTag.PrimitiveUnion:
             return `${emitPrimitiveUnionFunction(node, context)}(${emitGraphExpression(
                 graph,
@@ -2156,7 +2322,7 @@ function emitObjectShapeCatchall(
         `const ${key}=${keys}[${index}];`,
         `if(typeof ${key}==="string"&&${keyMembershipExpression(key, node.keys, context)})continue;`,
         `const ${descriptor}=gp(${objectExpression},${key});`,
-        `if(${descriptor}===undefined||!h.call(${descriptor},"value"))${failStatement(state)}`,
+        `if(${descriptor}===undefined${node.catchall !== undefined && descriptorNeedsValueProof(node.catchall) ? `||!h.call(${descriptor},"value")` : ""})${failStatement(state)}`,
         `const ${itemValue}=${descriptor}.value;`
     );
     emitFalseCheck(
@@ -2243,11 +2409,10 @@ function emitObjectShapeEntries(
             state
         );
         if (entry.presence === PresenceTag.Optional) {
-            const rejectsUndefined = !schemaCanAcceptUndefined(entry.schema);
             state.chunks.push(
                 `if(${slot.descriptor}!==undefined){`
             );
-            if (!rejectsUndefined) {
+            if (descriptorNeedsValueProof(entry.schema)) {
                 state.chunks.push(
                     `if(!h.call(${slot.descriptor},"value"))${failStatement(state)}`
                 );
@@ -2258,11 +2423,8 @@ function emitObjectShapeEntries(
             state.chunks.push(`}else if(h.call(${objectExpression},${stringRef(context, entry.key)}))${failStatement(state)}`);
         } else {
             if (!state.dataGuards.has(cacheKey)) {
-                const rejectsUndefined = !schemaCanAcceptUndefined(entry.schema);
                 state.chunks.push(
-                    rejectsUndefined
-                        ? `if(${slot.descriptor}===undefined)${failStatement(state)}`
-                        : `if(${slot.descriptor}===undefined||!h.call(${slot.descriptor},"value"))${failStatement(state)}`
+                    `if(${slot.descriptor}===undefined${descriptorNeedsValueProof(entry.schema) ? `||!h.call(${slot.descriptor},"value")` : ""})${failStatement(state)}`
                 );
                 state.dataGuards.add(cacheKey);
             }
@@ -2436,6 +2598,7 @@ function estimateNodeCost(node: GraphNode): number {
         case NodeTag.PrimitiveUnion:
         case NodeTag.UnionDispatch:
         case NodeTag.DiscriminantDispatch:
+        case NodeTag.PresenceDispatch:
         case NodeTag.ObjectShape:
         case NodeTag.TupleItems:
             return 16;
@@ -2489,6 +2652,7 @@ function nodeContainsSchemaCheck(node: GraphNode): boolean {
         case NodeTag.ObjectShape:
             return objectEntriesContainSchemaCheck(node.entries);
         case NodeTag.DiscriminantDispatch:
+        case NodeTag.PresenceDispatch:
         case NodeTag.UnionDispatch:
         case NodeTag.PrimitiveUnion:
             return graphArrayContainsSchemaCheck(node.graphs);
@@ -3390,6 +3554,73 @@ function readGraphResultBoolean(graph: Graph): boolean | undefined {
         return value.value;
     }
     return undefined;
+}
+
+/**
+ * @brief Decide whether a descriptor must be proven to be a data slot.
+ * @details If the child schema statically rejects `undefined`, accessor
+ * descriptors may flow as `undefined` into the child validator and fail without
+ * executing the getter. Schemas that can accept `undefined` still need the
+ * explicit data-property proof.
+ * @param schema Child schema receiving the descriptor value.
+ * @returns True when `hasOwnProperty(descriptor, "value")` is required.
+ */
+function descriptorNeedsValueProof(schema: Schema): boolean {
+    return !schemaMustRejectUndefined(schema);
+}
+
+/**
+ * @brief Check whether a union presence key rejects accessor-as-undefined.
+ * @details Presence dispatch only skips the data-property proof when the branch
+ * schema itself contains a required key that statically rejects `undefined`.
+ * @param schema Union branch schema.
+ * @param key Presence key used to gate the branch.
+ * @returns True when the child branch will reject an accessor descriptor value.
+ */
+function branchKeyMustRejectUndefined(
+    schema: Schema | undefined,
+    key: string
+): boolean {
+    if (schema === undefined) {
+        return false;
+    }
+    switch (schema.tag) {
+        case SchemaTag.Object:
+            return objectRequiredKeyMustRejectUndefined(schema.entries, key);
+        case SchemaTag.Intersection:
+            return branchKeyMustRejectUndefined(schema.left, key) ||
+                branchKeyMustRejectUndefined(schema.right, key);
+        case SchemaTag.Brand:
+        case SchemaTag.Nullable:
+        case SchemaTag.Refine:
+            return branchKeyMustRejectUndefined(schema.inner, key);
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Inspect one object shape for a required undefined-rejecting key.
+ * @param entries Object entries in source order.
+ * @param key Required key being inspected.
+ * @returns True when the matching required entry rejects `undefined`.
+ */
+function objectRequiredKeyMustRejectUndefined(
+    entries: readonly {
+        readonly key: string;
+        readonly schema: Schema;
+        readonly presence: number;
+    }[],
+    key: string
+): boolean {
+    for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (entry?.key === key &&
+            entry.presence === PresenceTag.Required) {
+            return schemaMustRejectUndefined(entry.schema);
+        }
+    }
+    return false;
 }
 
 /**

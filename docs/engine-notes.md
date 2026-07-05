@@ -65,9 +65,9 @@ use this graph as their predicate source.
 
 Array, tuple, and record schemas lower to native composite IR nodes whose child
 schemas are executed through child validation plans. `SchemaCheck` is reserved
-for dynamic schemas such as `lazy` and `refine`; the graph records that callback
-or resolver-backed semantics are required instead of pretending they are static
-predicates.
+for dynamic schemas such as `lazy`, `refine`, and `superRefine`; the graph
+records that callback or resolver-backed semantics are required instead of
+pretending they are static predicates.
 
 ## Runtime Compiler
 
@@ -83,6 +83,18 @@ diagnostic names live in side tables captured by the generated factory. The
 generated source contains numeric side-table indexes, fixed helper strings, and
 sanitized function names.
 
+`compileBoolean()` uses the same predicate emitter but stops before diagnostic
+collector emission. That keeps the fail-fast artifact smaller than a full
+compiled guard and makes the "boolean only" contract explicit. `compileAsync()`
+does not make generated predicates async; it wraps a compiled diagnostic guard
+with a separate cooperative evaluator so ordinary compiled hot paths never pay
+for `await` state machines.
+
+The AOT bundler plugins are thin build-time adapters around `emitAotModule()`.
+Virtual modules are resolved by id, and the Rollup, Vite, and esbuild macro
+paths rewrite only static `compileCached("id", ...)` calls whose id was declared
+in plugin config. No schema expression is evaluated from source text.
+
 Scalar nodes emit direct JavaScript tests where the semantics are local:
 finite-number checks, integer checks, string length bounds, literal equality,
 and regexp tests all lower without helper calls on the generated hot path.
@@ -91,8 +103,15 @@ Array and record IR nodes emit indexed loops. Static child schemas are inlined
 into those loops from their optimized graphs, which avoids function-call
 boundaries for small scalar or union element contracts. Tuple nodes preserve
 descriptor-based element access, and dynamic edges use the same IR-backed
-runtime fallback as ordinary guard execution, preserving behavior for `lazy` and
-`refine`.
+runtime fallback as ordinary guard execution, preserving behavior for `lazy`,
+`refine`, and `superRefine`.
+
+Union IR now has four increasingly general fast paths. Literal-tag object
+unions use discriminant dispatch, primitive unions use a compact root-kind
+dispatch, object unions with required branch keys use presence dispatch, and the
+remaining mixed unions use ordered root-kind branch probing. Presence dispatch
+keeps declaration order but skips object branches whose required own data key is
+absent, which avoids recursive union explosions in AST-like inputs.
 
 Strict object IR emits two shapes. When every declared key is required,
 generated validators run the strict-key count before field descriptor reads:
@@ -165,8 +184,11 @@ identity and schema identity. Re-entering the same schema/value pair
 short-circuits that edge, which lets cyclic object graphs validate finitely while
 still checking the original object fields on the outer frame.
 
-Compiled `lazy` and `refine` fallbacks use the same IR-backed runtime path, so
-recursive behavior stays consistent across execution engines.
+Compiled `lazy`, `refine`, and `superRefine` fallbacks use the same IR-backed
+runtime path, so recursive behavior stays consistent across execution engines.
+When `superRefine` emits custom issue paths or messages, the generated
+diagnostic fallback copies those nested issues under the current compiled path
+prefix.
 
 `checkFirst()` has a separate generated collector. It returns one frozen issue
 as soon as the first diagnostic is known, instead of running the full `check()`
@@ -199,21 +221,21 @@ Zod, Valibot, and Ajv are dev dependencies for measurement only. They are not
 imported by `src`, and package policy rejects runtime, peer, optional, or
 bundled dependency fields before release.
 
-Last local benchmark on 2026-07-05 KST reported these ecosystem paths over the
+Last local benchmark on 2026-07-06 KST reported these ecosystem paths over the
 JSON-compatible strict-object benchmark. The committed source of truth is
 `bench/results/latest.json`; `npm run bench:record` refreshes that summary and
-the README SVG from raw Vitest JSON.
-`npm run bench:compare` checks the committed summary against 0.3.2 regression
-floors for unchecked valid hot path, safe invalid fast-fail, and safe valid
-throughput. `check:benchmarks` runs the same floor check after verifying the SVG
-is fresh.
+the README SVG from the median of 3 full Vitest runs.
+`npm run bench:compare` checks the committed summary against release regression
+floors for unchecked valid hot path, safe invalid fast-fail, safe valid
+throughput, and presence-dispatch object union paths. `check:benchmarks` runs
+the same floor check after verifying the SVG is fresh.
 
 | Case | TypeSea runtime plan | TypeSea compiled safe | TypeSea compiled unsafe | TypeSea compiled unchecked | Ajv compiled |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Valid `is()` | 476,703 hz | 5,230,756 hz | 36,756,599 hz | 42,431,440 hz | 4,336,006 hz |
-| Valid `check()` | 466,105 hz | 4,824,240 hz | 36,509,714 hz | 43,131,347 hz | 4,280,363 hz |
-| Invalid `is()` | 3,396,045 hz | 42,197,735 hz | 50,090,902 hz | 51,002,903 hz | 28,986,950 hz |
-| Invalid `check()` | 339,575 hz | 2,145,392 hz | 3,098,275 hz | 3,673,561 hz | 28,274,668 hz |
+| Valid `is()` | 341,332 hz | 3,840,854 hz | 27,464,645 hz | 29,647,233 hz | 2,682,380 hz |
+| Valid `check()` | 294,582 hz | 2,914,942 hz | 21,517,947 hz | 31,707,555 hz | 2,876,907 hz |
+| Invalid `is()` | 2,223,276 hz | 30,513,434 hz | 28,172,129 hz | 36,659,550 hz | 15,870,460 hz |
+| Invalid `check()` | 280,569 hz | 1,460,301 hz | 2,144,535 hz | 2,658,950 hz | 19,847,089 hz |
 
 Benchmark numbers are machine-local telemetry. They are useful for catching
 regressions, not for promising a fixed throughput floor. Unsafe and unchecked

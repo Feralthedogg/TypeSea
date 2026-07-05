@@ -2,9 +2,16 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import { NodeTag } from "../src/kind/index.js";
 import type { Graph } from "../src/ir/index.js";
 import {
+    checkAsync,
     compile,
+    compileAsync,
+    compileBoolean,
+    compileCached,
+    createCompileCache,
+    isAsync,
     t,
     TypeSeaAssertionError,
+    warmup,
     type Guard,
     type Infer,
     type StringGuard
@@ -216,6 +223,218 @@ describe("TypeSea core guards", () => {
         expect(TreeGuard.is(invalidRoot)).toBe(false);
         expect(FastTree.is(invalidRoot)).toBe(false);
         expect(FastTree.check(invalidRoot)).toEqual(TreeGuard.check(invalidRoot));
+    });
+
+    test("supports callback-style super refinement", () => {
+        const Range = t.object({
+            min: t.number,
+            max: t.number
+        }).superRefine((value, context) => {
+            if (value.min > value.max) {
+                context.addIssue({
+                    path: ["max"],
+                    message: "max must be greater than or equal to min"
+                });
+            }
+        }, "ordered_range");
+        const FunctionalRange = t.superRefine(
+            t.object({
+                min: t.number,
+                max: t.number
+            }),
+            (value, context) => {
+                if (value.min > value.max) {
+                    context.addIssue("range is not ordered");
+                }
+            },
+            "ordered_range"
+        );
+        const FastRange = compile(Range, { name: "superRefinedRange" });
+
+        expect(Range.is({ min: 1, max: 2 })).toBe(true);
+        expect(Range.is({ min: 3, max: 2 })).toBe(false);
+        expect(FunctionalRange.is({ min: 3, max: 2 })).toBe(false);
+        expect(Range.check({ min: 3, max: 2 })).toEqual({
+            ok: false,
+            error: [
+                {
+                    path: ["max"],
+                    code: "expected_refinement",
+                    expected: "ordered_range",
+                    actual: "object",
+                    message: "max must be greater than or equal to min"
+                }
+            ]
+        });
+        expect(FunctionalRange.check({ min: 3, max: 2 })).toEqual({
+            ok: false,
+            error: [
+                {
+                    path: [],
+                    code: "expected_refinement",
+                    expected: "ordered_range",
+                    actual: "object",
+                    message: "range is not ordered"
+                }
+            ]
+        });
+        expect(Range.checkFirst({ min: 3, max: 2 })).toEqual(
+            Range.check({ min: 3, max: 2 })
+        );
+        expect(FastRange.check({ min: 3, max: 2 }))
+            .toEqual(Range.check({ min: 3, max: 2 }));
+        expect(FastRange.checkFirst({ min: 3, max: 2 }))
+            .toEqual(Range.checkFirst({ min: 3, max: 2 }));
+    });
+
+    test("caches compiled guards with explicit semantic keys", () => {
+        const cache = createCompileCache();
+        let builds = 0;
+        const first = cache.compile("user:v1", () => {
+            builds += 1;
+            return t.object({
+                id: t.string
+            });
+        }, { name: "cachedUser" });
+        const second = cache.compile("user:v1", () => {
+            throw new Error("cache miss");
+        }, { name: "cachedUser" });
+        const unsafe = cache.compile("user:v1", () => {
+            builds += 1;
+            return t.object({
+                id: t.string
+            });
+        }, {
+            name: "cachedUser",
+            mode: "unsafe"
+        });
+        const globalFirst = compileCached("global-user:v1", () => {
+            builds += 1;
+            return t.object({
+                id: t.string
+            });
+        }, { name: "globalCachedUser" });
+        const globalSecond = compileCached("global-user:v1", () => {
+            throw new Error("global cache miss");
+        }, { name: "globalCachedUser" });
+
+        expect(first).toBe(second);
+        expect(first).not.toBe(unsafe);
+        expect(globalFirst).toBe(globalSecond);
+        expect(builds).toBe(3);
+        expect(cache.size).toBe(2);
+        expect(cache.delete("user:v1", { name: "cachedUser" })).toBe(true);
+        expect(cache.size).toBe(1);
+        cache.clear();
+        expect(cache.size).toBe(0);
+    });
+
+    test("warms guards before first request paths", () => {
+        const cache = createCompileCache();
+        const User = t.object({
+            id: t.string
+        });
+        let builds = 0;
+        const compiled = warmup([
+            User,
+            {
+                key: "warm:user",
+                factory: (): typeof User => {
+                    builds += 1;
+                    return User;
+                },
+                options: { name: "warmUser" }
+            }
+        ], {
+            cache,
+            namePrefix: "warm_"
+        });
+        const cached = cache.compile("warm:user", () => {
+            throw new Error("warm cache miss");
+        }, { name: "warmUser" });
+
+        expect(compiled).toHaveLength(2);
+        expect(compiled[0]?.is({ id: "u1" })).toBe(true);
+        expect(compiled[1]).toBe(cached);
+        expect(builds).toBe(1);
+    });
+
+    test("emits predicate-only boolean guards for fail-fast paths", () => {
+        const User = t.strictObject({
+            id: t.string,
+            score: t.number.int()
+        });
+        const FastUser = compileBoolean(User, { name: "booleanUser" });
+        const Again = compileBoolean(User, { name: "booleanUser" });
+
+        expect(FastUser).toBe(Again);
+        expect(FastUser.is({ id: "u1", score: 1 })).toBe(true);
+        expect(FastUser.is({ id: "u1", score: 1.5 })).toBe(false);
+        expect(FastUser.source).toContain("return booleanUser");
+        expect(FastUser.source).not.toContain("_check");
+        expect("check" in FastUser).toBe(false);
+    });
+
+    test("validates large values cooperatively through async guards", async () => {
+        const Numbers = t.array(t.number.int());
+        const values = new Array<number>(8192).fill(7);
+        let yielded = false;
+        const marker = new Promise<void>((resolve) => {
+            setImmediate(() => {
+                yielded = true;
+                resolve();
+            });
+        });
+        const valid = await isAsync(Numbers, values, {
+            yieldEvery: 1,
+            yieldTimeout: 0
+        });
+        await marker;
+        const result = await checkAsync(Numbers, values, {
+            yieldEvery: 16,
+            yieldTimeout: 0
+        });
+        const Pair = t.object({
+            count: t.number,
+            name: t.string
+        });
+        const invalidPair = await checkAsync(Pair, {
+            count: "bad",
+            name: 7
+        }, {
+            yieldEvery: 1,
+            yieldTimeout: 0
+        });
+        const AsyncNumbers = compileAsync(Numbers, {
+            name: "asyncNumbers",
+            yieldEvery: 16,
+            yieldTimeout: 0
+        });
+
+        expect(yielded).toBe(true);
+        expect(valid).toBe(true);
+        expect(result.ok).toBe(true);
+        expect(invalidPair.ok).toBe(false);
+        expect(invalidPair.ok ? 0 : invalidPair.error.length).toBe(2);
+        expect(await AsyncNumbers.is(values)).toBe(true);
+        expect((await AsyncNumbers.check([1, 2.5])).ok).toBe(false);
+        expect(AsyncNumbers.sync.is(values)).toBe(true);
+    });
+
+    test("reuses compiled output for the same guard instance and options", () => {
+        const User = t.object({
+            id: t.string
+        });
+        const first = compile(User, { name: "sameGuardUser" });
+        const second = compile(User, { name: "sameGuardUser" });
+        const debug = compile(User, {
+            name: "sameGuardUser",
+            debugSource: true
+        });
+
+        expect(first).toBe(second);
+        expect(first).not.toBe(debug);
+        expect(debug.source).toContain("TypeSea generated validator");
     });
 
     test("compiled guards match interpreter semantics", () => {

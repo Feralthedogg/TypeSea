@@ -432,6 +432,11 @@ describe("edge-case runtime semantics", () => {
             predicate: unknown,
             name: unknown
         ) => Guard<unknown>;
+        const looseSuperRefine = t.superRefine as unknown as (
+            guard: Guard<unknown>,
+            callback: unknown,
+            name: unknown
+        ) => Guard<unknown>;
         const looseCompile = compile as unknown as (
             guard: unknown,
             options?: unknown
@@ -443,6 +448,7 @@ describe("edge-case runtime semantics", () => {
         const looseString = t.string as unknown as {
             regex(pattern: unknown, name: unknown): Guard<string>;
             refine(predicate: unknown, name: unknown): Guard<string>;
+            superRefine(callback: unknown, name: unknown): Guard<string>;
             or(other: Guard<unknown>): Guard<unknown>;
         };
         const looseDiscriminatedUnion = t.discriminatedUnion as unknown as (
@@ -461,17 +467,42 @@ describe("edge-case runtime semantics", () => {
         expect(() => looseString.regex(poisonedPattern, "word")).toThrow(TypeError);
         expect(() => looseString.refine("not_fn", "named")).toThrow(TypeError);
         expect(() => looseString.refine(() => true, 1)).toThrow(TypeError);
+        expect(() => looseString.superRefine("not_fn", "named")).toThrow(TypeError);
+        expect(() => looseString.superRefine(() => undefined, 1)).toThrow(TypeError);
         expect(() => looseString.or({} as unknown as Guard<unknown>)).toThrow(TypeError);
         expect(() => looseTuple(null)).toThrow(TypeError);
         expect(() => looseTuple({ length: 1 })).toThrow(TypeError);
         expect(() => looseRefine(t.string, "not_fn", "named")).toThrow(TypeError);
         expect(() => looseRefine(t.string, () => true, 1)).toThrow(TypeError);
+        expect(() => looseSuperRefine(t.string, "not_fn", "named")).toThrow(TypeError);
+        expect(() => looseSuperRefine(t.string, () => undefined, 1)).toThrow(TypeError);
         expect(() => looseLazy(undefined)).toThrow(TypeError);
         expect(() => looseDiscriminatedUnion("kind", {})).toThrow(TypeError);
         expect(() => looseIntersect(t.string, {})).toThrow(TypeError);
         expect(() => looseCompile({})).toThrow(TypeError);
         expect(() => looseCompile(t.string, 1)).toThrow(TypeError);
         expect(() => looseCompile(t.string, { name: 1 })).toThrow(TypeError);
+    });
+
+    test("rejects malformed super refinement issue payloads", () => {
+        const badMessage = t.string.superRefine((_value, context) => {
+            context.addIssue({ message: 1 } as unknown as { readonly message: string });
+        }, "bad_message");
+        const badPath = t.string.superRefine((_value, context) => {
+            context.addIssue({
+                path: ["name", -1]
+            });
+        }, "bad_path");
+        const badPayload = t.string.superRefine((_value, context) => {
+            context.addIssue(1 as unknown as string);
+        }, "bad_payload");
+
+        expect(() => badMessage.is("x")).toThrow(TypeError);
+        expect(() => badMessage.check("x")).toThrow(TypeError);
+        expect(() => badPath.is("x")).toThrow(TypeError);
+        expect(() => badPath.check("x")).toThrow(TypeError);
+        expect(() => badPayload.is("x")).toThrow(TypeError);
+        expect(() => badPayload.check("x")).toThrow(TypeError);
     });
 
     test("rejects malformed direct public class construction", () => {

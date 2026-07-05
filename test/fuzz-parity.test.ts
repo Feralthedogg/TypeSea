@@ -114,6 +114,39 @@ describe("deterministic schema fuzzing", () => {
             }
         }
     });
+
+    test("keeps presence-dispatched object unions aligned across fast modes", () => {
+        const context: FuzzContext = {
+            marker: Symbol("fuzz_marker")
+        };
+        const guard = presenceDispatchFuzzGuard();
+        const safe = compile(guard, { name: "presence_mode_safe" });
+        const unsafe = compile(guard, {
+            name: "presence_mode_unsafe",
+            mode: "unsafe"
+        });
+        const unchecked = compile(guard, {
+            name: "presence_mode_unchecked",
+            mode: "unchecked"
+        });
+        const graph = guard.graph();
+        const values = makePresenceDispatchFuzzValues(context);
+
+        expect(graph.nodes.some((node) => node.tag === NodeTag.PresenceDispatch))
+            .toBe(true);
+
+        for (let valueIndex = 0; valueIndex < values.length; valueIndex += 1) {
+            const value = values[valueIndex];
+            const label = `presence value ${String(valueIndex)}`;
+            const safeIs = safe.is(value);
+            const safeCheckOk = safe.check(value).ok;
+
+            expect(unsafe.is(value), label).toBe(safeIs);
+            expect(unsafe.check(value).ok, label).toBe(safeCheckOk);
+            expect(unchecked.is(value), label).toBe(safeIs);
+            expect(unchecked.check(value).ok, label).toBe(safeCheckOk);
+        }
+    });
 });
 
 /**
@@ -312,6 +345,37 @@ function randomDiscriminatedUnion(
 }
 
 /**
+ * @brief Build the fixed presence-dispatch fuzz schema.
+ * @returns Guard that must lower to PresenceDispatch.
+ */
+function presenceDispatchFuzzGuard(): Guard<unknown, Presence> {
+    const Operators = t.object({
+        eq: t.optional(t.string),
+        neq: t.optional(t.string),
+        exists: t.optional(t.boolean),
+        gt: t.optional(t.number),
+        between: t.optional(t.tuple([t.number, t.number]))
+    });
+    return t.union(
+        t.object({ and: t.array(t.unknown).min(1) }),
+        t.object({ or: t.array(t.unknown).min(1) }),
+        t.object({ not: t.unknown }),
+        t.object({
+            elemMatch: t.object({
+                path: t.string,
+                where: t.unknown
+            })
+        }),
+        t.object({
+            path: t.string,
+            eq: t.optional(t.string),
+            gt: t.optional(t.number)
+        }),
+        t.record(Operators)
+    );
+}
+
+/**
  * @brief Generate literal.
  * @details Test helpers pin observable behavior so engine rewrites keep the same external result.
  */
@@ -437,6 +501,96 @@ function makePlainValues(context: FuzzContext): readonly unknown[] {
         values.push(randomPlainValue(rng, context, 0));
     }
     return values;
+}
+
+/**
+ * @brief Build generated values for presence-dispatch parity.
+ * @param context Shared fuzz context containing stable symbol identity.
+ * @returns Plain values that avoid hostile accessors but exercise every branch.
+ */
+function makePresenceDispatchFuzzValues(context: FuzzContext): readonly unknown[] {
+    const rng = new Rng(0x51ea0003);
+    const values: unknown[] = [
+        { and: [{ path: "user.age", gt: 20 }] },
+        { and: [] },
+        { or: [{ path: "user.name", eq: "Ada" }] },
+        { not: { path: "disabled", eq: "true" } },
+        { elemMatch: { path: "items", where: { path: "price", gt: 1 } } },
+        { elemMatch: { path: 1, where: true } },
+        { path: "user.name", eq: "Ada" },
+        { path: "user.age", gt: 37 },
+        { path: "user.age", gt: "old" },
+        { "user.age": { gt: 20 } },
+        { "user.name": { eq: "Ada" } },
+        { "user.age": { between: [1, 5] } },
+        { "user.age": { between: [1, "5"] } },
+        {}
+    ];
+
+    for (let index = 0; index < 128; index += 1) {
+        values.push(randomPresenceDispatchValue(rng, context, 0));
+    }
+    return values;
+}
+
+/**
+ * @brief Generate one plain query-like object union value.
+ * @param rng Deterministic random source.
+ * @param context Shared fuzz context.
+ * @param depth Recursion depth guard.
+ * @returns Candidate value for the presence-dispatch schema.
+ */
+function randomPresenceDispatchValue(
+    rng: Rng,
+    context: FuzzContext,
+    depth: number
+): unknown {
+    switch (rng.nextInt(9)) {
+        case 0:
+            return { and: [randomPlainValue(rng, context, depth + 1)] };
+        case 1:
+            return { and: [] };
+        case 2:
+            return { or: [randomPlainValue(rng, context, depth + 1)] };
+        case 3:
+            return { not: randomPlainValue(rng, context, depth + 1) };
+        case 4:
+            return {
+                elemMatch: {
+                    path: randomString(rng),
+                    where: randomPlainValue(rng, context, depth + 1)
+                }
+            };
+        case 5:
+            return {
+                path: randomString(rng),
+                eq: randomString(rng)
+            };
+        case 6:
+            return {
+                path: randomString(rng),
+                gt: rng.nextBool() ? rng.nextInt(100) : randomString(rng)
+            };
+        case 7:
+            return {
+                [randomQueryField(rng)]: {
+                    gt: rng.nextBool() ? rng.nextInt(100) : randomString(rng),
+                    between: rng.nextBool() ? [1, 2] : [1, "bad"]
+                }
+            };
+        default:
+            return randomPlainRecord(rng, context, depth + 1);
+    }
+}
+
+/**
+ * @brief Generate a query field key.
+ * @param rng Deterministic random source.
+ * @returns Stable field-like property name.
+ */
+function randomQueryField(rng: Rng): string {
+    const fields = ["user.age", "user.name", "order.total", "items.price"] as const;
+    return fields[rng.nextInt(fields.length)] ?? "field";
 }
 
 /**

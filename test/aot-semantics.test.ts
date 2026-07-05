@@ -4,11 +4,20 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, expectTypeOf, test } from "vitest";
 import {
+    createTypeSeaEsbuildPlugin,
+    createTypeSeaRollupPlugin,
     emitAotModule,
     t,
     type AotCompileOptions,
     type AotModule,
-    type CheckResult
+    type CheckResult,
+    type TypeSeaEsbuildBuild,
+    type TypeSeaEsbuildFilter,
+    type TypeSeaEsbuildLoadArgs,
+    type TypeSeaEsbuildLoadFilter,
+    type TypeSeaEsbuildLoadResult,
+    type TypeSeaEsbuildResolveArgs,
+    type TypeSeaEsbuildResolveResult
 } from "../src/index.js";
 
 interface AotRuntimeModule {
@@ -24,7 +33,101 @@ interface AotRuntimeModule {
     };
 }
 
+interface EsbuildResolveRegistration {
+    readonly options: TypeSeaEsbuildFilter;
+    readonly callback: (args: TypeSeaEsbuildResolveArgs) =>
+        TypeSeaEsbuildResolveResult;
+}
+
+interface EsbuildLoadRegistration {
+    readonly options: TypeSeaEsbuildLoadFilter;
+    readonly callback: (args: TypeSeaEsbuildLoadArgs) =>
+        TypeSeaEsbuildLoadResult |
+        null |
+        Promise<TypeSeaEsbuildLoadResult | null>;
+}
+
 describe("AOT module emission", () => {
+    test("serves AOT virtual modules and rewrites compileCached macros", () => {
+        const User = t.strictObject({
+            id: t.string,
+            age: t.number.int()
+        });
+        const plugin = createTypeSeaRollupPlugin({
+            entries: [
+                {
+                    id: "user",
+                    guard: User,
+                    options: { name: "aotUser" }
+                }
+            ],
+            transformCompileCached: true
+        });
+        const resolved = plugin.resolveId("typesea:aot/user");
+        const transformed = plugin.transform(
+            "const User = compileCached(\"user\", () => makeUser(), { name: \"aotUser\" });\nexport { User };",
+            "/project/src/user.ts"
+        );
+
+        expect(resolved).toBe("\0typesea:aot/user");
+        expect(plugin.load("\0typesea:aot/user")).toContain("export function is");
+        expect(transformed?.code).toContain("import __typesea_aotuser from \"typesea:aot/user\";");
+        expect(transformed?.code).toContain("const User = __typesea_aotuser;");
+        expect(transformed?.code).not.toContain("compileCached(");
+    });
+
+    test("rewrites compileCached macros through the esbuild source loader", async () => {
+        const User = t.strictObject({
+            id: t.string,
+            age: t.number.int()
+        });
+        const resolves: EsbuildResolveRegistration[] = [];
+        const loads: EsbuildLoadRegistration[] = [];
+        const build: TypeSeaEsbuildBuild = {
+            onResolve(options, callback): void {
+                resolves.push({ options, callback });
+            },
+
+            onLoad(options, callback): void {
+                loads.push({ options, callback });
+            }
+        };
+        const plugin = createTypeSeaEsbuildPlugin({
+            entries: [
+                {
+                    id: "user",
+                    guard: User,
+                    options: { name: "aotUser" }
+                }
+            ],
+            transformCompileCached: true,
+            readFile(path): string {
+                expect(path).toBe("/project/src/user.ts");
+                return "const User = compileCached(\"user\", () => makeUser(), { name: \"aotUser\" });\nexport { User };";
+            }
+        });
+
+        plugin.setup(build);
+        const sourceLoad = loads.find((entry) => entry.options.namespace === "file");
+        const virtualLoad = loads.find((entry) => entry.options.namespace === "typesea-aot");
+        const resolved = resolves[0]?.callback({ path: "typesea:aot/user" });
+        const virtualModule = await virtualLoad?.callback({ path: "user" });
+        const transformed = await sourceLoad?.callback({
+            path: "/project/src/user.ts"
+        });
+
+        expect(resolved).toEqual({
+            path: "user",
+            namespace: "typesea-aot"
+        });
+        expect(virtualModule?.contents).toContain("export function is");
+        expect(transformed?.loader).toBe("ts");
+        expect(transformed?.contents)
+            .toContain("import __typesea_aotuser from \"typesea:aot/user\";");
+        expect(transformed?.contents).toContain("const User = __typesea_aotuser;");
+        expect(transformed?.contents).not.toContain("compileCached(");
+    });
+
     test("emits importable ESM validators matching interpreter semantics", async () => {
         const User = t.strictObject({
             id: t.string.min(1),
@@ -110,6 +213,11 @@ describe("AOT module emission", () => {
             (value) => value.length > 0,
             "non_empty"
         ));
+        const SuperRefined = emitAotModule(t.string.superRefine((value, context) => {
+            if (value.length === 0) {
+                context.addIssue();
+            }
+        }, "non_empty"));
         const Lazy = emitAotModule(t.lazy(() => t.string));
         const DateGuard = emitAotModule(t.date);
         const SymbolLiteral = emitAotModule(t.literal(Symbol("marker")));
@@ -118,6 +226,10 @@ describe("AOT module emission", () => {
         if (!Refined.ok) {
             expect(Refined.error[0]?.code).toBe("unsupported_aot_refine");
             expect(Object.isFrozen(Refined.error)).toBe(true);
+        }
+        expect(SuperRefined.ok).toBe(false);
+        if (!SuperRefined.ok) {
+            expect(SuperRefined.error[0]?.code).toBe("unsupported_aot_refine");
         }
         expect(Lazy.ok).toBe(false);
         if (!Lazy.ok) {

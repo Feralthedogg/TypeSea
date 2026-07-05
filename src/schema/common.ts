@@ -88,7 +88,7 @@ export function isRecord(value: unknown): value is Readonly<Record<string, unkno
  */
 export function isUnknownArray(value: unknown): value is readonly unknown[] {
     return Array.isArray(value) &&
-        hasOnlyDataProperties(value) &&
+        hasOnlyArrayDataProperties(value) &&
         hasDenseDataSlots(value);
 }
 
@@ -101,12 +101,40 @@ export function isUnknownArray(value: unknown): value is readonly unknown[] {
  */
 function hasOnlyDataProperties(value: object): boolean {
     const descriptors = Object.getOwnPropertyDescriptors(value);
-    const descriptorMap = descriptors as Record<PropertyKey, PropertyDescriptor | undefined>;
+    const descriptorMap = descriptors as unknown as
+        Record<PropertyKey, PropertyDescriptor | undefined>;
     const keys = Reflect.ownKeys(descriptors);
     for (let index = 0; index < keys.length; index += 1) {
         const key = keys[index];
         if (key === undefined) {
             continue;
+        }
+        const descriptor = descriptorMap[key];
+        if (descriptor === undefined ||
+            !Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Reject non-index own properties on schema metadata arrays.
+ * @param value Array whose descriptor table is inspected.
+ * @returns True when only length and canonical index data slots are present.
+ */
+function hasOnlyArrayDataProperties(value: readonly unknown[]): boolean {
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const descriptorMap = descriptors as unknown as
+        Record<PropertyKey, PropertyDescriptor | undefined>;
+    const keys = Reflect.ownKeys(descriptors);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === "length") {
+            continue;
+        }
+        if (typeof key !== "string" || !isArrayIndexKey(key, value.length)) {
+            return false;
         }
         const descriptor = descriptorMap[key];
         if (descriptor === undefined ||
@@ -184,7 +212,7 @@ export function isObjectKeyLookup(
     if (!isRecord(value)) {
         return false;
     }
-    const present = Object.keys(value);
+    const present = Reflect.ownKeys(value);
     if (present.length !== keys.length) {
         return false;
     }
@@ -196,11 +224,28 @@ export function isObjectKeyLookup(
     }
     for (let index = 0; index < present.length; index += 1) {
         const key = present[index];
-        if (key === undefined || !includesString(keys, key)) {
+        if (typeof key !== "string" || !includesString(keys, key)) {
             return false;
         }
     }
     return true;
+}
+
+/**
+ * @brief Test for a canonical array index property key.
+ * @param key Own array property name.
+ * @param length Array length upper bound.
+ * @returns True when key names an in-bounds element slot.
+ */
+function isArrayIndexKey(key: string, length: number): boolean {
+    if (key.length === 0 || key === "length") {
+        return false;
+    }
+    const index = Number(key);
+    return Number.isInteger(index) &&
+        index >= 0 &&
+        index < length &&
+        String(index) === key;
 }
 
 /**

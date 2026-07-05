@@ -24,6 +24,22 @@ import type { LiteralValue, Schema } from "../schema/index.js";
 export type BooleanPredicate = (value: unknown) => boolean;
 
 /**
+ * @brief Factory signature for predicate-only compiled modules.
+ * @details This ABI is used by compileBoolean(), which deliberately emits no
+ * diagnostic collectors and returns only a boolean type guard.
+ */
+export type PredicateFactory = (
+    literals: readonly LiteralValue[],
+    regexps: readonly RegExp[],
+    keysets: readonly (readonly string[])[],
+    strings: readonly string[],
+    dynamicCheck: DynamicCheck,
+    dynamicIssueCheck: DynamicIssueCheck,
+    dynamicFirstIssueCheck: DynamicFirstIssueCheck,
+    strictKeys: StrictKeysCheck
+) => BooleanPredicate;
+
+/**
  * @brief Diagnostic collector generated for `check` calls.
  * @details Generated collectors return undefined for the successful fast path.
  * Hand-written collectors still have to return an issue array and are validated

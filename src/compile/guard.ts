@@ -28,10 +28,15 @@ import {
     type BooleanPredicate,
     type CheckResultRoot,
     type IsFactory,
-    type IssueCollectorRoot
+    type IssueCollectorRoot,
+    type PredicateFactory
 } from "./runtime.js";
-import { emitCompiledSourceBundle } from "./source.js";
+import {
+    emitCompiledBooleanSourceBundle,
+    emitCompiledSourceBundle
+} from "./source.js";
 import type {
+    CompiledBooleanGuard,
     CompileMode,
     CompileOptions,
     CompiledGuard
@@ -40,6 +45,27 @@ import type {
 const trustedCollectors = new WeakSet<IssueCollectorRoot>();
 const trustedCheckResults = new WeakSet<CheckResultRoot>();
 const trustedPredicates = new WeakSet<BooleanPredicate>();
+const compiledGuardCache = new WeakMap<object, Map<string, CompiledBaseGuard<unknown, Presence>>>();
+const compiledBooleanGuardCache = new WeakMap<
+    object,
+    Map<string, CompiledBooleanBaseGuard<unknown, Presence>>
+>();
+const COMPILE_WARNING_THRESHOLD = 32;
+const COMPILE_WARNING_WINDOW_MS = 10_000;
+const COMPILE_WARNING_LIMIT = 256;
+const compileWarnings = new Map<string, CompileWarningState>();
+
+interface ResolvedCompileOptions {
+    readonly name: string;
+    readonly mode: CompileMode;
+    readonly debugSource: boolean;
+}
+
+interface CompileWarningState {
+    count: number;
+    windowStart: number;
+    warned: boolean;
+}
 
 /**
  * @brief Guard backed by generated predicate and diagnostic collectors.
@@ -156,6 +182,49 @@ export class CompiledBaseGuard<
 }
 
 /**
+ * @brief Predicate-only compiled guard.
+ * @details This object is the fail-fast validation surface. It contains no
+ * diagnostic collector, so validation can only answer true or false.
+ */
+export class CompiledBooleanBaseGuard<
+    TValue,
+    TPresence extends Presence = "required"
+> implements CompiledBooleanGuard<TValue, TPresence> {
+    /**
+     * @brief Trusted predicate emitted by predicate-only code generation.
+     */
+    readonly #test: BooleanPredicate;
+
+    /**
+     * @brief Generated JavaScript source backing this predicate.
+     */
+    public declare readonly source: string;
+
+    /**
+     * @brief Construct a frozen predicate-only compiled guard.
+     * @param test Emitted predicate function.
+     * @param source Generated JavaScript source for debug and audit use.
+     */
+    public constructor(test: BooleanPredicate, source: string) {
+        if (typeof test !== "function") {
+            throw new TypeError("compiled boolean guard test must be a function");
+        }
+        if (typeof source !== "string") {
+            throw new TypeError("compiled boolean guard source must be a string");
+        }
+        this.#test = test;
+        defineReadonlyProperty(this, "source", source, true);
+        Object.freeze(this);
+    }
+
+    public is(
+        value: unknown
+    ): value is RuntimeValue<TValue, TPresence> {
+        return isStrictTrue(this.#test(value));
+    }
+}
+
+/**
  * @brief Emit a V8-visible validator function for a guard schema.
  * @details The generated function keeps literals and dynamic schema fallbacks in
  * side tables so the source body remains monomorphic and easy to inline.
@@ -165,9 +234,19 @@ export function compile<TValue, TPresence extends Presence>(
     options?: Partial<CompileOptions>
 ): CompiledBaseGuard<TValue, TPresence> {
     const schema = readCompileSchema(guard);
-    const name = readCompileName(options);
-    const mode = readCompileMode(options);
-    const bundle = emitCompiledSourceBundle(schema, name, mode);
+    const config = readCompileOptions(options);
+    const cacheKey = compileCacheKey(config);
+    const cached = readCachedCompiledGuard<TValue, TPresence>(guard, cacheKey);
+    if (cached !== undefined) {
+        return cached;
+    }
+    maybeWarnRepeatedCompile();
+    const bundle = emitCompiledSourceBundle(
+        schema,
+        config.name,
+        config.mode,
+        config.debugSource
+    );
     // compile() intentionally emits source so V8 can optimize the validator body.
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const factory = new Function(
@@ -197,7 +276,7 @@ export function compile<TValue, TPresence extends Presence>(
     trustedCollectors.add(runtime.check);
     trustedCheckResults.add(runtime.result);
     trustedCheckResults.add(runtime.first);
-    return new CompiledBaseGuard<TValue, TPresence>(
+    const compiled = new CompiledBaseGuard<TValue, TPresence>(
         schema,
         runtime.is,
         runtime.check,
@@ -206,6 +285,67 @@ export function compile<TValue, TPresence extends Presence>(
         runtime.result,
         runtime.first
     );
+    writeCachedCompiledGuard(guard, cacheKey, compiled);
+    return compiled;
+}
+
+/**
+ * @brief Emit a predicate-only compiled validator for fail-fast checks.
+ * @param guard Guard whose schema should be compiled.
+ * @param options Compile options shared with compile().
+ * @returns Frozen boolean-only guard with is() and source.
+ * @details Unlike compile(), this function does not emit check(), checkFirst(),
+ * assert(), or issue collector code. Use it on hot paths that only need a
+ * boolean answer.
+ */
+export function compileBoolean<TValue, TPresence extends Presence>(
+    guard: Guard<TValue, TPresence>,
+    options?: Partial<CompileOptions>
+): CompiledBooleanBaseGuard<TValue, TPresence> {
+    const schema = readCompileSchema(guard);
+    const config = readCompileOptions(options);
+    const cacheKey = compileCacheKey(config);
+    const cached = readCachedCompiledBooleanGuard<TValue, TPresence>(guard, cacheKey);
+    if (cached !== undefined) {
+        return cached;
+    }
+    maybeWarnRepeatedCompile();
+    const bundle = emitCompiledBooleanSourceBundle(
+        schema,
+        config.name,
+        config.mode,
+        config.debugSource
+    );
+    // compileBoolean() intentionally emits source so V8 can optimize the predicate body.
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const factory = new Function(
+        "l",
+        "r",
+        "k",
+        "u",
+        "d",
+        "m",
+        "mf",
+        "sk",
+        bundle.source
+    ) as PredicateFactory;
+    const predicate = factory(
+        bundle.literals,
+        bundle.regexps,
+        bundle.keysets,
+        bundle.strings,
+        makeDynamicCheck(bundle.dynamicSchemas),
+        makeDynamicIssueCheck(bundle.dynamicSchemas),
+        makeDynamicFirstIssueCheck(bundle.dynamicSchemas),
+        strictKeys
+    );
+    trustedPredicates.add(predicate);
+    const compiled = new CompiledBooleanBaseGuard<TValue, TPresence>(
+        predicate,
+        bundle.source
+    );
+    writeCachedCompiledBooleanGuard(guard, cacheKey, compiled);
+    return compiled;
 }
 
 /**
@@ -428,45 +568,187 @@ function defineReadonlyProperty(
 }
 
 /**
- * @brief Read compile name.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
+ * @brief Normalize compile options once for cache keys and codegen.
+ * @param options User-supplied compile options.
+ * @returns Complete compile options with defaults applied.
  */
-function readCompileName(options: unknown): string {
+function readCompileOptions(options: unknown): ResolvedCompileOptions {
     if (options === undefined) {
-        return "typesea_is";
+        return {
+            name: "typesea_is",
+            mode: "safe",
+            debugSource: false
+        };
     }
     if (!isRecord(options)) {
         throw new TypeError("compile options must be an object");
     }
     const name = options["name"];
-    if (name === undefined) {
-        return "typesea_is";
-    }
-    if (typeof name !== "string") {
+    if (name !== undefined && typeof name !== "string") {
         throw new TypeError("compile name must be a string");
     }
-    return name;
+    const mode = options["mode"];
+    if (mode !== undefined &&
+        mode !== "safe" &&
+        mode !== "unsafe" &&
+        mode !== "unchecked") {
+        throw new TypeError("compile mode must be \"safe\", \"unsafe\", or \"unchecked\"");
+    }
+    const debugSource = options["debugSource"];
+    if (debugSource !== undefined && typeof debugSource !== "boolean") {
+        throw new TypeError("compile debugSource must be a boolean");
+    }
+    return {
+        name: name ?? "typesea_is",
+        mode: mode ?? "safe",
+        debugSource: debugSource ?? false
+    };
 }
 
 /**
- * @brief Read compile mode.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
+ * @brief Build the per-guard compile cache key.
+ * @param config Normalized compile options.
+ * @returns Stable key for one guard instance and compile mode.
  */
-function readCompileMode(options: unknown): CompileMode {
-    if (options === undefined) {
-        return "safe";
+function compileCacheKey(config: ResolvedCompileOptions): string {
+    return `${config.mode}\n${config.name}\n${config.debugSource ? "debug" : "compact"}`;
+}
+
+/**
+ * @brief Read a cached compiled guard for the same guard instance.
+ */
+function readCachedCompiledGuard<TValue, TPresence extends Presence>(
+    guard: object,
+    cacheKey: string
+): CompiledBaseGuard<TValue, TPresence> | undefined {
+    return compiledGuardCache.get(guard)?.get(cacheKey) as
+        CompiledBaseGuard<TValue, TPresence> | undefined;
+}
+
+/**
+ * @brief Store a compiled guard for repeated calls with the same guard object.
+ */
+function writeCachedCompiledGuard<TValue, TPresence extends Presence>(
+    guard: object,
+    cacheKey: string,
+    compiled: CompiledBaseGuard<TValue, TPresence>
+): void {
+    let entries = compiledGuardCache.get(guard);
+    if (entries === undefined) {
+        entries = new Map<string, CompiledBaseGuard<unknown, Presence>>();
+        compiledGuardCache.set(guard, entries);
     }
-    if (!isRecord(options)) {
-        throw new TypeError("compile options must be an object");
+    entries.set(cacheKey, compiled);
+}
+
+/**
+ * @brief Read a cached predicate-only compiled guard for one guard instance.
+ */
+function readCachedCompiledBooleanGuard<TValue, TPresence extends Presence>(
+    guard: object,
+    cacheKey: string
+): CompiledBooleanBaseGuard<TValue, TPresence> | undefined {
+    return compiledBooleanGuardCache.get(guard)?.get(cacheKey) as
+        CompiledBooleanBaseGuard<TValue, TPresence> | undefined;
+}
+
+/**
+ * @brief Store a predicate-only compiled guard for repeated compileBoolean calls.
+ */
+function writeCachedCompiledBooleanGuard<TValue, TPresence extends Presence>(
+    guard: object,
+    cacheKey: string,
+    compiled: CompiledBooleanBaseGuard<TValue, TPresence>
+): void {
+    let entries = compiledBooleanGuardCache.get(guard);
+    if (entries === undefined) {
+        entries = new Map<string, CompiledBooleanBaseGuard<unknown, Presence>>();
+        compiledBooleanGuardCache.set(guard, entries);
     }
-    const mode = options["mode"];
-    if (mode === undefined) {
-        return "safe";
+    entries.set(cacheKey, compiled);
+}
+
+/**
+ * @brief Warn when compile() repeatedly code-generates from the same callsite.
+ */
+function maybeWarnRepeatedCompile(): void {
+    if (!shouldEmitCompileWarning()) {
+        return;
     }
-    if (mode === "safe" || mode === "unsafe" || mode === "unchecked") {
-        return mode;
+    const callsite = readCompileCallsite();
+    const now = Date.now();
+    let state = compileWarnings.get(callsite);
+    if (state === undefined ||
+        now - state.windowStart > COMPILE_WARNING_WINDOW_MS) {
+        state = {
+            count: 0,
+            windowStart: now,
+            warned: false
+        };
+        if (compileWarnings.size > COMPILE_WARNING_LIMIT) {
+            compileWarnings.clear();
+        }
+        compileWarnings.set(callsite, state);
     }
-    throw new TypeError("compile mode must be \"safe\", \"unsafe\", or \"unchecked\"");
+    state.count += 1;
+    if (!state.warned && state.count >= COMPILE_WARNING_THRESHOLD) {
+        state.warned = true;
+        readConsoleWarn()(
+            `TypeSea warning: compile() was called ${String(state.count)} times from the same callsite (${callsite}). Move schema construction to module scope or use compileCached()/createCompileCache().`
+        );
+    }
+}
+
+/**
+ * @brief Decide whether development compile warnings are enabled.
+ */
+function shouldEmitCompileWarning(): boolean {
+    const env = readProcessEnv();
+    const mode = env?.["NODE_ENV"];
+    return mode !== "production" && mode !== "test";
+}
+
+/**
+ * @brief Read the user's compile() callsite from an Error stack.
+ */
+function readCompileCallsite(): string {
+    const stack = new Error().stack;
+    if (stack === undefined) {
+        return "unknown";
+    }
+    const lines = stack.split("\n");
+    for (let index = 1; index < lines.length; index += 1) {
+        const line = lines[index]?.trim();
+        if (line === undefined ||
+            line.length === 0 ||
+            line.includes("maybeWarnRepeatedCompile") ||
+            line.includes("readCompileCallsite") ||
+            line.includes("compile/guard") ||
+            line.includes("dist/compile/guard")) {
+            continue;
+        }
+        return line;
+    }
+    return "unknown";
+}
+
+/**
+ * @brief Read process.env without assuming a Node global exists.
+ */
+function readProcessEnv(): Readonly<Record<string, string | undefined>> | undefined {
+    const processLike = (globalThis as {
+        readonly process?: {
+            readonly env?: Readonly<Record<string, string | undefined>>;
+        };
+    }).process;
+    return processLike?.env;
+}
+
+/**
+ * @brief Read console.warn through a tiny indirection for tests.
+ */
+function readConsoleWarn(): (message: string) => void {
+    return globalThis.console.warn.bind(globalThis.console);
 }
 
 /**

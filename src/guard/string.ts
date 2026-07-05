@@ -87,8 +87,22 @@ export class StringGuard<
      * @returns Fresh StringGuard with matching min and max bounds.
      */
     public length(value: number): StringGuard<TPresence> {
+        const schema = readStringMethodSchema(this, "string length receiver");
         const bound = checkStringLengthBound(value, "length");
-        return this.min(bound).max(bound);
+        return new StringGuard<TPresence>({
+            tag: SchemaTag.String,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: StringCheckTag.Min,
+                    value: bound
+                },
+                {
+                    tag: StringCheckTag.Max,
+                    value: bound
+                }
+            ]
+        });
     }
 
     /**
@@ -96,7 +110,17 @@ export class StringGuard<
      * @returns Fresh StringGuard with `min(1)`.
      */
     public nonempty(): StringGuard<TPresence> {
-        return this.min(1);
+        const schema = readStringMethodSchema(this, "string nonempty receiver");
+        return new StringGuard<TPresence>({
+            tag: SchemaTag.String,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: StringCheckTag.Min,
+                    value: 1
+                }
+            ]
+        });
     }
 
     /**
@@ -344,7 +368,7 @@ export class StringGuard<
 function readRequiredStringGuard<TPresence extends Presence>(
     guard: StringGuard<TPresence>
 ): Guard<string> {
-    return guard as unknown as Guard<string>;
+    return new StringGuard(readStringMethodSchema(guard, "string decoder receiver"));
 }
 
 function trimString(value: string): string {

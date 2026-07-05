@@ -143,7 +143,12 @@ describe("JSON Schema export", () => {
             missing: t.undefinedable(t.string),
             token: t.symbol,
             amount: t.bigint,
-            refined: t.number.refine((value) => value > 0, "positive")
+            refined: t.number.refine((value) => value > 0, "positive"),
+            superRefined: t.string.superRefine((value, context) => {
+                if (value.length === 0) {
+                    context.addIssue();
+                }
+            }, "non_empty")
         });
 
         const result = toJsonSchema(Schema);
@@ -158,7 +163,9 @@ describe("JSON Schema export", () => {
                 [["amount"], "unsupported_bigint"],
                 [["amount"], "unsupported_child"],
                 [["refined"], "unsupported_refine"],
-                [["refined"], "unsupported_child"]
+                [["refined"], "unsupported_child"],
+                [["superRefined"], "unsupported_refine"],
+                [["superRefined"], "unsupported_child"]
             ]);
         }
     });

@@ -10,6 +10,7 @@ import type {
     GraphNode,
     NodeId
 } from "../ir/index.js";
+import { NodeTag } from "../kind/index.js";
 import {
     ensureConst,
     keep,
@@ -43,6 +44,7 @@ export function foldAnd(
     aliases: NodeId[]
 ): FoldResult {
     const values: NodeId[] = [];
+    let hasBarrier = false;
     const flattened = flattenBooleanValues(node.values, nodes, node.tag);
     for (let index = 0; index < flattened.length; index += 1) {
         const value = flattened[index];
@@ -52,11 +54,18 @@ export function foldAnd(
         const constant = readConst(nodes, value);
         if (constant.found) {
             if (constant.value !== true) {
+                if (hasBarrier) {
+                    values.push(value);
+                    break;
+                }
                 return replace(node, ensureConst(nodes, aliases, false));
             }
             continue;
         }
         values.push(value);
+        if (isBooleanBarrier(value, nodes)) {
+            hasBarrier = true;
+        }
     }
     if (values.length === 0) {
         return replace(node, ensureConst(nodes, aliases, true));
@@ -105,6 +114,7 @@ export function foldOr(
     aliases: NodeId[]
 ): FoldResult {
     const values: NodeId[] = [];
+    let hasBarrier = false;
     const flattened = flattenBooleanValues(node.values, nodes, node.tag);
     for (let index = 0; index < flattened.length; index += 1) {
         const value = flattened[index];
@@ -114,11 +124,18 @@ export function foldOr(
         const constant = readConst(nodes, value);
         if (constant.found) {
             if (constant.value === true) {
+                if (hasBarrier) {
+                    values.push(value);
+                    break;
+                }
                 return replace(node, ensureConst(nodes, aliases, true));
             }
             continue;
         }
         values.push(value);
+        if (isBooleanBarrier(value, nodes)) {
+            hasBarrier = true;
+        }
     }
     if (values.length === 0) {
         return replace(node, ensureConst(nodes, aliases, false));
@@ -146,4 +163,31 @@ export function foldOr(
         deps: canonicalValues,
         values: canonicalValues
     });
+}
+
+/**
+ * @brief Test whether a boolean operand may execute dynamic validation.
+ * @param value Operand node id.
+ * @param nodes Graph node table.
+ * @returns True when earlier execution must be preserved before annihilators.
+ */
+function isBooleanBarrier(value: NodeId, nodes: readonly GraphNode[]): boolean {
+    const node = nodes[value];
+    if (node === undefined) {
+        return true;
+    }
+    switch (node.tag) {
+        case NodeTag.SchemaCheck:
+        case NodeTag.ArrayEvery:
+        case NodeTag.TupleItems:
+        case NodeTag.RecordEvery:
+        case NodeTag.DiscriminantDispatch:
+        case NodeTag.PresenceDispatch:
+        case NodeTag.ObjectShape:
+        case NodeTag.UnionDispatch:
+        case NodeTag.PrimitiveUnion:
+            return true;
+        default:
+            return false;
+    }
 }

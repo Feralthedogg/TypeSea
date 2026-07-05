@@ -32,6 +32,7 @@ import {
     nullish,
     optional,
     refine,
+    superRefine,
     undefinedable
 } from "./modifier.js";
 import {
@@ -128,6 +129,7 @@ export const t = Object.freeze({
     nullish,
     lazy,
     refine,
+    superRefine,
     transform,
     pipe,
     coerce,

@@ -568,6 +568,48 @@ describe("Sea-of-Nodes graph semantics", () => {
         }
     });
 
+    test("lowers object unions with required keys to presence dispatch", () => {
+        const Operators = t.object({
+            eq: t.optional(t.string),
+            gt: t.optional(t.number)
+        });
+        const Query = t.union(
+            t.object({ and: t.array(t.unknown).min(1) }),
+            t.object({ or: t.array(t.unknown).min(1) }),
+            t.object({ not: t.unknown }),
+            t.object({ path: t.string, eq: t.optional(t.string) }),
+            t.record(Operators)
+        );
+        const graph = Query.graph();
+        const dispatch = graph.nodes.find(
+            (node) => node.tag === NodeTag.PresenceDispatch
+        );
+        const values: readonly unknown[] = [
+            { and: [{}] },
+            { and: [] },
+            { or: [1] },
+            { not: null },
+            { path: "user.name", eq: "Ada" },
+            { "user.age": { gt: 30 } },
+            { "user.age": { gt: "old" } },
+            []
+        ];
+
+        assertDenseGraph(graph);
+        expect(dispatch?.tag).toBe(NodeTag.PresenceDispatch);
+        if (dispatch?.tag === NodeTag.PresenceDispatch) {
+            expect(dispatch.keys).toEqual(["and", "or", "not", "path", undefined]);
+        }
+        expect(graph.nodes.some((node) => node.tag === NodeTag.UnionDispatch))
+            .toBe(false);
+
+        for (let index = 0; index < values.length; index += 1) {
+            const value = values[index];
+            expect(evaluateGraph(graph, value), `value ${String(index)}`)
+                .toBe(Query.is(value));
+        }
+    });
+
     test("specializes union child graphs with dispatch-domain facts", () => {
         const Guard = t.union(
             t.string,
@@ -1166,6 +1208,12 @@ function evaluateGraphNode(state: EvalState, node: GraphNode): unknown {
                 node.allRequired
             );
         case NodeTag.UnionDispatch:
+            return unionDispatch(
+                evaluateNode(state, node.value),
+                node.graphs,
+                node.masks
+            );
+        case NodeTag.PresenceDispatch:
             return unionDispatch(
                 evaluateNode(state, node.value),
                 node.graphs,

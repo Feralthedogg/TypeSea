@@ -41,6 +41,8 @@ export type {
     MapSchema,
     PropertySchema,
     RecordSchema,
+    RefinementIssue,
+    RefinementIssueCollector,
     RefineSchema,
     Schema,
     SetSchema,
@@ -77,5 +79,8 @@ export { isLiteralValue } from "./literal.js";
 export { isSchemaValue } from "./validate.js";
 export { freezeSchema } from "./freeze.js";
 export { resolveLazySchema } from "./lazy.js";
-export { schemaCanAcceptUndefined } from "./undefined.js";
+export {
+    schemaCanAcceptUndefined,
+    schemaMustRejectUndefined
+} from "./undefined.js";
 export { normalizeUnionSchema } from "./union.js";

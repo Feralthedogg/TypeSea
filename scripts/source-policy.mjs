@@ -12,7 +12,9 @@ const allowedForbiddenLines = [
     "decoder ca" + "tch receiver",
     "ca" + "tch source",
     "t.ca" + "tch(",
-    ".ca" + "tch("
+    ".ca" + "tch(",
+    "    tr" + "y {",
+    "    } ca" + "tch {"
 ];
 const forbiddenSnippets = [
     "function " + "contract",

@@ -5,7 +5,7 @@
 
 ## 벤치마크 요약
 
-마지막 로컬 벤치마크는 2026-07-05 KST에 실행했습니다.
+마지막 로컬 벤치마크는 2026-07-06 KST에 실행했습니다.
 명령은 `npm run bench:record`이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다.
 그래프는 [`bench/results/latest.json`](../../bench/results/latest.json)에서 생성합니다.
 아래 수치는 회귀를 잡기 위한 로컬 측정값이지, 릴리스 성능 보증값은 아닙니다.
@@ -111,6 +111,44 @@ compiled/AOT `checkFirst()`는 전체 issue list를 만든 뒤 자르지 않고 
 > `unsafe-eval`을 금지하는 Content-Security-Policy 환경에서는 사용할 수 없습니다.
 > CSP 제한 환경에서는 `emitAotModule()`로 빌드 시점에 validator source를 생성하세요.
 
+### Cold start, fail-fast, 대형 payload
+
+```ts
+import {
+  compileAsync,
+  compileBoolean,
+  compileCached,
+  createTypeSeaVitePlugin,
+  warmup
+} from "typesea";
+
+const FastUser = compileCached("user:v1", () => User, { name: "isUser" });
+const BooleanUser = compileBoolean(User, { name: "isUserBoolean" });
+const AsyncUsers = compileAsync(t.array(User), {
+  name: "isUsersAsync",
+  yieldEvery: 4096,
+  yieldTimeout: 5
+});
+
+warmup([User, { key: "user:v1", guard: User, options: { name: "isUser" } }]);
+
+export default createTypeSeaVitePlugin({
+  entries: [{ id: "user:v1", guard: User, options: { name: "isUser" } }],
+  transformCompileCached: true
+});
+```
+
+request handler 안에서 schema를 만들거나 compile하는 실수를 막고 싶다면 `compileCached()`를 씁니다.
+caller가 정한 semantic key로 캐시하므로, cold-start 비용을 한 번만 지불하고 의도적으로 재사용할 수 있습니다.
+`compile()`도 같은 guard instance에 대한 반복 호출은 캐시하며, development build에서는 같은 callsite에서 codegen이 반복되면 경고합니다.
+
+`warmup()`은 Lambda/serverless module scope나 service startup에서 compiled guard를 미리 채웁니다.
+true/false 판정만 필요한 hot path는 diagnostic collector를 아예 만들지 않는 `compileBoolean()`을 씁니다.
+수십만 개 원소를 가진 array, record, map, set, object graph가 event loop를 오래 막으면 `compileAsync()` 또는 `isAsync()`로 chunk 사이에서 양보하게 할 수 있습니다.
+
+zero-dependency AOT plugin helper는 Rollup, Vite, esbuild compatible plugin object를 반환합니다.
+Vite, Rollup, esbuild는 plugin config에 등록된 entry에 한해 정적 `compileCached("id", ...)` 호출을 `typesea:aot/<id>` virtual module import로 치환할 수 있습니다.
+
 ### Unsafe FastMode
 
 ```ts
@@ -197,50 +235,62 @@ failed check() -> schema-aware diagnostic collector
 
 ## 성능 스냅샷
 
-마지막 로컬 벤치마크는 2026-07-05 KST에 실행했습니다.
-`npm run bench:record`를 사용했고, benchmark strict-object 계약을 대상으로 했습니다.
+마지막 로컬 벤치마크는 2026-07-06 KST에 실행했습니다.
+`npm run bench:record`로 전체 Vitest 벤치를 3회 실행한 뒤 중앙값을 사용했고, benchmark strict-object 계약을 대상으로 했습니다.
 raw Vitest JSON은 [`bench/results/raw.json`](../../bench/results/raw.json)에, README 그래프용 stable summary는 [`bench/results/latest.json`](../../bench/results/latest.json)에 저장합니다.
 아래 값은 단일 머신의 초당 실행 횟수이며 릴리스 성능 보증값은 아닙니다.
 
 | 유효한 객체: boolean 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 476,703 |
-| TypeSea compiled safe `is()` | 5,230,756 |
-| TypeSea compiled unsafe `is()` | 36,756,599 |
-| TypeSea compiled unchecked `is()` | 42,431,440 |
-| Zod `safeParse` | 1,386,237 |
-| Valibot `safeParse` | 1,395,970 |
-| Ajv compiled | 4,336,006 |
+| TypeSea interpreted `is()` | 341,332 |
+| TypeSea compiled safe `is()` | 3,840,854 |
+| TypeSea compiled unsafe `is()` | 27,464,645 |
+| TypeSea compiled unchecked `is()` | 29,647,233 |
+| Zod `safeParse` | 911,576 |
+| Valibot `safeParse` | 946,246 |
+| Ajv compiled | 2,682,380 |
 
 | 유효한 객체: 진단 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 466,105 |
-| TypeSea compiled safe `check()` | 4,824,240 |
-| TypeSea compiled unsafe `check()` | 36,509,714 |
-| TypeSea compiled unchecked `check()` | 43,131,347 |
-| Zod `safeParse` | 1,294,230 |
-| Valibot `safeParse` | 1,355,910 |
-| Ajv compiled | 4,280,363 |
+| TypeSea interpreted `check()` | 294,582 |
+| TypeSea compiled safe `check()` | 2,914,942 |
+| TypeSea compiled unsafe `check()` | 21,517,947 |
+| TypeSea compiled unchecked `check()` | 31,707,555 |
+| Zod `safeParse` | 883,138 |
+| Valibot `safeParse` | 893,898 |
+| Ajv compiled | 2,876,907 |
 
 | 잘못된 객체: boolean 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 3,396,045 |
-| TypeSea compiled safe `is()` | 42,197,735 |
-| TypeSea compiled unsafe `is()` | 50,090,902 |
-| TypeSea compiled unchecked `is()` | 51,002,903 |
-| Zod `safeParse` | 83,798 |
-| Valibot `safeParse` | 914,604 |
-| Ajv compiled | 28,986,950 |
+| TypeSea interpreted `is()` | 2,223,276 |
+| TypeSea compiled safe `is()` | 30,513,434 |
+| TypeSea compiled unsafe `is()` | 28,172,129 |
+| TypeSea compiled unchecked `is()` | 36,659,550 |
+| Zod `safeParse` | 60,043 |
+| Valibot `safeParse` | 533,818 |
+| Ajv compiled | 15,870,460 |
 
 | 잘못된 객체: 진단 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 339,575 |
-| TypeSea compiled safe `check()` | 2,145,392 |
-| TypeSea compiled unsafe `check()` | 3,098,275 |
-| TypeSea compiled unchecked `check()` | 3,673,561 |
-| Zod `safeParse` | 84,876 |
-| Valibot `safeParse` | 896,023 |
-| Ajv compiled | 28,274,668 |
+| TypeSea interpreted `check()` | 280,569 |
+| TypeSea compiled safe `check()` | 1,460,301 |
+| TypeSea compiled unsafe `check()` | 2,144,535 |
+| TypeSea compiled unchecked `check()` | 2,658,950 |
+| Zod `safeParse` | 59,685 |
+| Valibot `safeParse` | 592,515 |
+| Ajv compiled | 19,847,089 |
+
+| Presence-dispatched object union | hz |
+| --- | ---: |
+| TypeSea interpreted logical branch | 893,483 |
+| TypeSea compiled safe logical branch | 3,671,517 |
+| TypeSea compiled unsafe logical branch | 31,475,593 |
+| TypeSea interpreted fallback record branch | 355,598 |
+| TypeSea compiled safe fallback record branch | 4,724,044 |
+| TypeSea compiled unsafe fallback record branch | 9,841,223 |
+| TypeSea interpreted invalid branch | 520,812 |
+| TypeSea compiled safe invalid branch | 11,309,279 |
+| TypeSea compiled unsafe invalid branch | 14,484,249 |
 
 safe compiled path는 TypeSea의 적대적 입력 방어를 유지하면서 Ajv에 가깝게 동작합니다.
 descriptor 기반 property read, symbol/non-enumerable strict-key rejection, key presence semantics, immutable diagnostics, TypeScript guard inference를 유지합니다.
@@ -267,7 +317,7 @@ builder는 `t` table 아래에도 묶여 있습니다.
 | Runtime object contract | `t.instanceOf`, `t.property`, `guard.property` |
 | Composition | `t.union`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect` |
 | Presence wrapper | `t.optional`, `t.undefinedable`, `t.nullable`, `t.nullish` |
-| Dynamic contract | `t.lazy`, `t.refine` |
+| Dynamic contract | `t.lazy`, `t.refine`, `t.superRefine`, `guard.superRefine` |
 
 ### Decoders
 
@@ -358,6 +408,7 @@ const internalParser = toTrpcParser(UnsafeUser);
 - **경계 데이터는 `unknown`으로 들어옵니다.** `as`로 미리 좁히지 마세요. builder API는 validation을 통해 narrowing이 일어나도록 typed되어 있습니다.
 - **recursive contract는 `t.lazy`를 통합니다.** 직접 순환하는 schema object는 construction에서 거부합니다.
 - **schema lifetime에 맞춰 engine을 고르세요.** 일회성 schema는 runtime plan, 안정적인 hot schema는 `compile()`, CSP 환경이나 build-time generation은 `emitAotModule()`이 맞습니다.
+- **object union은 required key가 드러나게 설계하세요.** `t.union(t.object({ and: ... }), t.object({ or: ... }), t.object({ path: ... }))` 같은 shape는 presence dispatch로 낮아져 불가능한 branch를 건너뜁니다. optional operator bag을 비슷한 union branch 여러 개로 쪼개지 말고, 하나의 object에 담은 뒤 "operator가 하나 이상 있어야 한다" 같은 의미 규칙은 `superRefine`으로 붙이세요.
 - **decoder는 object shape 안에 넣지 않습니다.** decoder를 `t.object` entry와 섞지 말고, validated shape 바깥에서 `t.pipe`로 transformation을 합성하세요.
 
 ---
@@ -369,7 +420,7 @@ CI가 실행하는 gate는 전부 로컬 npm script입니다.
 ```sh
 npm run check           # policy, docs, typecheck, lint, tests, build, dist, API snapshot, pack
 npm run check:consumer  # tarball install + runtime/type smoke in a temp project
-npm run bench:compare   # committed benchmark JSON을 0.3.2 floor와 비교
+npm run bench:compare   # committed benchmark JSON을 릴리즈 기준선과 비교
 npm run bench:record    # full benchmark run + committed JSON/SVG refresh
 npm run bench:render    # committed benchmark JSON에서 SVG 재생성
 npm run bench -- --run  # benchmark smoke
@@ -395,8 +446,8 @@ CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께
 > benchmark 비교 패키지인 Zod, Valibot, Ajv는 dev dependency일 뿐입니다.
 > package policy는 이들이 runtime dependency field에 들어가는 것을 거부합니다.
 > benchmark suite는 boolean path와 diagnostic path(`check()` vs `safeParse`)를 모두 보고하므로 비교 기준을 맞춥니다.
-> `check:benchmarks`는 committed summary가 0.3.2 performance floor를 넘는지도 확인합니다.
-> 대상은 unchecked valid, safe invalid, safe valid path입니다.
+> `check:benchmarks`는 committed summary가 릴리즈 성능 기준선을 넘는지도 확인합니다.
+> 대상은 unchecked valid, safe invalid, safe valid, presence-dispatch union path입니다.
 
 ---
 
@@ -410,6 +461,14 @@ CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께
 ---
 
 ## 마이그레이션 노트
+
+### 0.3.2에서 0.4.0
+
+기존 schema는 그대로 동작합니다.
+`0.4.0`은 patch가 아니라 minor release입니다.
+`superRefine`, `compileCached`, `createCompileCache`, `warmup`, `compileBoolean`, cooperative async validation, zero-dependency Vite/Rollup/esbuild AOT plugin helper 같은 새 public API가 추가됐습니다.
+또 branch마다 required key가 있는 object union의 compiled 성능을 개선합니다.
+`and`, `or`, `not`, `path` 같은 field로 모양이 갈리는 AST나 query object에서 특히 효과가 큽니다.
 
 ### 0.3.1에서 0.3.2
 

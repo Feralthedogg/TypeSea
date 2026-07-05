@@ -596,6 +596,7 @@ function isPureScalarNode(node: GraphNode): boolean {
         case NodeTag.DiscriminantDispatch:
         case NodeTag.ObjectShape:
         case NodeTag.UnionDispatch:
+        case NodeTag.PresenceDispatch:
         case NodeTag.And:
         case NodeTag.Or:
             return false;

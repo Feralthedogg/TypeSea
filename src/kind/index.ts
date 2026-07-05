@@ -140,6 +140,7 @@ export const NodeTag = {
     ObjectShape: 44,
     UnionDispatch: 45,
     PrimitiveUnion: 46,
+    PresenceDispatch: 47,
     Not: 50,
     And: 51,
     Or: 52,

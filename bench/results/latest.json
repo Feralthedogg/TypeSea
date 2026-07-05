@@ -1,8 +1,8 @@
 {
     "schemaVersion": 1,
     "package": "typesea",
-    "version": "0.3.2",
-    "recordedAt": "2026-07-05T13:28:00.210Z",
+    "version": "0.4.0",
+    "recordedAt": "2026-07-05T19:02:21.714Z",
     "command": "npm run bench:record",
     "rawOutput": "bench/results/raw.json",
     "environment": {
@@ -13,284 +13,1150 @@
         "cpu": "Apple M4",
         "logicalCpus": 10
     },
+    "aggregation": {
+        "strategy": "median-of-runs",
+        "runCount": 3
+    },
     "suites": [
         {
             "id": "valid-is",
             "title": "Valid object path",
-            "group": "bench/ecosystem.bench.ts > ecosystem comparison valid",
+            "group": "ecosystem comparison valid",
             "rows": [
                 {
                     "id": "typesea-interpreted",
                     "label": "TypeSea interpreted",
                     "sourceName": "typesea interpreted",
                     "color": "#9ca3af",
-                    "hz": 476703.0179917968,
-                    "rme": 0.06860101398127573,
-                    "sampleCount": 238352
+                    "hz": 341331.65388973267,
+                    "rme": 0.18033775467742771,
+                    "sampleCount": 170666,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 310190.1580908652,
+                        "medianHz": 341331.65388973267,
+                        "bestHz": 432980.55189586815,
+                        "hzSamples": [
+                            310190.1580908652,
+                            341331.65388973267,
+                            432980.55189586815
+                        ]
+                    }
                 },
                 {
                     "id": "typesea-safe",
                     "label": "TypeSea safe compiled",
                     "sourceName": "typesea compiled",
                     "color": "#14b8a6",
-                    "hz": 5230755.93908,
-                    "rme": 0.6285045023592436,
-                    "sampleCount": 2615379
+                    "hz": 3840854.2332064984,
+                    "rme": 0.5323449457425943,
+                    "sampleCount": 1920428,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 3414587.4400077746,
+                        "medianHz": 3840854.2332064984,
+                        "bestHz": 4826451.111933781,
+                        "hzSamples": [
+                            3414587.4400077746,
+                            3840854.2332064984,
+                            4826451.111933781
+                        ]
+                    }
                 },
                 {
                     "id": "typesea-unsafe",
                     "label": "TypeSea unsafe compiled",
                     "sourceName": "typesea unsafe compiled",
                     "color": "#f97316",
-                    "hz": 36756599.19136698,
-                    "rme": 0.03570266962285852,
-                    "sampleCount": 18378300
+                    "hz": 27464644.5170487,
+                    "rme": 0.04799601748561655,
+                    "sampleCount": 13732323,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 23208100.42180182,
+                        "medianHz": 27464644.5170487,
+                        "bestHz": 32848658.357526165,
+                        "hzSamples": [
+                            23208100.42180182,
+                            27464644.5170487,
+                            32848658.357526165
+                        ]
+                    }
                 },
                 {
                     "id": "typesea-unchecked",
                     "label": "TypeSea unchecked compiled",
                     "sourceName": "typesea unchecked compiled",
                     "color": "#22c55e",
-                    "hz": 42431440.47249556,
-                    "rme": 0.03993242167772,
-                    "sampleCount": 21215721
+                    "hz": 29647233.051419105,
+                    "rme": 0.10081504896786266,
+                    "sampleCount": 14823617,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 28674427.93547267,
+                        "medianHz": 29647233.051419105,
+                        "bestHz": 37860605.274197474,
+                        "hzSamples": [
+                            28674427.93547267,
+                            29647233.051419105,
+                            37860605.274197474
+                        ]
+                    }
                 },
                 {
                     "id": "zod",
                     "label": "Zod safeParse",
                     "sourceName": "zod safeParse",
                     "color": "#8b5cf6",
-                    "hz": 1386236.7385242367,
-                    "rme": 0.29565600772378137,
-                    "sampleCount": 693119
+                    "hz": 911576.2224267162,
+                    "rme": 0.4627255609477473,
+                    "sampleCount": 455789,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 3,
+                        "worstHz": 783178.4336416451,
+                        "medianHz": 911576.2224267162,
+                        "bestHz": 1222493.107579747,
+                        "hzSamples": [
+                            783178.4336416451,
+                            911576.2224267162,
+                            1222493.107579747
+                        ]
+                    }
                 },
                 {
                     "id": "valibot",
                     "label": "Valibot safeParse",
                     "sourceName": "valibot safeParse",
                     "color": "#ec4899",
-                    "hz": 1395969.852027303,
-                    "rme": 0.28334620015250345,
-                    "sampleCount": 697985
+                    "hz": 946246.4576186606,
+                    "rme": 0.31380152909243686,
+                    "sampleCount": 473124,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 802662.1458516289,
+                        "medianHz": 946246.4576186606,
+                        "bestHz": 947632.5482282994,
+                        "hzSamples": [
+                            802662.1458516289,
+                            946246.4576186606,
+                            947632.5482282994
+                        ]
+                    }
                 },
                 {
                     "id": "ajv",
                     "label": "Ajv compiled",
                     "sourceName": "ajv compiled",
                     "color": "#3b82f6",
-                    "hz": 4336006.456380343,
-                    "rme": 0.2730690353073249,
-                    "sampleCount": 2168004
+                    "hz": 2682380.488927412,
+                    "rme": 4.098755148159743,
+                    "sampleCount": 1342048,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 2080555.2663822903,
+                        "medianHz": 2682380.488927412,
+                        "bestHz": 3363719.1657903036,
+                        "hzSamples": [
+                            2080555.2663822903,
+                            2682380.488927412,
+                            3363719.1657903036
+                        ]
+                    }
                 }
             ]
         },
         {
             "id": "valid-check",
             "title": "Valid diagnostic path",
-            "group": "bench/ecosystem.bench.ts > ecosystem comparison valid diagnostics",
+            "group": "ecosystem comparison valid diagnostics",
             "rows": [
                 {
                     "id": "typesea-interpreted",
                     "label": "TypeSea interpreted",
                     "sourceName": "typesea interpreted check",
                     "color": "#9ca3af",
-                    "hz": 466105.39126626484,
-                    "rme": 0.0265075491389213,
-                    "sampleCount": 233053
+                    "hz": 294582.48938083136,
+                    "rme": 1.1407161987249483,
+                    "sampleCount": 147292,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 222687.77018613848,
+                        "medianHz": 294582.48938083136,
+                        "bestHz": 402317.369971422,
+                        "hzSamples": [
+                            222687.77018613848,
+                            294582.48938083136,
+                            402317.369971422
+                        ]
+                    }
                 },
                 {
                     "id": "typesea-safe",
                     "label": "TypeSea safe compiled",
                     "sourceName": "typesea compiled check",
                     "color": "#14b8a6",
-                    "hz": 4824240.079954115,
-                    "rme": 0.23980213532142813,
-                    "sampleCount": 2412121
+                    "hz": 2914941.656038083,
+                    "rme": 0.3849975475222766,
+                    "sampleCount": 1457471,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 1702278.8390486466,
+                        "medianHz": 2914941.656038083,
+                        "bestHz": 3899260.6352648693,
+                        "hzSamples": [
+                            1702278.8390486466,
+                            2914941.656038083,
+                            3899260.6352648693
+                        ]
+                    }
                 },
                 {
                     "id": "typesea-unsafe",
                     "label": "TypeSea unsafe compiled",
                     "sourceName": "typesea unsafe compiled check",
                     "color": "#f97316",
-                    "hz": 36509714.02879169,
-                    "rme": 0.036834773730294874,
-                    "sampleCount": 18254858
+                    "hz": 21517946.772174206,
+                    "rme": 3.178079887666322,
+                    "sampleCount": 10758975,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 11031825.691169096,
+                        "medianHz": 21517946.772174206,
+                        "bestHz": 32346444.77073901,
+                        "hzSamples": [
+                            11031825.691169096,
+                            21517946.772174206,
+                            32346444.77073901
+                        ]
+                    }
                 },
                 {
                     "id": "typesea-unchecked",
                     "label": "TypeSea unchecked compiled",
                     "sourceName": "typesea unchecked compiled check",
                     "color": "#22c55e",
-                    "hz": 43131347.411791906,
-                    "rme": 0.04237103751941888,
-                    "sampleCount": 21565675
+                    "hz": 31707554.541236985,
+                    "rme": 0.16304579204473083,
+                    "sampleCount": 15853778,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 21955568.638802208,
+                        "medianHz": 31707554.541236985,
+                        "bestHz": 38842759.0481429,
+                        "hzSamples": [
+                            21955568.638802208,
+                            31707554.541236985,
+                            38842759.0481429
+                        ]
+                    }
                 },
                 {
                     "id": "zod",
                     "label": "Zod safeParse",
                     "sourceName": "zod safeParse",
                     "color": "#8b5cf6",
-                    "hz": 1294230.3822138666,
-                    "rme": 5.65090092137615,
-                    "sampleCount": 647116
+                    "hz": 883137.7656624635,
+                    "rme": 1.9182971633244843,
+                    "sampleCount": 441570,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 779139.0525660359,
+                        "medianHz": 883137.7656624635,
+                        "bestHz": 1283385.2530683533,
+                        "hzSamples": [
+                            779139.0525660359,
+                            883137.7656624635,
+                            1283385.2530683533
+                        ]
+                    }
                 },
                 {
                     "id": "valibot",
                     "label": "Valibot safeParse",
                     "sourceName": "valibot safeParse",
                     "color": "#ec4899",
-                    "hz": 1355909.945760999,
-                    "rme": 0.12331121090200302,
-                    "sampleCount": 677955
+                    "hz": 893897.9749703475,
+                    "rme": 9.557825745943957,
+                    "sampleCount": 446949,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 777505.4246480538,
+                        "medianHz": 893897.9749703475,
+                        "bestHz": 1257314.8080647192,
+                        "hzSamples": [
+                            777505.4246480538,
+                            893897.9749703475,
+                            1257314.8080647192
+                        ]
+                    }
                 },
                 {
                     "id": "ajv",
                     "label": "Ajv compiled",
                     "sourceName": "ajv compiled",
                     "color": "#3b82f6",
-                    "hz": 4280363.1867244905,
-                    "rme": 0.14293949104832007,
-                    "sampleCount": 2140182
+                    "hz": 2876907.459132988,
+                    "rme": 0.3937685664661842,
+                    "sampleCount": 1438454,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 2394276.8603269295,
+                        "medianHz": 2876907.459132988,
+                        "bestHz": 3826270.882729916,
+                        "hzSamples": [
+                            2394276.8603269295,
+                            2876907.459132988,
+                            3826270.882729916
+                        ]
+                    }
                 }
             ]
         },
         {
             "id": "invalid-is",
             "title": "Invalid object fast-fail",
-            "group": "bench/ecosystem.bench.ts > ecosystem comparison invalid",
+            "group": "ecosystem comparison invalid",
             "rows": [
                 {
                     "id": "typesea-interpreted",
                     "label": "TypeSea interpreted",
                     "sourceName": "typesea interpreted",
                     "color": "#9ca3af",
-                    "hz": 3396045.3818908185,
-                    "rme": 0.12401141208632895,
-                    "sampleCount": 1698023
+                    "hz": 2223276.3103100145,
+                    "rme": 0.3049226090857931,
+                    "sampleCount": 1111639,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 1658814.5800542508,
+                        "medianHz": 2223276.3103100145,
+                        "bestHz": 2733940.8900311803,
+                        "hzSamples": [
+                            1658814.5800542508,
+                            2223276.3103100145,
+                            2733940.8900311803
+                        ]
+                    }
                 },
                 {
                     "id": "typesea-safe",
                     "label": "TypeSea safe compiled",
                     "sourceName": "typesea compiled",
                     "color": "#14b8a6",
-                    "hz": 42197735.15584974,
-                    "rme": 0.6710262882679979,
-                    "sampleCount": 21098868
+                    "hz": 30513433.694741897,
+                    "rme": 0.3340158284171685,
+                    "sampleCount": 15256717,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 24201924.78987412,
+                        "medianHz": 30513433.694741897,
+                        "bestHz": 36602214.90185755,
+                        "hzSamples": [
+                            24201924.78987412,
+                            30513433.694741897,
+                            36602214.90185755
+                        ]
+                    }
                 },
                 {
                     "id": "typesea-unsafe",
                     "label": "TypeSea unsafe compiled",
                     "sourceName": "typesea unsafe compiled",
                     "color": "#f97316",
-                    "hz": 50090901.69626639,
-                    "rme": 0.07793611215216859,
-                    "sampleCount": 25045452
+                    "hz": 28172128.64717921,
+                    "rme": 2.9502153645160227,
+                    "sampleCount": 14086065,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 23452579.34336868,
+                        "medianHz": 28172128.64717921,
+                        "bestHz": 44477772.22127555,
+                        "hzSamples": [
+                            23452579.34336868,
+                            28172128.64717921,
+                            44477772.22127555
+                        ]
+                    }
                 },
                 {
                     "id": "typesea-unchecked",
                     "label": "TypeSea unchecked compiled",
                     "sourceName": "typesea unchecked compiled",
                     "color": "#22c55e",
-                    "hz": 51002902.57155383,
-                    "rme": 0.043013534747870105,
-                    "sampleCount": 25501452
+                    "hz": 36659550.02046632,
+                    "rme": 0.041762185563115735,
+                    "sampleCount": 18329776,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 25151813.04430618,
+                        "medianHz": 36659550.02046632,
+                        "bestHz": 44783953.1041551,
+                        "hzSamples": [
+                            25151813.04430618,
+                            36659550.02046632,
+                            44783953.1041551
+                        ]
+                    }
                 },
                 {
                     "id": "zod",
                     "label": "Zod safeParse",
                     "sourceName": "zod safeParse",
                     "color": "#8b5cf6",
-                    "hz": 83798.43430999767,
-                    "rme": 5.803218478757611,
-                    "sampleCount": 41900
+                    "hz": 60043.18041059652,
+                    "rme": 5.1706622140064376,
+                    "sampleCount": 30022,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 38031.88384036962,
+                        "medianHz": 60043.18041059652,
+                        "bestHz": 78327.28393192621,
+                        "hzSamples": [
+                            38031.88384036962,
+                            60043.18041059652,
+                            78327.28393192621
+                        ]
+                    }
                 },
                 {
                     "id": "valibot",
                     "label": "Valibot safeParse",
                     "sourceName": "valibot safeParse",
                     "color": "#ec4899",
-                    "hz": 914604.2951760984,
-                    "rme": 0.14465423557691062,
-                    "sampleCount": 457303
+                    "hz": 533818.0141943807,
+                    "rme": 0.8863283254597778,
+                    "sampleCount": 266910,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 379053.9438999863,
+                        "medianHz": 533818.0141943807,
+                        "bestHz": 739667.4703961574,
+                        "hzSamples": [
+                            379053.9438999863,
+                            533818.0141943807,
+                            739667.4703961574
+                        ]
+                    }
                 },
                 {
                     "id": "ajv",
                     "label": "Ajv compiled",
                     "sourceName": "ajv compiled",
                     "color": "#3b82f6",
-                    "hz": 28986949.88441366,
-                    "rme": 2.1774420677830175,
-                    "sampleCount": 14493475
+                    "hz": 15870460.032034807,
+                    "rme": 1.500031659035205,
+                    "sampleCount": 7935231,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 1,
+                        "worstHz": 14134116.841015395,
+                        "medianHz": 15870460.032034807,
+                        "bestHz": 18482689.41263186,
+                        "hzSamples": [
+                            14134116.841015395,
+                            15870460.032034807,
+                            18482689.41263186
+                        ]
+                    }
                 }
             ]
         },
         {
             "id": "invalid-check",
             "title": "Invalid diagnostic path",
-            "group": "bench/ecosystem.bench.ts > ecosystem comparison invalid diagnostics",
+            "group": "ecosystem comparison invalid diagnostics",
             "rows": [
                 {
                     "id": "typesea-interpreted",
                     "label": "TypeSea interpreted",
                     "sourceName": "typesea interpreted check",
                     "color": "#9ca3af",
-                    "hz": 339575.440180592,
-                    "rme": 3.1842462915403047,
-                    "sampleCount": 169790
+                    "hz": 280568.9927575589,
+                    "rme": 0.8559810684085867,
+                    "sampleCount": 140285,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 213660.95263508582,
+                        "medianHz": 280568.9927575589,
+                        "bestHz": 361119.93716393254,
+                        "hzSamples": [
+                            213660.95263508582,
+                            280568.9927575589,
+                            361119.93716393254
+                        ]
+                    }
                 },
                 {
                     "id": "typesea-safe",
                     "label": "TypeSea safe compiled",
                     "sourceName": "typesea compiled check",
                     "color": "#14b8a6",
-                    "hz": 2145391.6996388477,
-                    "rme": 0.22445491809516527,
-                    "sampleCount": 1072696
+                    "hz": 1460301.065409063,
+                    "rme": 0.9045990300201256,
+                    "sampleCount": 730151,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 977087.6169814249,
+                        "medianHz": 1460301.065409063,
+                        "bestHz": 1941762.4893044857,
+                        "hzSamples": [
+                            977087.6169814249,
+                            1460301.065409063,
+                            1941762.4893044857
+                        ]
+                    }
                 },
                 {
                     "id": "typesea-unsafe",
                     "label": "TypeSea unsafe compiled",
                     "sourceName": "typesea unsafe compiled check",
                     "color": "#f97316",
-                    "hz": 3098274.655333376,
-                    "rme": 0.15508602743252853,
-                    "sampleCount": 1549138
+                    "hz": 2144534.6360871186,
+                    "rme": 0.6884388561540258,
+                    "sampleCount": 1072268,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 1606315.633760823,
+                        "medianHz": 2144534.6360871186,
+                        "bestHz": 2975280.845594451,
+                        "hzSamples": [
+                            1606315.633760823,
+                            2144534.6360871186,
+                            2975280.845594451
+                        ]
+                    }
                 },
                 {
                     "id": "typesea-unchecked",
                     "label": "TypeSea unchecked compiled",
                     "sourceName": "typesea unchecked compiled check",
                     "color": "#22c55e",
-                    "hz": 3673561.4342916613,
-                    "rme": 0.08334976485578097,
-                    "sampleCount": 1836781
+                    "hz": 2658949.6760690324,
+                    "rme": 0.27964622194367766,
+                    "sampleCount": 1329476,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 1907992.4583385454,
+                        "medianHz": 2658949.6760690324,
+                        "bestHz": 3465159.105963839,
+                        "hzSamples": [
+                            1907992.4583385454,
+                            2658949.6760690324,
+                            3465159.105963839
+                        ]
+                    }
                 },
                 {
                     "id": "zod",
                     "label": "Zod safeParse",
                     "sourceName": "zod safeParse",
                     "color": "#8b5cf6",
-                    "hz": 84875.67271944835,
-                    "rme": 4.826218767786619,
-                    "sampleCount": 42438
+                    "hz": 59684.642293658784,
+                    "rme": 5.8874952220198695,
+                    "sampleCount": 29843,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 38948.25469357068,
+                        "medianHz": 59684.642293658784,
+                        "bestHz": 72929.9269241853,
+                        "hzSamples": [
+                            38948.25469357068,
+                            59684.642293658784,
+                            72929.9269241853
+                        ]
+                    }
                 },
                 {
                     "id": "valibot",
                     "label": "Valibot safeParse",
                     "sourceName": "valibot safeParse",
                     "color": "#ec4899",
-                    "hz": 896022.7133131777,
-                    "rme": 0.2613255531821717,
-                    "sampleCount": 448012
+                    "hz": 592515.081602011,
+                    "rme": 1.1604044675019793,
+                    "sampleCount": 296258,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 410646.6752535206,
+                        "medianHz": 592515.081602011,
+                        "bestHz": 806741.946754626,
+                        "hzSamples": [
+                            410646.6752535206,
+                            592515.081602011,
+                            806741.946754626
+                        ]
+                    }
                 },
                 {
                     "id": "ajv",
                     "label": "Ajv compiled",
                     "sourceName": "ajv compiled",
                     "color": "#3b82f6",
-                    "hz": 28274668.24726499,
-                    "rme": 1.173899465359584,
-                    "sampleCount": 14137335
+                    "hz": 19847088.690082747,
+                    "rme": 1.6884596716418188,
+                    "sampleCount": 9923545,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 11040280.745804317,
+                        "medianHz": 19847088.690082747,
+                        "bestHz": 27617173.735455688,
+                        "hzSamples": [
+                            11040280.745804317,
+                            19847088.690082747,
+                            27617173.735455688
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "id": "union-presence",
+            "title": "Presence-dispatched object union",
+            "group": "presence-dispatched object unions",
+            "rows": [
+                {
+                    "id": "typesea-interpreted-logical",
+                    "label": "TypeSea interpreted logical",
+                    "sourceName": "interpreted logical branch",
+                    "color": "#9ca3af",
+                    "hz": 893482.570427866,
+                    "rme": 0.14737116202879952,
+                    "sampleCount": 446742,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 3,
+                        "worstHz": 813774.0762380931,
+                        "medianHz": 893482.570427866,
+                        "bestHz": 992747.618784819,
+                        "hzSamples": [
+                            813774.0762380931,
+                            893482.570427866,
+                            992747.618784819
+                        ]
+                    }
+                },
+                {
+                    "id": "typesea-safe-logical",
+                    "label": "TypeSea safe logical",
+                    "sourceName": "compiled logical branch",
+                    "color": "#14b8a6",
+                    "hz": 3671517.0013485285,
+                    "rme": 0.23307259356292803,
+                    "sampleCount": 1835759,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 3308084.802473475,
+                        "medianHz": 3671517.0013485285,
+                        "bestHz": 3804210.7446092167,
+                        "hzSamples": [
+                            3308084.802473475,
+                            3671517.0013485285,
+                            3804210.7446092167
+                        ]
+                    }
+                },
+                {
+                    "id": "typesea-unsafe-logical",
+                    "label": "TypeSea unsafe logical",
+                    "sourceName": "compiled unsafe logical branch",
+                    "color": "#f97316",
+                    "hz": 31475593.37041827,
+                    "rme": 1.0636005240662958,
+                    "sampleCount": 15737797,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 3,
+                        "worstHz": 26984460.16503206,
+                        "medianHz": 31475593.37041827,
+                        "bestHz": 31604324.483099904,
+                        "hzSamples": [
+                            26984460.16503206,
+                            31475593.37041827,
+                            31604324.483099904
+                        ]
+                    }
+                },
+                {
+                    "id": "typesea-interpreted-fallback",
+                    "label": "TypeSea interpreted fallback",
+                    "sourceName": "interpreted fallback record branch",
+                    "color": "#9ca3af",
+                    "hz": 355597.99288809404,
+                    "rme": 0.25860108376056595,
+                    "sampleCount": 177799,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 3,
+                        "worstHz": 351040.0390904179,
+                        "medianHz": 355597.99288809404,
+                        "bestHz": 479930.88272108464,
+                        "hzSamples": [
+                            351040.0390904179,
+                            355597.99288809404,
+                            479930.88272108464
+                        ]
+                    }
+                },
+                {
+                    "id": "typesea-safe-fallback",
+                    "label": "TypeSea safe fallback",
+                    "sourceName": "compiled fallback record branch",
+                    "color": "#14b8a6",
+                    "hz": 4724044.497756813,
+                    "rme": 0.015359678526622554,
+                    "sampleCount": 2362023,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 3,
+                        "worstHz": 4442711.191431478,
+                        "medianHz": 4724044.497756813,
+                        "bestHz": 5830564.285800835,
+                        "hzSamples": [
+                            4442711.191431478,
+                            4724044.497756813,
+                            5830564.285800835
+                        ]
+                    }
+                },
+                {
+                    "id": "typesea-unsafe-fallback",
+                    "label": "TypeSea unsafe fallback",
+                    "sourceName": "compiled unsafe fallback record branch",
+                    "color": "#f97316",
+                    "hz": 9841223.468569921,
+                    "rme": 0.2743327714477386,
+                    "sampleCount": 4920612,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 3,
+                        "worstHz": 9616578.095903737,
+                        "medianHz": 9841223.468569921,
+                        "bestHz": 11611168.699583387,
+                        "hzSamples": [
+                            9616578.095903737,
+                            9841223.468569921,
+                            11611168.699583387
+                        ]
+                    }
+                },
+                {
+                    "id": "typesea-interpreted-invalid",
+                    "label": "TypeSea interpreted invalid",
+                    "sourceName": "interpreted invalid branch",
+                    "color": "#9ca3af",
+                    "hz": 520812.0365388405,
+                    "rme": 0.16110493723351074,
+                    "sampleCount": 260407,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 450671.4781231272,
+                        "medianHz": 520812.0365388405,
+                        "bestHz": 593489.0053127531,
+                        "hzSamples": [
+                            450671.4781231272,
+                            520812.0365388405,
+                            593489.0053127531
+                        ]
+                    }
+                },
+                {
+                    "id": "typesea-safe-invalid",
+                    "label": "TypeSea safe invalid",
+                    "sourceName": "compiled invalid branch",
+                    "color": "#14b8a6",
+                    "hz": 11309279.004624752,
+                    "rme": 0.5337351792856856,
+                    "sampleCount": 5654640,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 9539295.087089704,
+                        "medianHz": 11309279.004624752,
+                        "bestHz": 13047803.39979054,
+                        "hzSamples": [
+                            9539295.087089704,
+                            11309279.004624752,
+                            13047803.39979054
+                        ]
+                    }
+                },
+                {
+                    "id": "typesea-unsafe-invalid",
+                    "label": "TypeSea unsafe invalid",
+                    "sourceName": "compiled unsafe invalid branch",
+                    "color": "#f97316",
+                    "hz": 14484248.899162037,
+                    "rme": 3.2183713838992842,
+                    "sampleCount": 7242125,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 3,
+                        "worstHz": 14234099.231399031,
+                        "medianHz": 14484248.899162037,
+                        "bestHz": 18295525.194950625,
+                        "hzSamples": [
+                            14234099.231399031,
+                            14484248.899162037,
+                            18295525.194950625
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "id": "runtime-features",
+            "title": "Runtime feature extensions",
+            "group": "runtime feature extensions",
+            "rows": [
+                {
+                    "id": "compiled-valid",
+                    "label": "Compiled is() valid",
+                    "sourceName": "compiled is valid",
+                    "color": "#14b8a6",
+                    "hz": 3318218.878441953,
+                    "rme": 0.9949809633325893,
+                    "sampleCount": 1659110,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 2510162.127419115,
+                        "medianHz": 3318218.878441953,
+                        "bestHz": 3430651.4922631993,
+                        "hzSamples": [
+                            2510162.127419115,
+                            3318218.878441953,
+                            3430651.4922631993
+                        ]
+                    }
+                },
+                {
+                    "id": "compiled-boolean-valid",
+                    "label": "compileBoolean valid",
+                    "sourceName": "compiled boolean valid",
+                    "color": "#22c55e",
+                    "hz": 3458027.3291414646,
+                    "rme": 1.5268182139784812,
+                    "sampleCount": 1729014,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 1,
+                        "worstHz": 2577358.4690477247,
+                        "medianHz": 3458027.3291414646,
+                        "bestHz": 3497686.6359018725,
+                        "hzSamples": [
+                            2577358.4690477247,
+                            3458027.3291414646,
+                            3497686.6359018725
+                        ]
+                    }
+                },
+                {
+                    "id": "compiled-invalid",
+                    "label": "Compiled is() invalid",
+                    "sourceName": "compiled is invalid",
+                    "color": "#0f766e",
+                    "hz": 14429948.354987273,
+                    "rme": 1.4637841964177307,
+                    "sampleCount": 7214975,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 1,
+                        "worstHz": 9153507.981694834,
+                        "medianHz": 14429948.354987273,
+                        "bestHz": 14500868.288888734,
+                        "hzSamples": [
+                            9153507.981694834,
+                            14429948.354987273,
+                            14500868.288888734
+                        ]
+                    }
+                },
+                {
+                    "id": "compiled-boolean-invalid",
+                    "label": "compileBoolean invalid",
+                    "sourceName": "compiled boolean invalid",
+                    "color": "#16a34a",
+                    "hz": 13872951.722557502,
+                    "rme": 0.4083257703168515,
+                    "sampleCount": 6936476,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 11779599.175407574,
+                        "medianHz": 13872951.722557502,
+                        "bestHz": 14628621.707446173,
+                        "hzSamples": [
+                            11779599.175407574,
+                            13872951.722557502,
+                            14628621.707446173
+                        ]
+                    }
+                },
+                {
+                    "id": "compile-cached-global",
+                    "label": "compileCached global hit",
+                    "sourceName": "compileCached global hit",
+                    "color": "#f97316",
+                    "hz": 1850124.1535756716,
+                    "rme": 0.21061687014668476,
+                    "sampleCount": 925063,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 1,
+                        "worstHz": 1753296.6464550411,
+                        "medianHz": 1850124.1535756716,
+                        "bestHz": 1970323.8502583685,
+                        "hzSamples": [
+                            1753296.6464550411,
+                            1850124.1535756716,
+                            1970323.8502583685
+                        ]
+                    }
+                },
+                {
+                    "id": "compile-cache-local",
+                    "label": "createCompileCache hit",
+                    "sourceName": "createCompileCache hit",
+                    "color": "#fb923c",
+                    "hz": 2036359.7311963423,
+                    "rme": 0.4010485990536994,
+                    "sampleCount": 1018180,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 1997078.645978367,
+                        "medianHz": 2036359.7311963423,
+                        "bestHz": 2068076.6681576483,
+                        "hzSamples": [
+                            1997078.645978367,
+                            2036359.7311963423,
+                            2068076.6681576483
+                        ]
+                    }
+                },
+                {
+                    "id": "prebuilt-cache",
+                    "label": "Prebuilt cached guard",
+                    "sourceName": "prebuilt cached guard valid",
+                    "color": "#fdba74",
+                    "hz": 3891517.9532862804,
+                    "rme": 0.2546009684047751,
+                    "sampleCount": 1945759,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 1,
+                        "worstHz": 3747641.640232975,
+                        "medianHz": 3891517.9532862804,
+                        "bestHz": 3918870.8713744585,
+                        "hzSamples": [
+                            3747641.640232975,
+                            3891517.9532862804,
+                            3918870.8713744585
+                        ]
+                    }
+                },
+                {
+                    "id": "prebuilt-global-cache",
+                    "label": "Prebuilt global cached guard",
+                    "sourceName": "prebuilt global cached guard valid",
+                    "color": "#fed7aa",
+                    "hz": 3739669.23709968,
+                    "rme": 0.26883923431718576,
+                    "sampleCount": 1869835,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 3,
+                        "worstHz": 3367621.5352625945,
+                        "medianHz": 3739669.23709968,
+                        "bestHz": 4107200.9403426205,
+                        "hzSamples": [
+                            3367621.5352625945,
+                            3739669.23709968,
+                            4107200.9403426205
+                        ]
+                    }
+                },
+                {
+                    "id": "compile-async-valid",
+                    "label": "compileAsync valid",
+                    "sourceName": "compileAsync is valid",
+                    "color": "#3b82f6",
+                    "hz": 1044.242983905626,
+                    "rme": 1.1102344655540957,
+                    "sampleCount": 523,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 535.5944692916092,
+                        "medianHz": 1044.242983905626,
+                        "bestHz": 1119.0325046390963,
+                        "hzSamples": [
+                            535.5944692916092,
+                            1044.242983905626,
+                            1119.0325046390963
+                        ]
+                    }
+                },
+                {
+                    "id": "compile-async-invalid-check",
+                    "label": "compileAsync invalid check",
+                    "sourceName": "compileAsync check invalid",
+                    "color": "#60a5fa",
+                    "hz": 957.6549416020806,
+                    "rme": 1.0352188393847181,
+                    "sampleCount": 479,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 416.44399283495295,
+                        "medianHz": 957.6549416020806,
+                        "bestHz": 968.775295584388,
+                        "hzSamples": [
+                            416.44399283495295,
+                            957.6549416020806,
+                            968.775295584388
+                        ]
+                    }
+                },
+                {
+                    "id": "rollup-macro",
+                    "label": "Rollup macro transform",
+                    "sourceName": "rollup compileCached macro transform",
+                    "color": "#8b5cf6",
+                    "hz": 2004296.49677725,
+                    "rme": 0.13121690925489754,
+                    "sampleCount": 1002149,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 1,
+                        "worstHz": 1372771.7254449178,
+                        "medianHz": 2004296.49677725,
+                        "bestHz": 2006259.995985647,
+                        "hzSamples": [
+                            1372771.7254449178,
+                            2004296.49677725,
+                            2006259.995985647
+                        ]
+                    }
+                },
+                {
+                    "id": "esbuild-macro",
+                    "label": "esbuild macro transform",
+                    "sourceName": "esbuild compileCached macro transform",
+                    "color": "#a78bfa",
+                    "hz": 1368841.5564926309,
+                    "rme": 0.40530252591170085,
+                    "sampleCount": 684421,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 1,
+                        "worstHz": 1157736.9649829546,
+                        "medianHz": 1368841.5564926309,
+                        "bestHz": 1375448.3026962148,
+                        "hzSamples": [
+                            1157736.9649829546,
+                            1368841.5564926309,
+                            1375448.3026962148
+                        ]
+                    }
+                },
+                {
+                    "id": "rollup-aot-load",
+                    "label": "Rollup AOT virtual load",
+                    "sourceName": "rollup AOT virtual load",
+                    "color": "#c4b5fd",
+                    "hz": 8316.657209160607,
+                    "rme": 1.5056056208628772,
+                    "sampleCount": 4159,
+                    "aggregation": {
+                        "strategy": "median-hz",
+                        "runCount": 3,
+                        "selectedRun": 2,
+                        "worstHz": 6614.982668584584,
+                        "medianHz": 8316.657209160607,
+                        "bestHz": 9130.664147312476,
+                        "hzSamples": [
+                            6614.982668584584,
+                            8316.657209160607,
+                            9130.664147312476
+                        ]
+                    }
                 }
             ]
         }

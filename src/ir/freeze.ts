@@ -98,6 +98,7 @@ function freezeGraphNode(node: GraphNode): void {
             Object.freeze(node.keys);
             break;
         case NodeTag.UnionDispatch:
+        case NodeTag.PresenceDispatch:
             for (let index = 0; index < node.options.length; index += 1) {
                 const schema = node.options[index];
                 if (schema !== undefined) {
@@ -107,6 +108,9 @@ function freezeGraphNode(node: GraphNode): void {
                 if (graph !== undefined) {
                     freezeGraph(graph);
                 }
+            }
+            if (node.tag === NodeTag.PresenceDispatch) {
+                Object.freeze(node.keys);
             }
             Object.freeze(node.options);
             Object.freeze(node.graphs);

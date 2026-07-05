@@ -38,8 +38,13 @@ import type {
     Presence,
     PresenceSymbol,
     RuntimeValue,
+    SuperRefineContext,
     TypeSymbol
 } from "./types.js";
+import {
+    collectSuperRefineIssues,
+    runSuperRefine
+} from "./super-refine.js";
 
 type ArraySchemaRecord = Extract<Schema, { readonly tag: typeof SchemaTag.Array }>;
 type ArrayGuardFactory = <TItem>(schema: ArraySchemaRecord) => ArrayGuard<TItem>;
@@ -278,6 +283,43 @@ export class BaseGuard<
              */
             predicate: (value: unknown): boolean =>
                 isStrictTrue(predicate(value)),
+            name
+        });
+    }
+
+    /**
+     * @brief Append a callback-style semantic refinement.
+     * @param callback Function that calls context.addIssue() to fail.
+     * @param name Diagnostic name for refinement failure.
+     * @returns Fresh refined guard.
+     */
+    public superRefine(
+        callback: (
+            value: RuntimeValue<TValue, TPresence>,
+            context: SuperRefineContext
+        ) => void,
+        name: string
+    ): BaseGuard<TValue, TPresence> {
+        checkRefinementInput(callback, name);
+        return new BaseGuard<TValue, TPresence>({
+            tag: SchemaTag.Refine,
+            inner: readGuardSchema(this, "superRefine inner"),
+            predicate: (value: unknown): boolean =>
+                runSuperRefine(
+                    callback as (
+                        value: RuntimeValue<TValue, TPresence>,
+                        context: SuperRefineContext
+                    ) => void,
+                    value as RuntimeValue<TValue, TPresence>
+                ),
+            collect: (value: unknown) =>
+                collectSuperRefineIssues(
+                    callback as (
+                        value: RuntimeValue<TValue, TPresence>,
+                        context: SuperRefineContext
+                    ) => void,
+                    value as RuntimeValue<TValue, TPresence>
+                ),
             name
         });
     }

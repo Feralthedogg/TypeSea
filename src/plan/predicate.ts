@@ -296,6 +296,13 @@ function evaluateGraphNode(
                 node.masks,
                 state
             );
+        case NodeTag.PresenceDispatch:
+            return testUnionDispatch(
+                evaluateNode(graph, node.value, input, values, seen, epoch, state),
+                node.graphs,
+                node.masks,
+                state
+            );
         case NodeTag.PrimitiveUnion:
             return testUnionDispatch(
                 evaluateNode(graph, node.value, input, values, seen, epoch, state),

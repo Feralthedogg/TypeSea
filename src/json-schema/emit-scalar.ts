@@ -12,10 +12,12 @@ import {
 } from "../kind/index.js";
 import type { PathSegment } from "../issue/index.js";
 import {
+    EMAIL_PATTERN,
     IPV4_PATTERN,
     IPV6_PATTERN,
     ISO_DATETIME_PATTERN,
     ISO_DATE_PATTERN,
+    URL_PATTERN,
     UUID_PATTERN,
     type LiteralValue,
     type Schema
@@ -79,9 +81,11 @@ export function emitString(
                 break;
             case StringCheckTag.Email:
                 result.format = "email";
+                patterns.push(EMAIL_PATTERN.source);
                 break;
             case StringCheckTag.Url:
                 result.format = "uri";
+                patterns.push(URL_PATTERN.source);
                 break;
             case StringCheckTag.IsoDate:
                 result.format = "date";

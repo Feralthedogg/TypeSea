@@ -88,8 +88,23 @@ export class ArrayGuard<
      * backend can reuse the same comparison and diagnostic paths.
      */
     public length(value: number): ArrayGuard<TItem, TPresence> {
+        const schema = readArrayMethodSchema(this, "array length receiver");
         const bound = checkArrayLengthBound(value, "exact");
-        return this.min(bound).max(bound);
+        return new ArrayGuard<TItem, TPresence>({
+            tag: SchemaTag.Array,
+            item: schema.item,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: ArrayCheckTag.Min,
+                    value: bound
+                },
+                {
+                    tag: ArrayCheckTag.Max,
+                    value: bound
+                }
+            ]
+        });
     }
 
     /**
@@ -97,7 +112,18 @@ export class ArrayGuard<
      * @returns Fresh ArrayGuard with a minimum length of one.
      */
     public nonempty(): ArrayGuard<TItem, TPresence> {
-        return this.min(1);
+        const schema = readArrayMethodSchema(this, "array nonempty receiver");
+        return new ArrayGuard<TItem, TPresence>({
+            tag: SchemaTag.Array,
+            item: schema.item,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: ArrayCheckTag.Min,
+                    value: 1
+                }
+            ]
+        });
     }
 }
 

@@ -18,5 +18,7 @@ export type {
     GuardValue,
     Infer,
     Presence,
-    RuntimeValue
+    RuntimeValue,
+    SuperRefineContext,
+    SuperRefineIssueInput
 } from "./types.js";

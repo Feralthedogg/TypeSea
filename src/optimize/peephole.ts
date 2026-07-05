@@ -12,6 +12,7 @@ import type {
     Graph,
     GraphNode,
     NodeId,
+    PresenceDispatchNode,
     PrimitiveUnionNode,
     UnionDispatchNode
 } from "../ir/index.js";
@@ -94,6 +95,8 @@ function peepholeNode(
             return compactDiscriminantDispatch(node, nodes, aliases);
         case NodeTag.UnionDispatch:
             return compactUnionDispatch(node, nodes, aliases);
+        case NodeTag.PresenceDispatch:
+            return compactPresenceDispatch(node, nodes, aliases);
         case NodeTag.PrimitiveUnion:
             return compactPrimitiveUnion(node, nodes, aliases);
         default:
@@ -207,6 +210,58 @@ function compactUnionDispatch(
         tag: node.tag,
         deps: node.deps,
         value: node.value,
+        options,
+        graphs,
+        masks
+    });
+}
+
+/**
+ * @brief Remove impossible presence-dispatch arms.
+ * @param node Presence dispatch node to compact.
+ * @param nodes Mutable graph node table used for replacement constants.
+ * @param aliases Alias table updated by replacements.
+ * @returns Compacted dispatch node or constant false when no arm remains.
+ */
+function compactPresenceDispatch(
+    node: PresenceDispatchNode,
+    nodes: GraphNode[],
+    aliases: NodeId[]
+): FoldResult {
+    const keys: (string | undefined)[] = [];
+    const options: Schema[] = [];
+    const graphs: Graph[] = [];
+    const masks: number[] = [];
+    let changed = false;
+
+    for (let index = 0; index < node.graphs.length; index += 1) {
+        const graph = node.graphs[index];
+        const option = node.options[index];
+        const mask = node.masks[index];
+        if (graph === undefined || option === undefined || mask === undefined ||
+            mask === 0 || readGraphResultBoolean(graph) === false) {
+            changed = true;
+            continue;
+        }
+        keys.push(node.keys[index]);
+        options.push(option);
+        graphs.push(graph);
+        masks.push(mask);
+        changed = changed || graphs.length - 1 !== index;
+    }
+
+    if (graphs.length === 0) {
+        return replace(node, ensureConst(nodes, aliases, false));
+    }
+    if (!changed) {
+        return keep(node);
+    }
+    return keep({
+        id: node.id,
+        tag: node.tag,
+        deps: node.deps,
+        value: node.value,
+        keys,
         options,
         graphs,
         masks

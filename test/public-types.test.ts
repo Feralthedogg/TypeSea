@@ -1,18 +1,32 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import {
     compile,
+    compileAsync,
+    compileBoolean,
+    createCompileCache,
+    createTypeSeaRollupPlugin,
     t,
+    warmup,
+    type AsyncCompiledGuard,
+    type AsyncValidationOptions,
     type Brand,
     type CheckResult,
+    type CompileAsyncOptions,
+    type CompileCache,
     type CompileMode,
     type CompileOptions,
+    type CompiledBooleanGuard,
+    type CompileSourceMode,
     type GuardPresence,
     type GuardValue,
     type Infer,
     type InferAsyncDecoder,
     type InferDecoder,
     type JsonValue,
-    type RuntimeValue
+    type RuntimeValue,
+    type SuperRefineIssueInput,
+    type TypeSeaEsbuildLoader,
+    type TypeSeaPluginReadFile
 } from "../src/index.js";
 
 describe("public type contracts", () => {
@@ -29,6 +43,19 @@ describe("public type contracts", () => {
                 (value) => value === undefined || value.length > 0,
                 "present_non_empty"
             ),
+            maybeSuperRefined: t.superRefine(
+                t.optional(t.string),
+                (value, context) => {
+                    if (value?.length === 0) {
+                        const issue: SuperRefineIssueInput = {
+                            path: ["maybeSuperRefined"],
+                            message: "must not be empty"
+                        };
+                        context.addIssue(issue);
+                    }
+                },
+                "present_non_empty"
+            ),
             tags: t.array(t.optional(t.number.int())),
             pair: t.tuple([t.literal("id"), UserId])
         });
@@ -41,6 +68,7 @@ describe("public type contracts", () => {
             readonly maybeTitle?: string | undefined;
             readonly maybeNull?: string | null;
             readonly maybeRefined?: string;
+            readonly maybeSuperRefined?: string;
             readonly tags: (number | undefined)[];
             readonly pair: readonly ["id", Brand<string, "UserId">];
         }>();
@@ -48,20 +76,71 @@ describe("public type contracts", () => {
 
     test("keeps guard helper types and compiled presence stable", () => {
         const OptionalName = t.optional(t.string);
-        const FastOptionalName = compile(OptionalName, { name: "optionalName" });
+        const cache: CompileCache = createCompileCache();
+        const FastOptionalName = compile(OptionalName, {
+            name: "optionalName",
+            debugSource: true
+        });
+        const BooleanOptionalName = compileBoolean(OptionalName, {
+            name: "booleanOptionalName"
+        });
+        const AsyncOptionalName = compileAsync(OptionalName, {
+            name: "asyncOptionalName",
+            yieldEvery: 16,
+            yieldTimeout: 0
+        });
+        const CachedOptionalName = cache.compile("optional-name", () => OptionalName, {
+            name: "optionalName",
+            debugSource: true
+        });
+        const WarmedOptionalName = warmup([OptionalName], {
+            cache,
+            namePrefix: "warmType"
+        });
         const result = FastOptionalName.check("Ada");
         const firstResult = FastOptionalName.checkFirst("Ada");
+        const plugin = createTypeSeaRollupPlugin({
+            entries: [
+                {
+                    id: "optional-name",
+                    guard: OptionalName,
+                    options: { name: "optionalName" }
+                }
+            ],
+            transformCompileCached: true
+        });
 
         expectTypeOf<GuardValue<typeof OptionalName>>().toEqualTypeOf<string>();
         expectTypeOf<GuardPresence<typeof OptionalName>>().toEqualTypeOf<"optional">();
         expectTypeOf<Infer<typeof OptionalName>>().toEqualTypeOf<string | undefined>();
         expectTypeOf<Infer<typeof FastOptionalName>>().toEqualTypeOf<string | undefined>();
+        expectTypeOf<typeof CachedOptionalName>().toEqualTypeOf<typeof FastOptionalName>();
+        expectTypeOf<typeof BooleanOptionalName>()
+            .toExtend<CompiledBooleanGuard<string, "optional">>();
+        expectTypeOf<typeof AsyncOptionalName>()
+            .toExtend<AsyncCompiledGuard<string, "optional">>();
+        expectTypeOf<CompileAsyncOptions["yieldEvery"]>()
+            .toEqualTypeOf<number | undefined>();
+        expectTypeOf<AsyncValidationOptions["yieldTimeout"]>()
+            .toEqualTypeOf<number | undefined>();
+        expectTypeOf<CompileSourceMode>().toEqualTypeOf<"compact" | "debug">();
+        expectTypeOf<TypeSeaEsbuildLoader>()
+            .toEqualTypeOf<"js" | "jsx" | "ts" | "tsx">();
+        expectTypeOf<TypeSeaPluginReadFile>()
+            .toEqualTypeOf<(path: string) => unknown>();
         expectTypeOf<typeof result>().toEqualTypeOf<CheckResult<string | undefined>>();
         expectTypeOf<typeof firstResult>().toEqualTypeOf<CheckResult<string | undefined>>();
         expectTypeOf<RuntimeValue<string, "optional">>().toEqualTypeOf<
             string | undefined
         >();
         expectTypeOf<RuntimeValue<string, "required">>().toEqualTypeOf<string>();
+        expect(WarmedOptionalName[0]?.is("Ada")).toBe(true);
+        expect(CachedOptionalName.is("Ada")).toBe(true);
+        expect(BooleanOptionalName.is("Ada")).toBe(true);
+        expect(AsyncOptionalName.sync.is("Ada")).toBe(true);
+        expect(plugin.resolveId("typesea:aot/optional-name")).toBe(
+            "\0typesea:aot/optional-name"
+        );
         expect(result.ok).toBe(true);
         expect(firstResult.ok).toBe(true);
     });

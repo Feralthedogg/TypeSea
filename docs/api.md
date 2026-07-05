@@ -67,7 +67,7 @@ cross the API boundary.
 | Runtime object contracts | `t.instanceOf(Ctor)`, `t.property(base, key, value)`, `guard.property(key, value)` |
 | Composition | `t.union`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect` |
 | Presence | `t.optional`, `t.undefinedable`, `t.nullable`, `t.nullish` |
-| Dynamic guards | `t.lazy`, `t.refine` |
+| Dynamic guards | `t.lazy`, `t.refine`, `t.superRefine`, `guard.superRefine` |
 | Decoders | `guard.transform`, `guard.pipe`, `guard.default`, `guard.prefault`, `guard.catch`, `t.decoder`, `t.transform`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()` |
 | Async decoders | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
 
@@ -97,7 +97,7 @@ const Shape = t.object({
 - `t.nullish(inner)` combines nullable value semantics with optional object-key
   presence.
 - Presence-preserving wrappers keep optional-key semantics through `nullable`,
-  `undefinedable`, `brand`, and `refine`.
+  `undefinedable`, `brand`, `refine`, and `superRefine`.
 
 Object combinators preserve object mode. Strict object guards remain strict
 after `extend`, `pick`, `omit`, or `partial`; passthrough object guards keep
@@ -118,6 +118,27 @@ instead of executed.
 ## Composition
 
 `t.union(a, b)` accepts a value that satisfies at least one branch.
+
+`refine` and `superRefine` attach semantic checks after structural validation.
+Use `refine` when a boolean predicate is enough, and `superRefine` when the
+check is easier to write as a callback that can call `context.addIssue()`.
+`addIssue()` accepts no argument for the default refinement issue, a string as a
+message shorthand, or `{ path, message }` when the failure should point at a
+nested relative path.
+
+```ts
+const Range = t.object({
+  min: t.number,
+  max: t.number
+}).superRefine((value, context) => {
+  if (value.min > value.max) {
+    context.addIssue({
+      path: ["max"],
+      message: "max must be greater than or equal to min"
+    });
+  }
+}, "ordered_range");
+```
 
 `t.discriminatedUnion("kind", cases)` requires string case keys. Each case must
 be a statically inspectable object case whose dispatch key is a required string
@@ -230,9 +251,11 @@ FastUser.check(input);
 `compile` emits generated predicate functions from the optimized Sea-of-Nodes
 validation graph plus diagnostics collectors for failed values. Static scalar,
 object, array, record, union, and strict-key nodes lower to straight-line
-JavaScript or indexed loops where possible. Dynamic schema edges such as `lazy`
-and `refine` keep semantics by using the same IR-backed runtime fallback as
-ordinary guards.
+JavaScript or indexed loops where possible. Union lowering specializes
+discriminant literals, primitive domains, required-key presence checks, and
+coarse root-kind masks before falling back to ordered branch probing. Dynamic
+schema edges such as `lazy`, `refine`, and `superRefine` keep semantics by using
+the same IR-backed runtime fallback as ordinary guards.
 
 The optional `name` is a debugging and profiling hint. TypeSea normalizes it
 into a strict-mode-safe JavaScript function name, prefixes reserved names, and
@@ -243,6 +266,123 @@ copied, and frozen before `check()` returns them.
 Generated source never interpolates user-controlled values directly. Literals,
 regexps, property keys, keysets, and dynamic schema fallbacks are captured in
 side tables and referenced by numeric index.
+
+### Compile Cache And Warmup
+
+```ts
+const FastUser = compileCached("user:v1", () => User, { name: "isUser" });
+
+warmup([
+  User,
+  {
+    key: "user:v1",
+    guard: User,
+    options: { name: "isUser" }
+  }
+], {
+  namePrefix: "boot_"
+});
+```
+
+`compileCached(key, factory, options)` uses a process-local explicit cache.
+`createCompileCache()` creates an isolated cache for tests, workers, or
+multi-tenant servers. The cache key combines the caller key, compile mode,
+generated function name, and debug-source flag.
+
+`warmup()` compiles guards during service startup or serverless module
+initialization. Plain guards fill the per-guard WeakMap cache. Entries with
+`key` fill an explicit cache, so the first real request does not pay schema
+construction or codegen cost.
+
+### Boolean-Only And Async Validation
+
+```ts
+const BooleanUser = compileBoolean(User, { name: "isUserBoolean" });
+const AsyncUsers = compileAsync(t.array(User), {
+  name: "isUsersAsync",
+  yieldEvery: 4096,
+  yieldTimeout: 5
+});
+
+BooleanUser.is(input);
+await AsyncUsers.is(largePayload);
+```
+
+`compileBoolean()` is the fail-fast surface: it emits only a predicate and
+generated source. It has no `check`, no `assert`, and no diagnostic collector.
+Use it when the caller only needs a boolean verdict.
+
+`isAsync()`, `checkAsync()`, and `compileAsync()` validate cooperatively. Long
+array, tuple, record, map, set, union, and object loops yield with
+`setImmediate()` when available, otherwise `setTimeout(0)`. `yieldEvery` limits
+node-count bursts and `yieldTimeout` limits wall-clock bursts in milliseconds.
+Diagnostics are still collected only after failure. `checkAsync()` and
+`compileAsync().check()` return the same full diagnostic result as `check()`;
+use `isAsync()` when the hot path needs only the cooperative boolean verdict.
+
+### AOT Bundler Plugins
+
+```ts
+export default createTypeSeaVitePlugin({
+  entries: [
+    {
+      id: "user:v1",
+      guard: User,
+      options: { name: "isUser", mode: "unsafe" }
+    }
+  ],
+  transformCompileCached: true
+});
+```
+
+`createTypeSeaVitePlugin`, `createTypeSeaRollupPlugin`, and
+`createTypeSeaEsbuildPlugin` are zero-dependency structural plugin factories.
+They serve virtual modules such as `typesea:aot/user:v1` by running
+`emitAotModule()` at build time. Vite, Rollup, and esbuild can rewrite static
+`compileCached("user:v1", ...)` calls into default imports from those virtual
+modules, so production bundles can drop the schema factory and runtime compiler
+for that guard. esbuild source reads use an optional `readFile` hook or a
+dynamic `node:fs/promises` import inside plugin `setup()`.
+
+### Union Schema Shape
+
+TypeSea optimizes object unions best when each branch advertises a required own
+key. AST-like contracts such as `and`, `or`, `not`, `path`, or `elemMatch`
+lower to presence dispatch: the compiled predicate checks the required key first
+and skips branches that cannot match.
+
+```ts
+const Query = t.union(
+  t.object({ and: t.array(t.unknown).min(1) }),
+  t.object({ or: t.array(t.unknown).min(1) }),
+  t.object({ not: t.unknown }),
+  t.object({ path: t.string, eq: t.optional(t.string) })
+);
+```
+
+Avoid splitting optional operator bags into many near-identical union branches
+only to express "at least one key exists". That shape repeats the same property
+walk for every branch and can dominate recursive query validation. Prefer one
+object schema for the structural pass, then add a semantic refinement if the
+non-empty operator rule matters.
+
+```ts
+const Operators = t.object({
+  eq: t.optional(t.string),
+  neq: t.optional(t.string),
+  exists: t.optional(t.boolean),
+  gt: t.optional(t.number),
+  between: t.optional(t.tuple([t.number, t.number]))
+}).superRefine((value, context) => {
+  if (!("eq" in value) &&
+      !("neq" in value) &&
+      !("exists" in value) &&
+      !("gt" in value) &&
+      !("between" in value)) {
+    context.addIssue();
+  }
+}, "at_least_one_operator");
+```
 
 ### Unsafe Compile Mode
 
@@ -386,9 +526,9 @@ dependency-checked, dense, and frozen.
 Regex graph nodes accept only plain `RegExp` values and store non-extensible
 regexps, cloning extensible inputs before the graph is frozen.
 
-`SchemaCheck` records dynamic runtime schema logic such as `lazy` or `refine`.
-It keeps the IR truthful instead of pretending a callback-backed edge is a
-static primitive.
+`SchemaCheck` records dynamic runtime schema logic such as `lazy`, `refine`, or
+`superRefine`. It keeps the IR truthful instead of pretending a callback-backed
+edge is a static primitive.
 
 ## JSON Schema
 
@@ -408,6 +548,7 @@ Runtime-only concepts return explicit export issues:
 - JavaScript `Date`, `Map`, `Set`, `instanceOf`, and `property` contracts
 - `lazy`
 - `refine`
+- `superRefine`
 - decoder transforms
 - async validation
 - regexps with flags

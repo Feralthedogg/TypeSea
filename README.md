@@ -17,9 +17,9 @@ runtime compilation, and AOT source generation.
 
 ## Benchmark Headline
 
-Last local benchmark on 2026-07-05 KST:
-`npm run bench:record`, strict-object contract, operations per second on one
-machine. The chart is generated from
+Latest committed local benchmark on 2026-07-06 KST:
+`npm run bench:record`, median of 3 full runs, strict-object contract,
+operations per second on one machine. The chart is generated from
 [`bench/results/latest.json`](./bench/results/latest.json).
 
 ![TypeSea benchmark comparison](./docs/assets/benchmark-headline.svg)
@@ -139,6 +139,52 @@ of building the full issue list and slicing it afterward.
 > environments, generate validator source ahead of time with
 > `emitAotModule()` instead.
 
+### Cold Starts, Fail-Fast, And Large Payloads
+
+```ts
+import {
+  compileAsync,
+  compileBoolean,
+  compileCached,
+  createTypeSeaVitePlugin,
+  warmup
+} from "typesea";
+
+const FastUser = compileCached("user:v1", () => User, { name: "isUser" });
+const BooleanUser = compileBoolean(User, { name: "isUserBoolean" });
+const AsyncUsers = compileAsync(t.array(User), {
+  name: "isUsersAsync",
+  yieldEvery: 4096,
+  yieldTimeout: 5
+});
+
+warmup([User, { key: "user:v1", guard: User, options: { name: "isUser" } }]);
+
+export default createTypeSeaVitePlugin({
+  entries: [{ id: "user:v1", guard: User, options: { name: "isUser" } }],
+  transformCompileCached: true
+});
+```
+
+Use `compileCached()` when schema construction might otherwise happen inside a
+request handler. It caches by caller-owned semantic keys, so cold-start work can
+be paid once and reused deliberately. `compile()` also caches repeated calls for
+the same guard instance, and development builds warn when repeated codegen comes
+from the same callsite.
+
+Use `warmup()` in Lambda/serverless module scope or service startup to prefill
+compiled guards before the first request. Use `compileBoolean()` when a hot
+path only needs true/false; it emits no diagnostic collectors at all. Use
+`compileAsync()` or `isAsync()` for huge arrays, records, maps, sets, or object
+graphs that should yield back to the Node.js event loop between validation
+chunks.
+
+The zero-dependency AOT plugin helpers expose Rollup, Vite, and esbuild
+compatible plugin objects. All three can rewrite static
+`compileCached("id", ...)` calls into imports from `typesea:aot/<id>` when the
+entry is listed in the plugin config. esbuild reads source through an optional
+`readFile` hook or a dynamic `node:fs/promises` import inside `setup()`.
+
 ### Unsafe FastMode
 
 ```ts
@@ -242,52 +288,64 @@ failed check() -> schema-aware diagnostic collector
 
 ## Performance Snapshot
 
-Last local benchmark on 2026-07-05 KST, using
-`npm run bench:record` on the benchmark strict-object contract. The raw Vitest
-JSON is stored in [`bench/results/raw.json`](./bench/results/raw.json), and the
-stable summary used by the README graph is stored in
-[`bench/results/latest.json`](./bench/results/latest.json). These are
-operations per second on one machine, not release guarantees.
+Last local benchmark on 2026-07-06 KST, using `npm run bench:record` with the
+median of 3 full Vitest runs over the benchmark strict-object contract. The raw
+Vitest JSON is stored in [`bench/results/raw.json`](./bench/results/raw.json),
+and the stable summary used by the README graph is stored in
+[`bench/results/latest.json`](./bench/results/latest.json). These are operations
+per second on one machine, not release guarantees.
 
 | Valid object path | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 476,703 |
-| TypeSea compiled safe `is()` | 5,230,756 |
-| TypeSea compiled unsafe `is()` | 36,756,599 |
-| TypeSea compiled unchecked `is()` | 42,431,440 |
-| Zod `safeParse` | 1,386,237 |
-| Valibot `safeParse` | 1,395,970 |
-| Ajv compiled | 4,336,006 |
+| TypeSea interpreted `is()` | 341,332 |
+| TypeSea compiled safe `is()` | 3,840,854 |
+| TypeSea compiled unsafe `is()` | 27,464,645 |
+| TypeSea compiled unchecked `is()` | 29,647,233 |
+| Zod `safeParse` | 911,576 |
+| Valibot `safeParse` | 946,246 |
+| Ajv compiled | 2,682,380 |
 
 | Valid diagnostic path | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 466,105 |
-| TypeSea compiled safe `check()` | 4,824,240 |
-| TypeSea compiled unsafe `check()` | 36,509,714 |
-| TypeSea compiled unchecked `check()` | 43,131,347 |
-| Zod `safeParse` | 1,294,230 |
-| Valibot `safeParse` | 1,355,910 |
-| Ajv compiled | 4,280,363 |
+| TypeSea interpreted `check()` | 294,582 |
+| TypeSea compiled safe `check()` | 2,914,942 |
+| TypeSea compiled unsafe `check()` | 21,517,947 |
+| TypeSea compiled unchecked `check()` | 31,707,555 |
+| Zod `safeParse` | 883,138 |
+| Valibot `safeParse` | 893,898 |
+| Ajv compiled | 2,876,907 |
 
 | Invalid object path | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 3,396,045 |
-| TypeSea compiled safe `is()` | 42,197,735 |
-| TypeSea compiled unsafe `is()` | 50,090,902 |
-| TypeSea compiled unchecked `is()` | 51,002,903 |
-| Zod `safeParse` | 83,798 |
-| Valibot `safeParse` | 914,604 |
-| Ajv compiled | 28,986,950 |
+| TypeSea interpreted `is()` | 2,223,276 |
+| TypeSea compiled safe `is()` | 30,513,434 |
+| TypeSea compiled unsafe `is()` | 28,172,129 |
+| TypeSea compiled unchecked `is()` | 36,659,550 |
+| Zod `safeParse` | 60,043 |
+| Valibot `safeParse` | 533,818 |
+| Ajv compiled | 15,870,460 |
 
 | Invalid diagnostic path | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 339,575 |
-| TypeSea compiled safe `check()` | 2,145,392 |
-| TypeSea compiled unsafe `check()` | 3,098,275 |
-| TypeSea compiled unchecked `check()` | 3,673,561 |
-| Zod `safeParse` | 84,876 |
-| Valibot `safeParse` | 896,023 |
-| Ajv compiled | 28,274,668 |
+| TypeSea interpreted `check()` | 280,569 |
+| TypeSea compiled safe `check()` | 1,460,301 |
+| TypeSea compiled unsafe `check()` | 2,144,535 |
+| TypeSea compiled unchecked `check()` | 2,658,950 |
+| Zod `safeParse` | 59,685 |
+| Valibot `safeParse` | 592,515 |
+| Ajv compiled | 19,847,089 |
+
+| Presence-dispatched object union | hz |
+| --- | ---: |
+| TypeSea interpreted logical branch | 893,483 |
+| TypeSea compiled safe logical branch | 3,671,517 |
+| TypeSea compiled unsafe logical branch | 31,475,593 |
+| TypeSea interpreted fallback record branch | 355,598 |
+| TypeSea compiled safe fallback record branch | 4,724,044 |
+| TypeSea compiled unsafe fallback record branch | 9,841,223 |
+| TypeSea interpreted invalid branch | 520,812 |
+| TypeSea compiled safe invalid branch | 11,309,279 |
+| TypeSea compiled unsafe invalid branch | 14,484,249 |
 
 The safe compiled path stays close to Ajv while retaining TypeSea hostile-input
 semantics: descriptor-based property reads, symbol/non-enumerable strict-key
@@ -316,7 +374,7 @@ grouped under the `t` table.
 | Runtime object contracts | `t.instanceOf`, `t.property`, `guard.property` |
 | Composition | `t.union`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect` |
 | Presence wrappers | `t.optional`, `t.undefinedable`, `t.nullable`, `t.nullish` |
-| Dynamic contracts | `t.lazy`, `t.refine` |
+| Dynamic contracts | `t.lazy`, `t.refine`, `t.superRefine`, `guard.superRefine` |
 
 ### Decoders
 
@@ -413,6 +471,11 @@ Deliberate, documented, and pinned by tests:
 - **Choose the engine by schema lifetime.** One-off schemas: runtime plan.
   Stable hot schemas: `compile()`. CSP environments or build-time generation:
   `emitAotModule()`.
+- **Shape object unions by required keys.** `t.union(t.object({ and: ... }),
+  t.object({ or: ... }), t.object({ path: ... }))` lowers to presence dispatch
+  and skips impossible branches. Do not model an optional operator bag as many
+  near-identical union branches; use one object and `superRefine` for "at least
+  one operator exists".
 - **Decoders do not embed in object shapes.** Compose transformations with
   `t.pipe` around a validated shape instead of mixing decoders into `t.object`
   entries.
@@ -426,7 +489,7 @@ Every gate that CI runs is a local npm script:
 ```sh
 npm run check           # policy, docs, typecheck, lint, tests, build, dist, API snapshot, pack
 npm run check:consumer  # tarball install + runtime/type smoke in a temp project
-npm run bench:compare   # compare committed benchmark JSON against 0.3.2 floors
+npm run bench:compare   # compare committed benchmark JSON against release floors
 npm run bench:record    # full benchmark run + committed JSON/SVG refresh
 npm run bench:render    # regenerate SVG from committed benchmark JSON
 npm run bench -- --run  # benchmark smoke
@@ -456,8 +519,9 @@ provenance.
 > package policy rejects them from every runtime dependency field. The
 > benchmark suite reports both boolean-path and diagnostic-path
 > (`check()` vs `safeParse`) comparisons, so numbers stay apples-to-apples.
-> `check:benchmarks` also verifies the committed summary against the 0.3.2
-> performance floors for unchecked valid, safe invalid, and safe valid paths.
+> `check:benchmarks` also verifies the committed summary against release floors
+> for unchecked valid, safe invalid, safe valid, and presence-dispatch union
+> paths.
 
 ---
 
@@ -471,6 +535,15 @@ provenance.
 ---
 
 ## Migration Notes
+
+### 0.3.2 to 0.4.0
+
+Existing schemas keep working. `0.4.0` is a minor release because it adds new
+public APIs: `superRefine`, `compileCached`, `createCompileCache`, `warmup`,
+`compileBoolean`, cooperative async validation, and zero-dependency Vite,
+Rollup, and esbuild AOT plugin helpers. Compiled object unions are also faster
+when branches have required keys, such as AST or query objects shaped by `and`,
+`or`, `not`, or `path` fields.
 
 ### 0.3.1 to 0.3.2
 

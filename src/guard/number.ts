@@ -86,7 +86,18 @@ export class NumberGuard<
      * @returns Fresh NumberGuard with an appended gte check.
      */
     public min(value: number): NumberGuard<TPresence> {
-        return this.gte(value);
+        const schema = readNumberMethodSchema(this, "number min receiver");
+        const bound = checkFiniteNumberBound(value, "min");
+        return new NumberGuard<TPresence>({
+            tag: SchemaTag.Number,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: NumberCheckTag.Gte,
+                    value: bound
+                }
+            ]
+        });
     }
 
     /**
@@ -117,7 +128,18 @@ export class NumberGuard<
      * @returns Fresh NumberGuard with an appended lte check.
      */
     public max(value: number): NumberGuard<TPresence> {
-        return this.lte(value);
+        const schema = readNumberMethodSchema(this, "number max receiver");
+        const bound = checkFiniteNumberBound(value, "max");
+        return new NumberGuard<TPresence>({
+            tag: SchemaTag.Number,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: NumberCheckTag.Lte,
+                    value: bound
+                }
+            ]
+        });
     }
 
     /**
@@ -185,7 +207,17 @@ export class NumberGuard<
      * @returns Fresh NumberGuard with `gt(0)`.
      */
     public positive(): NumberGuard<TPresence> {
-        return this.gt(0);
+        const schema = readNumberMethodSchema(this, "number positive receiver");
+        return new NumberGuard<TPresence>({
+            tag: SchemaTag.Number,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: NumberCheckTag.Gt,
+                    value: 0
+                }
+            ]
+        });
     }
 
     /**
@@ -193,7 +225,17 @@ export class NumberGuard<
      * @returns Fresh NumberGuard with `gte(0)`.
      */
     public nonnegative(): NumberGuard<TPresence> {
-        return this.gte(0);
+        const schema = readNumberMethodSchema(this, "number nonnegative receiver");
+        return new NumberGuard<TPresence>({
+            tag: SchemaTag.Number,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: NumberCheckTag.Gte,
+                    value: 0
+                }
+            ]
+        });
     }
 
     /**
@@ -201,7 +243,17 @@ export class NumberGuard<
      * @returns Fresh NumberGuard with `lt(0)`.
      */
     public negative(): NumberGuard<TPresence> {
-        return this.lt(0);
+        const schema = readNumberMethodSchema(this, "number negative receiver");
+        return new NumberGuard<TPresence>({
+            tag: SchemaTag.Number,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: NumberCheckTag.Lt,
+                    value: 0
+                }
+            ]
+        });
     }
 
     /**
@@ -209,15 +261,26 @@ export class NumberGuard<
      * @returns Fresh NumberGuard with `lte(0)`.
      */
     public nonpositive(): NumberGuard<TPresence> {
-        return this.lte(0);
+        const schema = readNumberMethodSchema(this, "number nonpositive receiver");
+        return new NumberGuard<TPresence>({
+            tag: SchemaTag.Number,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: NumberCheckTag.Lte,
+                    value: 0
+                }
+            ]
+        });
     }
 
     /**
      * @brief Keep the explicit Zod-compatible finite marker.
      * @returns This guard because TypeSea numbers are finite by construction.
      */
-    public finite(): this {
-        return this;
+    public finite(): NumberGuard<TPresence> {
+        const schema = readNumberMethodSchema(this, "number finite receiver");
+        return new NumberGuard<TPresence>(schema);
     }
 
     /**
@@ -225,9 +288,24 @@ export class NumberGuard<
      * @returns Fresh NumberGuard constrained to Number.isSafeInteger domain.
      */
     public safe(): NumberGuard<TPresence> {
-        return this.int()
-            .gte(Number.MIN_SAFE_INTEGER)
-            .lte(Number.MAX_SAFE_INTEGER);
+        const schema = readNumberMethodSchema(this, "number safe receiver");
+        return new NumberGuard<TPresence>({
+            tag: SchemaTag.Number,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: NumberCheckTag.Integer
+                },
+                {
+                    tag: NumberCheckTag.Gte,
+                    value: Number.MIN_SAFE_INTEGER
+                },
+                {
+                    tag: NumberCheckTag.Lte,
+                    value: Number.MAX_SAFE_INTEGER
+                }
+            ]
+        });
     }
 }
 

@@ -12,10 +12,15 @@ import {
     type GuardPresence,
     type GuardValue,
     type Infer,
-    type Presence
+    type Presence,
+    type SuperRefineContext
 } from "../guard/index.js";
 import type { Schema } from "../schema/index.js";
 import { isStrictTrue, readGuardSchema } from "../internal/index.js";
+import {
+    collectSuperRefineIssues,
+    runSuperRefine
+} from "../guard/super-refine.js";
 
 /**
  * @brief Mark a guard optional for object shape construction.
@@ -139,6 +144,41 @@ export function refine<TGuard extends Guard<unknown, Presence>>(
          */
         predicate: (value: unknown): boolean =>
             isStrictTrue(predicate(value as Infer<TGuard>)),
+        name
+    });
+}
+
+/**
+ * @brief Attach a callback-style semantic refinement.
+ * @param guard Guard that must pass before the callback runs.
+ * @param callback User callback that calls context.addIssue() to fail.
+ * @param name Diagnostic name for refinement failures.
+ * @returns Fresh refined guard.
+ */
+export function superRefine<TGuard extends Guard<unknown, Presence>>(
+    guard: TGuard,
+    callback: (value: Infer<TGuard>, context: SuperRefineContext) => void,
+    name: string
+): BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>> {
+    if (typeof callback !== "function") {
+        throw new TypeError("super refinement callback must be a function");
+    }
+    if (typeof name !== "string") {
+        throw new TypeError("refinement name must be a string");
+    }
+    return new BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>>({
+        tag: SchemaTag.Refine,
+        inner: readGuardSchema(guard, "superRefine inner"),
+        predicate: (value: unknown): boolean =>
+            runSuperRefine(
+                callback,
+                value as Infer<TGuard>
+            ),
+        collect: (value: unknown) =>
+            collectSuperRefineIssues(
+                callback,
+                value as Infer<TGuard>
+            ),
         name
     });
 }

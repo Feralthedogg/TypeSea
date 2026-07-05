@@ -31,6 +31,7 @@ export type GraphNode =
     | TupleItemsNode
     | RecordEveryNode
     | DiscriminantDispatchNode
+    | PresenceDispatchNode
     | ObjectShapeNode
     | UnionDispatchNode
     | PrimitiveUnionNode
@@ -212,6 +213,23 @@ export interface DiscriminantDispatchNode {
     readonly schemas: readonly Schema[];
     readonly graphs: readonly Graph[];
     readonly lookup: DiscriminantDispatchLookup;
+}
+
+/**
+ * @brief Object union dispatch gated by required field presence.
+ * @details The key vector is aligned with the source union options. A string key
+ * lets codegen skip that branch when the candidate object cannot satisfy the
+ * required field. Undefined keeps ordinary branch probing for fallback arms.
+ */
+export interface PresenceDispatchNode {
+    readonly id: NodeId;
+    readonly tag: typeof NodeTag.PresenceDispatch;
+    readonly deps: readonly [NodeId];
+    readonly value: NodeId;
+    readonly keys: readonly (string | undefined)[];
+    readonly options: readonly Schema[];
+    readonly graphs: readonly Graph[];
+    readonly masks: readonly UnionDispatchMask[];
 }
 
 /**

@@ -5,7 +5,7 @@
  * existing guard instance.
  */
 
-import type { CheckResult } from "../issue/index.js";
+import type { CheckResult, PathSegment } from "../issue/index.js";
 import type {
     BaseDecoder,
     DecodeSource,
@@ -36,6 +36,27 @@ export type Presence = "required" | "optional";
  */
 export type RuntimeValue<TValue, TPresence extends Presence> =
     TPresence extends "optional" ? TValue | undefined : TValue;
+
+/**
+ * @brief Optional diagnostic payload supplied to `context.addIssue()`.
+ * @details The path is relative to the current refinement node. Message is
+ * copied into the emitted Issue without running the message catalog renderer.
+ */
+export type SuperRefineIssueInput =
+    string |
+    {
+        readonly path?: readonly PathSegment[];
+        readonly message?: string;
+    };
+
+/**
+ * @brief Context object passed to super refinement callbacks.
+ * @details `addIssue()` marks the refinement as failed. Optional payloads let
+ * callback-style checks point at a nested path or attach a pre-rendered message.
+ */
+export interface SuperRefineContext {
+    addIssue(issue?: SuperRefineIssueInput): void;
+}
 
 /**
  * @brief Infer the runtime value type accepted by a guard.
@@ -178,6 +199,22 @@ export interface Guard<TValue, TPresence extends Presence = "required"> {
      */
     refine(
         predicate: (value: RuntimeValue<TValue, TPresence>) => boolean,
+        name: string
+    ): BaseGuard<TValue, TPresence>;
+
+    /**
+     * @brief Append a callback-style semantic refinement.
+     * @details The callback runs after the base schema accepts the value. Calling
+     * `context.addIssue()` marks the refinement as failed.
+     * @param callback Function that can report a semantic failure through context.
+     * @param name Diagnostic name for failed refinements.
+     * @returns New guard with the refinement appended.
+     */
+    superRefine(
+        callback: (
+            value: RuntimeValue<TValue, TPresence>,
+            context: SuperRefineContext
+        ) => void,
         name: string
     ): BaseGuard<TValue, TPresence>;
 

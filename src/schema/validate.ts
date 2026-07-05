@@ -168,12 +168,22 @@ function isSchemaRecord(
         case SchemaTag.Lazy:
             return typeof readOwnDataProperty(value, "get") === "function";
         case SchemaTag.Refine:
-            return typeof readOwnDataProperty(value, "name") === "string" &&
+            return isOptionalRefinementCollector(readOwnDataProperty(value, "collect")) &&
+                typeof readOwnDataProperty(value, "name") === "string" &&
                 typeof readOwnDataProperty(value, "predicate") === "function" &&
                 isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
         default:
             return false;
     }
+}
+
+/**
+ * @brief Validate an optional refinement diagnostic collector.
+ * @param value Candidate collector slot.
+ * @returns True when the slot is absent or callable.
+ */
+function isOptionalRefinementCollector(value: unknown): boolean {
+    return isMissingDataProperty(value) || typeof value === "function";
 }
 
 /**

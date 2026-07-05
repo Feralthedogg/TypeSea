@@ -26,6 +26,7 @@ import type {
     ObjectShapeNode,
     NumericCompareNode,
     ParamNode,
+    PresenceDispatchNode,
     PrimitiveUnionNode,
     RecordEveryNode,
     RegexNode,
@@ -321,6 +322,25 @@ export class GraphBuilder {
             tag: NodeTag.UnionDispatch,
             deps: [value],
             value,
+            options,
+            graphs,
+            masks
+        }));
+    }
+
+    public presenceDispatch(
+        value: NodeId,
+        keys: readonly (string | undefined)[],
+        options: readonly Schema[],
+        graphs: readonly Graph[],
+        masks: readonly UnionDispatchMask[]
+    ): NodeId {
+        return this.push((id: NodeId): PresenceDispatchNode => ({
+            id,
+            tag: NodeTag.PresenceDispatch,
+            deps: [value],
+            value,
+            keys,
             options,
             graphs,
             masks

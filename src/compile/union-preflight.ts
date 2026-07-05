@@ -150,8 +150,7 @@ function emitNumberExpression(
     context: EmitContext
 ): string {
     const checks = schema.checks;
-    const parts: string[] = [];
-    let needsFinite = true;
+    const parts = [`typeof ${value}==="number"&&Number.isFinite(${value})`];
     for (let index = 0; index < checks.length; index += 1) {
         const check = checks[index];
         if (check === undefined) {
@@ -160,7 +159,6 @@ function emitNumberExpression(
         switch (check.tag) {
             case NumberCheckTag.Integer:
                 parts.push(`Number.isInteger(${value})`);
-                needsFinite = false;
                 break;
             case NumberCheckTag.Gte:
                 parts.push(`${value}>=${String(check.value)}`);
@@ -177,12 +175,6 @@ function emitNumberExpression(
             case NumberCheckTag.MultipleOf:
                 return `${emitGraphFunction(schema, context)}(${value})`;
         }
-    }
-    if (needsFinite) {
-        parts.unshift(`typeof ${value}==="number"&&Number.isFinite(${value})`);
-    }
-    if (parts.length === 0) {
-        return `(typeof ${value}==="number"&&Number.isFinite(${value}))`;
     }
     return `(${parts.join("&&")})`;
 }

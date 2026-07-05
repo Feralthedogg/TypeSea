@@ -98,6 +98,9 @@ function isGraphValueInner(
             return false;
         }
     }
+    if (hasDependencyCycle(nodes as readonly GraphNode[])) {
+        return false;
+    }
     const entry = nodes[entryId];
     const result = nodes[resultId];
     const valid = isRecord(entry) &&
@@ -196,6 +199,9 @@ function isGraphNodeValue(
                 isSingleDepNode(value, deps, "value", nodeCount);
         case NodeTag.DiscriminantDispatch:
             return isDiscriminantDispatchNode(value, state) &&
+                isSingleDepNode(value, deps, "value", nodeCount);
+        case NodeTag.PresenceDispatch:
+            return isPresenceDispatchNode(value, state) &&
                 isSingleDepNode(value, deps, "value", nodeCount);
         case NodeTag.ObjectShape:
             return isObjectShapePayload(value, state) &&
@@ -392,6 +398,57 @@ function sameNodeIds(
 }
 
 /**
+ * @brief Detect dependency cycles without consuming the JavaScript call stack.
+ * @param nodes Validated graph node arena.
+ * @returns True when a dependency edge participates in a cycle.
+ */
+function hasDependencyCycle(nodes: readonly GraphNode[]): boolean {
+    const colors = new Uint8Array(nodes.length);
+    const stack: NodeId[] = [];
+    const cursors: number[] = [];
+    for (let start = 0; start < nodes.length; start += 1) {
+        if (colors[start] !== 0) {
+            continue;
+        }
+        stack.push(start);
+        cursors.push(0);
+        colors[start] = 1;
+        while (stack.length !== 0) {
+            const stackIndex = stack.length - 1;
+            const id = stack[stackIndex];
+            if (id === undefined) {
+                return true;
+            }
+            const node = nodes[id];
+            if (node === undefined) {
+                return true;
+            }
+            const cursor = cursors[stackIndex] ?? 0;
+            if (cursor >= node.deps.length) {
+                colors[id] = 2;
+                stack.pop();
+                cursors.pop();
+                continue;
+            }
+            cursors[stackIndex] = cursor + 1;
+            const dep = node.deps[cursor];
+            if (dep === undefined) {
+                return true;
+            }
+            if (colors[dep] === 1) {
+                return true;
+            }
+            if (colors[dep] === 0) {
+                colors[dep] = 1;
+                stack.push(dep);
+                cursors.push(0);
+            }
+        }
+    }
+    return false;
+}
+
+/**
  * @brief Validate a dense vector of graph-owned strings.
  * @details Graph validation protects optimizer and compiler passes before they assume dense
  * node ids and valid dependency edges.
@@ -404,6 +461,24 @@ function isStringArray(value: unknown): value is readonly string[] {
     }
     for (let index = 0; index < value.length; index += 1) {
         if (typeof value[index] !== "string") {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Validate a dense vector of optional graph-owned strings.
+ * @param value Candidate key vector.
+ * @returns True when each slot is either a string key or undefined fallback.
+ */
+function isOptionalStringArray(value: unknown): value is readonly (string | undefined)[] {
+    if (!isUnknownArray(value)) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+        const item = value[index];
+        if (item !== undefined && typeof item !== "string") {
             return false;
         }
     }
@@ -524,6 +599,29 @@ function isUnionDispatchNode(
         isUnionMaskArray(masks) &&
         options.length === graphs.length &&
         options.length === masks.length;
+}
+
+/**
+ * @brief Validate presence-gated union dispatch metadata.
+ * @param value Candidate PresenceDispatch node.
+ * @param state Shared recursion state for option graphs.
+ * @returns True when branch keys, options, graphs, and masks are aligned.
+ */
+function isPresenceDispatchNode(
+    value: Readonly<Record<string, unknown>>,
+    state: GraphValidationState
+): boolean {
+    const keys = readOwnDataProperty(value, "keys");
+    const options = readOwnDataProperty(value, "options");
+    const graphs = readOwnDataProperty(value, "graphs");
+    const masks = readOwnDataProperty(value, "masks");
+    return isOptionalStringArray(keys) &&
+        isSchemaArray(options) &&
+        isGraphArray(graphs, state) &&
+        isUnionMaskArray(masks) &&
+        keys.length === options.length &&
+        keys.length === graphs.length &&
+        keys.length === masks.length;
 }
 
 /**
@@ -757,7 +855,7 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
  */
 function isUnknownArray(value: unknown): value is readonly unknown[] {
     return Array.isArray(value) &&
-        hasOnlyDataProperties(value) &&
+        hasOnlyArrayDataProperties(value) &&
         hasDenseDataSlots(value);
 }
 
@@ -770,12 +868,40 @@ function isUnknownArray(value: unknown): value is readonly unknown[] {
  */
 function hasOnlyDataProperties(value: object): boolean {
     const descriptors = Object.getOwnPropertyDescriptors(value);
-    const descriptorMap = descriptors as Record<PropertyKey, PropertyDescriptor | undefined>;
+    const descriptorMap = descriptors as unknown as
+        Record<PropertyKey, PropertyDescriptor | undefined>;
     const keys = Reflect.ownKeys(descriptors);
     for (let index = 0; index < keys.length; index += 1) {
         const key = keys[index];
         if (key === undefined) {
             continue;
+        }
+        const descriptor = descriptorMap[key];
+        if (descriptor === undefined ||
+            !Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Reject non-index own properties on graph metadata arrays.
+ * @param value Array whose descriptor table is inspected.
+ * @returns True when only length and canonical index data slots are present.
+ */
+function hasOnlyArrayDataProperties(value: readonly unknown[]): boolean {
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const descriptorMap = descriptors as unknown as
+        Record<PropertyKey, PropertyDescriptor | undefined>;
+    const keys = Reflect.ownKeys(descriptors);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === "length") {
+            continue;
+        }
+        if (typeof key !== "string" || !isArrayIndexKey(key, value.length)) {
+            return false;
         }
         const descriptor = descriptorMap[key];
         if (descriptor === undefined ||
@@ -802,6 +928,23 @@ function hasDenseDataSlots(value: readonly unknown[]): boolean {
         }
     }
     return true;
+}
+
+/**
+ * @brief Test for a canonical array index property key.
+ * @param key Own array property name.
+ * @param length Array length upper bound.
+ * @returns True when key names an in-bounds element slot.
+ */
+function isArrayIndexKey(key: string, length: number): boolean {
+    if (key.length === 0 || key === "length") {
+        return false;
+    }
+    const index = Number(key);
+    return Number.isInteger(index) &&
+        index >= 0 &&
+        index < length &&
+        String(index) === key;
 }
 
 /**

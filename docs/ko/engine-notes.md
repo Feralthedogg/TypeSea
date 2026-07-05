@@ -53,7 +53,7 @@ public graph value는 API 밖으로 나가기 전에 validate되고 freeze됩니
 `compile()`과 AOT emission은 이 graph를 predicate source로 사용합니다.
 
 array, tuple, record schema는 native composite IR node로 낮아지며, child schema는 child validation plan을 통해 실행됩니다.
-`SchemaCheck`는 `lazy`와 `refine` 같은 dynamic schema에 예약되어 있습니다.
+`SchemaCheck`는 `lazy`, `refine`, `superRefine` 같은 dynamic schema에 예약되어 있습니다.
 graph는 callback 또는 resolver-backed semantics가 필요하다는 사실을 기록하며, 이것을 static predicate인 척하지 않습니다.
 
 ## Runtime Compiler
@@ -66,6 +66,15 @@ successful value는 diagnostic collection을 건너뛰고, failed value는 diagn
 user-controlled literal, regexp, object key, keyset, dynamic schema, diagnostic name은 generated factory가 capture한 side table에 둡니다.
 generated source에는 numeric side-table index, fixed helper string, sanitized function name만 들어갑니다.
 
+`compileBoolean()`은 같은 predicate emitter를 쓰지만 diagnostic collector를 만들기 전에 멈춥니다.
+그래서 full compiled guard보다 산출물이 작고, "boolean only" 계약이 API에 드러납니다.
+`compileAsync()`는 generated predicate를 async function으로 바꾸지 않습니다.
+대신 compiled diagnostic guard를 별도 cooperative evaluator로 감싸서, 일반 compiled hot path가 `await` state machine 비용을 지불하지 않게 합니다.
+
+AOT bundler plugin은 `emitAotModule()`을 감싼 얇은 build-time adapter입니다.
+virtual module은 id로 resolve되고, Rollup, Vite, esbuild macro path는 plugin config에 선언된 id의 정적 `compileCached("id", ...)` 호출만 치환합니다.
+source text 안의 schema expression을 임의로 평가하지 않습니다.
+
 semantic이 local한 scalar node는 direct JavaScript test로 emit됩니다.
 finite-number check, integer check, string length bound, literal equality, regexp test는 generated hot path에서 helper call 없이 낮아집니다.
 
@@ -73,7 +82,14 @@ array와 record IR node는 indexed loop를 emit합니다.
 static child schema는 optimized graph에서 해당 loop 안으로 inline됩니다.
 작은 scalar 또는 union element contract에서 function-call boundary를 피하기 위해서입니다.
 tuple node는 descriptor-based element access를 보존하고, dynamic edge는 ordinary guard execution과 같은 IR-backed runtime fallback을 사용합니다.
-따라서 `lazy`와 `refine`의 동작이 유지됩니다.
+따라서 `lazy`, `refine`, `superRefine`의 동작이 유지됩니다.
+
+union IR은 네 단계의 fast path를 가집니다.
+literal tag가 있는 object union은 discriminant dispatch를 쓰고, primitive union은 compact root-kind dispatch를 씁니다.
+required key로 branch를 구분할 수 있는 object union은 presence dispatch를 사용합니다.
+그 외 mixed union은 root-kind mask로 불가능한 branch를 건너뛰며 선언 순서대로 검사합니다.
+presence dispatch는 선언 순서를 유지하면서도, 후보 object에 필요한 own data key가 없으면 해당 branch를 실행하지 않습니다.
+AST나 query object처럼 재귀적인 object union에서 branch 폭발을 막기 위한 최적화입니다.
 
 strict object IR은 두 가지 shape으로 emit됩니다.
 모든 declared key가 required이면 generated validator는 field descriptor read보다 먼저 strict-key count를 실행합니다.
@@ -129,7 +145,8 @@ key는 runtime object identity와 schema identity의 pair입니다.
 같은 schema/value pair에 다시 들어오면 그 edge를 short-circuit합니다.
 이 방식으로 cyclic object graph도 유한하게 검증하면서, outer frame에서는 원래 object field를 계속 검사합니다.
 
-compiled `lazy`와 `refine` fallback은 같은 IR-backed runtime path를 사용하므로 recursive behavior가 execution engine 사이에서 일관됩니다.
+compiled `lazy`, `refine`, `superRefine` fallback은 같은 IR-backed runtime path를 사용하므로 recursive behavior가 execution engine 사이에서 일관됩니다.
+`superRefine`이 custom issue path나 message를 내보내면 generated diagnostic fallback은 그 nested issue를 현재 compiled path prefix 아래로 복사합니다.
 
 `checkFirst()`는 별도의 generated collector를 사용합니다.
 첫 diagnostic이 확정되는 즉시 frozen issue 하나를 반환하며, full `check()` collector를 끝까지 실행한 뒤 issue array를 자르지 않습니다.
@@ -155,18 +172,18 @@ benchmark suite는 두 질문을 분리합니다.
 Zod, Valibot, Ajv는 측정용 dev dependency입니다.
 `src`에서 import하지 않으며, package policy는 release 전에 runtime, peer, optional, bundled dependency field를 거부합니다.
 
-2026-07-05 KST의 마지막 로컬 벤치마크는 JSON-compatible strict-object benchmark에서 아래 ecosystem path를 보고했습니다.
-커밋된 기준 데이터는 `bench/results/latest.json`이며, `npm run bench:record`가 raw Vitest JSON에서 summary와 README SVG를 다시 생성합니다.
-`npm run bench:compare`는 committed summary를 0.3.2 regression floor와 비교합니다.
-대상은 unchecked valid hot path, safe invalid fast-fail, safe valid throughput입니다.
+2026-07-06 KST의 마지막 로컬 벤치마크는 JSON-compatible strict-object benchmark에서 아래 ecosystem path를 보고했습니다.
+커밋된 기준 데이터는 `bench/results/latest.json`이며, `npm run bench:record`가 전체 Vitest bench 3회의 중앙값으로 summary와 README SVG를 다시 생성합니다.
+`npm run bench:compare`는 committed summary를 release regression floor와 비교합니다.
+대상은 unchecked valid hot path, safe invalid fast-fail, safe valid throughput, presence-dispatch object union path입니다.
 `check:benchmarks`는 SVG freshness를 확인한 뒤 같은 floor check를 실행합니다.
 
 | Case | TypeSea runtime plan | TypeSea compiled safe | TypeSea compiled unsafe | TypeSea compiled unchecked | Ajv compiled |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Valid `is()` | 476,703 hz | 5,230,756 hz | 36,756,599 hz | 42,431,440 hz | 4,336,006 hz |
-| Valid `check()` | 466,105 hz | 4,824,240 hz | 36,509,714 hz | 43,131,347 hz | 4,280,363 hz |
-| Invalid `is()` | 3,396,045 hz | 42,197,735 hz | 50,090,902 hz | 51,002,903 hz | 28,986,950 hz |
-| Invalid `check()` | 339,575 hz | 2,145,392 hz | 3,098,275 hz | 3,673,561 hz | 28,274,668 hz |
+| Valid `is()` | 341,332 hz | 3,840,854 hz | 27,464,645 hz | 29,647,233 hz | 2,682,380 hz |
+| Valid `check()` | 294,582 hz | 2,914,942 hz | 21,517,947 hz | 31,707,555 hz | 2,876,907 hz |
+| Invalid `is()` | 2,223,276 hz | 30,513,434 hz | 28,172,129 hz | 36,659,550 hz | 15,870,460 hz |
+| Invalid `check()` | 280,569 hz | 1,460,301 hz | 2,144,535 hz | 2,658,950 hz | 19,847,089 hz |
 
 benchmark number는 machine-local telemetry입니다.
 regression을 잡는 데 유용하지만 고정된 throughput floor를 약속하지 않습니다.
