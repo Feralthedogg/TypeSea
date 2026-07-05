@@ -386,6 +386,12 @@ function matchesNumberKeywords(schema: JsonSchemaObject, value: JsonValue): bool
     if (schema.maximum !== undefined && value > schema.maximum) {
         return false;
     }
+    if (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum) {
+        return false;
+    }
+    if (schema.exclusiveMaximum !== undefined && value >= schema.exclusiveMaximum) {
+        return false;
+    }
     return true;
 }
 

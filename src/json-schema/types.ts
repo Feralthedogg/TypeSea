@@ -61,6 +61,9 @@ export interface JsonSchemaObject {
     readonly maxLength?: number;
     readonly minimum?: number;
     readonly maximum?: number;
+    readonly exclusiveMinimum?: number;
+    readonly exclusiveMaximum?: number;
+    readonly multipleOf?: number;
     readonly items?: JsonSchema | readonly JsonSchema[];
 
     /**
@@ -88,6 +91,8 @@ export interface JsonSchemaObject {
 export type JsonSchemaExportCode =
     | "unsupported_bigint"
     | "unsupported_symbol"
+    | "unsupported_date"
+    | "unsupported_runtime_object"
     | "unsupported_undefined"
     | "unsupported_number_literal"
     | "unsupported_number_bound"
@@ -141,6 +146,9 @@ export interface MutableJsonSchemaObject {
     maxLength?: number;
     minimum?: number;
     maximum?: number;
+    exclusiveMinimum?: number;
+    exclusiveMaximum?: number;
+    multipleOf?: number;
     items?: JsonSchema | readonly JsonSchema[];
 
     /**

@@ -6,40 +6,70 @@
  */
 
 import { asyncDecoder, asyncPipe, asyncRefine, asyncTransform } from "../async/index.js";
-import { coerce, decoder, pipe, transform } from "../decoder/index.js";
+import {
+    catchValue,
+    codec,
+    coerce,
+    decoder,
+    defaultValue,
+    pipe,
+    prefault,
+    transform
+} from "../decoder/index.js";
 import {
     array,
     discriminatedUnion,
     intersect,
+    map,
     record,
+    set,
     tuple,
     union
 } from "./composite.js";
 import {
     lazy,
     nullable,
+    nullish,
     optional,
     refine,
     undefinedable
 } from "./modifier.js";
 import {
+    catchall,
+    deepPartial,
     extend,
+    merge,
     object,
     omit,
     partial,
+    passthrough,
     pick,
-    strictObject
+    required,
+    safeExtend,
+    strict,
+    strictObject,
+    strip
 } from "./object/index.js";
 import {
     bigintGuard,
     booleanGuard,
+    dateGuard,
+    enumValues,
     literal,
     neverGuard,
+    nullGuard,
     numberGuard,
     stringGuard,
     symbolGuard,
-    unknownGuard
+    unknownGuard,
+    undefinedGuard,
+    voidGuard
 } from "./scalar.js";
+import {
+    instanceOf,
+    json,
+    property
+} from "./runtime.js";
 
 /**
  * @brief t.
@@ -51,26 +81,51 @@ export const t = Object.freeze({
     never: neverGuard,
     string: stringGuard,
     number: numberGuard,
+    date: dateGuard,
     bigint: bigintGuard,
     symbol: symbolGuard,
     boolean: booleanGuard,
+    null: nullGuard,
+    undefined: undefinedGuard,
+    void: voidGuard,
     literal,
+    enum: enumValues,
+    enumValues,
     array,
     tuple,
     record,
+    map,
+    set,
+    instanceOf,
+    property,
+    json,
     decoder,
+    default: defaultValue,
+    defaultValue,
+    prefault,
+    catch: catchValue,
+    codec,
     object,
     strictObject,
     extend,
+    merge,
     pick,
     omit,
     partial,
+    deepPartial,
+    required,
+    safeExtend,
+    strict,
+    passthrough,
+    strip,
+    catchall,
     union,
     intersect,
     discriminatedUnion,
     optional,
     undefinedable,
     nullable,
+    nullish,
     lazy,
     refine,
     transform,

@@ -6,6 +6,7 @@
  */
 
 import {
+    ArrayCheckTag,
     ObjectModeTag,
     PresenceTag,
     SchemaTag
@@ -57,7 +58,7 @@ export type CheckFunctionEmitter = (
  * @returns JavaScript source for array diagnostics.
  */
 export function emitArrayCheck(
-    item: Schema,
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
     value: string,
     path: string,
     issues: string,
@@ -65,8 +66,9 @@ export function emitArrayCheck(
     emitChild: CheckFunctionEmitter
 ): string {
     if (isUnsafeMode(context)) {
-        return emitUnsafeArrayCheck(item, value, path, issues, context, emitChild);
+        return emitUnsafeArrayCheck(schema, value, path, issues, context, emitChild);
     }
+    const item = schema.item;
     const itemValue = "av";
     const itemLeaf = emitLeafCheckAtSegment(
         item,
@@ -106,6 +108,7 @@ export function emitArrayCheck(
                 "array",
                 `a(${value})`
             )}return;}`,
+            emitArrayLengthIssues(schema, value, path, issues),
             `const xs=Object.getOwnPropertyNames(${value});`,
             "for(let xi=0;xi<xs.length;xi+=1){",
             "const key=xs[xi];",
@@ -131,6 +134,7 @@ export function emitArrayCheck(
             "array",
             `a(${value})`
         )}return;}`,
+        emitArrayLengthIssues(schema, value, path, issues),
         `for(let i=0;i<${value}.length;i+=1){`,
         `const d=gp(${value},i);`,
         `if(d===undefined){${missingCheck}}else if(!h.call(d,"value")){${emitIssueAtSegment(
@@ -232,13 +236,14 @@ export function emitTupleCheck(
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeArrayCheck(
-    item: Schema,
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
     value: string,
     path: string,
     issues: string,
     context: EmitContext,
     emitChild: CheckFunctionEmitter
 ): string {
+    const item = schema.item;
     const itemValue = "av";
     const itemLeaf = emitLeafCheckAtSegment(
         item,
@@ -262,8 +267,9 @@ function emitUnsafeArrayCheck(
             "expected_array",
             "array",
             `a(${value})`
-        )}return;}`
+            )}return;}`
     ];
+    parts.push(emitArrayLengthIssues(schema, value, path, issues));
     if (itemCheck !== "") {
         parts.push(
             `for(let i=0;i<${value}.length;i+=1){`,
@@ -273,6 +279,100 @@ function emitUnsafeArrayCheck(
         );
     }
     return parts.join("");
+}
+
+/**
+ * @brief Emit root-level array length diagnostics.
+ * @param schema Array schema with normalized checks.
+ * @param value Generated expression for the candidate array.
+ * @param path Generated expression for the current diagnostic path.
+ * @param issues Generated expression for the issue buffer.
+ * @returns JavaScript source that appends zero or more length issues.
+ */
+function emitArrayLengthIssues(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
+    value: string,
+    path: string,
+    issues: string
+): string {
+    const chunks: string[] = [];
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        switch (check.tag) {
+            case ArrayCheckTag.Min:
+                chunks.push(`if(${value}.length<${String(check.value)}){${emitIssue(
+                    issues,
+                    path,
+                    "expected_min_length",
+                    `length >= ${String(check.value)}`,
+                    `"length "+String(${value}.length)`
+                )}}`);
+                break;
+            case ArrayCheckTag.Max:
+                chunks.push(`if(${value}.length>${String(check.value)}){${emitIssue(
+                    issues,
+                    path,
+                    "expected_max_length",
+                    `length <= ${String(check.value)}`,
+                    `"length "+String(${value}.length)`
+                )}}`);
+                break;
+        }
+    }
+    return chunks.join("");
+}
+
+/**
+ * @brief Emit one-segment array length diagnostics.
+ * @param schema Array schema with normalized checks.
+ * @param value Generated expression for the candidate array.
+ * @param path Generated expression for the current diagnostic path.
+ * @param segmentExpression Generated path segment for the array field.
+ * @param issues Generated expression for the issue buffer.
+ * @returns JavaScript source that appends zero or more length issues.
+ */
+function emitArrayLengthIssuesAtSegment(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
+    value: string,
+    path: string,
+    segmentExpression: string,
+    issues: string
+): string {
+    const chunks: string[] = [];
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        switch (check.tag) {
+            case ArrayCheckTag.Min:
+                chunks.push(`if(${value}.length<${String(check.value)}){${emitIssueAtSegment(
+                    issues,
+                    path,
+                    segmentExpression,
+                    "expected_min_length",
+                    `length >= ${String(check.value)}`,
+                    `"length "+String(${value}.length)`
+                )}}`);
+                break;
+            case ArrayCheckTag.Max:
+                chunks.push(`if(${value}.length>${String(check.value)}){${emitIssueAtSegment(
+                    issues,
+                    path,
+                    segmentExpression,
+                    "expected_max_length",
+                    `length <= ${String(check.value)}`,
+                    `"length "+String(${value}.length)`
+                )}}`);
+                break;
+        }
+    }
+    return chunks.join("");
 }
 
 /**
@@ -346,7 +446,7 @@ function emitUnsafeTupleCheck(
  * @returns JavaScript source, or undefined when the caller must fall back.
  */
 function emitArrayCheckAtSegment(
-    item: Schema,
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
     value: string,
     path: string,
     segmentExpression: string,
@@ -355,7 +455,7 @@ function emitArrayCheckAtSegment(
 ): string | undefined {
     if (isUnsafeMode(context)) {
         return emitUnsafeArrayCheckAtSegment(
-            item,
+            schema,
             value,
             path,
             segmentExpression,
@@ -363,6 +463,7 @@ function emitArrayCheckAtSegment(
             context
         );
     }
+    const item = schema.item;
     const itemValue = "av";
     const itemLeaf = emitLeafCheckAtTwoSegments(
         item,
@@ -403,6 +504,7 @@ function emitArrayCheckAtSegment(
                 "array",
                 `a(${value})`
             )}}else{`,
+            emitArrayLengthIssuesAtSegment(schema, value, path, segmentExpression, issues),
             `const xs=Object.getOwnPropertyNames(${value});`,
             "for(let xi=0;xi<xs.length;xi+=1){",
             "const key=xs[xi];",
@@ -431,6 +533,7 @@ function emitArrayCheckAtSegment(
             "array",
             `a(${value})`
         )}}else{`,
+        emitArrayLengthIssuesAtSegment(schema, value, path, segmentExpression, issues),
         `for(let i=0;i<${value}.length;i+=1){`,
         `const vd=gp(${value},i);`,
         `if(vd===undefined){${missingLeaf}}else if(!h.call(vd,"value")){${emitIssueAtTwoSegments(
@@ -540,13 +643,14 @@ function emitTupleCheckAtSegment(
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeArrayCheckAtSegment(
-    item: Schema,
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
     value: string,
     path: string,
     segmentExpression: string,
     issues: string,
     context: EmitContext
 ): string | undefined {
+    const item = schema.item;
     const itemLeaf = emitLeafCheckAtTwoSegments(
         item,
         "av",
@@ -569,16 +673,19 @@ function emitUnsafeArrayCheckAtSegment(
             `a(${value})`
         )}}`
     ];
+    parts.push(
+        "else{",
+        emitArrayLengthIssuesAtSegment(schema, value, path, segmentExpression, issues)
+    );
     if (itemLeaf !== "") {
         parts.push(
-            "else{",
             `for(let i=0;i<${value}.length;i+=1){`,
             `const av=${value}[i];`,
             itemLeaf,
             "}",
-            "}"
         );
     }
+    parts.push("}");
     return parts.join("");
 }
 
@@ -946,7 +1053,16 @@ export function emitObjectCheck(
             )}}else{${presentCheck}}}`);
         }
     }
-    if (schema.mode === ObjectModeTag.Strict) {
+    if (schema.catchall !== undefined) {
+        parts.push(emitObjectCatchallCheck(
+            schema,
+            value,
+            path,
+            issues,
+            context,
+            emitChild
+        ));
+    } else if (schema.mode === ObjectModeTag.Strict) {
         parts.push(`const xs=Object.getOwnPropertyNames(${value});const xn=xs.length;for(let i=0;i<xn;i+=1){const key=xs[i];if(!(${safeKeyMembershipExpression(
             "key",
             keyExpressions
@@ -967,6 +1083,64 @@ export function emitObjectCheck(
         )}}}`);
     }
     return parts.join("");
+}
+
+/**
+ * @brief Emit diagnostic collection for object catchall keys.
+ */
+function emitObjectCatchallCheck(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>,
+    value: string,
+    path: string,
+    issues: string,
+    context: EmitContext,
+    emitChild: CheckFunctionEmitter
+): string {
+    const catchall = schema.catchall;
+    if (catchall === undefined) {
+        return "";
+    }
+    const child = emitChild(catchall, context);
+    const membership = safeKeyMembershipExpression(
+        "key",
+        objectKeyExpressions(schema, context)
+    );
+    return [
+        `const cx=Reflect.ownKeys(${value});`,
+        "const cn=cx.length;",
+        "for(let ci=0;ci<cn;ci+=1){",
+        "const key=cx[ci];",
+        `if(typeof key==="string"&&(${membership}))continue;`,
+        "const pk=typeof key===\"string\"?key:String(key);",
+        `const cd=gp(${value},key);`,
+        `if(cd===undefined||!h.call(cd,"value")){${emitIssueAtSegment(
+            issues,
+            path,
+            "pk",
+            "expected_object",
+            "data property",
+            stringLiteral("accessor")
+        )}}else{`,
+        `${path}.push(pk);${child}(cd.value,${path},${issues});${path}.pop();`,
+        "}}"
+    ].join("");
+}
+
+/**
+ * @brief Convert object schema keys into side-table source expressions.
+ */
+function objectKeyExpressions(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>,
+    context: EmitContext
+): readonly string[] {
+    const keys = new Array<string>(schema.keys.length);
+    for (let index = 0; index < schema.keys.length; index += 1) {
+        const key = schema.keys[index];
+        if (key !== undefined) {
+            keys[index] = stringRef(context, key);
+        }
+    }
+    return keys;
 }
 
 /**
@@ -1028,7 +1202,16 @@ function emitUnsafeObjectCheck(
         }
         parts.push("}");
     }
-    if (schema.mode === ObjectModeTag.Strict && !isUncheckedMode(context)) {
+    if (schema.catchall !== undefined) {
+        parts.push(emitUnsafeObjectCatchallCheck(
+            schema,
+            value,
+            path,
+            issues,
+            context,
+            emitChild
+        ));
+    } else if (schema.mode === ObjectModeTag.Strict && !isUncheckedMode(context)) {
         const keys = new Array<string>(schema.entries.length);
         for (let index = 0; index < schema.entries.length; index += 1) {
             const entry = schema.entries[index];
@@ -1051,6 +1234,35 @@ function emitUnsafeObjectCheck(
         );
     }
     return parts.join("");
+}
+
+/**
+ * @brief Emit unsafe diagnostic collection for object catchall keys.
+ */
+function emitUnsafeObjectCatchallCheck(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>,
+    value: string,
+    path: string,
+    issues: string,
+    context: EmitContext,
+    emitChild: CheckFunctionEmitter
+): string {
+    const catchall = schema.catchall;
+    if (catchall === undefined) {
+        return "";
+    }
+    const child = emitChild(catchall, context);
+    const membership = unsafeKeyMembershipExpression("key", schema.keys);
+    return [
+        `const cx=Reflect.ownKeys(${value});`,
+        "const cn=cx.length;",
+        "for(let ci=0;ci<cn;ci+=1){",
+        "const key=cx[ci];",
+        `if(typeof key==="string"&&(${membership}))continue;`,
+        "const pk=typeof key===\"string\"?key:String(key);",
+        `${path}.push(pk);${child}(${value}[key],${path},${issues});${path}.pop();`,
+        "}"
+    ].join("");
 }
 
 /**
@@ -1107,7 +1319,7 @@ function emitCompositeCheckAtSegment(
     switch (schema.tag) {
         case SchemaTag.Array:
             return emitArrayCheckAtSegment(
-                schema.item,
+                schema,
                 value,
                 path,
                 segmentExpression,
@@ -1115,6 +1327,9 @@ function emitCompositeCheckAtSegment(
                 context
             );
         case SchemaTag.Tuple:
+            if (schema.rest !== undefined) {
+                return undefined;
+            }
             return emitTupleCheckAtSegment(
                 schema.items,
                 value,

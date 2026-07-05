@@ -6,11 +6,19 @@
  */
 
 import {
+    DateCheckTag,
     NumberCheckTag,
     SchemaTag,
     StringCheckTag
 } from "../kind/index.js";
 import {
+    EMAIL_PATTERN,
+    IPV4_PATTERN,
+    IPV6_PATTERN,
+    ISO_DATETIME_PATTERN,
+    ISO_DATE_PATTERN,
+    ULID_PATTERN,
+    URL_PATTERN,
     UUID_PATTERN,
     type LiteralValue,
     type Schema
@@ -93,8 +101,91 @@ export function emitStringCheck(
             case StringCheckTag.Uuid:
                 parts.push(emitPatternIssue(value, path, issues, UUID_PATTERN, "uuid", context));
                 break;
+            case StringCheckTag.Email:
+                parts.push(emitPatternIssue(value, path, issues, EMAIL_PATTERN, "email", context));
+                break;
+            case StringCheckTag.Url:
+                parts.push(emitPatternIssue(value, path, issues, URL_PATTERN, "url", context));
+                break;
+            case StringCheckTag.IsoDate:
+                parts.push(emitPatternIssue(value, path, issues, ISO_DATE_PATTERN, "iso_date", context));
+                break;
+            case StringCheckTag.IsoDateTime:
+                parts.push(emitPatternIssue(value, path, issues, ISO_DATETIME_PATTERN, "iso_datetime", context));
+                break;
+            case StringCheckTag.Ulid:
+                parts.push(emitPatternIssue(value, path, issues, ULID_PATTERN, "ulid", context));
+                break;
+            case StringCheckTag.Ipv4:
+                parts.push(emitPatternIssue(value, path, issues, IPV4_PATTERN, "ipv4", context));
+                break;
+            case StringCheckTag.Ipv6:
+                parts.push(emitPatternIssue(value, path, issues, IPV6_PATTERN, "ipv6", context));
+                break;
         }
     }
+    return parts.join("");
+}
+
+/**
+ * @brief Emit Date diagnostics.
+ * @param value Generated expression for the candidate value.
+ * @param path Generated expression for the current diagnostic path.
+ * @param issues Generated expression for the issue buffer.
+ * @returns JavaScript source for root Date diagnostics.
+ */
+export function emitDateCheck(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Date }>,
+    value: string,
+    path: string,
+    issues: string
+): string {
+    const invalid = `!dg(${value})`;
+    const checks = schema.checks;
+    if (checks.length === 0) {
+        return `if(${invalid}){${emitIssue(
+            issues,
+            path,
+            "expected_date",
+            "valid Date",
+            `a(${value})`
+        )}}`;
+    }
+    const parts = [`if(${invalid}){${emitIssue(
+        issues,
+        path,
+        "expected_date",
+        "valid Date",
+        `a(${value})`
+    )}}else{`];
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        const actual = `new Date(dt(${value})).toISOString()`;
+        switch (check.tag) {
+            case DateCheckTag.Min:
+                parts.push(`if(dt(${value})<${String(check.value)}){${emitIssue(
+                    issues,
+                    path,
+                    "expected_gte",
+                    `>= ${new Date(check.value).toISOString()}`,
+                    actual
+                )}}`);
+                break;
+            case DateCheckTag.Max:
+                parts.push(`if(dt(${value})>${String(check.value)}){${emitIssue(
+                    issues,
+                    path,
+                    "expected_lte",
+                    `<= ${new Date(check.value).toISOString()}`,
+                    actual
+                )}}`);
+                break;
+        }
+    }
+    parts.push("}");
     return parts.join("");
 }
 
@@ -147,6 +238,18 @@ export function emitLeafCheckAtSegment(
                 segmentExpression,
                 issues
             );
+        case SchemaTag.Date:
+            if (schema.checks.length !== 0) {
+                return undefined;
+            }
+            return `if(!dg(${value})){${emitIssueAtSegment(
+                issues,
+                path,
+                segmentExpression,
+                "expected_date",
+                "valid Date",
+                `a(${value})`
+            )}}`;
         case SchemaTag.BigInt:
             return `if(typeof ${value}!=="bigint"){${emitIssueAtSegment(
                 issues,
@@ -250,6 +353,15 @@ export function emitUndefinedLeafCheckAtSegment(
                 "number",
                 stringLiteral("undefined")
             );
+        case SchemaTag.Date:
+            return emitIssueAtSegment(
+                issues,
+                path,
+                segmentExpression,
+                "expected_date",
+                "valid Date",
+                stringLiteral("undefined")
+            );
         case SchemaTag.BigInt:
             return emitIssueAtSegment(
                 issues,
@@ -344,6 +456,19 @@ export function emitLeafCheckAtTwoSegments(
                 secondSegmentExpression,
                 issues
             );
+        case SchemaTag.Date:
+            if (schema.checks.length !== 0) {
+                return undefined;
+            }
+            return `if(!dg(${value})){${emitIssueAtTwoSegments(
+                issues,
+                path,
+                firstSegmentExpression,
+                secondSegmentExpression,
+                "expected_date",
+                "valid Date",
+                `a(${value})`
+            )}}`;
         case SchemaTag.BigInt:
             return `if(typeof ${value}!=="bigint"){${emitIssueAtTwoSegments(
                 issues,
@@ -450,6 +575,16 @@ export function emitUndefinedLeafCheckAtTwoSegments(
                 secondSegmentExpression,
                 "expected_number",
                 "number",
+                stringLiteral("undefined")
+            );
+        case SchemaTag.Date:
+            return emitIssueAtTwoSegments(
+                issues,
+                path,
+                firstSegmentExpression,
+                secondSegmentExpression,
+                "expected_date",
+                "valid Date",
                 stringLiteral("undefined")
             );
         case SchemaTag.BigInt:
@@ -589,6 +724,83 @@ function emitStringCheckAtSegment(
                     context
                 ));
                 break;
+            case StringCheckTag.Email:
+                parts.push(emitPatternIssueAtSegment(
+                    value,
+                    path,
+                    segmentExpression,
+                    issues,
+                    EMAIL_PATTERN,
+                    "email",
+                    context
+                ));
+                break;
+            case StringCheckTag.Url:
+                parts.push(emitPatternIssueAtSegment(
+                    value,
+                    path,
+                    segmentExpression,
+                    issues,
+                    URL_PATTERN,
+                    "url",
+                    context
+                ));
+                break;
+            case StringCheckTag.IsoDate:
+                parts.push(emitPatternIssueAtSegment(
+                    value,
+                    path,
+                    segmentExpression,
+                    issues,
+                    ISO_DATE_PATTERN,
+                    "iso_date",
+                    context
+                ));
+                break;
+            case StringCheckTag.IsoDateTime:
+                parts.push(emitPatternIssueAtSegment(
+                    value,
+                    path,
+                    segmentExpression,
+                    issues,
+                    ISO_DATETIME_PATTERN,
+                    "iso_datetime",
+                    context
+                ));
+                break;
+            case StringCheckTag.Ulid:
+                parts.push(emitPatternIssueAtSegment(
+                    value,
+                    path,
+                    segmentExpression,
+                    issues,
+                    ULID_PATTERN,
+                    "ulid",
+                    context
+                ));
+                break;
+            case StringCheckTag.Ipv4:
+                parts.push(emitPatternIssueAtSegment(
+                    value,
+                    path,
+                    segmentExpression,
+                    issues,
+                    IPV4_PATTERN,
+                    "ipv4",
+                    context
+                ));
+                break;
+            case StringCheckTag.Ipv6:
+                parts.push(emitPatternIssueAtSegment(
+                    value,
+                    path,
+                    segmentExpression,
+                    issues,
+                    IPV6_PATTERN,
+                    "ipv6",
+                    context
+                ));
+                break;
         }
     }
     parts.push("}");
@@ -692,6 +904,90 @@ function emitStringCheckAtTwoSegments(
                     context
                 ));
                 break;
+            case StringCheckTag.Email:
+                parts.push(emitPatternIssueAtTwoSegments(
+                    value,
+                    path,
+                    firstSegmentExpression,
+                    secondSegmentExpression,
+                    issues,
+                    EMAIL_PATTERN,
+                    "email",
+                    context
+                ));
+                break;
+            case StringCheckTag.Url:
+                parts.push(emitPatternIssueAtTwoSegments(
+                    value,
+                    path,
+                    firstSegmentExpression,
+                    secondSegmentExpression,
+                    issues,
+                    URL_PATTERN,
+                    "url",
+                    context
+                ));
+                break;
+            case StringCheckTag.IsoDate:
+                parts.push(emitPatternIssueAtTwoSegments(
+                    value,
+                    path,
+                    firstSegmentExpression,
+                    secondSegmentExpression,
+                    issues,
+                    ISO_DATE_PATTERN,
+                    "iso_date",
+                    context
+                ));
+                break;
+            case StringCheckTag.IsoDateTime:
+                parts.push(emitPatternIssueAtTwoSegments(
+                    value,
+                    path,
+                    firstSegmentExpression,
+                    secondSegmentExpression,
+                    issues,
+                    ISO_DATETIME_PATTERN,
+                    "iso_datetime",
+                    context
+                ));
+                break;
+            case StringCheckTag.Ulid:
+                parts.push(emitPatternIssueAtTwoSegments(
+                    value,
+                    path,
+                    firstSegmentExpression,
+                    secondSegmentExpression,
+                    issues,
+                    ULID_PATTERN,
+                    "ulid",
+                    context
+                ));
+                break;
+            case StringCheckTag.Ipv4:
+                parts.push(emitPatternIssueAtTwoSegments(
+                    value,
+                    path,
+                    firstSegmentExpression,
+                    secondSegmentExpression,
+                    issues,
+                    IPV4_PATTERN,
+                    "ipv4",
+                    context
+                ));
+                break;
+            case StringCheckTag.Ipv6:
+                parts.push(emitPatternIssueAtTwoSegments(
+                    value,
+                    path,
+                    firstSegmentExpression,
+                    secondSegmentExpression,
+                    issues,
+                    IPV6_PATTERN,
+                    "ipv6",
+                    context
+                ));
+                break;
         }
     }
     parts.push("}");
@@ -758,6 +1054,33 @@ export function emitNumberCheck(
                     path,
                     "expected_lte",
                     `<= ${String(check.value)}`,
+                    `String(${value})`
+                )}}`);
+                break;
+            case NumberCheckTag.Gt:
+                parts.push(`if(${value}<=${String(check.value)}){${emitIssue(
+                    issues,
+                    path,
+                    "expected_gt",
+                    `> ${String(check.value)}`,
+                    `String(${value})`
+                )}}`);
+                break;
+            case NumberCheckTag.Lt:
+                parts.push(`if(${value}>=${String(check.value)}){${emitIssue(
+                    issues,
+                    path,
+                    "expected_lt",
+                    `< ${String(check.value)}`,
+                    `String(${value})`
+                )}}`);
+                break;
+            case NumberCheckTag.MultipleOf:
+                parts.push(`if(${value}%${String(check.value)}!==0){${emitIssue(
+                    issues,
+                    path,
+                    "expected_multiple_of",
+                    `multiple of ${String(check.value)}`,
                     `String(${value})`
                 )}}`);
                 break;
@@ -842,6 +1165,36 @@ function emitNumberCheckAtSegment(
                     segmentExpression,
                     "expected_lte",
                     `<= ${String(check.value)}`,
+                    `String(${value})`
+                )}}`);
+                break;
+            case NumberCheckTag.Gt:
+                parts.push(`if(${value}<=${String(check.value)}){${emitIssueAtSegment(
+                    issues,
+                    path,
+                    segmentExpression,
+                    "expected_gt",
+                    `> ${String(check.value)}`,
+                    `String(${value})`
+                )}}`);
+                break;
+            case NumberCheckTag.Lt:
+                parts.push(`if(${value}>=${String(check.value)}){${emitIssueAtSegment(
+                    issues,
+                    path,
+                    segmentExpression,
+                    "expected_lt",
+                    `< ${String(check.value)}`,
+                    `String(${value})`
+                )}}`);
+                break;
+            case NumberCheckTag.MultipleOf:
+                parts.push(`if(${value}%${String(check.value)}!==0){${emitIssueAtSegment(
+                    issues,
+                    path,
+                    segmentExpression,
+                    "expected_multiple_of",
+                    `multiple of ${String(check.value)}`,
                     `String(${value})`
                 )}}`);
                 break;
@@ -930,6 +1283,39 @@ function emitNumberCheckAtTwoSegments(
                     secondSegmentExpression,
                     "expected_lte",
                     `<= ${String(check.value)}`,
+                    `String(${value})`
+                )}}`);
+                break;
+            case NumberCheckTag.Gt:
+                parts.push(`if(${value}<=${String(check.value)}){${emitIssueAtTwoSegments(
+                    issues,
+                    path,
+                    firstSegmentExpression,
+                    secondSegmentExpression,
+                    "expected_gt",
+                    `> ${String(check.value)}`,
+                    `String(${value})`
+                )}}`);
+                break;
+            case NumberCheckTag.Lt:
+                parts.push(`if(${value}>=${String(check.value)}){${emitIssueAtTwoSegments(
+                    issues,
+                    path,
+                    firstSegmentExpression,
+                    secondSegmentExpression,
+                    "expected_lt",
+                    `< ${String(check.value)}`,
+                    `String(${value})`
+                )}}`);
+                break;
+            case NumberCheckTag.MultipleOf:
+                parts.push(`if(${value}%${String(check.value)}!==0){${emitIssueAtTwoSegments(
+                    issues,
+                    path,
+                    firstSegmentExpression,
+                    secondSegmentExpression,
+                    "expected_multiple_of",
+                    `multiple of ${String(check.value)}`,
                     `String(${value})`
                 )}}`);
                 break;

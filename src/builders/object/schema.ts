@@ -64,7 +64,7 @@ export function objectSchema(
             presence: entrySchema.presence
         };
     }
-    return objectSchemaFromEntries(entries, mode);
+    return objectSchemaFromEntries(entries, mode, undefined);
 }
 
 /**
@@ -74,7 +74,8 @@ export function objectSchema(
  */
 export function objectSchemaFromEntries(
     sourceEntries: readonly ObjectEntry[],
-    mode: ObjectModeTag
+    mode: ObjectModeTag,
+    catchall: Schema | undefined
 ): ObjectSchema {
     const entries = new Array<ObjectEntry>(sourceEntries.length);
     const keys = new Array<string>(sourceEntries.length);
@@ -96,8 +97,35 @@ export function objectSchemaFromEntries(
         entries,
         keys,
         keyLookup,
-        mode
+        mode,
+        catchall
     };
+}
+
+/**
+ * @brief Rebuild an object schema with a different unknown-key mode.
+ * @param schema Source object schema.
+ * @param mode Unknown-key policy for the rebuilt schema.
+ * @returns Object schema with identical entries and catchall policy.
+ */
+export function objectSchemaWithMode(
+    schema: ObjectSchema,
+    mode: ObjectModeTag
+): ObjectSchema {
+    return objectSchemaFromEntries(schema.entries, mode, schema.catchall);
+}
+
+/**
+ * @brief Rebuild an object schema with an unknown-key validator.
+ * @param schema Source object schema.
+ * @param catchall Schema applied to every undeclared own key.
+ * @returns Object schema that validates extra keys with the supplied schema.
+ */
+export function objectSchemaWithCatchall(
+    schema: ObjectSchema,
+    catchall: Schema
+): ObjectSchema {
+    return objectSchemaFromEntries(schema.entries, schema.mode, catchall);
 }
 
 /**
@@ -158,7 +186,11 @@ export function mergeObjectSchemas(
             entries.push(entry);
         }
     }
-    return objectSchemaFromEntries(entries, base.mode);
+    return objectSchemaFromEntries(
+        entries,
+        base.mode,
+        extension.catchall ?? base.catchall
+    );
 }
 
 /**
@@ -185,7 +217,7 @@ export function pickObjectSchema(
         }
         entries[index] = entry;
     }
-    return objectSchemaFromEntries(entries, schema.mode);
+    return objectSchemaFromEntries(entries, schema.mode, schema.catchall);
 }
 
 /**
@@ -207,7 +239,7 @@ export function omitObjectSchema(
             entries.push(entry);
         }
     }
-    return objectSchemaFromEntries(entries, schema.mode);
+    return objectSchemaFromEntries(entries, schema.mode, schema.catchall);
 }
 
 /**
@@ -230,7 +262,55 @@ export function partialObjectSchema(schema: ObjectSchema): ObjectSchema {
             };
         }
     }
-    return objectSchemaFromEntries(entries, schema.mode);
+    return objectSchemaFromEntries(entries, schema.mode, schema.catchall);
+}
+
+/**
+ * @brief Recursively convert object entries to optional presence.
+ * @param schema Source object schema.
+ * @returns Rebuilt object schema with nested object/container children partialized.
+ * @details Lazy and refinement schemas are treated as semantic barriers because
+ * their runtime callbacks may depend on the original exact value domain.
+ */
+export function deepPartialObjectSchema(schema: ObjectSchema): ObjectSchema {
+    const entries = new Array<ObjectEntry>(schema.entries.length);
+    for (let index = 0; index < schema.entries.length; index += 1) {
+        const entry = schema.entries[index];
+        if (entry !== undefined) {
+            entries[index] = {
+                key: entry.key,
+                schema: deepPartialSchema(entry.schema),
+                presence: PresenceTag.Optional
+            };
+        }
+    }
+    const catchall = schema.catchall === undefined
+        ? undefined
+        : deepPartialSchema(schema.catchall);
+    return objectSchemaFromEntries(entries, schema.mode, catchall);
+}
+
+/**
+ * @brief Convert every object entry to required presence.
+ * @param schema Source object schema.
+ * @returns Rebuilt object schema with required entries.
+ * @details Object construction already stripped Optional wrappers into entry
+ * presence metadata. Requiring a field therefore only needs to flip that
+ * metadata back to Required while preserving each value-domain schema.
+ */
+export function requiredObjectSchema(schema: ObjectSchema): ObjectSchema {
+    const entries = new Array<ObjectEntry>(schema.entries.length);
+    for (let index = 0; index < schema.entries.length; index += 1) {
+        const entry = schema.entries[index];
+        if (entry !== undefined) {
+            entries[index] = {
+                key: entry.key,
+                schema: entry.schema,
+                presence: PresenceTag.Required
+            };
+        }
+    }
+    return objectSchemaFromEntries(entries, schema.mode, schema.catchall);
 }
 
 /**
@@ -248,8 +328,11 @@ export function readObjectKeySelection(
     schema: ObjectSchema,
     label: string
 ): readonly string[] {
+    if (isRecord(keys)) {
+        return readObjectKeyMask(keys, schema, label);
+    }
     if (!isUnknownArray(keys)) {
-        throw new TypeError(`${label} must be an array`);
+        throw new TypeError(`${label} must be an array or key mask`);
     }
     const selected = new Array<string>(keys.length);
     for (let index = 0; index < keys.length; index += 1) {
@@ -266,6 +349,135 @@ export function readObjectKeySelection(
         selected[index] = key;
     }
     return selected;
+}
+
+/**
+ * @brief Validate a Zod-style object key mask.
+ * @param mask Candidate object whose selected keys have value true.
+ * @param schema Object schema whose keys define the valid selection domain.
+ * @param label Human-readable API label used in thrown errors.
+ * @returns Ordered key selection accepted by object pick and omit.
+ */
+function readObjectKeyMask(
+    mask: Readonly<Record<string, unknown>>,
+    schema: ObjectSchema,
+    label: string
+): readonly string[] {
+    const keys = Object.keys(mask);
+    const selected: string[] = [];
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined) {
+            continue;
+        }
+        if (mask[key] !== true) {
+            throw new TypeError(`${label} mask values must be true`);
+        }
+        if (!hasObjectKey(schema.keyLookup, key)) {
+            throw new TypeError(`${label} contains unknown object key ${key}`);
+        }
+        selected.push(key);
+    }
+    return selected;
+}
+
+/**
+ * @brief Recursively partialize pure schema containers.
+ * @param schema Schema to rewrite.
+ * @returns Schema with nested object fields made optional where safe.
+ */
+function deepPartialSchema(schema: Schema): Schema {
+    switch (schema.tag) {
+        case SchemaTag.Object:
+            return deepPartialObjectSchema(schema);
+        case SchemaTag.Array:
+            return {
+                tag: SchemaTag.Array,
+                item: deepPartialSchema(schema.item),
+                checks: schema.checks
+            };
+        case SchemaTag.Tuple:
+            return {
+                tag: SchemaTag.Tuple,
+                items: mapDeepPartialSchemas(schema.items),
+                rest: schema.rest === undefined
+                    ? undefined
+                    : deepPartialSchema(schema.rest)
+            };
+        case SchemaTag.Record:
+            return {
+                tag: SchemaTag.Record,
+                value: deepPartialSchema(schema.value)
+            };
+        case SchemaTag.Map:
+            return {
+                tag: SchemaTag.Map,
+                key: deepPartialSchema(schema.key),
+                value: deepPartialSchema(schema.value)
+            };
+        case SchemaTag.Set:
+            return {
+                tag: SchemaTag.Set,
+                item: deepPartialSchema(schema.item)
+            };
+        case SchemaTag.Property:
+            return {
+                tag: SchemaTag.Property,
+                base: deepPartialSchema(schema.base),
+                key: schema.key,
+                value: deepPartialSchema(schema.value)
+            };
+        case SchemaTag.Union:
+            return {
+                tag: SchemaTag.Union,
+                options: mapDeepPartialSchemas(schema.options)
+            };
+        case SchemaTag.Intersection:
+            return {
+                tag: SchemaTag.Intersection,
+                left: deepPartialSchema(schema.left),
+                right: deepPartialSchema(schema.right)
+            };
+        case SchemaTag.Optional:
+            return {
+                tag: SchemaTag.Optional,
+                inner: deepPartialSchema(schema.inner)
+            };
+        case SchemaTag.Undefinedable:
+            return {
+                tag: SchemaTag.Undefinedable,
+                inner: deepPartialSchema(schema.inner)
+            };
+        case SchemaTag.Nullable:
+            return {
+                tag: SchemaTag.Nullable,
+                inner: deepPartialSchema(schema.inner)
+            };
+        case SchemaTag.Brand:
+            return {
+                tag: SchemaTag.Brand,
+                inner: deepPartialSchema(schema.inner),
+                brand: schema.brand
+            };
+        default:
+            return schema;
+    }
+}
+
+/**
+ * @brief Deep-partialize a schema vector.
+ * @param schemas Source schema vector.
+ * @returns New schema vector preserving index order.
+ */
+function mapDeepPartialSchemas(schemas: readonly Schema[]): readonly Schema[] {
+    const mapped = new Array<Schema>(schemas.length);
+    for (let index = 0; index < schemas.length; index += 1) {
+        const schema = schemas[index];
+        if (schema !== undefined) {
+            mapped[index] = deepPartialSchema(schema);
+        }
+    }
+    return mapped;
 }
 
 /**

@@ -41,17 +41,38 @@ function freezeSchemaInner(schema: Schema, frozen: WeakSet<object>): Schema {
         case SchemaTag.Number:
             freezeArray(schema.checks, frozen);
             return Object.freeze(schema);
+        case SchemaTag.Date:
+            freezeArray(schema.checks, frozen);
+            return Object.freeze(schema);
         case SchemaTag.Array:
             freezeSchemaInner(schema.item, frozen);
+            freezeArray(schema.checks, frozen);
             return Object.freeze(schema);
         case SchemaTag.Tuple:
             freezeSchemaArray(schema.items, frozen);
+            if (schema.rest !== undefined) {
+                freezeSchemaInner(schema.rest, frozen);
+            }
             return Object.freeze(schema);
         case SchemaTag.Record:
             freezeSchemaInner(schema.value, frozen);
             return Object.freeze(schema);
+        case SchemaTag.Map:
+            freezeSchemaInner(schema.key, frozen);
+            freezeSchemaInner(schema.value, frozen);
+            return Object.freeze(schema);
+        case SchemaTag.Set:
+            freezeSchemaInner(schema.item, frozen);
+            return Object.freeze(schema);
+        case SchemaTag.Property:
+            freezeSchemaInner(schema.base, frozen);
+            freezeSchemaInner(schema.value, frozen);
+            return Object.freeze(schema);
         case SchemaTag.Object:
             freezeObjectEntries(schema.entries, frozen);
+            if (schema.catchall !== undefined) {
+                freezeSchemaInner(schema.catchall, frozen);
+            }
             Object.freeze(schema.keys);
             Object.freeze(schema.keyLookup);
             return Object.freeze(schema);
@@ -81,6 +102,7 @@ function freezeSchemaInner(schema: Schema, frozen: WeakSet<object>): Schema {
         case SchemaTag.BigInt:
         case SchemaTag.Symbol:
         case SchemaTag.Boolean:
+        case SchemaTag.InstanceOf:
         case SchemaTag.Literal:
         case SchemaTag.Lazy:
             return Object.freeze(schema);

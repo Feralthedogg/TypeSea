@@ -59,6 +59,9 @@ export function emitSchema(
             return emitString(schema, path, issues);
         case SchemaTag.Number:
             return emitNumber(schema, path, issues);
+        case SchemaTag.Date:
+            pushJsonSchemaIssue(path, issues, "unsupported_date", "JSON Schema cannot represent JavaScript Date objects");
+            return undefined;
         case SchemaTag.BigInt:
             pushJsonSchemaIssue(path, issues, "unsupported_bigint", "JSON Schema has no bigint type");
             return undefined;
@@ -70,11 +73,22 @@ export function emitSchema(
         case SchemaTag.Literal:
             return emitLiteral(schema.value, path, issues);
         case SchemaTag.Array:
-            return emitArray(schema.item, path, issues, emitSchema, dialect);
+            return emitArray(schema, path, issues, emitSchema, dialect);
         case SchemaTag.Tuple:
-            return emitTuple(schema.items, path, issues, emitSchema, dialect);
+            return emitTuple(schema, path, issues, emitSchema, dialect);
         case SchemaTag.Record:
             return emitRecord(schema.value, path, issues, emitSchema, dialect);
+        case SchemaTag.Map:
+        case SchemaTag.Set:
+        case SchemaTag.InstanceOf:
+        case SchemaTag.Property:
+            pushJsonSchemaIssue(
+                path,
+                issues,
+                "unsupported_runtime_object",
+                "JSON Schema cannot preserve this JavaScript runtime object contract"
+            );
+            return undefined;
         case SchemaTag.Object:
             return emitObject(schema, path, issues, emitSchema, dialect);
         case SchemaTag.Union:

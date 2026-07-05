@@ -6,17 +6,29 @@
  */
 
 import {
+    DateCheckTag,
     NumberCheckTag,
     SchemaTag,
     StringCheckTag
 } from "../kind/index.js";
 import type { Issue, PathSegment } from "../issue/index.js";
 import {
+    EMAIL_PATTERN,
+    IPV4_PATTERN,
+    IPV6_PATTERN,
+    ISO_DATETIME_PATTERN,
+    ISO_DATE_PATTERN,
+    ULID_PATTERN,
+    URL_PATTERN,
     UUID_PATTERN,
     type Schema
 } from "../schema/index.js";
 import { pushIssue } from "./issue.js";
-import { actualType } from "./shared.js";
+import {
+    actualType,
+    isValidDateObject,
+    readDateTime
+} from "./shared.js";
 
 /**
  * @brief collect string issues.
@@ -91,6 +103,98 @@ export function collectStringIssues(
                     pushIssue(path, issues, "expected_pattern", "uuid", "string");
                 }
                 break;
+            case StringCheckTag.Email:
+                EMAIL_PATTERN.lastIndex = 0;
+                if (!EMAIL_PATTERN.test(value)) {
+                    pushIssue(path, issues, "expected_pattern", "email", "string");
+                }
+                break;
+            case StringCheckTag.Url:
+                URL_PATTERN.lastIndex = 0;
+                if (!URL_PATTERN.test(value)) {
+                    pushIssue(path, issues, "expected_pattern", "url", "string");
+                }
+                break;
+            case StringCheckTag.IsoDate:
+                ISO_DATE_PATTERN.lastIndex = 0;
+                if (!ISO_DATE_PATTERN.test(value)) {
+                    pushIssue(path, issues, "expected_pattern", "iso_date", "string");
+                }
+                break;
+            case StringCheckTag.IsoDateTime:
+                ISO_DATETIME_PATTERN.lastIndex = 0;
+                if (!ISO_DATETIME_PATTERN.test(value)) {
+                    pushIssue(path, issues, "expected_pattern", "iso_datetime", "string");
+                }
+                break;
+            case StringCheckTag.Ulid:
+                ULID_PATTERN.lastIndex = 0;
+                if (!ULID_PATTERN.test(value)) {
+                    pushIssue(path, issues, "expected_pattern", "ulid", "string");
+                }
+                break;
+            case StringCheckTag.Ipv4:
+                IPV4_PATTERN.lastIndex = 0;
+                if (!IPV4_PATTERN.test(value)) {
+                    pushIssue(path, issues, "expected_pattern", "ipv4", "string");
+                }
+                break;
+            case StringCheckTag.Ipv6:
+                IPV6_PATTERN.lastIndex = 0;
+                if (!IPV6_PATTERN.test(value)) {
+                    pushIssue(path, issues, "expected_pattern", "ipv6", "string");
+                }
+                break;
+        }
+    }
+}
+
+/**
+ * @brief Collect Date issues.
+ * @param value Candidate runtime value.
+ * @param path Current diagnostic path.
+ * @param issues Output issue buffer.
+ */
+export function collectDateIssues(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Date }>,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[]
+): void {
+    if (!isValidDateObject(value)) {
+        pushIssue(path, issues, "expected_date", "valid Date", actualType(value));
+        return;
+    }
+    const time = readDateTime(value);
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        switch (check.tag) {
+            case DateCheckTag.Min:
+                if (time < check.value) {
+                    pushIssue(
+                        path,
+                        issues,
+                        "expected_gte",
+                        `>= ${new Date(check.value).toISOString()}`,
+                        new Date(time).toISOString()
+                    );
+                }
+                break;
+            case DateCheckTag.Max:
+                if (time > check.value) {
+                    pushIssue(
+                        path,
+                        issues,
+                        "expected_lte",
+                        `<= ${new Date(check.value).toISOString()}`,
+                        new Date(time).toISOString()
+                    );
+                }
+                break;
         }
     }
 }
@@ -149,6 +253,39 @@ export function collectNumberIssues(
                         issues,
                         "expected_lte",
                         `<= ${String(check.value)}`,
+                        String(value)
+                    );
+                }
+                break;
+            case NumberCheckTag.Gt:
+                if (value <= check.value) {
+                    pushIssue(
+                        path,
+                        issues,
+                        "expected_gt",
+                        `> ${String(check.value)}`,
+                        String(value)
+                    );
+                }
+                break;
+            case NumberCheckTag.Lt:
+                if (value >= check.value) {
+                    pushIssue(
+                        path,
+                        issues,
+                        "expected_lt",
+                        `< ${String(check.value)}`,
+                        String(value)
+                    );
+                }
+                break;
+            case NumberCheckTag.MultipleOf:
+                if (value % check.value !== 0) {
+                    pushIssue(
+                        path,
+                        issues,
+                        "expected_multiple_of",
+                        `multiple of ${String(check.value)}`,
                         String(value)
                     );
                 }

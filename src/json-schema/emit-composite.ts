@@ -6,6 +6,7 @@
  */
 
 import {
+    ArrayCheckTag,
     ObjectModeTag,
     PresenceTag,
     SchemaTag
@@ -27,12 +28,13 @@ import type {
  * report a structured export issue.
  */
 export function emitArray(
-    item: Schema,
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
     path: PathSegment[],
     issues: JsonSchemaExportIssue[],
     emitChild: JsonSchemaEmitter,
     dialect: JsonSchemaDialect
 ): JsonSchema | undefined {
+    const item = schema.item;
     path.push("items");
     const emitted = emitChild(item, path, issues, dialect);
     if (emitted === undefined) {
@@ -41,10 +43,30 @@ export function emitArray(
         return undefined;
     }
     path.pop();
-    return {
+    const result: MutableJsonSchemaObject = {
         type: "array",
         items: emitted
     };
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        switch (check.tag) {
+            case ArrayCheckTag.Min:
+                result.minItems = result.minItems === undefined
+                    ? check.value
+                    : Math.max(result.minItems, check.value);
+                break;
+            case ArrayCheckTag.Max:
+                result.maxItems = result.maxItems === undefined
+                    ? check.value
+                    : Math.min(result.maxItems, check.value);
+                break;
+        }
+    }
+    return result;
 }
 
 /**
@@ -53,12 +75,13 @@ export function emitArray(
  * report a structured export issue.
  */
 export function emitTuple(
-    items: readonly Schema[],
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Tuple }>,
     path: PathSegment[],
     issues: JsonSchemaExportIssue[],
     emitChild: JsonSchemaEmitter,
     dialect: JsonSchemaDialect
 ): JsonSchema | undefined {
+    const items = schema.items;
     const emitted = new Array<JsonSchema>(items.length);
     let failed = false;
     for (let index = 0; index < items.length; index += 1) {
@@ -80,21 +103,40 @@ export function emitTuple(
     if (failed) {
         return undefined;
     }
+    let restSchema: JsonSchema | undefined;
+    if (schema.rest !== undefined) {
+        path.push("rest");
+        restSchema = emitChild(schema.rest, path, issues, dialect);
+        if (restSchema === undefined) {
+            pushJsonSchemaIssue(path, issues, "unsupported_child", "Tuple rest schema is unsupported");
+            path.pop();
+            return undefined;
+        }
+        path.pop();
+    }
     if (dialect === "2020-12") {
-        return {
+        const result: MutableJsonSchemaObject = {
             type: "array",
             prefixItems: emitted,
-            minItems: items.length,
-            maxItems: items.length
+            minItems: items.length
         };
+        if (restSchema === undefined) {
+            result.maxItems = items.length;
+        } else {
+            result.items = restSchema;
+        }
+        return result;
     }
-    return {
+    const result: MutableJsonSchemaObject = {
         type: "array",
         items: emitted,
-        additionalItems: false,
-        minItems: items.length,
-        maxItems: items.length
+        additionalItems: restSchema ?? false,
+        minItems: items.length
     };
+    if (restSchema === undefined) {
+        result.maxItems = items.length;
+    }
+    return result;
 }
 
 /**
@@ -161,10 +203,22 @@ export function emitObject(
     if (failed) {
         return undefined;
     }
+    let additionalProperties: JsonSchema = schema.mode !== ObjectModeTag.Strict;
+    if (schema.catchall !== undefined) {
+        path.push("additionalProperties");
+        const emittedCatchall = emitChild(schema.catchall, path, issues, dialect);
+        if (emittedCatchall === undefined) {
+            pushJsonSchemaIssue(path, issues, "unsupported_child", "Object catchall schema is unsupported");
+            path.pop();
+            return undefined;
+        }
+        path.pop();
+        additionalProperties = emittedCatchall;
+    }
     const result: MutableJsonSchemaObject = {
         type: "object",
         properties,
-        additionalProperties: schema.mode !== ObjectModeTag.Strict
+        additionalProperties
     };
     if (required.length !== 0) {
         result.required = required;

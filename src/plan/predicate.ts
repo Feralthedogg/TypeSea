@@ -5,7 +5,13 @@
  * preserving interpreter parity.
  */
 
-import { NodeTag, ObjectModeTag, PresenceTag, SchemaTag } from "../kind/index.js";
+import {
+    ArrayCheckTag,
+    NodeTag,
+    ObjectModeTag,
+    PresenceTag,
+    SchemaTag
+} from "../kind/index.js";
 import type {
     Graph,
     GraphNode,
@@ -13,6 +19,7 @@ import type {
     ObjectShapeEntry
 } from "../ir/index.js";
 import {
+    type ArrayCheck,
     resolveLazySchema,
     schemaCanAcceptUndefined,
     type Schema
@@ -249,6 +256,7 @@ function evaluateGraphNode(
             return testArrayEvery(
                 evaluateNode(graph, node.value, input, values, seen, epoch, state),
                 node.item,
+                node.checks,
                 node.itemGraph,
                 state
             );
@@ -371,10 +379,14 @@ function evaluateOr(
 function testArrayEvery(
     value: unknown,
     item: Schema,
+    checks: readonly ArrayCheck[],
     itemGraph: Graph,
     state: ValidationState
 ): boolean {
     if (!Array.isArray(value)) {
+        return false;
+    }
+    if (!testArrayLengthChecks(value.length, checks)) {
         return false;
     }
     if (schemaCanAcceptUndefined(item)) {
@@ -390,6 +402,37 @@ function testArrayEvery(
         if (slot.accessor ||
             !executeGraphPredicate(itemGraph, slot.value, state)) {
             return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Test array length checks attached to an ArrayEvery node.
+ * @param length Runtime array length.
+ * @param checks Normalized length check vector.
+ * @returns True when every bound accepts the length.
+ */
+function testArrayLengthChecks(
+    length: number,
+    checks: readonly ArrayCheck[]
+): boolean {
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            return false;
+        }
+        switch (check.tag) {
+            case ArrayCheckTag.Min:
+                if (length < check.value) {
+                    return false;
+                }
+                break;
+            case ArrayCheckTag.Max:
+                if (length > check.value) {
+                    return false;
+                }
+                break;
         }
     }
     return true;

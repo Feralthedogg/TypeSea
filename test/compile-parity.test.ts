@@ -126,6 +126,109 @@ describe("compiled guard parity", () => {
         expect(FastShape.check(symbolExtra)).toEqual(Shape.check(symbolExtra));
     });
 
+    test("returns at most one issue from checkFirst", () => {
+        const Shape = t.strictObject({
+            id: t.string.min(2),
+            age: t.number.int().gte(0)
+        });
+        const FastShape = compile(Shape, { name: "first_issue_shape" });
+        const invalid = {
+            id: "",
+            age: -1,
+            extra: true
+        };
+        const interpreted = Shape.checkFirst(invalid);
+        const compiled = FastShape.checkFirst(invalid);
+
+        expect(Shape.checkFirst({ id: "ok", age: 1 }).ok).toBe(true);
+        expect(FastShape.checkFirst({ id: "ok", age: 1 }).ok).toBe(true);
+        expect(interpreted.ok).toBe(false);
+        expect(compiled.ok).toBe(false);
+        if (!interpreted.ok && !compiled.ok) {
+            expect(interpreted.error).toHaveLength(1);
+            expect(compiled.error).toHaveLength(1);
+            expect(Object.isFrozen(interpreted.error)).toBe(true);
+            expect(Object.isFrozen(compiled.error)).toBe(true);
+            expect(compiled.error[0]).toEqual(interpreted.error[0]);
+        }
+    });
+
+    test("stops compiled checkFirst after the first diagnostic", () => {
+        let firstRefinements = 0;
+        let secondRefinements = 0;
+        const Shape = t.strictObject({
+            first: t.string.refine(
+                (): boolean => {
+                    firstRefinements += 1;
+                    return false;
+                },
+                "first_refinement"
+            ),
+            second: t.string.refine(
+                (): boolean => {
+                    secondRefinements += 1;
+                    return false;
+                },
+                "second_refinement"
+            )
+        });
+        const FastShape = compile(Shape, { name: "firstFaultStops" });
+        const result = FastShape.checkFirst({
+            first: "a",
+            second: "b"
+        });
+
+        expect(result.ok).toBe(false);
+        expect(firstRefinements).toBeGreaterThan(0);
+        expect(secondRefinements).toBe(0);
+        if (!result.ok) {
+            expect(result.error).toHaveLength(1);
+            expect(result.error[0]?.path).toEqual(["first"]);
+        }
+    });
+
+    test("keeps diagnostic order independent from predicate scheduling", () => {
+        const Shape = t.strictObject({
+            tags: t.array(t.string.min(1)),
+            id: t.string.min(2)
+        });
+        const FastShape = compile(Shape, { name: "diagnostic_order_shape" });
+        const invalid = {
+            tags: [""],
+            id: ""
+        };
+        const full = FastShape.check(invalid);
+        const first = FastShape.checkFirst(invalid);
+
+        expect(full).toEqual(Shape.check(invalid));
+        expect(first).toEqual(Shape.checkFirst(invalid));
+        if (!full.ok && !first.ok) {
+            expect(full.error[0]?.path).toEqual(["tags", 0]);
+            expect(first.error[0]?.path).toEqual(["tags", 0]);
+        }
+    });
+
+    test("does not move pure object checks before refinement barriers", () => {
+        let refinements = 0;
+        const Shape = t.strictObject({
+            gated: t.string.refine(
+                (value): boolean => {
+                    refinements += 1;
+                    return value.length > 0;
+                },
+                "non_empty"
+            ),
+            cheap: t.number.int()
+        });
+        const FastShape = compile(Shape, { name: "refinement_barrier_shape" });
+
+        expect(FastShape.is({
+            gated: "ok",
+            cheap: 1.5
+        })).toBe(false);
+        expect(refinements).toBe(1);
+    });
+
     test("matches sparse arrays and accessor-backed array slots", () => {
         const MaybeStringArray = t.array(t.undefinedable(t.string));
         const FastMaybeStringArray = compile(MaybeStringArray, {

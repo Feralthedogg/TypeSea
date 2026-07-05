@@ -1,7 +1,7 @@
 # TypeSea
 
 [![CI](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml/badge.svg)](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml)
-[![Socket Badge](https://badge.socket.dev/npm/package/typesea/0.2.0)](https://badge.socket.dev/npm/package/typesea/0.2.0)
+[![Socket Badge](https://badge.socket.dev/npm/package/typesea/0.3.0)](https://badge.socket.dev/npm/package/typesea/0.3.0)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![TypeScript](https://img.shields.io/badge/language-TypeScript-informational)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-zero-brightgreen)
@@ -93,8 +93,10 @@ import { compile, t, toJsonSchema, type Infer } from "typesea";
 
 const User = t.strictObject({
   id: t.string.uuid(),
-  age: t.number.int().gte(0),
-  role: t.union(t.literal("admin"), t.literal("user"))
+  email: t.string.email(),
+  age: t.number.int().nonnegative(),
+  role: t.enum(["admin", "user"]),
+  tags: t.array(t.string.min(1)).max(8)
 });
 
 type User = Infer<typeof User>;
@@ -118,8 +120,11 @@ const schema = toJsonSchema(User);
 ```
 
 Use `is()` for the allocation-light boolean path. Use `check()` when callers
-need immutable diagnostics. Use `compile()` or `emitAotModule()` when a stable
-schema is hot enough to deserve generated validator code.
+need the full immutable diagnostic list, or `checkFirst()` when a hot rejection
+path only needs one machine-readable issue. Use `compile()` or `emitAotModule()`
+when a stable schema is hot enough to deserve generated validator code.
+Compiled and AOT `checkFirst()` use a dedicated first-fault collector instead
+of building the full issue list and slicing it afterward.
 
 > [!CAUTION]
 > `compile()` builds the validator with `new Function`, which throws under a
@@ -279,33 +284,39 @@ grouped under the `t` table.
 
 | Area | Entry points |
 | --- | --- |
-| Scalar guards | `t.unknown`, `t.never`, `t.string`, `t.number`, `t.bigint`, `t.symbol`, `t.boolean` |
-| Literal and containers | `t.literal`, `t.array`, `t.tuple`, `t.record` |
-| Objects | `t.object`, `t.strictObject`, `extend`, `pick`, `omit`, `partial` |
+| Scalar guards | `t.unknown`, `t.never`, `t.string`, `t.number`, `t.date`, `t.bigint`, `t.symbol`, `t.boolean`, `t.null`, `t.undefined`, `t.void` |
+| String checks | `.min`, `.max`, `.length`, `.nonempty`, `.regex`, `.startsWith`, `.endsWith`, `.includes`, `.uuid`, `.email`, `.url`, `.isoDate`, `.isoDateTime`, `.ulid`, `.ipv4`, `.ipv6` |
+| Number checks | `.int`, `.finite`, `.safe`, `.gte`, `.lte`, `.min`, `.max`, `.gt`, `.lt`, `.multipleOf`, `.positive`, `.nonnegative`, `.negative`, `.nonpositive` |
+| Date checks | `.min`, `.max` |
+| Literal and containers | `t.literal`, `t.enum`, `t.array`, `t.tuple`, tuple rest, `t.record`, `t.map`, `t.set`, `t.json` |
+| Array checks | `.min`, `.max`, `.length`, `.nonempty` |
+| Objects | `t.object`, `t.strictObject`, `extend`, `safeExtend`, `merge`, `pick`, `omit`, `partial`, `deepPartial`, `required`, `strict`, `passthrough`, `strip`, `catchall` |
+| Runtime object contracts | `t.instanceOf`, `t.property`, `guard.property` |
 | Composition | `t.union`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect` |
-| Presence wrappers | `t.optional`, `t.undefinedable`, `t.nullable` |
+| Presence wrappers | `t.optional`, `t.undefinedable`, `t.nullable`, `t.nullish` |
 | Dynamic contracts | `t.lazy`, `t.refine` |
 
 ### Decoders
 
 | Area | Entry points |
 | --- | --- |
-| Sync decoders | `t.decoder`, `t.transform`, `t.pipe`, `t.coerce` |
+| Sync decoders | `t.decoder`, `t.transform`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()` |
 | Async decoders | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
 
 ### Execution & Export
 
 | Area | Entry points |
 | --- | --- |
-| Guard methods | `guard.is()`, `guard.check()`, `guard.graph()` |
+| Guard methods | `guard.is()`, `guard.check()`, `guard.checkFirst()`, `guard.graph()` |
 | Generated validators | `compile`, `emitAotModule` |
 | JSON Schema | `toJsonSchema` |
+| Messages | `formatIssue`, `formatIssues`, `flattenIssues`, `withMessages` |
 
 ### Messages & Adapters
 
 | Area | Entry points |
 | --- | --- |
-| Messages / i18n | `formatIssue`, `formatIssues`, `withMessages`, `defineMessages` |
+| Messages / i18n | `formatIssue`, `formatIssues`, `flattenIssues`, `withMessages`, `defineMessages` |
 | tRPC | `toTrpcParser`, `toAsyncTrpcParser` |
 | Fastify | `toFastifyRouteSchema`, `toFastifyValidatorCompiler` |
 | React Hook Form | `toReactHookFormResolver` |
@@ -344,6 +355,11 @@ Deliberate, documented, and pinned by tests:
 | `__proto__`, `constructor` keys | validated as plain own keys, no pollution |
 | Sparse array holes | read as `undefined` without executing accessors |
 | Strict object extras | rejected via `Reflect.ownKeys` — including symbol keys and non-enumerable properties |
+| `catchall` extras | unknown own keys are descriptor-read and validated by the catchall schema |
+| `strip()` | validation-only alias for accepting extras; TypeSea does not clone stripped output |
+| `t.date` | accepts valid JavaScript `Date` objects; `.min` and `.max` compare epoch milliseconds without reading user-overridable Date methods |
+| `t.map`, `t.set`, `t.instanceOf` | runtime-only contracts; JSON Schema and AOT export reject them instead of weakening semantics |
+| `property` | validates own data properties only; getter-backed properties are rejected |
 | Global-flag regexes | cloned at construction; `lastIndex` reset before every test |
 | UUID | accepts RFC 9562 versions 1–8 plus the nil UUID |
 | Cyclic input values | validate finitely via (value × schema) active-pair tracking |

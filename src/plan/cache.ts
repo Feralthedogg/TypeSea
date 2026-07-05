@@ -86,9 +86,19 @@ function schemaRequiresTrackingInner(
         case SchemaTag.Array:
             return schemaRequiresTrackingInner(schema.item, seen);
         case SchemaTag.Tuple:
-            return schemaArrayRequiresTracking(schema.items, seen);
+            return schemaArrayRequiresTracking(schema.items, seen) ||
+                (schema.rest !== undefined &&
+                    schemaRequiresTrackingInner(schema.rest, seen));
         case SchemaTag.Record:
             return schemaRequiresTrackingInner(schema.value, seen);
+        case SchemaTag.Map:
+            return schemaRequiresTrackingInner(schema.key, seen) ||
+                schemaRequiresTrackingInner(schema.value, seen);
+        case SchemaTag.Set:
+            return schemaRequiresTrackingInner(schema.item, seen);
+        case SchemaTag.Property:
+            return schemaRequiresTrackingInner(schema.base, seen) ||
+                schemaRequiresTrackingInner(schema.value, seen);
         case SchemaTag.Object:
             for (let index = 0; index < schema.entries.length; index += 1) {
                 const entry = schema.entries[index];
@@ -123,6 +133,8 @@ function schemaRequiresTrackingInner(
         case SchemaTag.Never:
         case SchemaTag.String:
         case SchemaTag.Number:
+        case SchemaTag.Date:
+        case SchemaTag.InstanceOf:
         case SchemaTag.BigInt:
         case SchemaTag.Symbol:
         case SchemaTag.Boolean:

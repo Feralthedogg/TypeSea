@@ -8,6 +8,7 @@
 import type { Schema } from "../schema/index.js";
 import { emitCheckFunction, emitCheckFunctions } from "./check.js";
 import { createEmitContext } from "./context.js";
+import { emitFirstFunction, emitFirstFunctions } from "./first.js";
 import { emitGraphFunction, emitGraphFunctions } from "./graph-predicate.js";
 import { safeFunctionName } from "./names.js";
 import type { CompileMode, CompiledSourceBundle } from "./types.js";
@@ -39,25 +40,32 @@ export function emitCompiledSourceBundle(
         directRoot ? functionName : undefined
     );
     const checkRoot = emitCheckFunction(schema, context);
+    const firstRoot = emitFirstFunction(schema, context);
     const checkFunctionName = `${functionName}_check`;
     const resultFunctionName = `${functionName}_result`;
+    const firstFunctionName = `${functionName}_first`;
     const isProperty = directRoot
         ? `is:${root}`
         : `is:function ${functionName}(x){return ${root}(x);}`;
     const graphFunctions = emitGraphFunctions(context);
     const checkFunctions = emitCheckFunctions(context);
+    const firstFunctions = emitFirstFunctions(context);
     const rootPathIsFrozen = canReuseFrozenRootPath(checkFunctions);
+    const firstPathIsFrozen = canReuseFrozenRootPath(firstFunctions);
     const rootPath = rootPathIsFrozen ? "z" : "[]";
+    const firstPath = firstPathIsFrozen ? "z" : "[]";
     /*
      * Boolean is() owns the hot path; check()/result() first reuse it so valid
      * data avoids diagnostic allocation. Only failing inputs enter the check tree.
      */
     const issueCollector = `check:function ${checkFunctionName}(x){if(${root}(x))return;const s=[];${checkRoot}(x,${rootPath},s);return s;}`;
     const resultCollector = `result:function ${resultFunctionName}(x){if(${root}(x))return ${emitSuccessResult(mode, "x")};const s=[];${checkRoot}(x,${rootPath},s);return Object.freeze({ok:false,error:Object.freeze(s)});}`;
+    const firstCollector = `first:function ${firstFunctionName}(x){if(${root}(x))return ${emitSuccessResult(mode, "x")};const e=${firstRoot}(x,${firstPath});if(e===undefined)return ${emitSuccessResult(mode, "x")};return Object.freeze({ok:false,error:Object.freeze([e])});}`;
     const body = [
         graphFunctions,
         checkFunctions,
-        `return {${isProperty},${issueCollector},${resultCollector}};`
+        firstFunctions,
+        `return {${isProperty},${issueCollector},${resultCollector},${firstCollector}};`
     ].join("");
     const source = [
         "\"use strict\";",
@@ -128,6 +136,7 @@ function isFactoryParameterName(name: string): boolean {
         case "u":
         case "d":
         case "m":
+        case "mf":
         case "sk":
         case "w":
             return true;
@@ -182,15 +191,16 @@ function emitHelperPrelude(body: string, rootPathIsFrozen: boolean): string {
     pushHelper(chunks, needed, "hd", "const hd=function(v,k){if(!ph(v))return false;const d=gp(v,k);return d!==undefined&&h.call(d,\"value\");};");
     pushHelper(chunks, needed, "fn", "const fn=function(v){return typeof v===\"number\"&&Number.isFinite(v);};");
     pushHelper(chunks, needed, "nc", "const nc=function(x,y,gte){return typeof x===\"number\"&&typeof y===\"number\"&&(gte?x>=y:x<=y);};");
+    pushHelper(chunks, needed, "dg", "const __tg=Date.prototype.getTime;const dg=function(v){return v instanceof Date&&Number.isFinite(__tg.call(v));};const dt=function(v){return __tg.call(v);};");
     pushHelper(chunks, needed, "sb", "const sb=function(v,b,min){return typeof v===\"string\"&&(min?v.length>=b:v.length<=b);};");
     pushHelper(chunks, needed, "rx", "const rx=function(v,re){if(typeof v!==\"string\")return false;re.lastIndex=0;const ok=re.test(v);re.lastIndex=0;return ok;};");
     pushHelper(chunks, needed, "ai", "const ai=function(k,n){if(k.length===0||k===\"length\")return false;const i=Number(k);return Number.isInteger(i)&&i>=0&&i<=4294967294&&i<n&&String(i)===k;};");
-    pushHelper(chunks, needed, "ea", "const ea=function(v,f){if(!Array.isArray(v))return false;for(let i=0;i<v.length;i+=1){const d=gp(v,i);if(d!==undefined&&!h.call(d,\"value\"))return false;if(!f(d===undefined?undefined:d.value))return false;}return true;};");
+    pushHelper(chunks, needed, "ea", "const ea=function(v,f){if(!Array.isArray(v))return false;for(let i=0;i<v.length;i+=1){const d=gp(v,i);if(!f(d===undefined?undefined:d.value))return false;}return true;};");
     pushHelper(chunks, needed, "eu", "const eu=function(v,f){if(!Array.isArray(v))return false;const xs=Object.getOwnPropertyNames(v);for(let i=0;i<xs.length;i+=1){const k=xs[i];if(!ai(k,v.length))continue;const d=gp(v,k);if(d!==undefined&&!h.call(d,\"value\"))return false;if(d!==undefined&&!f(d.value))return false;}return true;};");
     pushHelper(chunks, needed, "ev", "const ev=function(v,i,f){const d=gp(v,i);if(d!==undefined&&!h.call(d,\"value\"))return false;return f(d===undefined?undefined:d.value);};");
     pushHelper(chunks, needed, "er", "const er=function(v,f){if(!o(v))return false;for(const key in v){if(!h.call(v,key))continue;const d=gp(v,key);if(d===undefined||!h.call(d,\"value\")||!f(d.value))return false;}return true;};");
     pushHelper(chunks, needed, "dj", "const dj=function(v,key,ks){if(!o(v))return false;const d=g(v,key);if(d===undefined||typeof d.value!==\"string\")return false;const i=ks.indexOf(d.value);return i>=0&&arguments[i+3](v);};");
-    pushHelper(chunks, needed, "a", "const a=function(v){if(v===null)return \"null\";if(Array.isArray(v))return \"array\";if(typeof v===\"bigint\")return \"bigint\";if(typeof v===\"symbol\")return \"symbol\";if(typeof v===\"number\"&&Number.isNaN(v))return \"nan\";return typeof v;};");
+    pushHelper(chunks, needed, "a", "const a=function(v){if(v===null)return \"null\";if(Array.isArray(v))return \"array\";if(v instanceof Date)return \"date\";if(v instanceof Map)return \"map\";if(v instanceof Set)return \"set\";if(typeof v===\"bigint\")return \"bigint\";if(typeof v===\"symbol\")return \"symbol\";if(typeof v===\"number\"&&Number.isNaN(v))return \"nan\";return typeof v;};");
     pushHelper(chunks, needed, "le", "const le=function(v){if(v===null)return \"null\";if(v===undefined)return \"undefined\";if(typeof v===\"string\")return JSON.stringify(v);if(typeof v===\"number\"&&Object.is(v,-0))return \"-0\";if(typeof v===\"symbol\")return String(v);return String(v);};");
     pushHelper(chunks, needed, "w", "const w=function(){const x=new Array(u.length);for(let i=0;i<u.length;i+=1)x[i]=Object.freeze([u[i]]);return x;}();");
     pushHelper(chunks, needed, "q", rootPathIsFrozen
@@ -205,6 +215,10 @@ function emitHelperPrelude(body: string, rootPathIsFrozen: boolean): string {
     pushHelper(chunks, needed, "q2", rootPathIsFrozen
         ? "const q2=function(s,p,a,b,c,e,x){s.push(Object.freeze({path:Object.freeze([a,b]),code:c,expected:e,actual:x,message:undefined}));};"
         : "const q2=function(s,p,a,b,c,e,x){const n=p.length;const y=n===0?[a,b]:p.slice();if(n!==0){y.push(a);y.push(b);}Object.freeze(y);s.push(Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined}));};");
+    pushHelper(chunks, needed, "fq", "const fq=function(p,c,e,x){const y=p.length===0?z:Object.freeze(p.slice());return Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined});};");
+    pushHelper(chunks, needed, "fq1", "const fq1=function(p,k,c,e,x){const n=p.length;const y=n===0?[k]:p.slice();if(n!==0)y.push(k);Object.freeze(y);return Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined});};");
+    pushHelper(chunks, needed, "fq1s", "const fq1s=function(p,i,c,e,x){if(p.length===0)return Object.freeze({path:w[i],code:c,expected:e,actual:x,message:undefined});const y=p.slice();y.push(u[i]);Object.freeze(y);return Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined});};");
+    pushHelper(chunks, needed, "fq2", "const fq2=function(p,a,b,c,e,x){const n=p.length;const y=n===0?[a,b]:p.slice();if(n!==0){y.push(a);y.push(b);}Object.freeze(y);return Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined});};");
     return chunks.join("");
 }
 
@@ -308,8 +322,12 @@ function closeHelperDependencies(needed: Set<string>): void {
         changed = addDependencies(needed, "ev", ["gp", "h"]) || changed;
         changed = addDependencies(needed, "er", ["o", "gp", "h"]) || changed;
         changed = addDependencies(needed, "dj", ["o", "g"]) || changed;
+        changed = addDependencies(needed, "dt", ["dg"]) || changed;
         changed = addDependencies(needed, "q", ["z"]) || changed;
         changed = addDependencies(needed, "q1s", ["w"]) || changed;
+        changed = addDependencies(needed, "fq", ["z"]) || changed;
+        changed = addDependencies(needed, "fq1", ["z"]) || changed;
+        changed = addDependencies(needed, "fq1s", ["w"]) || changed;
     }
 }
 
@@ -361,6 +379,8 @@ function isRuntimeHelperName(name: string): boolean {
         case "hd":
         case "fn":
         case "nc":
+        case "dg":
+        case "dt":
         case "sb":
         case "rx":
         case "ai":
@@ -376,6 +396,10 @@ function isRuntimeHelperName(name: string): boolean {
         case "q1":
         case "q1s":
         case "q2":
+        case "fq":
+        case "fq1":
+        case "fq1s":
+        case "fq2":
             return true;
         default:
             return false;

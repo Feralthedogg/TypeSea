@@ -154,6 +154,10 @@ still checking the original object fields on the outer frame.
 Compiled `lazy` and `refine` fallbacks use the same IR-backed runtime path, so
 recursive behavior stays consistent across execution engines.
 
+`checkFirst()` has a separate generated collector. It returns one frozen issue
+as soon as the first diagnostic is known, instead of running the full `check()`
+collector and truncating its issue array.
+
 ## JSON Schema Export
 
 JSON Schema export succeeds only when the TypeSea schema can be represented over

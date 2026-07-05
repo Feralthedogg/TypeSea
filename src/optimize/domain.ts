@@ -145,12 +145,16 @@ function specializeChildDomains(
         }
         case NodeTag.ObjectShape: {
             const entries = specializeObjectShapeEntries(node.entries);
-            if (entries === node.entries) {
+            const catchallGraph = node.catchallGraph === undefined
+                ? undefined
+                : specializeDomains(node.catchallGraph);
+            if (entries === node.entries && catchallGraph === node.catchallGraph) {
                 return node;
             }
             return {
                 ...node,
-                entries
+                entries,
+                catchallGraph
             };
         }
         case NodeTag.UnionDispatch: {

@@ -163,6 +163,15 @@ export function actualType(value: unknown): string {
     if (Array.isArray(value)) {
         return "array";
     }
+    if (value instanceof Date) {
+        return "date";
+    }
+    if (value instanceof Map) {
+        return "map";
+    }
+    if (value instanceof Set) {
+        return "set";
+    }
     if (typeof value === "bigint") {
         return "bigint";
     }
@@ -173,6 +182,38 @@ export function actualType(value: unknown): string {
         return "nan";
     }
     return typeof value;
+}
+
+/**
+ * @brief Validate a Date object without reading user-overridable methods.
+ * @param value Candidate runtime value.
+ * @returns True when value is a Date with a finite time value.
+ */
+export function isValidDateObject(value: unknown): value is Date {
+    return value instanceof Date &&
+        Number.isFinite(Date.prototype.getTime.call(value));
+}
+
+/**
+ * @brief Read a Date object's time value through the intrinsic method.
+ * @param value Date object already accepted by isValidDateObject.
+ * @returns Epoch millisecond value.
+ */
+export function readDateTime(value: Date): number {
+    return Date.prototype.getTime.call(value);
+}
+
+/**
+ * @brief Execute ordinary instanceof without invoking custom hasInstance hooks.
+ * @param value Candidate runtime value.
+ * @param constructor Constructor function stored in the schema.
+ * @returns True when the ordinary prototype-chain check accepts the value.
+ */
+export function ordinaryHasInstance(
+    value: unknown,
+    constructor: abstract new (...args: never[]) => unknown
+): boolean {
+    return Function.prototype[Symbol.hasInstance].call(constructor, value);
 }
 
 /**

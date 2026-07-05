@@ -6,6 +6,8 @@
  */
 
 import {
+    ArrayCheckTag,
+    DateCheckTag,
     NumberCheckTag,
     ObjectModeTag,
     PresenceTag,
@@ -13,7 +15,15 @@ import {
     StringCheckTag
 } from "../kind/index.js";
 import {
+    EMAIL_PATTERN,
+    IPV4_PATTERN,
+    IPV6_PATTERN,
+    ISO_DATETIME_PATTERN,
+    ISO_DATE_PATTERN,
+    ULID_PATTERN,
+    URL_PATTERN,
     UUID_PATTERN,
+    type ArrayCheck,
     type NumberCheck,
     type DiscriminatedUnionCase,
     type Schema
@@ -86,11 +96,19 @@ export function emitFunctions(context: EmitContext): string {
 function emitBody(schema: Schema, value: string, context: EmitContext): string {
     switch (schema.tag) {
         case SchemaTag.Array:
-            return emitArrayBody(schema.item, value, context);
+            return emitArrayBody(schema, value, context);
         case SchemaTag.Tuple:
+            if (schema.rest !== undefined) {
+                return `return d(${String(pushSchema(context, schema))},${value});`;
+            }
             return emitTupleBody(schema.items, value, context);
         case SchemaTag.Record:
             return emitRecordBody(schema.value, value, context);
+        case SchemaTag.Map:
+        case SchemaTag.Set:
+        case SchemaTag.InstanceOf:
+        case SchemaTag.Property:
+            return `return d(${String(pushSchema(context, schema))},${value});`;
         case SchemaTag.Object:
             return emitObjectBody(schema, value, context);
         case SchemaTag.DiscriminatedUnion:
@@ -123,6 +141,8 @@ export function emitExpression(
             return emitString(schema, value, context);
         case SchemaTag.Number:
             return emitNumber(schema, value);
+        case SchemaTag.Date:
+            return emitDate(schema, value);
         case SchemaTag.BigInt:
             return `(typeof ${value}==="bigint")`;
         case SchemaTag.Symbol:
@@ -138,9 +158,17 @@ export function emitExpression(
              */
             return `${emitFunction(schema, context)}(${value})`;
         case SchemaTag.Tuple:
+            if (schema.rest !== undefined) {
+                return `d(${String(pushSchema(context, schema))},${value})`;
+            }
             return `${emitFunction(schema, context)}(${value})`;
         case SchemaTag.Record:
             return `${emitFunction(schema, context)}(${value})`;
+        case SchemaTag.Map:
+        case SchemaTag.Set:
+        case SchemaTag.InstanceOf:
+        case SchemaTag.Property:
+            return `d(${String(pushSchema(context, schema))},${value})`;
         case SchemaTag.Object:
             return `${emitFunction(schema, context)}(${value})`;
         case SchemaTag.Union:
@@ -171,6 +199,38 @@ export function emitExpression(
 }
 
 /**
+ * @brief Emit a Date predicate expression.
+ * @param schema Date schema with normalized checks.
+ * @param value Generated expression for the candidate value.
+ * @returns JavaScript expression that accepts valid Date objects within bounds.
+ */
+function emitDate(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Date }>,
+    value: string
+): string {
+    const checks = schema.checks;
+    const parts = [
+        `(${value} instanceof Date)`,
+        `dg(${value})`
+    ];
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        switch (check.tag) {
+            case DateCheckTag.Min:
+                parts.push(`dt(${value})>=${String(check.value)}`);
+                break;
+            case DateCheckTag.Max:
+                parts.push(`dt(${value})<=${String(check.value)}`);
+                break;
+        }
+    }
+    return `(${parts.join("&&")})`;
+}
+
+/**
  * @brief emit array body.
  * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
  * stable across runtime and AOT emission.
@@ -180,10 +240,11 @@ export function emitExpression(
  * @returns JavaScript source for an array predicate body.
  */
 function emitArrayBody(
-    item: Schema,
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
     value: string,
     context: EmitContext
 ): string {
+    const item = schema.item;
     const itemFunction = emitFunction(item, context);
     /*
      * Descriptor reads block accessor-backed slots without executing getters.
@@ -192,6 +253,7 @@ function emitArrayBody(
      */
     return [
         `if(!Array.isArray(${value}))return false;`,
+        emitArrayLengthBody(value, schema.checks),
         `for(let i=0;i<${value}.length;i+=1){`,
         `const d=gp(${value},i);`,
         `if(d!==undefined&&!h.call(d,"value"))return false;`,
@@ -199,6 +261,38 @@ function emitArrayBody(
         "}",
         "return true;"
     ].join("");
+}
+
+/**
+ * @brief Emit array length checks for direct predicate bodies.
+ * @param value Generated expression for the candidate array.
+ * @param checks Normalized array length checks.
+ * @returns Straight-line early-return checks, or an empty string.
+ */
+function emitArrayLengthBody(
+    value: string,
+    checks: readonly ArrayCheck[]
+): string {
+    if (checks.length === 0) {
+        return "";
+    }
+    const chunks: string[] = [];
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            chunks.push("return false;");
+            continue;
+        }
+        switch (check.tag) {
+            case ArrayCheckTag.Min:
+                chunks.push(`if(${value}.length<${String(check.value)})return false;`);
+                break;
+            case ArrayCheckTag.Max:
+                chunks.push(`if(${value}.length>${String(check.value)})return false;`);
+                break;
+        }
+    }
+    return chunks.join("");
 }
 
 /**
@@ -315,8 +409,38 @@ function emitObjectBody(
             );
         }
     }
+    chunks.push(emitObjectCatchallBody(schema, value, context));
     chunks.push("return true;");
     return chunks.join("");
+}
+
+/**
+ * @brief Emit catchall checks for undeclared object keys.
+ * @param schema Object schema with optional catchall.
+ * @param value Generated expression for the object value.
+ * @param context Shared code-generation context.
+ * @returns Generated source that validates extra own keys.
+ */
+function emitObjectCatchallBody(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>,
+    value: string,
+    context: EmitContext
+): string {
+    if (schema.catchall === undefined) {
+        return "";
+    }
+    const keys = schema.keys;
+    const membership = keyMembershipExpression("key", keys, context);
+    return [
+        `const cx=Reflect.ownKeys(${value});`,
+        "for(let ci=0;ci<cx.length;ci+=1){",
+        "const key=cx[ci];",
+        `if(typeof key==="string"&&${membership})continue;`,
+        `const cd=gp(${value},key);`,
+        "if(cd===undefined||!h.call(cd,\"value\"))return false;",
+        `if(!${emitExpression(schema.catchall, "cd.value", context)})return false;`,
+        "}"
+    ].join("");
 }
 
 /**
@@ -332,7 +456,7 @@ function emitStrictObjectKeyBody(
     value: string,
     context: EmitContext
 ): string {
-    if (schema.mode !== ObjectModeTag.Strict) {
+    if (schema.mode !== ObjectModeTag.Strict || schema.catchall !== undefined) {
         return "";
     }
     const entries = schema.entries;
@@ -433,6 +557,27 @@ function emitString(
             case StringCheckTag.Uuid:
                 parts.push(emitRegex(value, UUID_PATTERN, context));
                 break;
+            case StringCheckTag.Email:
+                parts.push(emitRegex(value, EMAIL_PATTERN, context));
+                break;
+            case StringCheckTag.Url:
+                parts.push(emitRegex(value, URL_PATTERN, context));
+                break;
+            case StringCheckTag.IsoDate:
+                parts.push(emitRegex(value, ISO_DATE_PATTERN, context));
+                break;
+            case StringCheckTag.IsoDateTime:
+                parts.push(emitRegex(value, ISO_DATETIME_PATTERN, context));
+                break;
+            case StringCheckTag.Ulid:
+                parts.push(emitRegex(value, ULID_PATTERN, context));
+                break;
+            case StringCheckTag.Ipv4:
+                parts.push(emitRegex(value, IPV4_PATTERN, context));
+                break;
+            case StringCheckTag.Ipv6:
+                parts.push(emitRegex(value, IPV6_PATTERN, context));
+                break;
         }
     }
     return `(${parts.join("&&")})`;
@@ -475,6 +620,15 @@ function emitNumber(
                 break;
             case NumberCheckTag.Lte:
                 parts.push(`(${value}<=${String(check.value)})`);
+                break;
+            case NumberCheckTag.Gt:
+                parts.push(`(${value}>${String(check.value)})`);
+                break;
+            case NumberCheckTag.Lt:
+                parts.push(`(${value}<${String(check.value)})`);
+                break;
+            case NumberCheckTag.MultipleOf:
+                parts.push(`(${value}%${String(check.value)}===0)`);
                 break;
         }
     }
@@ -537,4 +691,29 @@ function emitRegex(value: string, regex: RegExp, context: EmitContext): string {
     const index = pushRegex(context, regex);
     const access = `r[${String(index)}]`;
     return `((${access}.lastIndex=0),${access}.test(${value}))`;
+}
+
+/**
+ * @brief Emit a side-table backed key membership expression.
+ * @param key Generated expression containing the candidate property key.
+ * @param keys Known object shape keys.
+ * @param context Shared code-generation context.
+ * @returns JavaScript expression that is true for known string keys.
+ */
+function keyMembershipExpression(
+    key: string,
+    keys: readonly string[],
+    context: EmitContext
+): string {
+    if (keys.length === 0) {
+        return "false";
+    }
+    const parts = new Array<string>(keys.length);
+    for (let index = 0; index < keys.length; index += 1) {
+        const value = keys[index];
+        parts[index] = value === undefined
+            ? "false"
+            : `${key}===${stringRef(context, value)}`;
+    }
+    return `(${parts.join("||")})`;
 }

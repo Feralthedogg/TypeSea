@@ -8,8 +8,9 @@
 import { SchemaTag } from "../kind/index.js";
 import { checkSchema, isSchema } from "../evaluate/index.js";
 import { makeValidationPlan } from "../plan/index.js";
-import type { CheckResult } from "../issue/index.js";
+import { freezeIssueArray, type CheckResult, type Issue } from "../issue/index.js";
 import type { Graph } from "../ir/index.js";
+import { err } from "../result/index.js";
 import type { Schema } from "../schema/index.js";
 import { TypeSeaAssertionError } from "./error.js";
 import {
@@ -19,6 +20,7 @@ import {
 } from "./read.js";
 import { defineReadonlyProperty, isStrictTrue } from "./props.js";
 import { registerConstructedGuard } from "./registry.js";
+import type { ArrayGuard } from "./array.js";
 import type {
     Brand,
     Guard,
@@ -28,6 +30,22 @@ import type {
     RuntimeValue,
     TypeSymbol
 } from "./types.js";
+
+type ArraySchemaRecord = Extract<Schema, { readonly tag: typeof SchemaTag.Array }>;
+type ArrayGuardFactory = <TItem>(schema: ArraySchemaRecord) => ArrayGuard<TItem>;
+
+let arrayGuardFactory: ArrayGuardFactory | undefined;
+
+/**
+ * @brief Register the concrete array guard factory.
+ * @param factory Constructor wrapper supplied by the array guard module.
+ * @details BaseGuard cannot import ArrayGuard directly without creating an
+ * initialization cycle. The guard barrel loads ArrayGuard, which installs this
+ * factory before public code can call fluent `array()`.
+ */
+export function setArrayGuardFactory(factory: ArrayGuardFactory): void {
+    arrayGuardFactory = factory;
+}
 
 /**
  * @brief Schema-backed guard base.
@@ -96,6 +114,27 @@ export class BaseGuard<
             readGuardSchema(this, "guard receiver"),
             value
         );
+    }
+
+    /**
+     * @brief Validate a value and keep only the first diagnostic.
+ * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
+ * existing guard instance.
+     * @param value Candidate runtime value.
+     * @returns Result carrying the value on success or one frozen issue on failure.
+     */
+    public checkFirst(
+        this: unknown,
+        value: unknown
+    ): CheckResult<RuntimeValue<TValue, TPresence>> {
+        const result = checkSchema<RuntimeValue<TValue, TPresence>>(
+            readGuardSchema(this, "guard receiver"),
+            value
+        );
+        if (result.ok) {
+            return result;
+        }
+        return err(freezeIssueArray(readFirstIssue(result.error)));
     }
 
     /**
@@ -173,11 +212,16 @@ export class BaseGuard<
  * existing guard instance.
      * @returns Fresh array guard.
      */
-    public array(): BaseGuard<RuntimeValue<TValue, TPresence>[]> {
-        return new BaseGuard<RuntimeValue<TValue, TPresence>[]>({
+    public array(): ArrayGuard<RuntimeValue<TValue, TPresence>> {
+        const schema: ArraySchemaRecord = {
             tag: SchemaTag.Array,
-            item: readGuardSchema(this, "array item")
-        });
+            item: readGuardSchema(this, "array item"),
+            checks: []
+        };
+        if (arrayGuardFactory === undefined) {
+            throw new TypeError("ArrayGuard factory is not initialized");
+        }
+        return arrayGuardFactory<RuntimeValue<TValue, TPresence>>(schema);
     }
 
     /**
@@ -260,4 +304,55 @@ export class BaseGuard<
             right: readGuardSchema(other, "intersection right")
         });
     }
+
+    /**
+     * @brief Require one own data property after this guard succeeds.
+     * @param key Own string property key to inspect.
+     * @param value Guard applied to the property value.
+     * @returns Fresh guard that preserves the base domain and property proof.
+     */
+    public property<
+        const TKey extends string,
+        TGuard extends Guard<unknown, Presence>
+    >(
+        key: TKey,
+        value: TGuard
+    ): BaseGuard<
+        RuntimeValue<TValue, TPresence> & Readonly<Record<TKey, Infer<TGuard>>>
+    > {
+        if (typeof key !== "string") {
+            throw new TypeError("property key must be a string");
+        }
+        return new BaseGuard<
+            RuntimeValue<TValue, TPresence> & Readonly<Record<TKey, Infer<TGuard>>>
+        >({
+            tag: SchemaTag.Property,
+            base: readGuardSchema(this, "property base"),
+            key,
+            value: readGuardSchema(value, "property value")
+        });
+    }
+}
+
+/**
+ * @brief Copy the first issue into a single-slot diagnostic vector.
+ * @details The full checker owns the original frozen issue vector. checkFirst
+ * publishes a narrower vector so callers cannot observe or retain extra issues.
+ * @param issues Issue vector returned by the full checker.
+ * @returns Mutable vector containing zero or one copied issue.
+ */
+function readFirstIssue(issues: readonly Issue[]): Issue[] {
+    const first = issues[0];
+    if (first === undefined) {
+        return [];
+    }
+    return [
+        {
+            path: first.path.slice(),
+            code: first.code,
+            expected: first.expected,
+            actual: first.actual,
+            message: first.message
+        }
+    ];
 }

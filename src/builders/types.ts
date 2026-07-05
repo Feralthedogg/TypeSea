@@ -27,6 +27,16 @@ export type InferTuple<TShape extends TupleShape> = {
     readonly [TKey in keyof TShape]: Infer<TShape[TKey]>;
 };
 
+export type InferTupleWithRest<
+    TShape extends TupleShape,
+    TRest extends Guard<unknown, Presence>
+> = readonly [
+    ...{
+        [TKey in keyof TShape]: Infer<TShape[TKey]>;
+    },
+    ...Infer<TRest>[]
+];
+
 /**
  * @brief Non-empty union builder input.
  * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes

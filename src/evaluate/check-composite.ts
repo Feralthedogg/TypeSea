@@ -6,6 +6,7 @@
  */
 
 import {
+    ArrayCheckTag,
     ObjectModeTag,
     PresenceTag,
     SchemaTag
@@ -26,6 +27,7 @@ import {
     isPlainRecord,
     isStrictTrue,
     literalToExpected,
+    ordinaryHasInstance,
     readOwnDataProperty,
     type DataPropertyDescriptor
 } from "./shared.js";
@@ -57,7 +59,7 @@ export type IssueCollector = (
  * @post Every pushed path segment is popped before return.
  */
 export function collectArrayIssues(
-    item: Schema,
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
     value: unknown,
     path: PathSegment[],
     issues: Issue[],
@@ -68,6 +70,8 @@ export function collectArrayIssues(
         pushIssue(path, issues, "expected_array", "array", actualType(value));
         return;
     }
+    collectArrayLengthIssues(schema, value, path, issues);
+    const item = schema.item;
     if (schemaCanAcceptUndefined(item)) {
         /*
          * A sparse hole is observationally undefined for this item schema. Walking
@@ -96,6 +100,54 @@ export function collectArrayIssues(
             );
         }
         path.pop();
+    }
+}
+
+/**
+ * @brief Collect array length diagnostics.
+ * @param schema Array schema with normalized checks.
+ * @param value Array already proven by the caller.
+ * @param path Current diagnostic path.
+ * @param issues Output issue buffer.
+ * @details Length checks are reported at the array path, not at an item index,
+ * because the failure describes the container domain itself.
+ */
+function collectArrayLengthIssues(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
+    value: readonly unknown[],
+    path: PathSegment[],
+    issues: Issue[]
+): void {
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        switch (check.tag) {
+            case ArrayCheckTag.Min:
+                if (value.length < check.value) {
+                    pushIssue(
+                        path,
+                        issues,
+                        "expected_min_length",
+                        `length >= ${String(check.value)}`,
+                        `length ${String(value.length)}`
+                    );
+                }
+                break;
+            case ArrayCheckTag.Max:
+                if (value.length > check.value) {
+                    pushIssue(
+                        path,
+                        issues,
+                        "expected_max_length",
+                        `length <= ${String(check.value)}`,
+                        `length ${String(value.length)}`
+                    );
+                }
+                break;
+        }
     }
 }
 
@@ -157,7 +209,7 @@ function collectPresentArrayIssues(
  * @post Every pushed tuple index is popped before return.
  */
 export function collectTupleIssues(
-    items: readonly Schema[],
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Tuple }>,
     value: unknown,
     path: PathSegment[],
     issues: Issue[],
@@ -168,12 +220,22 @@ export function collectTupleIssues(
         pushIssue(path, issues, "expected_tuple", "tuple", actualType(value));
         return;
     }
-    if (value.length !== items.length) {
+    const items = schema.items;
+    const rest = schema.rest;
+    if (rest === undefined && value.length !== items.length) {
         pushIssue(
             path,
             issues,
             "expected_tuple_length",
             `length ${String(items.length)}`,
+            `length ${String(value.length)}`
+        );
+    } else if (rest !== undefined && value.length < items.length) {
+        pushIssue(
+            path,
+            issues,
+            "expected_tuple_length",
+            `length >= ${String(items.length)}`,
             `length ${String(value.length)}`
         );
     }
@@ -201,6 +263,24 @@ export function collectTupleIssues(
             );
         }
         path.pop();
+    }
+    if (rest !== undefined && value.length > items.length) {
+        for (let index = items.length; index < value.length; index += 1) {
+            const itemValue = readArrayIndexDataProperty(value, index);
+            path.push(index);
+            if (itemValue === null) {
+                pushIssue(path, issues, "expected_tuple", "data property", "accessor");
+            } else {
+                collectChild(
+                    rest,
+                    itemValue === undefined ? undefined : itemValue.value,
+                    path,
+                    issues,
+                    state
+                );
+            }
+            path.pop();
+        }
     }
 }
 
@@ -289,6 +369,137 @@ export function collectRecordIssues(
 }
 
 /**
+ * @brief collect Map issues.
+ * @param schema Map schema with key and value validators.
+ * @param value Candidate runtime value.
+ * @param path Mutable diagnostic path stack.
+ * @param issues Output issue buffer.
+ * @param state Shared recursion and cycle state.
+ * @param collectChild Dispatcher for nested schema diagnostics.
+ */
+export function collectMapIssues(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Map }>,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[],
+    state: ValidationState,
+    collectChild: IssueCollector
+): void {
+    if (!(value instanceof Map)) {
+        pushIssue(path, issues, "expected_map", "Map", actualType(value));
+        return;
+    }
+    const iterator = Map.prototype.entries.call(value) as
+        IterableIterator<[unknown, unknown]>;
+    let index = 0;
+    for (;;) {
+        const step = iterator.next();
+        if (step.done === true) {
+            return;
+        }
+        const pair = step.value;
+        path.push(index);
+        path.push("key");
+        collectChild(schema.key, pair[0], path, issues, state);
+        path.pop();
+        path.push("value");
+        collectChild(schema.value, pair[1], path, issues, state);
+        path.pop();
+        path.pop();
+        index += 1;
+    }
+}
+
+/**
+ * @brief collect Set issues.
+ * @param schema Set schema with item validator.
+ * @param value Candidate runtime value.
+ * @param path Mutable diagnostic path stack.
+ * @param issues Output issue buffer.
+ * @param state Shared recursion and cycle state.
+ * @param collectChild Dispatcher for nested schema diagnostics.
+ */
+export function collectSetIssues(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Set }>,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[],
+    state: ValidationState,
+    collectChild: IssueCollector
+): void {
+    if (!(value instanceof Set)) {
+        pushIssue(path, issues, "expected_set", "Set", actualType(value));
+        return;
+    }
+    const iterator = Set.prototype.values.call(value) as IterableIterator<unknown>;
+    let index = 0;
+    for (;;) {
+        const step = iterator.next();
+        if (step.done === true) {
+            return;
+        }
+        path.push(index);
+        collectChild(schema.item, step.value, path, issues, state);
+        path.pop();
+        index += 1;
+    }
+}
+
+/**
+ * @brief collect instanceOf issues.
+ * @param schema InstanceOf schema with constructor metadata.
+ * @param value Candidate runtime value.
+ * @param path Current diagnostic path.
+ * @param issues Output issue buffer.
+ */
+export function collectInstanceOfIssues(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.InstanceOf }>,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[]
+): void {
+    if (!ordinaryHasInstance(value, schema.constructor)) {
+        pushIssue(path, issues, "expected_instance", schema.name, actualType(value));
+    }
+}
+
+/**
+ * @brief collect property issues.
+ * @param schema Property schema with base and own data property validator.
+ * @param value Candidate runtime value.
+ * @param path Mutable diagnostic path stack.
+ * @param issues Output issue buffer.
+ * @param state Shared recursion and cycle state.
+ * @param collectChild Dispatcher for nested schema diagnostics.
+ */
+export function collectPropertyIssues(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Property }>,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[],
+    state: ValidationState,
+    collectChild: IssueCollector
+): void {
+    const before = issues.length;
+    collectChild(schema.base, value, path, issues, state);
+    if (issues.length !== before) {
+        return;
+    }
+    if (((typeof value !== "object" && typeof value !== "function") || value === null)) {
+        pushIssue(path, issues, "expected_object", "object with property", actualType(value));
+        return;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, schema.key);
+    path.push(schema.key);
+    if (descriptor === undefined || !isDataPropertyDescriptor(descriptor)) {
+        pushIssue(path, issues, "expected_object", "data property", "missing or accessor");
+    } else {
+        collectChild(schema.value, descriptor.value, path, issues, state);
+    }
+    path.pop();
+}
+
+/**
  * @brief collect object issues.
  * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
  * aligned with compiled behavior.
@@ -345,7 +556,9 @@ export function collectObjectIssues(
         collectChild(entry.schema, property.value, path, issues, state);
         path.pop();
     }
-    if (schema.mode === ObjectModeTag.Strict) {
+    if (schema.catchall !== undefined) {
+        collectObjectCatchallIssues(schema, record, path, issues, state, collectChild);
+    } else if (schema.mode === ObjectModeTag.Strict) {
         /*
          * Strict objects reject symbol and non-enumerable extras as well, so
          * Reflect.ownKeys is required instead of Object.keys.
@@ -360,6 +573,46 @@ export function collectObjectIssues(
                 path.pop();
             }
         }
+    }
+}
+
+/**
+ * @brief Collect issues for undeclared own object keys.
+ * @param schema Object schema carrying a catchall schema.
+ * @param record Runtime object already proven to be a plain record.
+ * @param path Mutable diagnostic path stack.
+ * @param issues Output issue buffer.
+ * @param state Shared recursion and cycle state.
+ * @param collectChild Dispatcher used for the catchall value schema.
+ */
+function collectObjectCatchallIssues(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>,
+    record: Readonly<Record<string, unknown>>,
+    path: PathSegment[],
+    issues: Issue[],
+    state: ValidationState,
+    collectChild: IssueCollector
+): void {
+    const catchall = schema.catchall;
+    if (catchall === undefined) {
+        return;
+    }
+    const keys = Reflect.ownKeys(record);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined ||
+            (typeof key === "string" && hasObjectKey(schema.keyLookup, key))) {
+            continue;
+        }
+        const pathKey = typeof key === "string" ? key : String(key);
+        const descriptor = Object.getOwnPropertyDescriptor(record, key);
+        path.push(pathKey);
+        if (descriptor === undefined || !isDataPropertyDescriptor(descriptor)) {
+            pushIssue(path, issues, "expected_object", "data property", "accessor");
+        } else {
+            collectChild(catchall, descriptor.value, path, issues, state);
+        }
+        path.pop();
     }
 }
 

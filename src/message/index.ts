@@ -73,6 +73,16 @@ export interface IssueMessageOptions {
 }
 
 /**
+ * @brief Zod-style flattened message view.
+ * @details Root issues go into formErrors. Field issues are grouped by the
+ * first path segment so form adapters can attach messages to top-level fields.
+ */
+export interface FlattenedIssueMessages {
+    readonly formErrors: readonly string[];
+    readonly fieldErrors: Readonly<Record<string, readonly string[]>>;
+}
+
+/**
  * @brief Internal rendering configuration after option normalization.
  * @details Keeping this separate from the public type avoids repeated undefined
  * branches inside the hot issue rendering loop.
@@ -139,6 +149,47 @@ export function formatIssues(
 }
 
 /**
+ * @brief Flatten issues into root and top-level field message buckets.
+ * @param issues Issue list returned by check-like APIs.
+ * @param options Optional locale, catalog, and path formatter.
+ * @returns Frozen flattened message object.
+ * @details This mirrors the practical shape of Zod's `error.flatten()` without
+ * changing TypeSea's allocation-free boolean path or array-based diagnostics.
+ */
+export function flattenIssues(
+    issues: readonly Issue[],
+    options?: Partial<IssueMessageOptions>
+): FlattenedIssueMessages {
+    const copied = copyIssueArray(issues);
+    const config = readOptions(options);
+    const formErrors: string[] = [];
+    const fieldErrors: Record<string, string[]> = Object.create(null) as Record<string, string[]>;
+    for (let index = 0; index < copied.length; index += 1) {
+        const issue = copied[index];
+        if (issue === undefined) {
+            continue;
+        }
+        const message = renderIssue(issue, config);
+        const first = issue.path[0];
+        if (first === undefined) {
+            formErrors.push(message);
+            continue;
+        }
+        const key = String(first);
+        const bucket = fieldErrors[key];
+        if (bucket === undefined) {
+            fieldErrors[key] = [message];
+        } else {
+            bucket.push(message);
+        }
+    }
+    return Object.freeze({
+        formErrors: Object.freeze(formErrors),
+        fieldErrors: freezeFieldErrors(fieldErrors)
+    });
+}
+
+/**
  * @brief Attach rendered messages to every issue in a failed check result.
  * @details Successful results are returned unchanged. Failed results are copied
  * into fresh issue objects so structured diagnostics keep their original fields
@@ -194,6 +245,24 @@ function renderIssue(
         return issue.message;
     }
     return renderTemplate(defaultCatalogs[options.locale][issue.code], issue, context);
+}
+
+/**
+ * @brief Freeze flattened field-error buckets.
+ * @param value Mutable field-error table.
+ * @returns Frozen table with frozen message arrays.
+ */
+function freezeFieldErrors(
+    value: Record<string, string[]>
+): Readonly<Record<string, readonly string[]>> {
+    const keys = Object.keys(value);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key !== undefined) {
+            Object.freeze(value[key]);
+        }
+    }
+    return Object.freeze(value);
 }
 
 /**
@@ -400,12 +469,16 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 const enCatalog: Readonly<Record<IssueCode, string>> = Object.freeze({
     expected_string: "Expected string at {path}; received {actual}.",
     expected_number: "Expected number at {path}; received {actual}.",
+    expected_date: "Expected valid Date at {path}; received {actual}.",
     expected_bigint: "Expected bigint at {path}; received {actual}.",
     expected_symbol: "Expected symbol at {path}; received {actual}.",
     expected_boolean: "Expected boolean at {path}; received {actual}.",
     expected_never: "Expected never at {path}; received {actual}.",
     expected_literal: "Expected literal {expected} at {path}; received {actual}.",
     expected_array: "Expected array at {path}; received {actual}.",
+    expected_map: "Expected Map at {path}; received {actual}.",
+    expected_set: "Expected Set at {path}; received {actual}.",
+    expected_instance: "Expected instance of {expected} at {path}; received {actual}.",
     expected_tuple: "Expected tuple at {path}; received {actual}.",
     expected_tuple_length: "Expected tuple {expected} at {path}; received {actual}.",
     expected_object: "Expected object at {path}; received {actual}.",
@@ -416,6 +489,9 @@ const enCatalog: Readonly<Record<IssueCode, string>> = Object.freeze({
     expected_pattern: "Expected pattern {expected} at {path}; received {actual}.",
     expected_gte: "Expected value {expected} at {path}; received {actual}.",
     expected_lte: "Expected value {expected} at {path}; received {actual}.",
+    expected_gt: "Expected value {expected} at {path}; received {actual}.",
+    expected_lt: "Expected value {expected} at {path}; received {actual}.",
+    expected_multiple_of: "Expected value {expected} at {path}; received {actual}.",
     expected_required_key: "Expected required key at {path}; received {actual}.",
     expected_union: "Expected union at {path}; received {actual}.",
     expected_discriminant: "Expected discriminant {expected} at {path}; received {actual}.",
@@ -432,12 +508,16 @@ const enCatalog: Readonly<Record<IssueCode, string>> = Object.freeze({
 const koCatalog: Readonly<Record<IssueCode, string>> = Object.freeze({
     expected_string: "{path}에서 문자열이 필요하지만 {actual}을 받았습니다.",
     expected_number: "{path}에서 숫자가 필요하지만 {actual}을 받았습니다.",
+    expected_date: "{path}에서 유효한 Date가 필요하지만 {actual}을 받았습니다.",
     expected_bigint: "{path}에서 bigint가 필요하지만 {actual}을 받았습니다.",
     expected_symbol: "{path}에서 symbol이 필요하지만 {actual}을 받았습니다.",
     expected_boolean: "{path}에서 boolean이 필요하지만 {actual}을 받았습니다.",
     expected_never: "{path}에서 never가 필요하지만 {actual}을 받았습니다.",
     expected_literal: "{path}에서 literal {expected}이 필요하지만 {actual}을 받았습니다.",
     expected_array: "{path}에서 배열이 필요하지만 {actual}을 받았습니다.",
+    expected_map: "{path}에서 Map이 필요하지만 {actual}을 받았습니다.",
+    expected_set: "{path}에서 Set이 필요하지만 {actual}을 받았습니다.",
+    expected_instance: "{path}에서 {expected} 인스턴스가 필요하지만 {actual}을 받았습니다.",
     expected_tuple: "{path}에서 튜플이 필요하지만 {actual}을 받았습니다.",
     expected_tuple_length: "{path}에서 튜플 {expected}이 필요하지만 {actual}을 받았습니다.",
     expected_object: "{path}에서 객체가 필요하지만 {actual}을 받았습니다.",
@@ -448,6 +528,9 @@ const koCatalog: Readonly<Record<IssueCode, string>> = Object.freeze({
     expected_pattern: "{path}에서 패턴 {expected}이 필요하지만 {actual}을 받았습니다.",
     expected_gte: "{path}에서 값 {expected}이 필요하지만 {actual}을 받았습니다.",
     expected_lte: "{path}에서 값 {expected}이 필요하지만 {actual}을 받았습니다.",
+    expected_gt: "{path}에서 값 {expected}이 필요하지만 {actual}을 받았습니다.",
+    expected_lt: "{path}에서 값 {expected}이 필요하지만 {actual}을 받았습니다.",
+    expected_multiple_of: "{path}에서 값 {expected}이 필요하지만 {actual}을 받았습니다.",
     expected_required_key: "{path}에 필수 키가 필요하지만 {actual}입니다.",
     expected_union: "{path}에서 유니온 값이 필요하지만 {actual}을 받았습니다.",
     expected_discriminant: "{path}에서 discriminant {expected}이 필요하지만 {actual}을 받았습니다.",

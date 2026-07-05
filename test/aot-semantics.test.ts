@@ -14,10 +14,12 @@ import {
 interface AotRuntimeModule {
     readonly is: (value: unknown) => boolean;
     readonly check: (value: unknown) => CheckResult<unknown>;
+    readonly checkFirst: (value: unknown) => CheckResult<unknown>;
     readonly assert: (value: unknown) => void;
     readonly default: {
         readonly is: (value: unknown) => boolean;
         readonly check: (value: unknown) => CheckResult<unknown>;
+        readonly checkFirst: (value: unknown) => CheckResult<unknown>;
         readonly assert: (value: unknown) => void;
     };
 }
@@ -88,6 +90,8 @@ describe("AOT module emission", () => {
             expect(runtime.default.is(value), `default is ${String(index)}`)
                 .toBe(User.is(value));
             expect(runtime.check(value), `check ${String(index)}`).toEqual(User.check(value));
+            expect(runtime.checkFirst(value), `checkFirst ${String(index)}`)
+                .toEqual(User.checkFirst(value));
         }
 
         const invalid = runtime.check(values[2]);
@@ -107,6 +111,7 @@ describe("AOT module emission", () => {
             "non_empty"
         ));
         const Lazy = emitAotModule(t.lazy(() => t.string));
+        const DateGuard = emitAotModule(t.date);
         const SymbolLiteral = emitAotModule(t.literal(Symbol("marker")));
 
         expect(Refined.ok).toBe(false);
@@ -117,6 +122,10 @@ describe("AOT module emission", () => {
         expect(Lazy.ok).toBe(false);
         if (!Lazy.ok) {
             expect(Lazy.error[0]?.code).toBe("unsupported_aot_lazy");
+        }
+        expect(DateGuard.ok).toBe(false);
+        if (!DateGuard.ok) {
+            expect(DateGuard.error[0]?.code).toBe("unsupported_aot_date");
         }
         expect(SymbolLiteral.ok).toBe(false);
         if (!SymbolLiteral.ok) {

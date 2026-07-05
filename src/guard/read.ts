@@ -6,7 +6,13 @@
  */
 
 import { SchemaTag } from "../kind/index.js";
-import type { NumberSchema, Schema, StringSchema } from "../schema/index.js";
+import type {
+    ArraySchema,
+    DateSchema,
+    NumberSchema,
+    Schema,
+    StringSchema
+} from "../schema/index.js";
 import { freezeSchema, isSchemaValue } from "../schema/index.js";
 import { isRecord } from "./props.js";
 import { isConstructedGuard } from "./registry.js";
@@ -91,6 +97,52 @@ export function readNumberMethodSchema(guard: unknown, label: string): NumberSch
 }
 
 /**
+ * @brief Read and require a Date schema from a method receiver.
+ * @param guard Candidate receiver.
+ * @param label Human-readable label used in TypeError messages.
+ * @returns Date schema carried by the receiver.
+ * @throws TypeError when the receiver is not a Date guard.
+ */
+export function readDateMethodSchema(guard: unknown, label: string): DateSchema {
+    if (isConstructedGuard(guard)) {
+        const schema = guard.schema;
+        if (schema.tag !== SchemaTag.Date) {
+            throw new TypeError(`${label} must be a date TypeSea guard`);
+        }
+        return schema;
+    }
+    const schema = readGuardSchema(guard, label);
+    if (schema.tag !== SchemaTag.Date) {
+        throw new TypeError(`${label} must be a date TypeSea guard`);
+    }
+    return schema;
+}
+
+/**
+ * @brief Read and require an array schema from a method receiver.
+ * @param guard Candidate receiver.
+ * @param label Human-readable label used in TypeError messages.
+ * @returns Array schema carried by the receiver.
+ * @throws TypeError when the receiver is not an array guard.
+ * @details ArrayGuard methods share this gate so fluent length helpers cannot
+ * be detached and applied to unrelated guard instances.
+ */
+export function readArrayMethodSchema(guard: unknown, label: string): ArraySchema {
+    if (isConstructedGuard(guard)) {
+        const schema = guard.schema;
+        if (schema.tag !== SchemaTag.Array) {
+            throw new TypeError(`${label} must be an array TypeSea guard`);
+        }
+        return schema;
+    }
+    const schema = readGuardSchema(guard, label);
+    if (schema.tag !== SchemaTag.Array) {
+        throw new TypeError(`${label} must be an array TypeSea guard`);
+    }
+    return schema;
+}
+
+/**
  * @brief Validate and freeze a generic guard constructor schema.
  * @param schema Candidate runtime schema.
  * @returns Frozen schema accepted by BaseGuard.
@@ -136,6 +188,34 @@ export function readNumberConstructorSchema(schema: unknown): NumberSchema {
 }
 
 /**
+ * @brief Validate a DateGuard constructor schema.
+ * @param schema Candidate runtime schema.
+ * @returns Date schema accepted by DateGuard.
+ * @throws TypeError when the schema is not a Date schema.
+ */
+export function readDateConstructorSchema(schema: unknown): DateSchema {
+    if (!isSchemaValue(schema) || schema.tag !== SchemaTag.Date) {
+        throw new TypeError("DateGuard constructor requires a date schema");
+    }
+    return schema;
+}
+
+/**
+ * @brief Validate an ArrayGuard constructor schema.
+ * @param schema Candidate runtime schema.
+ * @returns Array schema accepted by ArrayGuard.
+ * @throws TypeError when the schema is not an array schema.
+ * @details The schema validator already checks the item tree and length-check
+ * vector, so the specialized constructor only enforces the root tag.
+ */
+export function readArrayConstructorSchema(schema: unknown): ArraySchema {
+    if (!isSchemaValue(schema) || schema.tag !== SchemaTag.Array) {
+        throw new TypeError("ArrayGuard constructor requires an array schema");
+    }
+    return schema;
+}
+
+/**
  * @brief Validate refinement API inputs.
  * @param predicate Candidate refinement predicate.
  * @param name Candidate diagnostic name.
@@ -172,6 +252,22 @@ export function checkStringLengthBound(value: number, label: string): number {
 }
 
 /**
+ * @brief Validate a non-negative array length bound.
+ * @param value Candidate bound.
+ * @param label Bound label used in RangeError messages.
+ * @returns The validated bound.
+ * @throws RangeError when the bound is negative or non-integer.
+ * @details Array bounds share the same integer contract as string length
+ * bounds, but the separate helper keeps public error text precise.
+ */
+export function checkArrayLengthBound(value: number, label: string): number {
+    if (!Number.isInteger(value) || value < 0) {
+        throw new RangeError(`${label} array length bound must be a non-negative integer`);
+    }
+    return value;
+}
+
+/**
  * @brief Validate a finite numeric bound.
  * @param value Candidate bound.
  * @param label Bound label used in RangeError messages.
@@ -185,6 +281,24 @@ export function checkFiniteNumberBound(value: number, label: string): number {
         throw new RangeError(`${label} numeric bound must be finite`);
     }
     return value;
+}
+
+/**
+ * @brief Normalize a Date bound into a finite epoch millisecond value.
+ * @param value Candidate Date bound.
+ * @param label Bound label used in RangeError messages.
+ * @returns Finite epoch millisecond value.
+ * @throws RangeError when the bound is not a valid Date instance.
+ */
+export function checkDateBound(value: Date, label: string): number {
+    if (!(value instanceof Date)) {
+        throw new RangeError(`${label} date bound must be a Date`);
+    }
+    const time = Date.prototype.getTime.call(value);
+    if (!Number.isFinite(time)) {
+        throw new RangeError(`${label} date bound must be valid`);
+    }
+    return time;
 }
 
 /**

@@ -24,7 +24,12 @@ export const SchemaTag = {
     Never: 18,
     BigInt: 19,
     Symbol: 20,
-    Intersection: 21
+    Intersection: 21,
+    Date: 22,
+    Map: 23,
+    Set: 24,
+    InstanceOf: 25,
+    Property: 26
 } as const;
 
 export type SchemaTag = (typeof SchemaTag)[keyof typeof SchemaTag];
@@ -57,7 +62,14 @@ export const StringCheckTag = {
     Min: 1,
     Max: 2,
     Regex: 3,
-    Uuid: 4
+    Uuid: 4,
+    Email: 5,
+    Url: 6,
+    IsoDate: 7,
+    IsoDateTime: 8,
+    Ulid: 9,
+    Ipv4: 10,
+    Ipv6: 11
 } as const;
 
 export type StringCheckTag =
@@ -66,11 +78,30 @@ export type StringCheckTag =
 export const NumberCheckTag = {
     Integer: 1,
     Gte: 2,
-    Lte: 3
+    Lte: 3,
+    Gt: 4,
+    Lt: 5,
+    MultipleOf: 6
 } as const;
 
 export type NumberCheckTag =
     (typeof NumberCheckTag)[keyof typeof NumberCheckTag];
+
+export const DateCheckTag = {
+    Min: 1,
+    Max: 2
+} as const;
+
+export type DateCheckTag =
+    (typeof DateCheckTag)[keyof typeof DateCheckTag];
+
+export const ArrayCheckTag = {
+    Min: 1,
+    Max: 2
+} as const;
+
+export type ArrayCheckTag =
+    (typeof ArrayCheckTag)[keyof typeof ArrayCheckTag];
 
 /**
  * @brief IR node tags with reserved numeric ranges by node family.

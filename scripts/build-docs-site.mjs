@@ -38,6 +38,7 @@ if (!result.ok) {
  * @details The output is plain HTML and CSS so GitHub Pages can serve it without runtime code.
  */
 async function main() {
+    const packageVersion = await readPackageVersion();
     const sources = [];
     for (let index = 0; index < sourceFiles.length; index += 1) {
         const file = sourceFiles[index];
@@ -49,7 +50,7 @@ async function main() {
             });
         }
     }
-    const html = renderSite(sources);
+    const html = renderSite(sources, packageVersion);
     if (isCheckMode) {
         const current = await readFile(outputPath, "utf8");
         if (current !== html) {
@@ -62,11 +63,25 @@ async function main() {
 }
 
 /**
+ * @brief Read the package version shown in the generated documentation shell.
+ * @returns Release version stored in package.json.
+ */
+async function readPackageVersion() {
+    const text = await readFile("package.json", "utf8");
+    const metadata = JSON.parse(text);
+    if (!isRecord(metadata) || typeof metadata.version !== "string") {
+        throw new Error("package.json must contain a string version");
+    }
+    return metadata.version;
+}
+
+/**
  * @brief Render the whole documentation shell.
  * @param sources Markdown source records.
+ * @param packageVersion Release version displayed in the sidebar.
  * @returns Complete HTML document.
  */
-function renderSite(sources) {
+function renderSite(sources, packageVersion) {
     const rendered = sources.map((source) => renderSourceDocument(source)).join("\n");
     return `<!doctype html>
 <html lang="en">
@@ -674,7 +689,7 @@ function renderSite(sources) {
       <aside class="sidebar" aria-label="Documentation navigation">
         <div class="brand">
           <h1>TypeSea</h1>
-          <span class="version">v0.2.0</span>
+          <span class="version">v${escapeHtml(packageVersion)}</span>
         </div>
         <p class="brand-tagline">
           <span class="i18n-en">Complete docs from README.md, docs/api.md, and docs/engine-notes.md.</span>
@@ -808,6 +823,15 @@ ${rendered}
   </body>
 </html>
 `;
+}
+
+/**
+ * @brief Test whether an unknown JavaScript value is a string-keyed object.
+ * @param value Candidate value.
+ * @returns True when value can be read as a record.
+ */
+function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

@@ -6,6 +6,8 @@
  */
 
 import {
+    ArrayCheckTag,
+    DateCheckTag,
     NumberCheckTag,
     ObjectModeTag,
     PresenceTag,
@@ -24,6 +26,8 @@ import {
     readOwnDataProperty
 } from "./common.js";
 import type {
+    ArrayCheck,
+    DateCheck,
     NumberCheck,
     Schema,
     StringCheck
@@ -111,6 +115,8 @@ function isSchemaRecord(
         case SchemaTag.Symbol:
         case SchemaTag.Boolean:
             return true;
+        case SchemaTag.Date:
+            return isDateChecks(readOwnDataProperty(value, "checks"));
         case SchemaTag.String:
             return isStringChecks(readOwnDataProperty(value, "checks"));
         case SchemaTag.Number:
@@ -124,11 +130,25 @@ function isSchemaRecord(
             return !isMissingDataProperty(literal) && isLiteralValue(literal);
         }
         case SchemaTag.Array:
-            return isSchemaValueInner(readOwnDataProperty(value, "item"), state);
+            return isSchemaValueInner(readOwnDataProperty(value, "item"), state) &&
+                isArrayChecks(readOwnDataProperty(value, "checks"));
         case SchemaTag.Tuple:
-            return isSchemaArray(readOwnDataProperty(value, "items"), state);
+            return isSchemaArray(readOwnDataProperty(value, "items"), state) &&
+                isOptionalSchemaValue(readOwnDataProperty(value, "rest"), state);
         case SchemaTag.Record:
             return isSchemaValueInner(readOwnDataProperty(value, "value"), state);
+        case SchemaTag.Map:
+            return isSchemaValueInner(readOwnDataProperty(value, "key"), state) &&
+                isSchemaValueInner(readOwnDataProperty(value, "value"), state);
+        case SchemaTag.Set:
+            return isSchemaValueInner(readOwnDataProperty(value, "item"), state);
+        case SchemaTag.InstanceOf:
+            return typeof readOwnDataProperty(value, "constructor") === "function" &&
+                typeof readOwnDataProperty(value, "name") === "string";
+        case SchemaTag.Property:
+            return typeof readOwnDataProperty(value, "key") === "string" &&
+                isSchemaValueInner(readOwnDataProperty(value, "base"), state) &&
+                isSchemaValueInner(readOwnDataProperty(value, "value"), state);
         case SchemaTag.Object:
             return isObjectSchemaValue(value, state);
         case SchemaTag.Union:
@@ -154,6 +174,19 @@ function isSchemaRecord(
         default:
             return false;
     }
+}
+
+/**
+ * @brief Validate an optional schema payload.
+ * @param value Candidate child schema or undefined.
+ * @param state Recursion state for child schemas.
+ * @returns True when the value is absent or a valid schema.
+ */
+function isOptionalSchemaValue(
+    value: unknown,
+    state: SchemaValidationState
+): boolean {
+    return value === undefined || isSchemaValueInner(value, state);
 }
 
 /**
@@ -192,6 +225,13 @@ function isStringChecks(value: unknown): value is readonly StringCheck[] {
                 }
                 break;
             case StringCheckTag.Uuid:
+            case StringCheckTag.Email:
+            case StringCheckTag.Url:
+            case StringCheckTag.IsoDate:
+            case StringCheckTag.IsoDateTime:
+            case StringCheckTag.Ulid:
+            case StringCheckTag.Ipv4:
+            case StringCheckTag.Ipv6:
                 break;
             default:
                 return false;
@@ -220,9 +260,82 @@ function isNumberChecks(value: unknown): value is readonly NumberCheck[] {
             case NumberCheckTag.Integer:
                 break;
             case NumberCheckTag.Gte:
-            case NumberCheckTag.Lte: {
+            case NumberCheckTag.Lte:
+            case NumberCheckTag.Gt:
+            case NumberCheckTag.Lt: {
                 const bound = readOwnDataProperty(check, "value");
                 if (typeof bound !== "number" || !Number.isFinite(bound)) {
+                    return false;
+                }
+                break;
+            }
+            case NumberCheckTag.MultipleOf: {
+                const divisor = readOwnDataProperty(check, "value");
+                if (typeof divisor !== "number" ||
+                    !Number.isFinite(divisor) ||
+                    divisor <= 0) {
+                    return false;
+                }
+                break;
+            }
+            default:
+                return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Validate the check vector attached to a Date schema.
+ * @param value Candidate check vector.
+ * @returns True when every Date bound is finite epoch milliseconds.
+ */
+function isDateChecks(value: unknown): value is readonly DateCheck[] {
+    if (!isUnknownArray(value)) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+        const check = value[index];
+        if (!isRecord(check)) {
+            return false;
+        }
+        switch (readOwnDataProperty(check, "tag")) {
+            case DateCheckTag.Min:
+            case DateCheckTag.Max: {
+                const bound = readOwnDataProperty(check, "value");
+                if (typeof bound !== "number" || !Number.isFinite(bound)) {
+                    return false;
+                }
+                break;
+            }
+            default:
+                return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Validate the check vector attached to an array schema.
+ * @param value Candidate check vector.
+ * @returns True when every array length bound is a non-negative integer.
+ * @details Array length checks are admitted once at schema construction so
+ * interpreters and code generators can emit direct `length` comparisons later.
+ */
+function isArrayChecks(value: unknown): value is readonly ArrayCheck[] {
+    if (!isUnknownArray(value)) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+        const check = value[index];
+        if (!isRecord(check)) {
+            return false;
+        }
+        switch (readOwnDataProperty(check, "tag")) {
+            case ArrayCheckTag.Min:
+            case ArrayCheckTag.Max: {
+                const bound = readOwnDataProperty(check, "value");
+                if (typeof bound !== "number" || !Number.isInteger(bound) || bound < 0) {
                     return false;
                 }
                 break;
@@ -275,8 +388,12 @@ function isObjectSchemaValue(
     const entries = readOwnDataProperty(value, "entries");
     const keys = readOwnDataProperty(value, "keys");
     const keyLookup = readOwnDataProperty(value, "keyLookup");
+    const catchall = readOwnDataProperty(value, "catchall");
     if (!isUnknownArray(entries) || !isStringArray(keys) ||
         !isObjectKeyLookup(keyLookup, keys) || entries.length !== keys.length) {
+        return false;
+    }
+    if (catchall !== undefined && !isSchemaValueInner(catchall, state)) {
         return false;
     }
     const seen: string[] = [];

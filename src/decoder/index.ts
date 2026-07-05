@@ -7,6 +7,8 @@ import { err } from "../result/index.js";
 import { freezeSchema, isSchemaValue, type Schema } from "../schema/index.js";
 
 type DecodeRunner<TValue> = (value: unknown) => CheckResult<TValue>;
+type EncodeRunner<TValue> = (value: unknown) => CheckResult<TValue>;
+type DefaultInput<TValue> = TValue | (() => TValue);
 
 /**
  * @brief Private runner slot for decoder instances.
@@ -14,6 +16,7 @@ type DecodeRunner<TValue> = (value: unknown) => CheckResult<TValue>;
  * collision with user-visible properties.
  */
 const DecoderRunSymbol = Symbol("TypeSea.decoder.run");
+const CodecEncodeSymbol = Symbol("TypeSea.codec.encode");
 
 /**
  * @brief Real decoder instances tracked without extending object lifetime.
@@ -44,10 +47,24 @@ export interface Decoder<TValue> {
     transform<TNext>(mapper: (value: TValue) => TNext): BaseDecoder<TNext>;
 
     pipe<TNext extends DecodeSource>(next: TNext): BaseDecoder<InferDecoder<TNext>>;
+
+    default(fallback: DefaultInput<TValue>): BaseDecoder<TValue>;
+
+    prefault(fallback: unknown): BaseDecoder<TValue>;
+
+    catch(fallback: DefaultInput<TValue>): BaseDecoder<TValue>;
+}
+
+export interface Codec<TEncoded, TDecoded> extends Decoder<TDecoded> {
+    encode(value: TDecoded): CheckResult<TEncoded>;
 }
 
 interface ConstructedDecoder<TValue> extends Decoder<TValue> {
     readonly [DecoderRunSymbol]: DecodeRunner<TValue>;
+}
+
+interface ConstructedCodec<TEncoded, TDecoded> extends Codec<TEncoded, TDecoded> {
+    readonly [CodecEncodeSymbol]: EncodeRunner<TEncoded>;
 }
 
 /**
@@ -64,7 +81,9 @@ export class BaseDecoder<TValue> implements Decoder<TValue> {
         }
         defineReadonlyProperty(this, DecoderRunSymbol, run, false);
         constructedDecoders.add(this);
-        Object.freeze(this);
+        if (new.target === BaseDecoder) {
+            Object.freeze(this);
+        }
     }
 
     public decode(this: unknown, value: unknown): CheckResult<TValue> {
@@ -99,6 +118,60 @@ export class BaseDecoder<TValue> implements Decoder<TValue> {
                 return nextRun(decoded.value);
             }
         );
+    }
+
+    public default(fallback: DefaultInput<TValue>): BaseDecoder<TValue> {
+        const run = readDecoderRunner<TValue>(this, "decoder default receiver");
+        return new BaseDecoder<TValue>((value: unknown): CheckResult<TValue> => {
+            if (value === undefined) {
+                return okResult(resolveDefault(fallback));
+            }
+            return run(value);
+        });
+    }
+
+    public prefault(fallback: unknown): BaseDecoder<TValue> {
+        const run = readDecoderRunner<TValue>(this, "decoder prefault receiver");
+        return new BaseDecoder<TValue>((value: unknown): CheckResult<TValue> =>
+            run(value === undefined ? fallback : value));
+    }
+
+    public catch(fallback: DefaultInput<TValue>): BaseDecoder<TValue> {
+        const run = readDecoderRunner<TValue>(this, "decoder catch receiver");
+        return new BaseDecoder<TValue>((value: unknown): CheckResult<TValue> => {
+            const decoded = run(value);
+            if (decoded.ok) {
+                return decoded;
+            }
+            return okResult(resolveDefault(fallback));
+        });
+    }
+}
+
+/**
+ * @brief Frozen bidirectional codec wrapper.
+ * @details Decode uses the BaseDecoder runner. Encode has a separate private
+ * symbol so detached encode calls fail through the same receiver discipline.
+ */
+export class BaseCodec<TEncoded, TDecoded>
+    extends BaseDecoder<TDecoded>
+    implements Codec<TEncoded, TDecoded> {
+    private declare readonly [CodecEncodeSymbol]: EncodeRunner<TEncoded>;
+
+    public constructor(
+        decodeRun: DecodeRunner<TDecoded>,
+        encodeRun: EncodeRunner<TEncoded>
+    ) {
+        super(decodeRun);
+        if (typeof encodeRun !== "function") {
+            throw new TypeError("codec encode run must be a function");
+        }
+        defineReadonlyProperty(this, CodecEncodeSymbol, encodeRun, false);
+        Object.freeze(this);
+    }
+
+    public encode(this: unknown, value: TDecoded): CheckResult<TEncoded> {
+        return readCodecEncodeRunner<TEncoded>(this, "codec receiver")(value);
     }
 }
 
@@ -173,6 +246,109 @@ export function pipe<TNext extends DecodeSource>(
     next: TNext
 ): BaseDecoder<InferDecoder<TNext>> {
     return makeDecoder(source).pipe(next);
+}
+
+/**
+ * @brief Add a short-circuit default output for undefined input.
+ * @param source Guard or decoder used for non-undefined input.
+ * @param fallback Output value or zero-argument producer.
+ * @returns Decoder that returns fallback output when input is undefined.
+ */
+export function defaultValue<TSource extends DecodeSource>(
+    source: TSource,
+    fallback: DefaultInput<InferDecoder<TSource>>
+): BaseDecoder<InferDecoder<TSource>> {
+    const run = readDecodeSourceRunner<InferDecoder<TSource>>(source, "default source");
+    return new BaseDecoder<InferDecoder<TSource>>(
+        (value: unknown): CheckResult<InferDecoder<TSource>> => {
+            if (value === undefined) {
+                return okResult(resolveDefault(fallback));
+            }
+            return run(value);
+        }
+    );
+}
+
+/**
+ * @brief Add a pre-parse fallback input for undefined input.
+ * @param source Guard or decoder used for actual validation.
+ * @param fallback Input value passed through the source when input is undefined.
+ * @returns Decoder that validates fallback input instead of short-circuiting.
+ */
+export function prefault<TSource extends DecodeSource>(
+    source: TSource,
+    fallback: unknown
+): BaseDecoder<InferDecoder<TSource>> {
+    const run = readDecodeSourceRunner<InferDecoder<TSource>>(source, "prefault source");
+    return new BaseDecoder<InferDecoder<TSource>>(
+        (value: unknown): CheckResult<InferDecoder<TSource>> =>
+            run(value === undefined ? fallback : value)
+    );
+}
+
+/**
+ * @brief Add a failure fallback output for decode errors.
+ * @param source Guard or decoder used for validation.
+ * @param fallback Output value or zero-argument producer returned on failure.
+ * @returns Decoder that converts validation failure into fallback success.
+ */
+export function catchValue<TSource extends DecodeSource>(
+    source: TSource,
+    fallback: DefaultInput<InferDecoder<TSource>>
+): BaseDecoder<InferDecoder<TSource>> {
+    const run = readDecodeSourceRunner<InferDecoder<TSource>>(source, "catch source");
+    return new BaseDecoder<InferDecoder<TSource>>(
+        (value: unknown): CheckResult<InferDecoder<TSource>> => {
+            const decoded = run(value);
+            if (decoded.ok) {
+                return decoded;
+            }
+            return okResult(resolveDefault(fallback));
+        }
+    );
+}
+
+/**
+ * @brief Build a bidirectional codec from input and output validation sources.
+ * @param input Source schema for encoded values.
+ * @param output Source schema for decoded values.
+ * @param mapping Decode and encode mapping functions.
+ * @returns Codec that validates both sides of each conversion.
+ */
+export function codec<
+    TInput extends DecodeSource,
+    TOutput extends DecodeSource
+>(
+    input: TInput,
+    output: TOutput,
+    mapping: {
+        readonly decode: (value: InferDecoder<TInput>) => InferDecoder<TOutput>;
+        readonly encode: (value: InferDecoder<TOutput>) => InferDecoder<TInput>;
+    }
+): BaseCodec<InferDecoder<TInput>, InferDecoder<TOutput>> {
+    if (!isRecord(mapping) ||
+        typeof mapping.decode !== "function" ||
+        typeof mapping.encode !== "function") {
+        throw new TypeError("codec mapping must contain decode and encode functions");
+    }
+    const inputRun = readDecodeSourceRunner<InferDecoder<TInput>>(input, "codec input");
+    const outputRun = readDecodeSourceRunner<InferDecoder<TOutput>>(output, "codec output");
+    return new BaseCodec<InferDecoder<TInput>, InferDecoder<TOutput>>(
+        (value: unknown): CheckResult<InferDecoder<TOutput>> => {
+            const decodedInput = inputRun(value);
+            if (!decodedInput.ok) {
+                return decodedInput;
+            }
+            return outputRun(mapping.decode(decodedInput.value));
+        },
+        (value: unknown): CheckResult<InferDecoder<TInput>> => {
+            const decodedOutput = outputRun(value);
+            if (!decodedOutput.ok) {
+                return decodedOutput;
+            }
+            return inputRun(mapping.encode(decodedOutput.value));
+        }
+    );
 }
 
 /**
@@ -262,6 +438,15 @@ export function isDecoderValue(value: unknown): value is Decoder<unknown> {
 }
 
 /**
+ * @brief Check codec value.
+ * @param value Candidate runtime value.
+ * @returns True when the value is a TypeSea codec.
+ */
+export function isCodecValue(value: unknown): value is Codec<unknown, unknown> {
+    return isConstructedCodec(value);
+}
+
+/**
  * @brief Test decoder identity through the private registry.
  * @details Decoder helpers keep validation failures explicit in Result values while
  * preserving the original input value.
@@ -270,6 +455,27 @@ export function isDecoderValue(value: unknown): value is Decoder<unknown> {
  */
 function isConstructedDecoder(value: unknown): value is ConstructedDecoder<unknown> {
     return isRecord(value) && constructedDecoders.has(value);
+}
+
+/**
+ * @brief Test codec identity through the private encode slot.
+ * @param value Candidate codec.
+ * @returns True when TypeSea constructed the codec instance.
+ */
+function isConstructedCodec(value: unknown): value is ConstructedCodec<unknown, unknown> {
+    return isConstructedDecoder(value) &&
+        Object.prototype.hasOwnProperty.call(value, CodecEncodeSymbol);
+}
+
+/**
+ * @brief Resolve a default value or zero-argument producer.
+ * @param fallback Stored fallback value or producer.
+ * @returns Concrete fallback output.
+ */
+function resolveDefault<TValue>(fallback: DefaultInput<TValue>): TValue {
+    return typeof fallback === "function"
+        ? (fallback as () => TValue)()
+        : fallback;
 }
 
 /**
@@ -308,6 +514,23 @@ function readDecoderRunner<TValue>(
         throw new TypeError(`${label} must be a TypeSea decoder`);
     }
     return value[DecoderRunSymbol] as DecodeRunner<TValue>;
+}
+
+/**
+ * @brief Read the private encode runner from a constructed codec.
+ * @param value Candidate codec object.
+ * @param label Message prefix for TypeError diagnostics.
+ * @returns Stored encode runner.
+ * @throws TypeError when the receiver is not a TypeSea codec.
+ */
+function readCodecEncodeRunner<TValue>(
+    value: unknown,
+    label: string
+): EncodeRunner<TValue> {
+    if (!isConstructedCodec(value)) {
+        throw new TypeError(`${label} must be a TypeSea codec`);
+    }
+    return value[CodecEncodeSymbol] as EncodeRunner<TValue>;
 }
 
 /**
@@ -376,6 +599,15 @@ function actualType(value: unknown): string {
     }
     if (Array.isArray(value)) {
         return "array";
+    }
+    if (value instanceof Date) {
+        return "date";
+    }
+    if (value instanceof Map) {
+        return "map";
+    }
+    if (value instanceof Set) {
+        return "set";
     }
     if (typeof value === "number" && Number.isNaN(value)) {
         return "nan";

@@ -51,17 +51,18 @@ describe("compiled source audit", () => {
 
         expect(FastString.source).toContain("const z=Object.freeze([]);");
         expect(FastString.source).not.toContain("const e=Object.freeze([]);");
-        expect(FastString.source).not.toContain("path:y,code:c");
-        expect(FastString.source).not.toContain("p.length===0?z:Object.freeze(p.slice())");
-        expect(FastString.source).not.toContain("const n=p.length");
         expect(FastString.source).toContain("const q=function(s,p,c,e,x)");
+        expect(FastString.source).toContain("const fq=function(p,c,e,x)");
         expect(FastString.source).toContain("path:z,code:c");
         expect(FastString.source).toContain("check:function checkAllocationAudit_check(x){if(checkAllocationAudit(x))return;const s=[];");
         expect(FastString.source).toContain("c0(x,z,s)");
         expect(FastString.source).toContain("result:function checkAllocationAudit_result(x){if(checkAllocationAudit(x))return Object.freeze({ok:true,value:x});");
+        expect(FastString.source).toContain("first:function checkAllocationAudit_first(x){if(checkAllocationAudit(x))return Object.freeze({ok:true,value:x});const e=f0(x,z);");
+        expect(FastString.source).not.toContain("first:function checkAllocationAudit_first(x){if(checkAllocationAudit(x))return Object.freeze({ok:true,value:x});const s=[];");
         expect(FastString.check("ok")).toEqual(t.string.check("ok"));
         expect(Object.isFrozen(FastString.check("ok"))).toBe(true);
         expect(FastString.check(1)).toEqual(t.string.check(1));
+        expect(FastString.checkFirst(1)).toEqual(t.string.checkFirst(1));
     });
 
     test("reuses frozen root field paths for static diagnostics", () => {
@@ -558,7 +559,7 @@ describe("compiled source audit", () => {
         expect(FastTuple.source).toContain("gp(v,1)");
         expect(FastTuple.source).not.toContain("ev(v,0");
         expect(FastTuple.source).not.toContain("ev(v,1");
-        expect(predicateSource).toContain("===undefined||!h.call");
+        expect(predicateSource).toContain("===undefined)return false");
         expect(predicateSource).toContain(".value;");
         expect(predicateSource).not.toContain("===undefined?undefined");
         expect(FastTuple.is(["point", 1])).toBe(true);
@@ -575,7 +576,8 @@ describe("compiled source audit", () => {
         );
         const sparse = new Array<unknown>(1);
 
-        expect(predicateSource).toContain("===undefined||!h.call");
+        expect(predicateSource).toContain("===undefined)return false");
+        expect(predicateSource).not.toContain("||!h.call");
         expect(predicateSource).toContain(".value;");
         expect(predicateSource).not.toContain("===undefined?undefined");
         expect(FastValues.is(["x"])).toBe(true);
@@ -1032,7 +1034,8 @@ describe("compiled source audit", () => {
         expect(predicateSource).not.toContain("if(!o(v))return false;");
         expect(predicateSource).not.toContain("g(v,");
         expect(countOccurrences(predicateSource, "gp(v,")).toBe(3);
-        expect(predicateSource).toContain("!h.call(d0,\"value\")");
+        expect(predicateSource).toContain("typeof d0.value!==\"string\"");
+        expect(predicateSource).not.toContain("!h.call(d0,\"value\")");
         expect(predicateSource).not.toContain("Object.is(d0.value");
         expect(FastEntity.is({ kind: "user", id: "u1" })).toBe(true);
         expect(FastEntity.is({ kind: "order", id: "o1" })).toBe(true);

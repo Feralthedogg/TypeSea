@@ -6,6 +6,8 @@
  */
 
 export { BaseGuard } from "./base.js";
+export { ArrayGuard } from "./array.js";
+export { DateGuard } from "./date.js";
 export { TypeSeaAssertionError } from "./error.js";
 export { NumberGuard } from "./number.js";
 export { StringGuard } from "./string.js";

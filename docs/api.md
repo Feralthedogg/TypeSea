@@ -27,6 +27,7 @@ condition.
 interface Guard<T> {
   is(value: unknown): value is T;
   check(value: unknown): CheckResult<T>;
+  checkFirst(value: unknown): CheckResult<T>;
   assert(value: unknown): asserts value is T;
   graph(): Graph;
 }
@@ -36,6 +37,7 @@ interface Guard<T> {
 | --- | --- | --- |
 | `is` | Hot boolean narrowing | Avoids diagnostic allocation on the success path. |
 | `check` | Validation with issues | Returns frozen `Result<T, Issue[]>` containers. |
+| `checkFirst` | Hot rejection diagnostics | Returns the same frozen `Result` shape, but failure contains at most one issue. Compiled and AOT guards use a dedicated first-fault collector. |
 | `assert` | Throwing integration boundaries | Throws `TypeSeaAssertionError` with copied, frozen issues. |
 | `graph` | Runtime plan introspection | Returns the validated, optimized, frozen Sea-of-Nodes graph held by the validation plan. |
 
@@ -47,14 +49,19 @@ cross the API boundary.
 
 | Family | Builders |
 | --- | --- |
-| Scalars | `t.unknown`, `t.never`, `t.string`, `t.number`, `t.bigint`, `t.symbol`, `t.boolean` |
-| Literals and containers | `t.literal(value)`, `t.array(item)`, `t.tuple([a, b])`, `t.record(value)` |
+| Scalars | `t.unknown`, `t.never`, `t.string`, `t.number`, `t.date`, `t.bigint`, `t.symbol`, `t.boolean`, `t.null`, `t.undefined`, `t.void` |
+| String checks | `.min`, `.max`, `.length`, `.nonempty`, `.regex`, `.startsWith`, `.endsWith`, `.includes`, `.uuid`, `.email`, `.url`, `.isoDate`, `.isoDateTime`, `.ulid`, `.ipv4`, `.ipv6` |
+| Number checks | `.int`, `.finite`, `.safe`, `.gte`, `.lte`, `.min`, `.max`, `.gt`, `.lt`, `.multipleOf`, `.positive`, `.nonnegative`, `.negative`, `.nonpositive` |
+| Date checks | `.min`, `.max` |
+| Literals and containers | `t.literal(value)`, `t.enum(values)`, `t.array(item)`, `t.tuple([a, b])`, `t.tuple([head], rest)`, `t.record(value)`, `t.map(key, value)`, `t.set(item)`, `t.json()` |
+| Array checks | `.min`, `.max`, `.length`, `.nonempty` |
 | Objects | `t.object(shape)`, `t.strictObject(shape)` |
-| Object transforms | `t.extend`, `t.pick`, `t.omit`, `t.partial`, and matching object guard methods |
+| Object transforms | `t.extend`, `t.safeExtend`, `t.merge`, `t.pick`, `t.omit`, `t.partial`, `t.deepPartial`, `t.required`, `t.strict`, `t.passthrough`, `t.strip`, `t.catchall`, and matching object guard methods |
+| Runtime object contracts | `t.instanceOf(Ctor)`, `t.property(base, key, value)`, `guard.property(key, value)` |
 | Composition | `t.union`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect` |
-| Presence | `t.optional`, `t.undefinedable`, `t.nullable` |
+| Presence | `t.optional`, `t.undefinedable`, `t.nullable`, `t.nullish` |
 | Dynamic guards | `t.lazy`, `t.refine` |
-| Decoders | `t.decoder`, `t.transform`, `t.pipe`, `t.coerce` |
+| Decoders | `t.decoder`, `t.transform`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()` |
 | Async decoders | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
 
 Builder functions validate inputs before a schema can enter the validation plan,
@@ -80,12 +87,26 @@ const Shape = t.object({
 - `name` may be absent. If `name` exists, its value must be a string.
 - `nickname` must be present. Its value may be a string or `undefined`.
 - `t.nullable(inner)` adds `null` to the value domain.
+- `t.nullish(inner)` combines nullable value semantics with optional object-key
+  presence.
 - Presence-preserving wrappers keep optional-key semantics through `nullable`,
   `undefinedable`, `brand`, and `refine`.
 
 Object combinators preserve object mode. Strict object guards remain strict
 after `extend`, `pick`, `omit`, or `partial`; passthrough object guards keep
 allowing unknown keys.
+
+`catchall(schema)` validates every undeclared own key with `schema`.
+`strip()` is validation-only in TypeSea: guards return the original value, so it
+has the same validation behavior as `passthrough()`.
+`pick` and `omit` accept either key arrays or Zod-style `{ key: true }` masks.
+`deepPartial()` recursively partializes pure object, array, tuple, tuple rest,
+record, map, set, property, union, intersection, nullable, undefinedable,
+optional, and brand schemas. Lazy and refinement schemas are semantic barriers.
+
+`property` validates only own data descriptors. It is useful for class instances
+with stable fields; prototype getters and accessor-backed properties are rejected
+instead of executed.
 
 ## Composition
 
@@ -125,6 +146,16 @@ lazy chain must eventually resolve to a concrete non-lazy schema.
 ```ts
 const Count = t.pipe(t.coerce.number(), t.number.int().gte(0));
 const result = Count.decode("42");
+
+const Name = t.default(t.string.min(1), "anonymous");
+const NumberText = t.codec(
+  t.string.regex(/^\d+$/u, "digits"),
+  t.number.int().nonnegative(),
+  {
+    decode: (value) => Number(value),
+    encode: (value) => String(value)
+  }
+);
 ```
 
 Decoders are for output-producing operations. They return `Result` from
@@ -134,8 +165,15 @@ not be the same runtime value as the input.
 - `t.transform(source, mapper)` decodes `source`, then maps the decoded value.
 - `t.pipe(source, next)` feeds a successful decoded value into the next guard or
   decoder.
+- `t.default(source, value)` returns a fallback output for `undefined` input.
+- `t.prefault(source, value)` feeds a fallback input through the source.
+- `t.codec(input, output, mapping)` validates both sides of a bidirectional
+  decode/encode pair.
 - `t.coerce.string`, `t.coerce.number`, and `t.coerce.boolean` provide explicit
   primitive coercion.
+- `t.string.trim()`, `t.string.toLowerCase()`, and `t.string.toUpperCase()`
+  are decoder helpers. They validate the string first, then return transformed
+  output from `decode()`.
 - `t.asyncRefine`, `t.asyncTransform`, and `t.asyncPipe` return
   `Promise<Result<T, Issue[]>>` from `decodeAsync()`.
 
@@ -152,14 +190,16 @@ const checked = withMessages(User.check(input), {
 });
 ```
 
-`formatIssue`, `formatIssues`, and `withMessages` render diagnostics after
-validation has finished. This keeps `is()` and ordinary `check()` paths free from
-message allocation.
+`formatIssue`, `formatIssues`, `flattenIssues`, and `withMessages` render
+diagnostics after validation has finished. This keeps `is()` and ordinary
+`check()` paths free from message allocation.
 
 Built-in locales are `en` and `ko`. Custom catalogs can use string templates
 with `{path}`, `{code}`, `{expected}`, and `{actual}`, or formatter callbacks.
 `withMessages(result, options)` preserves successful results and returns a new
 failed `Result` with copied, frozen issues whose `message` fields are populated.
+`flattenIssues(issues, options)` groups rendered messages into `formErrors` and
+top-level `fieldErrors` buckets.
 
 ## Runtime Compile
 
@@ -336,6 +376,7 @@ Runtime-only concepts return explicit export issues:
 - `undefined`
 - `bigint`
 - `symbol`
+- JavaScript `Date`, `Map`, `Set`, `instanceOf`, and `property` contracts
 - `lazy`
 - `refine`
 - decoder transforms

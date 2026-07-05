@@ -19,6 +19,8 @@ import {
 export type AotIssueCode =
     | "unsupported_aot_lazy"
     | "unsupported_aot_refine"
+    | "unsupported_aot_date"
+    | "unsupported_aot_runtime_object"
     | "unsupported_aot_symbol_literal";
 
 /**
@@ -203,17 +205,47 @@ function scanAotSchema(
                 );
             }
             return;
+        case SchemaTag.Date:
+            pushIssue(
+                path,
+                issues,
+                "unsupported_aot_date",
+                "AOT modules cannot preserve JavaScript Date object validation yet"
+            );
+            return;
         case SchemaTag.Array:
             scanAotSchema(schema.item, path.concat("items"), issues, seen);
             return;
         case SchemaTag.Tuple:
             scanSchemaArray(schema.items, path, issues, seen);
+            if (schema.rest !== undefined) {
+                scanAotSchema(schema.rest, path.concat("rest"), issues, seen);
+            }
             return;
         case SchemaTag.Record:
             scanAotSchema(schema.value, path.concat("additionalProperties"), issues, seen);
             return;
+        case SchemaTag.Map:
+        case SchemaTag.Set:
+        case SchemaTag.InstanceOf:
+        case SchemaTag.Property:
+            pushIssue(
+                path,
+                issues,
+                "unsupported_aot_runtime_object",
+                "AOT modules cannot preserve JavaScript runtime object contracts yet"
+            );
+            return;
         case SchemaTag.Object:
             scanObjectEntries(schema.entries, path, issues, seen);
+            if (schema.catchall !== undefined) {
+                scanAotSchema(
+                    schema.catchall,
+                    path.concat("additionalProperties"),
+                    issues,
+                    seen
+                );
+            }
             return;
         case SchemaTag.Union:
             scanSchemaArray(schema.options, path, issues, seen);
@@ -334,14 +366,16 @@ function emitModuleSource(bundle: ModuleBundleInput): string {
         JSON.stringify(bundle.strings),
         ";const d=function(){return false;};",
         "const m=function(){return;};",
+        "const mf=function(){return;};",
         "const sk=function(v,ks){if(typeof v!==\"object\"||v===null||Array.isArray(v))return false;const ps=Reflect.ownKeys(v);for(let i=0;i<ps.length;i+=1){const key=ps[i];if(typeof key!==\"string\"||!ks.includes(key))return false;}return true;};",
-        "const __typesea=(function(l,r,k,u,d,m,sk){",
+        "const __typesea=(function(l,r,k,u,d,m,mf,sk){",
         bundle.source,
-        "})(l,r,k,u,d,m,sk);",
+        "})(l,r,k,u,d,m,mf,sk);",
         "export function is(value){return __typesea.is(value);}",
         "export function check(value){return __typesea.result(value);}",
+        "export function checkFirst(value){return __typesea.first(value);}",
         "export function assert(value){const result=check(value);if(!result.ok){const error=new Error(\"TypeSea assertion failed\");Object.defineProperty(error,\"issues\",{configurable:false,enumerable:true,value:result.error,writable:false});throw error;}}",
-        "export default Object.freeze({is,check,assert});",
+        "export default Object.freeze({is,check,checkFirst,assert});",
         ""
     ].join("");
 }
@@ -365,10 +399,12 @@ function emitDeclarationSource(): string {
         "  | { readonly ok: false; readonly error: readonly AotIssue[] };",
         "export declare function is(value: unknown): boolean;",
         "export declare function check<TValue = unknown>(value: TValue): AotCheckResult<TValue>;",
+        "export declare function checkFirst<TValue = unknown>(value: TValue): AotCheckResult<TValue>;",
         "export declare function assert(value: unknown): void;",
         "declare const guard: {",
         "  readonly is: typeof is;",
         "  readonly check: typeof check;",
+        "  readonly checkFirst: typeof checkFirst;",
         "  readonly assert: typeof assert;",
         "};",
         "export default guard;",

@@ -81,6 +81,15 @@ export class NumberGuard<
     }
 
     /**
+     * @brief Alias for an inclusive lower bound.
+     * @param value Finite lower bound.
+     * @returns Fresh NumberGuard with an appended gte check.
+     */
+    public min(value: number): NumberGuard<TPresence> {
+        return this.gte(value);
+    }
+
+    /**
      * @brief Add an inclusive upper bound.
  * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
  * existing guard instance.
@@ -101,4 +110,136 @@ export class NumberGuard<
             ]
         });
     }
+
+    /**
+     * @brief Alias for an inclusive upper bound.
+     * @param value Finite upper bound.
+     * @returns Fresh NumberGuard with an appended lte check.
+     */
+    public max(value: number): NumberGuard<TPresence> {
+        return this.lte(value);
+    }
+
+    /**
+     * @brief Add an exclusive lower bound.
+     * @param value Finite lower bound.
+     * @returns Fresh NumberGuard with an appended gt check.
+     */
+    public gt(value: number): NumberGuard<TPresence> {
+        const schema = readNumberMethodSchema(this, "number gt receiver");
+        const bound = checkFiniteNumberBound(value, "gt");
+        return new NumberGuard<TPresence>({
+            tag: SchemaTag.Number,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: NumberCheckTag.Gt,
+                    value: bound
+                }
+            ]
+        });
+    }
+
+    /**
+     * @brief Add an exclusive upper bound.
+     * @param value Finite upper bound.
+     * @returns Fresh NumberGuard with an appended lt check.
+     */
+    public lt(value: number): NumberGuard<TPresence> {
+        const schema = readNumberMethodSchema(this, "number lt receiver");
+        const bound = checkFiniteNumberBound(value, "lt");
+        return new NumberGuard<TPresence>({
+            tag: SchemaTag.Number,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: NumberCheckTag.Lt,
+                    value: bound
+                }
+            ]
+        });
+    }
+
+    /**
+     * @brief Require a number to be divisible by a positive finite divisor.
+     * @param value Positive finite divisor.
+     * @returns Fresh NumberGuard with an appended multipleOf check.
+     */
+    public multipleOf(value: number): NumberGuard<TPresence> {
+        const schema = readNumberMethodSchema(this, "number multipleOf receiver");
+        const divisor = checkPositiveFiniteNumber(value, "multipleOf");
+        return new NumberGuard<TPresence>({
+            tag: SchemaTag.Number,
+            checks: [
+                ...schema.checks,
+                {
+                    tag: NumberCheckTag.MultipleOf,
+                    value: divisor
+                }
+            ]
+        });
+    }
+
+    /**
+     * @brief Require a number greater than zero.
+     * @returns Fresh NumberGuard with `gt(0)`.
+     */
+    public positive(): NumberGuard<TPresence> {
+        return this.gt(0);
+    }
+
+    /**
+     * @brief Require a number greater than or equal to zero.
+     * @returns Fresh NumberGuard with `gte(0)`.
+     */
+    public nonnegative(): NumberGuard<TPresence> {
+        return this.gte(0);
+    }
+
+    /**
+     * @brief Require a number less than zero.
+     * @returns Fresh NumberGuard with `lt(0)`.
+     */
+    public negative(): NumberGuard<TPresence> {
+        return this.lt(0);
+    }
+
+    /**
+     * @brief Require a number less than or equal to zero.
+     * @returns Fresh NumberGuard with `lte(0)`.
+     */
+    public nonpositive(): NumberGuard<TPresence> {
+        return this.lte(0);
+    }
+
+    /**
+     * @brief Keep the explicit Zod-compatible finite marker.
+     * @returns This guard because TypeSea numbers are finite by construction.
+     */
+    public finite(): this {
+        return this;
+    }
+
+    /**
+     * @brief Require a safe JavaScript integer.
+     * @returns Fresh NumberGuard constrained to Number.isSafeInteger domain.
+     */
+    public safe(): NumberGuard<TPresence> {
+        return this.int()
+            .gte(Number.MIN_SAFE_INTEGER)
+            .lte(Number.MAX_SAFE_INTEGER);
+    }
+}
+
+/**
+ * @brief Validate a positive finite numeric divisor.
+ * @param value Candidate divisor.
+ * @param label Bound label used in RangeError messages.
+ * @returns Accepted divisor.
+ */
+function checkPositiveFiniteNumber(value: number, label: string): number {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+        throw new RangeError(`${label} numeric divisor must be positive and finite`);
+    }
+    return value;
 }

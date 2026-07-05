@@ -7,9 +7,15 @@ import {
     type ObjectShapeEntry,
     type RegexNode
 } from "../src/ir/index.js";
-import { NodeTag, ObjectModeTag, PresenceTag } from "../src/kind/index.js";
+import {
+    ArrayCheckTag,
+    NodeTag,
+    ObjectModeTag,
+    PresenceTag
+} from "../src/kind/index.js";
 import { lowerSchema } from "../src/lower/index.js";
 import { optimizeGraph } from "../src/optimize/index.js";
+import type { ArrayCheck } from "../src/schema/index.js";
 import { t, type Guard, type Presence } from "../src/index.js";
 
 interface EvalState {
@@ -988,7 +994,7 @@ function makeArrayIterationDomainGraph(): Graph {
     const entry = builder.start();
     const input = builder.param("input");
     const guard = builder.isArray(input);
-    const iteration = builder.arrayEvery(input, t.string.schema, t.string.graph());
+    const iteration = builder.arrayEvery(input, t.string.schema, [], t.string.graph());
     const result = builder.and([guard, iteration]);
     return builder.finish(entry, builder.ret(entry, result));
 }
@@ -1124,7 +1130,7 @@ function evaluateGraphNode(state: EvalState, node: GraphNode): unknown {
         case NodeTag.StrictKeys:
             return hasOnlyKnownKeys(evaluateNode(state, node.object), node.keys);
         case NodeTag.ArrayEvery:
-            return arrayEvery(evaluateNode(state, node.value), node.itemGraph);
+            return arrayEvery(evaluateNode(state, node.value), node.checks, node.itemGraph);
         case NodeTag.TupleItems:
             return tupleItems(evaluateNode(state, node.value), node.itemGraphs);
         case NodeTag.RecordEvery:
@@ -1287,9 +1293,25 @@ function hasOnlyKnownKeys(value: unknown, keys: readonly string[]): boolean {
  * @brief Execute array every.
  * @details Test helpers pin observable behavior so engine rewrites keep the same external result.
  */
-function arrayEvery(value: unknown, graph: Graph): boolean {
+function arrayEvery(
+    value: unknown,
+    checks: readonly ArrayCheck[],
+    graph: Graph
+): boolean {
     if (!Array.isArray(value)) {
         return false;
+    }
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            return false;
+        }
+        if (check.tag === ArrayCheckTag.Min && value.length < check.value) {
+            return false;
+        }
+        if (check.tag === ArrayCheckTag.Max && value.length > check.value) {
+            return false;
+        }
     }
     for (let index = 0; index < value.length; index += 1) {
         const slot = readArraySlot(value, index);

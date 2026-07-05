@@ -22,6 +22,7 @@ import {
 } from "../schema/index.js";
 import {
     makeDynamicCheck,
+    makeDynamicFirstIssueCheck,
     makeDynamicIssueCheck,
     strictKeys,
     type BooleanPredicate,
@@ -54,6 +55,7 @@ export class CompiledBaseGuard<
     readonly #collect: IssueCollectorRoot;
     readonly #trustedCollector: boolean;
     readonly #checkResult: CheckResultRoot | undefined;
+    readonly #checkFirstResult: CheckResultRoot | undefined;
 
     public declare readonly source: string;
 
@@ -63,7 +65,8 @@ export class CompiledBaseGuard<
         collect: IssueCollectorRoot,
         source: string,
         trustedCollector = false,
-        checkResult?: CheckResultRoot
+        checkResult?: CheckResultRoot,
+        checkFirstResult?: CheckResultRoot
     ) {
         if (typeof test !== "function") {
             throw new TypeError("compiled guard test must be a function");
@@ -82,12 +85,19 @@ export class CompiledBaseGuard<
             trustedCheckResults.has(checkResult)
             ? checkResult
             : undefined;
+        this.#checkFirstResult = checkFirstResult !== undefined &&
+            trustedCheckResults.has(checkFirstResult)
+            ? checkFirstResult
+            : undefined;
         defineReadonlyProperty(this, "source", source, true);
-        if (trustedPredicates.has(test) && this.#checkResult !== undefined) {
+        if (trustedPredicates.has(test) &&
+            this.#checkResult !== undefined &&
+            this.#checkFirstResult !== undefined) {
             defineTrustedHotMethods(
                 this,
                 test,
-                this.#checkResult
+                this.#checkResult,
+                this.#checkFirstResult
             );
         }
         Object.freeze(this);
@@ -108,6 +118,20 @@ export class CompiledBaseGuard<
             return this.#checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
         }
         return runCompiledCheck<RuntimeValue<TValue, TPresence>>(
+            this.#collect,
+            this.#trustedCollector,
+            value
+        );
+    }
+
+    public override checkFirst(
+        this: CompiledBaseGuard<TValue, TPresence>,
+        value: unknown
+    ): CheckResult<RuntimeValue<TValue, TPresence>> {
+        if (this.#checkFirstResult !== undefined) {
+            return this.#checkFirstResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
+        }
+        return runCompiledCheckFirst<RuntimeValue<TValue, TPresence>>(
             this.#collect,
             this.#trustedCollector,
             value
@@ -153,10 +177,12 @@ export function compile<TValue, TPresence extends Presence>(
         "u",
         "d",
         "m",
+        "mf",
         "sk",
         bundle.source
     ) as IsFactory;
     const dynamicCheck = makeDynamicCheck(bundle.dynamicSchemas);
+    const dynamicFirstIssueCheck = makeDynamicFirstIssueCheck(bundle.dynamicSchemas);
     const runtime = factory(
         bundle.literals,
         bundle.regexps,
@@ -164,18 +190,21 @@ export function compile<TValue, TPresence extends Presence>(
         bundle.strings,
         dynamicCheck,
         makeDynamicIssueCheck(bundle.dynamicSchemas),
+        dynamicFirstIssueCheck,
         strictKeys
     );
     trustedPredicates.add(runtime.is);
     trustedCollectors.add(runtime.check);
     trustedCheckResults.add(runtime.result);
+    trustedCheckResults.add(runtime.first);
     return new CompiledBaseGuard<TValue, TPresence>(
         schema,
         runtime.is,
         runtime.check,
         bundle.source,
         true,
-        runtime.result
+        runtime.result,
+        runtime.first
     );
 }
 
@@ -189,7 +218,8 @@ function defineTrustedHotMethods<
 >(
     guard: CompiledBaseGuard<TValue, TPresence>,
     test: BooleanPredicate,
-    checkResult: CheckResultRoot
+    checkResult: CheckResultRoot,
+    checkFirstResult: CheckResultRoot
 ): void {
     const self = guard;
     /*
@@ -251,6 +281,24 @@ function defineTrustedHotMethods<
             if (!result.ok) {
                 throw new TypeSeaAssertionError(result.error);
             }
+        },
+        false
+    );
+    defineReadonlyProperty(
+        guard,
+        "checkFirst",
+        /**
+         * @brief Execute compiled trusted checkFirst.
+         * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
+         */
+        function compiledTrustedCheckFirst(
+            this: unknown,
+            value: unknown
+        ): CheckResult<RuntimeValue<TValue, TPresence>> {
+            if (this !== self) {
+                throw new TypeError("compiled guard method receiver is invalid");
+            }
+            return checkFirstResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
         },
         false
     );
@@ -334,6 +382,31 @@ function runCompiledCheck<TValue>(
         return ok(value as TValue);
     }
     return err(issues);
+}
+
+/**
+ * @brief Convert a generated collector result into a one-issue public Result.
+ * @details This fallback is used only for manually constructed compiled guards.
+ * Trusted codegen normally installs a dedicated first-result function.
+ * @param collect Generated collector function.
+ * @param trustedCollector Whether the collector came from TypeSea codegen.
+ * @param value Candidate runtime value.
+ * @returns Success result or a frozen failure carrying at most one issue.
+ */
+function runCompiledCheckFirst<TValue>(
+    collect: IssueCollectorRoot,
+    trustedCollector: boolean,
+    value: unknown
+): CheckResult<TValue> {
+    const result = runCompiledCheck<TValue>(collect, trustedCollector, value);
+    if (result.ok || result.error.length <= 1) {
+        return result;
+    }
+    const first = result.error[0];
+    if (first === undefined) {
+        return ok(value as TValue);
+    }
+    return err(Object.freeze([first]));
 }
 
 /**

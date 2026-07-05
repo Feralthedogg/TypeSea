@@ -12,6 +12,10 @@ import {
 } from "../kind/index.js";
 import type { PathSegment } from "../issue/index.js";
 import {
+    IPV4_PATTERN,
+    IPV6_PATTERN,
+    ISO_DATETIME_PATTERN,
+    ISO_DATE_PATTERN,
     UUID_PATTERN,
     type LiteralValue,
     type Schema
@@ -73,6 +77,31 @@ export function emitString(
                 result.format = "uuid";
                 patterns.push(UUID_PATTERN.source);
                 break;
+            case StringCheckTag.Email:
+                result.format = "email";
+                break;
+            case StringCheckTag.Url:
+                result.format = "uri";
+                break;
+            case StringCheckTag.IsoDate:
+                result.format = "date";
+                patterns.push(ISO_DATE_PATTERN.source);
+                break;
+            case StringCheckTag.IsoDateTime:
+                result.format = "date-time";
+                patterns.push(ISO_DATETIME_PATTERN.source);
+                break;
+            case StringCheckTag.Ulid:
+                patterns.push("^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$");
+                break;
+            case StringCheckTag.Ipv4:
+                result.format = "ipv4";
+                patterns.push(IPV4_PATTERN.source);
+                break;
+            case StringCheckTag.Ipv6:
+                result.format = "ipv6";
+                patterns.push(IPV6_PATTERN.source);
+                break;
         }
     }
     appendStringPatterns(result, patterns);
@@ -122,6 +151,31 @@ export function emitNumber(
                     result.maximum = result.maximum === undefined
                         ? check.value
                         : Math.min(result.maximum, check.value);
+                }
+                break;
+            case NumberCheckTag.Gt:
+                if (!Number.isFinite(check.value)) {
+                    pushJsonSchemaIssue(path, issues, "unsupported_number_bound", "Number bounds must be finite");
+                } else {
+                    result.exclusiveMinimum = result.exclusiveMinimum === undefined
+                        ? check.value
+                        : Math.max(result.exclusiveMinimum, check.value);
+                }
+                break;
+            case NumberCheckTag.Lt:
+                if (!Number.isFinite(check.value)) {
+                    pushJsonSchemaIssue(path, issues, "unsupported_number_bound", "Number bounds must be finite");
+                } else {
+                    result.exclusiveMaximum = result.exclusiveMaximum === undefined
+                        ? check.value
+                        : Math.min(result.exclusiveMaximum, check.value);
+                }
+                break;
+            case NumberCheckTag.MultipleOf:
+                if (!Number.isFinite(check.value) || check.value <= 0) {
+                    pushJsonSchemaIssue(path, issues, "unsupported_number_bound", "multipleOf must be positive and finite");
+                } else {
+                    result.multipleOf = result.multipleOf ?? check.value;
                 }
                 break;
         }

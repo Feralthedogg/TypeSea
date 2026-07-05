@@ -5,17 +5,27 @@
  * stable across runtime and AOT emission.
  */
 
-import { NodeTag, ObjectModeTag, PresenceTag, SchemaTag } from "../kind/index.js";
+import {
+    ArrayCheckTag,
+    NodeTag,
+    ObjectModeTag,
+    PresenceTag,
+    SchemaTag
+} from "../kind/index.js";
 import type {
+    ArrayEveryNode,
     DiscriminantDispatchNode,
     Graph,
+    GraphNode,
     NodeId,
+    ObjectShapeEntry,
     ObjectShapeNode,
     PrimitiveUnionNode,
     UnionDispatchNode
 } from "../ir/index.js";
 import { makeValidationPlan } from "../plan/index.js";
 import {
+    type ArrayCheck,
     schemaCanAcceptUndefined,
     type LiteralValue,
     type Schema
@@ -402,6 +412,7 @@ function emitFalseCheck(
             graph,
             node.value,
             node.item,
+            node.checks,
             node.itemGraph,
             value,
             context,
@@ -422,7 +433,15 @@ function emitFalseCheck(
         return;
     }
     if (node?.tag === NodeTag.RecordEvery) {
-        emitRecordEveryCheck(graph, node.value, node.itemGraph, value, context, state);
+        emitRecordEveryCheck(
+            graph,
+            node.value,
+            node.item,
+            node.itemGraph,
+            value,
+            context,
+            state
+        );
         return;
     }
     if (node?.tag === NodeTag.PrimitiveUnion) {
@@ -493,6 +512,7 @@ function emitArrayEveryCheck(
     graph: Graph,
     valueId: NodeId,
     item: Schema,
+    checks: readonly ArrayCheck[],
     itemGraph: Graph,
     value: string,
     context: EmitContext,
@@ -502,6 +522,7 @@ function emitArrayEveryCheck(
         emitUnsafeArrayEveryCheck(
             graph,
             valueId,
+            checks,
             itemGraph,
             value,
             context,
@@ -517,6 +538,7 @@ function emitArrayEveryCheck(
     const allowsUndefined = schemaCanAcceptUndefined(item);
     const itemConstant = readGraphResultBoolean(itemGraph);
     emitArrayGuard(arrayExpression, state);
+    emitArrayLengthChecks(arrayExpression, checks, state);
     if (itemConstant === false) {
         /*
          * If the item graph is impossible, only an empty array can pass. This
@@ -544,7 +566,7 @@ function emitArrayEveryCheck(
     state.chunks.push(
         `for(let ${index}=0;${index}<${arrayExpression}.length;${index}+=1){`,
         `const ${descriptor}=gp(${arrayExpression},${index});`,
-        `if(${descriptor}===undefined||!h.call(${descriptor},"value"))${failStatement(state)}`
+        `if(${descriptor}===undefined)${failStatement(state)}`
     );
     if (itemConstant !== true) {
         const itemValue = `v${String(state.temp)}`;
@@ -618,6 +640,7 @@ function emitPresentArrayEveryCheck(
 function emitUnsafeArrayEveryCheck(
     graph: Graph,
     valueId: NodeId,
+    checks: readonly ArrayCheck[],
     itemGraph: Graph,
     value: string,
     context: EmitContext,
@@ -628,6 +651,7 @@ function emitUnsafeArrayEveryCheck(
     state.temp += 1;
     const itemConstant = readGraphResultBoolean(itemGraph);
     emitArrayGuard(arrayExpression, state);
+    emitArrayLengthChecks(arrayExpression, checks, state);
     if (itemConstant === false) {
         state.chunks.push(
             `if(${arrayExpression}.length!==0)${failStatement(state)}`
@@ -645,6 +669,39 @@ function emitUnsafeArrayEveryCheck(
     );
     emitFalseCheck(itemGraph, itemGraph.result, itemValue, context, state);
     state.chunks.push("}");
+}
+
+/**
+ * @brief Emit array length failure branches.
+ * @param arrayExpression Generated expression already proven to be an array.
+ * @param checks Normalized array length checks.
+ * @param state Mutable graph emitter state.
+ * @post Appends no code when the schema has no length checks.
+ */
+function emitArrayLengthChecks(
+    arrayExpression: string,
+    checks: readonly ArrayCheck[],
+    state: GraphEmitState
+): void {
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            state.chunks.push(failStatement(state));
+            continue;
+        }
+        switch (check.tag) {
+            case ArrayCheckTag.Min:
+                state.chunks.push(
+                    `if(${arrayExpression}.length<${String(check.value)})${failStatement(state)}`
+                );
+                break;
+            case ArrayCheckTag.Max:
+                state.chunks.push(
+                    `if(${arrayExpression}.length>${String(check.value)})${failStatement(state)}`
+                );
+                break;
+        }
+    }
 }
 
 /**
@@ -704,7 +761,7 @@ function emitTupleItemsCheck(
             );
         } else {
             state.chunks.push(
-                `if(${descriptor}===undefined||!h.call(${descriptor},"value"))${failStatement(state)}`
+                `if(${descriptor}===undefined)${failStatement(state)}`
             );
         }
         if (itemConstant !== true) {
@@ -764,6 +821,7 @@ function emitUnsafeTupleItemsCheck(
 function emitRecordEveryCheck(
     graph: Graph,
     valueId: NodeId,
+    item: Schema,
     itemGraph: Graph,
     value: string,
     context: EmitContext,
@@ -786,6 +844,7 @@ function emitRecordEveryCheck(
     const descriptor = `d${String(state.temp)}`;
     state.temp += 1;
     const itemConstant = readGraphResultBoolean(itemGraph);
+    const rejectsUndefined = !schemaCanAcceptUndefined(item);
     emitObjectGuard(recordExpression, state);
     if (itemConstant === false) {
         state.chunks.push(
@@ -799,7 +858,9 @@ function emitRecordEveryCheck(
         `for(const ${key} in ${recordExpression}){`,
         `if(!h.call(${recordExpression},${key}))continue;`,
         `const ${descriptor}=gp(${recordExpression},${key});`,
-        `if(${descriptor}===undefined||!h.call(${descriptor},"value"))${failStatement(state)}`
+        rejectsUndefined
+            ? `if(${descriptor}===undefined)${failStatement(state)}`
+            : `if(${descriptor}===undefined||!h.call(${descriptor},"value"))${failStatement(state)}`
     );
     if (itemConstant !== true) {
         const itemValue = `v${String(state.temp)}`;
@@ -961,7 +1022,7 @@ function emitDiscriminantDispatchReturn(
     state.chunks.push(
         objectGuardStatement(objectExpression, state),
         `const ${descriptor}=gp(${objectExpression},${stringRef(context, node.key)});`,
-        `if(${descriptor}===undefined||!h.call(${descriptor},"value")||typeof ${descriptor}.value!=="string")${failStatement(state)}`,
+        `if(${descriptor}===undefined||typeof ${descriptor}.value!=="string")${failStatement(state)}`,
         `switch(${descriptor}.value){`
     );
     markKnownObject(objectExpression, state);
@@ -1902,9 +1963,11 @@ function emitGraphExpression(
              * Expression-mode code uses compact helpers. `eu` is the present-key
              * variant; `ea` is the dense logical-slot variant.
              */
-            return schemaCanAcceptUndefined(node.item)
-                ? `eu(${emitGraphExpression(graph, node.value, value, context, state)},${emitGraphChildFunction(node.itemGraph, context)})`
-                : `ea(${emitGraphExpression(graph, node.value, value, context, state)},${emitGraphChildFunction(node.itemGraph, context)})`;
+            return emitArrayEveryExpression(
+                emitGraphExpression(graph, node.value, value, context, state),
+                node,
+                context
+            );
         case NodeTag.TupleItems:
             return emitTupleItemsExpression(
                 emitGraphExpression(graph, node.value, value, context, state),
@@ -1990,6 +2053,7 @@ function emitObjectShapeBody(
         state
     );
     emitObjectShapeEntries(node, value, context, state);
+    emitObjectShapeCatchall(node, value, context, state);
     if (!emittedStrictKeyCount) {
         emitObjectShapeStrictKeys(node, value, context, state);
     }
@@ -2023,6 +2087,7 @@ function emitObjectShapeCheck(
         state
     );
     emitObjectShapeEntries(node, objectExpression, context, state);
+    emitObjectShapeCatchall(node, objectExpression, context, state);
     if (!emittedStrictKeyCount) {
         emitObjectShapeStrictKeys(node, objectExpression, context, state);
     }
@@ -2040,6 +2105,7 @@ function emitEarlyStrictKeyCount(
 ): boolean {
     if (
         node.mode !== ObjectModeTag.Strict ||
+        node.catchall !== undefined ||
         !node.allRequired ||
         isUnsafeMode(context)
     ) {
@@ -2049,6 +2115,102 @@ function emitEarlyStrictKeyCount(
         `if(Object.getOwnPropertyNames(${objectExpression}).length!==${String(node.entries.length)}||Object.getOwnPropertySymbols(${objectExpression}).length!==0)${failStatement(state)}`
     );
     return true;
+}
+
+/**
+ * @brief Emit catchall validation for undeclared own object keys.
+ * @param node Object shape node with optional catchall graph.
+ * @param objectExpression JavaScript object expression already proven object.
+ * @param context Shared emission context.
+ * @param state Mutable graph emitter state.
+ */
+function emitObjectShapeCatchall(
+    node: ObjectShapeNode,
+    objectExpression: string,
+    context: EmitContext,
+    state: GraphEmitState
+): void {
+    if (node.catchallGraph === undefined) {
+        return;
+    }
+    if (isUnsafeMode(context)) {
+        emitUnsafeObjectShapeCatchall(node, objectExpression, context, state);
+        return;
+    }
+    const keys = `xs${String(state.temp)}`;
+    state.temp += 1;
+    const length = `n${String(state.temp)}`;
+    state.temp += 1;
+    const index = `i${String(state.temp)}`;
+    state.temp += 1;
+    const key = `key${String(state.temp)}`;
+    state.temp += 1;
+    const descriptor = `d${String(state.temp)}`;
+    state.temp += 1;
+    const itemValue = `v${String(state.temp)}`;
+    state.temp += 1;
+    state.chunks.push(
+        `const ${keys}=Reflect.ownKeys(${objectExpression});`,
+        `const ${length}=${keys}.length;`,
+        `for(let ${index}=0;${index}<${length};${index}+=1){`,
+        `const ${key}=${keys}[${index}];`,
+        `if(typeof ${key}==="string"&&${keyMembershipExpression(key, node.keys, context)})continue;`,
+        `const ${descriptor}=gp(${objectExpression},${key});`,
+        `if(${descriptor}===undefined||!h.call(${descriptor},"value"))${failStatement(state)}`,
+        `const ${itemValue}=${descriptor}.value;`
+    );
+    emitFalseCheck(
+        node.catchallGraph,
+        node.catchallGraph.result,
+        itemValue,
+        context,
+        state
+    );
+    state.chunks.push("}");
+}
+
+/**
+ * @brief Emit unsafe catchall validation for undeclared own object keys.
+ * @param node Object shape node with catchall graph.
+ * @param objectExpression JavaScript object expression already proven object.
+ * @param context Shared emission context.
+ * @param state Mutable graph emitter state.
+ */
+function emitUnsafeObjectShapeCatchall(
+    node: ObjectShapeNode,
+    objectExpression: string,
+    context: EmitContext,
+    state: GraphEmitState
+): void {
+    if (node.catchallGraph === undefined) {
+        return;
+    }
+    const keys = `xs${String(state.temp)}`;
+    state.temp += 1;
+    const length = `n${String(state.temp)}`;
+    state.temp += 1;
+    const index = `i${String(state.temp)}`;
+    state.temp += 1;
+    const key = `key${String(state.temp)}`;
+    state.temp += 1;
+    const itemValue = `v${String(state.temp)}`;
+    state.temp += 1;
+    state.chunks.push(
+        `const ${keys}=Reflect.ownKeys(${objectExpression});`,
+        `const ${length}=${keys}.length;`,
+        `for(let ${index}=0;${index}<${length};${index}+=1){`,
+        `const ${key}=${keys}[${index}];`,
+        `if(typeof ${key}==="string"&&${unsafeKeyMembershipExpression(key, node.keys)})continue;`,
+        `const ${itemValue}=${objectExpression}[${key}];`
+    );
+    emitFalseCheck(
+        node.catchallGraph,
+        node.catchallGraph.result,
+        itemValue,
+        context,
+        state
+    );
+    state.chunks.push("}");
 }
 
 /**
@@ -2065,8 +2227,9 @@ function emitObjectShapeEntries(
         emitUnsafeObjectShapeEntries(node, objectExpression, context, state);
         return;
     }
-    for (let index = 0; index < node.entries.length; index += 1) {
-        const entry = node.entries[index];
+    const entries = scheduleObjectShapeEntries(node.entries);
+    for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
         if (entry === undefined) {
             state.chunks.push(failStatement(state));
             continue;
@@ -2080,18 +2243,26 @@ function emitObjectShapeEntries(
             state
         );
         if (entry.presence === PresenceTag.Optional) {
+            const rejectsUndefined = !schemaCanAcceptUndefined(entry.schema);
             state.chunks.push(
-                `if(${slot.descriptor}!==undefined){`,
-                `if(!h.call(${slot.descriptor},"value"))${failStatement(state)}`
+                `if(${slot.descriptor}!==undefined){`
             );
+            if (!rejectsUndefined) {
+                state.chunks.push(
+                    `if(!h.call(${slot.descriptor},"value"))${failStatement(state)}`
+                );
+            }
             state.dataGuards.add(cacheKey);
             const itemValue = emitDataSlotValue(cacheKey, slot, state);
             emitFalseCheck(entry.graph, entry.graph.result, itemValue, context, state);
             state.chunks.push(`}else if(h.call(${objectExpression},${stringRef(context, entry.key)}))${failStatement(state)}`);
         } else {
             if (!state.dataGuards.has(cacheKey)) {
+                const rejectsUndefined = !schemaCanAcceptUndefined(entry.schema);
                 state.chunks.push(
-                    `if(${slot.descriptor}===undefined||!h.call(${slot.descriptor},"value"))${failStatement(state)}`
+                    rejectsUndefined
+                        ? `if(${slot.descriptor}===undefined)${failStatement(state)}`
+                        : `if(${slot.descriptor}===undefined||!h.call(${slot.descriptor},"value"))${failStatement(state)}`
                 );
                 state.dataGuards.add(cacheKey);
             }
@@ -2102,6 +2273,262 @@ function emitObjectShapeEntries(
             emitFalseCheck(entry.graph, entry.graph.result, itemValue, context, state);
         }
     }
+}
+
+/**
+ * @brief Schedule pure object fields for predicate-only fast failure.
+ * @details SchemaCheck nodes can run user code through refine or lazy fallback,
+ * so they act as barriers. Pure fields between barriers may be reordered because
+ * boolean validation has no diagnostic ordering contract.
+ * @param entries Object shape entries in schema order.
+ * @returns Entry view ordered for V8-friendly predicate emission.
+ */
+function scheduleObjectShapeEntries(
+    entries: readonly ObjectShapeEntry[]
+): readonly ObjectShapeEntry[] {
+    if (entries.length < 2) {
+        return entries;
+    }
+    const scheduled: ObjectShapeEntry[] = [];
+    let index = 0;
+    while (index < entries.length) {
+        const entry = entries[index];
+        if (entry === undefined) {
+            index += 1;
+            continue;
+        }
+        if (!isSchedulableObjectShapeEntry(entry)) {
+            scheduled.push(entry);
+            index += 1;
+            continue;
+        }
+        const run: ScheduledObjectShapeEntry[] = [];
+        while (index < entries.length) {
+            const candidate = entries[index];
+            if (candidate === undefined || !isSchedulableObjectShapeEntry(candidate)) {
+                break;
+            }
+            run.push({
+                entry: candidate,
+                order: index
+            });
+            index += 1;
+        }
+        run.sort(compareScheduledObjectShapeEntries);
+        for (let runIndex = 0; runIndex < run.length; runIndex += 1) {
+            const scheduledEntry = run[runIndex];
+            if (scheduledEntry !== undefined) {
+                scheduled.push(scheduledEntry.entry);
+            }
+        }
+    }
+    return scheduled;
+}
+
+/**
+ * @brief Object entry paired with its schema-order index.
+ * @details The original index is the final tie breaker so generated source stays
+ * deterministic when two fields have the same estimated validation cost.
+ */
+interface ScheduledObjectShapeEntry {
+    readonly entry: ObjectShapeEntry;
+    readonly order: number;
+}
+
+/**
+ * @brief Compare two object entries for predicate emission.
+ * @details Required fields can fail on absence and are therefore tested before
+ * optional fields. Within the same presence class, cheaper child graphs run
+ * first so invalid objects fail before arrays, records, or regex-heavy checks.
+ * @param left Left scheduled entry.
+ * @param right Right scheduled entry.
+ * @returns Negative when left should be emitted before right.
+ */
+function compareScheduledObjectShapeEntries(
+    left: ScheduledObjectShapeEntry,
+    right: ScheduledObjectShapeEntry
+): number {
+    const leftPresence = objectShapePresenceCost(left.entry);
+    const rightPresence = objectShapePresenceCost(right.entry);
+    if (leftPresence !== rightPresence) {
+        return leftPresence - rightPresence;
+    }
+    const leftCost = estimateGraphCost(left.entry.graph);
+    const rightCost = estimateGraphCost(right.entry.graph);
+    if (leftCost !== rightCost) {
+        return leftCost - rightCost;
+    }
+    return left.order - right.order;
+}
+
+/**
+ * @brief Return whether an object entry may move within its pure run.
+ * @details SchemaCheck is the IR boundary for user predicates and lazy
+ * resolution. Keeping those entries fixed preserves observable user-code order.
+ * @param entry Object shape entry under consideration.
+ * @returns True when the entry graph has no opaque runtime callback.
+ */
+function isSchedulableObjectShapeEntry(entry: ObjectShapeEntry): boolean {
+    return !graphContainsSchemaCheck(entry.graph);
+}
+
+/**
+ * @brief Estimate object field presence cost.
+ * @details Required fields receive the lower rank because missing required keys
+ * are common fast-fail cases and optional absence usually succeeds.
+ * @param entry Object shape entry.
+ * @returns Numeric rank used before graph cost.
+ */
+function objectShapePresenceCost(entry: ObjectShapeEntry): number {
+    return entry.presence === PresenceTag.Optional ? 1_000 : 0;
+}
+
+/**
+ * @brief Estimate predicate cost for one child graph.
+ * @details The values are intentionally coarse. The scheduler only needs stable
+ * buckets that keep scalar checks before regexes and bounded loops.
+ * @param graph Child graph emitted for one object field.
+ * @returns Relative cost used by Tide scheduling.
+ */
+function estimateGraphCost(graph: Graph): number {
+    let cost = 0;
+    for (let index = 0; index < graph.nodes.length; index += 1) {
+        const node = graph.nodes[index];
+        if (node !== undefined) {
+            cost += estimateNodeCost(node);
+        }
+    }
+    return cost;
+}
+
+/**
+ * @brief Estimate one node's predicate cost.
+ * @details Compile-time scheduling only needs relative ordering, so the weights
+ * favor V8-friendly scalar branches and push bounded or dynamic loops later.
+ * @param node Graph node inspected by the scheduler.
+ * @returns Relative node cost.
+ */
+function estimateNodeCost(node: GraphNode): number {
+    switch (node.tag) {
+        case NodeTag.Start:
+        case NodeTag.Param:
+        case NodeTag.Const:
+        case NodeTag.Return:
+            return 0;
+        case NodeTag.IsString:
+        case NodeTag.IsNumber:
+        case NodeTag.IsBoolean:
+        case NodeTag.IsBigInt:
+        case NodeTag.IsSymbol:
+        case NodeTag.IsObject:
+        case NodeTag.IsArray:
+        case NodeTag.IsUndefined:
+        case NodeTag.IsNull:
+        case NodeTag.IsInteger:
+        case NodeTag.StringMin:
+        case NodeTag.StringMax:
+        case NodeTag.Gte:
+        case NodeTag.Lte:
+        case NodeTag.Equals:
+            return 1;
+        case NodeTag.Regex:
+            return 8;
+        case NodeTag.PrimitiveUnion:
+        case NodeTag.UnionDispatch:
+        case NodeTag.DiscriminantDispatch:
+        case NodeTag.ObjectShape:
+        case NodeTag.TupleItems:
+            return 16;
+        case NodeTag.ArrayEvery:
+        case NodeTag.RecordEvery:
+            return 64;
+        case NodeTag.SchemaCheck:
+            return 128;
+        default:
+            return 2;
+    }
+}
+
+/**
+ * @brief Check whether a graph can enter user-controlled runtime logic.
+ * @details Refine and lazy schemas lower to SchemaCheck nodes. Treating them as
+ * scheduling barriers prevents pure field reordering from hiding side effects.
+ * @param graph Child graph scanned for opaque checks.
+ * @returns True when the graph contains a SchemaCheck node at some depth.
+ */
+function graphContainsSchemaCheck(graph: Graph): boolean {
+    for (let index = 0; index < graph.nodes.length; index += 1) {
+        const node = graph.nodes[index];
+        if (node === undefined) {
+            continue;
+        }
+        if (node.tag === NodeTag.SchemaCheck) {
+            return true;
+        }
+        if (nodeContainsSchemaCheck(node)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Scan nested graphs owned by one node.
+ * @details Composite IR nodes store child graphs by value, so barrier discovery
+ * must recurse through those embedded validation graphs.
+ * @param node Node whose embedded graphs are inspected.
+ * @returns True when a nested graph contains SchemaCheck.
+ */
+function nodeContainsSchemaCheck(node: GraphNode): boolean {
+    switch (node.tag) {
+        case NodeTag.ArrayEvery:
+        case NodeTag.RecordEvery:
+            return graphContainsSchemaCheck(node.itemGraph);
+        case NodeTag.TupleItems:
+            return graphArrayContainsSchemaCheck(node.itemGraphs);
+        case NodeTag.ObjectShape:
+            return objectEntriesContainSchemaCheck(node.entries);
+        case NodeTag.DiscriminantDispatch:
+        case NodeTag.UnionDispatch:
+        case NodeTag.PrimitiveUnion:
+            return graphArrayContainsSchemaCheck(node.graphs);
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Scan a graph vector for SchemaCheck.
+ * @details Undefined holes are ignored because they carry no executable graph.
+ * @param graphs Child graph vector.
+ * @returns True when a present graph contains SchemaCheck.
+ */
+function graphArrayContainsSchemaCheck(graphs: readonly Graph[]): boolean {
+    for (let index = 0; index < graphs.length; index += 1) {
+        const graph = graphs[index];
+        if (graph !== undefined && graphContainsSchemaCheck(graph)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Scan object entries for SchemaCheck.
+ * @details Nested object shapes may appear inside scheduled parent fields.
+ * @param entries Nested object shape entries.
+ * @returns True when an entry graph contains an opaque check.
+ */
+function objectEntriesContainSchemaCheck(
+    entries: readonly ObjectShapeEntry[]
+): boolean {
+    for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (entry !== undefined && graphContainsSchemaCheck(entry.graph)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -2182,6 +2609,9 @@ function emitObjectShapeStrictKeys(
     state: GraphEmitState
 ): void {
     if (node.mode !== ObjectModeTag.Strict) {
+        return;
+    }
+    if (node.catchall !== undefined) {
         return;
     }
     if (isUncheckedMode(context)) {
@@ -3133,6 +3563,60 @@ function regexExpression(
  */
 function regexNeedsLastIndexReset(regex: RegExp): boolean {
     return regex.global || regex.sticky;
+}
+
+/**
+ * @brief Emit compact expression-mode array iteration.
+ * @param value Generated expression for the candidate array.
+ * @param node ArrayEvery node with sparse-slot and length metadata.
+ * @param context Shared code-generation context.
+ * @returns Boolean JavaScript expression for array iteration.
+ */
+function emitArrayEveryExpression(
+    value: string,
+    node: ArrayEveryNode,
+    context: EmitContext
+): string {
+    const loop = schemaCanAcceptUndefined(node.item)
+        ? `eu(${value},${emitGraphChildFunction(node.itemGraph, context)})`
+        : `ea(${value},${emitGraphChildFunction(node.itemGraph, context)})`;
+    const lengthParts = arrayLengthPredicateParts(value, node.checks);
+    if (lengthParts.length === 0) {
+        return loop;
+    }
+    return `(${lengthParts.join("&&")}&&${loop})`;
+}
+
+/**
+ * @brief Build expression-mode array length predicates.
+ * @param value Generated expression for the candidate array.
+ * @param checks Normalized length check vector.
+ * @returns Predicate fragments guarding safe `.length` access.
+ */
+function arrayLengthPredicateParts(
+    value: string,
+    checks: readonly ArrayCheck[]
+): string[] {
+    if (checks.length === 0) {
+        return [];
+    }
+    const parts: string[] = [`Array.isArray(${value})`];
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            parts.push("false");
+            continue;
+        }
+        switch (check.tag) {
+            case ArrayCheckTag.Min:
+                parts.push(`${value}.length>=${String(check.value)}`);
+                break;
+            case ArrayCheckTag.Max:
+                parts.push(`${value}.length<=${String(check.value)}`);
+                break;
+        }
+    }
+    return parts;
 }
 
 /**

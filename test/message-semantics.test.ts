@@ -1,11 +1,13 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import {
     defineMessages,
+    flattenIssues,
     formatIssue,
     formatIssues,
     t,
     withMessages,
     type CheckResult,
+    type FlattenedIssueMessages,
     type IssueMessageCatalog,
     type MessageLocale
 } from "../src/index.js";
@@ -81,6 +83,46 @@ describe("issue message formatting and i18n", () => {
                 .toBe("$[\"name\"]: short, expected length >= 3, actual length 0");
             expect(Object.isFrozen(withCustomMessages.error)).toBe(true);
         }
+    });
+
+    test("flattens issues into form and field message buckets", () => {
+        const Shape = t.object({
+            name: t.string.min(3),
+            tags: t.array(t.string.min(2))
+        });
+        const result = Shape.check({
+            name: "",
+            tags: ["x"]
+        });
+        const rootResult = t.string.check(1);
+
+        expect(result.ok).toBe(false);
+        expect(rootResult.ok).toBe(false);
+        if (result.ok || rootResult.ok) {
+            return;
+        }
+
+        const issues = [
+            ...result.error,
+            ...rootResult.error
+        ];
+        const flattened = flattenIssues(issues);
+        const korean = flattenIssues(issues, {
+            locale: "ko"
+        });
+
+        expectTypeOf<typeof flattened>().toEqualTypeOf<FlattenedIssueMessages>();
+        expect(Object.isFrozen(flattened)).toBe(true);
+        expect(Object.isFrozen(flattened.formErrors)).toBe(true);
+        expect(Object.isFrozen(flattened.fieldErrors)).toBe(true);
+        expect(flattened.fieldErrors["name"]?.[0])
+            .toBe("Expected length >= 3 at $[\"name\"]; received length 0.");
+        expect(flattened.fieldErrors["tags"]?.[0])
+            .toBe("Expected length >= 2 at $[\"tags\"][0]; received length 1.");
+        expect(flattened.formErrors[0])
+            .toBe("Expected string at $; received number.");
+        expect(korean.formErrors[0])
+            .toBe("$에서 문자열이 필요하지만 number을 받았습니다.");
     });
 
     test("preserves successful results and formats single issues", () => {

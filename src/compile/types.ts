@@ -24,6 +24,8 @@ export interface EmitContext {
     readonly functionNames: Map<Schema, string>;
     readonly checkFunctions: FunctionSource[];
     readonly checkFunctionNames: Map<Schema, string>;
+    readonly firstFunctions: FunctionSource[];
+    readonly firstFunctionNames: Map<Schema, string>;
     readonly stringIndexes: Map<string, number>;
 }
 

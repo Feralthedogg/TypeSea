@@ -96,6 +96,16 @@ export interface Guard<TValue, TPresence extends Presence = "required"> {
     check(value: unknown): CheckResult<RuntimeValue<TValue, TPresence>>;
 
     /**
+     * @brief Validate a runtime value and keep only the first issue.
+     * @details This diagnostic path is intended for hot rejection checks where
+     * callers need one machine-readable failure and do not want full-tree issue
+     * collection. Success returns the original value with the guard's inferred type.
+     * @param value Candidate runtime value.
+     * @returns Check result with at most one frozen issue on failure.
+     */
+    checkFirst(value: unknown): CheckResult<RuntimeValue<TValue, TPresence>>;
+
+    /**
      * @brief Validate a runtime value or throw TypeSeaAssertionError.
      * @details This convenience wrapper is intentionally explicit in the method
      * name because most TypeSea APIs prefer Result-based control flow.
@@ -187,4 +197,22 @@ export interface Guard<TValue, TPresence extends Presence = "required"> {
     intersect<TOther extends Guard<unknown, Presence>>(
         other: TOther
     ): BaseGuard<RuntimeValue<TValue, TPresence> & Infer<TOther>>;
+
+    /**
+     * @brief Require one own data property after this guard succeeds.
+     * @details This is a safe property proof: only own data descriptors are
+     * accepted, so validation does not execute getters.
+     * @param key Own string property key to inspect.
+     * @param value Guard applied to the property value.
+     * @returns Guard carrying the base type plus the property proof.
+     */
+    property<
+        const TKey extends string,
+        TGuard extends Guard<unknown, Presence>
+    >(
+        key: TKey,
+        value: TGuard
+    ): BaseGuard<
+        RuntimeValue<TValue, TPresence> & Readonly<Record<TKey, Infer<TGuard>>>
+    >;
 }

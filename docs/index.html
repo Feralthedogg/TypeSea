@@ -604,7 +604,7 @@
       <aside class="sidebar" aria-label="Documentation navigation">
         <div class="brand">
           <h1>TypeSea</h1>
-          <span class="version">v0.2.0</span>
+          <span class="version">v0.3.0</span>
         </div>
         <p class="brand-tagline">
           <span class="i18n-en">Complete docs from README.md, docs/api.md, and docs/engine-notes.md.</span>
@@ -966,7 +966,7 @@ const schema = toJsonSchema(User);</code></pre>
             </header>
             <div class="locale-en">
 <h2 id="readme-en-typesea">TypeSea</h2>
-<p><a href="https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml/badge.svg">![CI</a>](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml) <span class="muted-link">![Socket Badge</span>](https://badge.socket.dev/npm/package/typesea/0.2.0) <span class="muted-link">![License</span>](./LICENSE) <span class="muted-link">TypeScript</span> <span class="muted-link">Dependencies</span> <span class="muted-link">Tree-shakeable</span> <span class="muted-link">Side-effect free</span> <span class="muted-link">No dependencies</span> <span class="muted-link">Module</span> <span class="muted-link">Node</span></p>
+<p><a href="https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml/badge.svg">![CI</a>](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml) <span class="muted-link">![Socket Badge</span>](https://badge.socket.dev/npm/package/typesea/0.3.0) <span class="muted-link">![License</span>](./LICENSE) <span class="muted-link">TypeScript</span> <span class="muted-link">Dependencies</span> <span class="muted-link">Tree-shakeable</span> <span class="muted-link">Side-effect free</span> <span class="muted-link">No dependencies</span> <span class="muted-link">Module</span> <span class="muted-link">Node</span></p>
 <p><strong>TypeSea</strong> is a <strong>zero-runtime-dependency TypeScript runtime narrowing library</strong> built around <strong>immutable guards</strong>, optimized <strong>Sea-of-Nodes validation plans</strong>, runtime compilation, and AOT source generation.</p>
 <h3 id="readme-en-benchmark-headline">Benchmark Headline</h3>
 <p>Last local benchmark on 2026-07-04 KST: <code>npm run bench -- bench/ecosystem.bench.ts --run</code>, strict-object contract, operations per second on one machine.</p>
@@ -1001,8 +1001,10 @@ const schema = toJsonSchema(User);</code></pre>
 
 const User = t.strictObject({
   id: t.string.uuid(),
-  age: t.number.int().gte(0),
-  role: t.union(t.literal(&quot;admin&quot;), t.literal(&quot;user&quot;))
+  email: t.string.email(),
+  age: t.number.int().nonnegative(),
+  role: t.enum([&quot;admin&quot;, &quot;user&quot;]),
+  tags: t.array(t.string.min(1)).max(8)
 });
 
 type User = Infer&lt;typeof User&gt;;
@@ -1023,7 +1025,7 @@ const FastUser = compile(User, { name: &quot;isUser&quot; });
 
 // 4) Interop — lossless-only JSON Schema export
 const schema = toJsonSchema(User);</code></pre>
-<p>Use <code>is()</code> for the allocation-light boolean path. Use <code>check()</code> when callers need immutable diagnostics. Use <code>compile()</code> or <code>emitAotModule()</code> when a stable schema is hot enough to deserve generated validator code.</p>
+<p>Use <code>is()</code> for the allocation-light boolean path. Use <code>check()</code> when callers need the full immutable diagnostic list, or <code>checkFirst()</code> when a hot rejection path only needs one machine-readable issue. Use <code>compile()</code> or <code>emitAotModule()</code> when a stable schema is hot enough to deserve generated validator code. Compiled and AOT <code>checkFirst()</code> use a dedicated first-fault collector instead of building the full issue list and slicing it afterward.</p>
 <aside class="admonition caution"><strong class="admonition-title">CAUTION</strong><p><code>compile()</code> builds the validator with <code>new Function</code>, which throws under a Content-Security-Policy that forbids <code>unsafe-eval</code>. In CSP-restricted environments, generate validator source ahead of time with <code>emitAotModule()</code> instead.</p></aside>
 <h4 id="readme-en-unsafe-fastmode">Unsafe FastMode</h4>
 <pre><code>const FastButLooseUser = compile(User, {
@@ -1091,21 +1093,27 @@ failed check() -&gt; schema-aware diagnostic collector</code></pre>
 <h3 id="readme-en-api-reference">API Reference</h3>
 <p>All public entry points are exported from the package root; builders are also grouped under the <code>t</code> table.</p>
 <h4 id="readme-en-builders">Builders</h4>
-<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Scalar guards</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code></td></tr>
-<tr><td>Literal and containers</td><td><code>t.literal</code>, <code>t.array</code>, <code>t.tuple</code>, <code>t.record</code></td></tr>
-<tr><td>Objects</td><td><code>t.object</code>, <code>t.strictObject</code>, <code>extend</code>, <code>pick</code>, <code>omit</code>, <code>partial</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Scalar guards</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.date</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code>, <code>t.null</code>, <code>t.undefined</code>, <code>t.void</code></td></tr>
+<tr><td>String checks</td><td><code>.min</code>, <code>.max</code>, <code>.length</code>, <code>.nonempty</code>, <code>.regex</code>, <code>.startsWith</code>, <code>.endsWith</code>, <code>.includes</code>, <code>.uuid</code>, <code>.email</code>, <code>.url</code>, <code>.isoDate</code>, <code>.isoDateTime</code>, <code>.ulid</code>, <code>.ipv4</code>, <code>.ipv6</code></td></tr>
+<tr><td>Number checks</td><td><code>.int</code>, <code>.finite</code>, <code>.safe</code>, <code>.gte</code>, <code>.lte</code>, <code>.min</code>, <code>.max</code>, <code>.gt</code>, <code>.lt</code>, <code>.multipleOf</code>, <code>.positive</code>, <code>.nonnegative</code>, <code>.negative</code>, <code>.nonpositive</code></td></tr>
+<tr><td>Date checks</td><td><code>.min</code>, <code>.max</code></td></tr>
+<tr><td>Literal and containers</td><td><code>t.literal</code>, <code>t.enum</code>, <code>t.array</code>, <code>t.tuple</code>, tuple rest, <code>t.record</code>, <code>t.map</code>, <code>t.set</code>, <code>t.json</code></td></tr>
+<tr><td>Array checks</td><td><code>.min</code>, <code>.max</code>, <code>.length</code>, <code>.nonempty</code></td></tr>
+<tr><td>Objects</td><td><code>t.object</code>, <code>t.strictObject</code>, <code>extend</code>, <code>safeExtend</code>, <code>merge</code>, <code>pick</code>, <code>omit</code>, <code>partial</code>, <code>deepPartial</code>, <code>required</code>, <code>strict</code>, <code>passthrough</code>, <code>strip</code>, <code>catchall</code></td></tr>
+<tr><td>Runtime object contracts</td><td><code>t.instanceOf</code>, <code>t.property</code>, <code>guard.property</code></td></tr>
 <tr><td>Composition</td><td><code>t.union</code>, <code>t.discriminatedUnion</code>, <code>t.intersect</code>, <code>guard.intersect</code></td></tr>
-<tr><td>Presence wrappers</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code></td></tr>
+<tr><td>Presence wrappers</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code>, <code>t.nullish</code></td></tr>
 <tr><td>Dynamic contracts</td><td><code>t.lazy</code>, <code>t.refine</code></td></tr></tbody></table></div>
 <h4 id="readme-en-decoders">Decoders</h4>
-<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Sync decoders</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.coerce</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Sync decoders</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.default</code>, <code>t.defaultValue</code>, <code>t.prefault</code>, <code>t.catch</code>, <code>t.codec</code>, <code>t.coerce</code>, <code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code></td></tr>
 <tr><td>Async decoders</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
 <h4 id="readme-en-execution-export">Execution &amp; Export</h4>
-<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Guard methods</td><td><code>guard.is()</code>, <code>guard.check()</code>, <code>guard.graph()</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Guard methods</td><td><code>guard.is()</code>, <code>guard.check()</code>, <code>guard.checkFirst()</code>, <code>guard.graph()</code></td></tr>
 <tr><td>Generated validators</td><td><code>compile</code>, <code>emitAotModule</code></td></tr>
-<tr><td>JSON Schema</td><td><code>toJsonSchema</code></td></tr></tbody></table></div>
+<tr><td>JSON Schema</td><td><code>toJsonSchema</code></td></tr>
+<tr><td>Messages</td><td><code>formatIssue</code>, <code>formatIssues</code>, <code>flattenIssues</code>, <code>withMessages</code></td></tr></tbody></table></div>
 <h4 id="readme-en-messages-adapters">Messages &amp; Adapters</h4>
-<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Messages / i18n</td><td><code>formatIssue</code>, <code>formatIssues</code>, <code>withMessages</code>, <code>defineMessages</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Messages / i18n</td><td><code>formatIssue</code>, <code>formatIssues</code>, <code>flattenIssues</code>, <code>withMessages</code>, <code>defineMessages</code></td></tr>
 <tr><td>tRPC</td><td><code>toTrpcParser</code>, <code>toAsyncTrpcParser</code></td></tr>
 <tr><td>Fastify</td><td><code>toFastifyRouteSchema</code>, <code>toFastifyValidatorCompiler</code></td></tr>
 <tr><td>React Hook Form</td><td><code>toReactHookFormResolver</code></td></tr></tbody></table></div>
@@ -1127,6 +1135,11 @@ const internalParser = toTrpcParser(UnsafeUser);</code></pre>
 <tr><td><code>__proto__</code>, <code>constructor</code> keys</td><td>validated as plain own keys, no pollution</td></tr>
 <tr><td>Sparse array holes</td><td>read as <code>undefined</code> without executing accessors</td></tr>
 <tr><td>Strict object extras</td><td>rejected via <code>Reflect.ownKeys</code> — including symbol keys and non-enumerable properties</td></tr>
+<tr><td><code>catchall</code> extras</td><td>unknown own keys are descriptor-read and validated by the catchall schema</td></tr>
+<tr><td><code>strip()</code></td><td>validation-only alias for accepting extras; TypeSea does not clone stripped output</td></tr>
+<tr><td><code>t.date</code></td><td>accepts valid JavaScript <code>Date</code> objects; <code>.min</code> and <code>.max</code> compare epoch milliseconds without reading user-overridable Date methods</td></tr>
+<tr><td><code>t.map</code>, <code>t.set</code>, <code>t.instanceOf</code></td><td>runtime-only contracts; JSON Schema and AOT export reject them instead of weakening semantics</td></tr>
+<tr><td><code>property</code></td><td>validates own data properties only; getter-backed properties are rejected</td></tr>
 <tr><td>Global-flag regexes</td><td>cloned at construction; <code>lastIndex</code> reset before every test</td></tr>
 <tr><td>UUID</td><td>accepts RFC 9562 versions 1–8 plus the nil UUID</td></tr>
 <tr><td>Cyclic input values</td><td>validate finitely via (value × schema) active-pair tracking</td></tr>
@@ -1192,8 +1205,10 @@ npm run release:check   # the full pre-publish gate (everything above)</code></p
 
 const User = t.strictObject({
   id: t.string.uuid(),
-  age: t.number.int().gte(0),
-  role: t.union(t.literal(&quot;admin&quot;), t.literal(&quot;user&quot;))
+  email: t.string.email(),
+  age: t.number.int().nonnegative(),
+  role: t.enum([&quot;admin&quot;, &quot;user&quot;]),
+  tags: t.array(t.string.min(1)).max(8)
 });
 
 type User = Infer&lt;typeof User&gt;;
@@ -1214,7 +1229,7 @@ const FastUser = compile(User, { name: &quot;isUser&quot; });
 
 // 4) Interop: 의미 손실이 없을 때만 JSON Schema로 내보냅니다.
 const schema = toJsonSchema(User);</code></pre>
-<p><code>is()</code>는 할당이 적은 boolean 경로에 씁니다. 호출자가 실패 이유와 path를 필요로 하면 <code>check()</code>를 씁니다. 스키마가 안정적이고 호출 빈도가 높다면 <code>compile()</code> 또는 <code>emitAotModule()</code>을 씁니다.</p>
+<p><code>is()</code>는 할당이 적은 boolean 경로에 씁니다. 호출자가 전체 실패 이유와 path를 필요로 하면 <code>check()</code>를 씁니다. hot rejection path에서 기계가 읽을 첫 번째 실패만 필요하면 <code>checkFirst()</code>를 씁니다. 스키마가 안정적이고 호출 빈도가 높다면 <code>compile()</code> 또는 <code>emitAotModule()</code>을 씁니다. compiled/AOT <code>checkFirst()</code>는 전체 issue list를 만든 뒤 자르지 않고 전용 first-fault collector를 사용합니다.</p>
 <aside class="admonition caution"><strong class="admonition-title">CAUTION</strong><p><code>compile()</code>은 <code>new Function</code>으로 검증기를 생성합니다. <code>unsafe-eval</code>을 금지하는 Content-Security-Policy 환경에서는 사용할 수 없습니다. CSP 제한 환경에서는 <code>emitAotModule()</code>로 빌드 시점에 validator source를 생성하세요.</p></aside>
 <h4 id="readme-ko-unsafe-fastmode">Unsafe FastMode</h4>
 <pre><code>const FastButLooseUser = compile(User, {
@@ -1282,21 +1297,26 @@ failed check() -&gt; schema-aware diagnostic collector</code></pre>
 <h3 id="readme-ko-api-레퍼런스-요약">API 레퍼런스 요약</h3>
 <p>모든 공개 진입점은 package root에서 export됩니다. builder는 <code>t</code> table 아래에도 묶여 있습니다.</p>
 <h4 id="readme-ko-builders">Builders</h4>
-<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Scalar guard</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code></td></tr>
-<tr><td>Literal과 container</td><td><code>t.literal</code>, <code>t.array</code>, <code>t.tuple</code>, <code>t.record</code></td></tr>
-<tr><td>Object</td><td><code>t.object</code>, <code>t.strictObject</code>, <code>extend</code>, <code>pick</code>, <code>omit</code>, <code>partial</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Scalar guard</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.date</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code>, <code>t.null</code>, <code>t.undefined</code>, <code>t.void</code></td></tr>
+<tr><td>String check</td><td><code>.min</code>, <code>.max</code>, <code>.length</code>, <code>.nonempty</code>, <code>.regex</code>, <code>.startsWith</code>, <code>.endsWith</code>, <code>.includes</code>, <code>.uuid</code>, <code>.email</code>, <code>.url</code>, <code>.isoDate</code>, <code>.isoDateTime</code>, <code>.ulid</code>, <code>.ipv4</code>, <code>.ipv6</code></td></tr>
+<tr><td>Number check</td><td><code>.int</code>, <code>.finite</code>, <code>.safe</code>, <code>.gte</code>, <code>.lte</code>, <code>.min</code>, <code>.max</code>, <code>.gt</code>, <code>.lt</code>, <code>.multipleOf</code>, <code>.positive</code>, <code>.nonnegative</code>, <code>.negative</code>, <code>.nonpositive</code></td></tr>
+<tr><td>Date check</td><td><code>.min</code>, <code>.max</code></td></tr>
+<tr><td>Literal과 container</td><td><code>t.literal</code>, <code>t.enum</code>, <code>t.array</code>, <code>t.tuple</code>, tuple rest, <code>t.record</code>, <code>t.map</code>, <code>t.set</code>, <code>t.json</code></td></tr>
+<tr><td>Array check</td><td><code>.min</code>, <code>.max</code>, <code>.length</code>, <code>.nonempty</code></td></tr>
+<tr><td>Object</td><td><code>t.object</code>, <code>t.strictObject</code>, <code>extend</code>, <code>safeExtend</code>, <code>merge</code>, <code>pick</code>, <code>omit</code>, <code>partial</code>, <code>deepPartial</code>, <code>required</code>, <code>strict</code>, <code>passthrough</code>, <code>strip</code>, <code>catchall</code></td></tr>
+<tr><td>Runtime object contract</td><td><code>t.instanceOf</code>, <code>t.property</code>, <code>guard.property</code></td></tr>
 <tr><td>Composition</td><td><code>t.union</code>, <code>t.discriminatedUnion</code>, <code>t.intersect</code>, <code>guard.intersect</code></td></tr>
-<tr><td>Presence wrapper</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code></td></tr>
+<tr><td>Presence wrapper</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code>, <code>t.nullish</code></td></tr>
 <tr><td>Dynamic contract</td><td><code>t.lazy</code>, <code>t.refine</code></td></tr></tbody></table></div>
 <h4 id="readme-ko-decoders">Decoders</h4>
-<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Sync decoder</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.coerce</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Sync decoder</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.default</code>, <code>t.defaultValue</code>, <code>t.prefault</code>, <code>t.catch</code>, <code>t.codec</code>, <code>t.coerce</code>, <code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code></td></tr>
 <tr><td>Async decoder</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
 <h4 id="readme-ko-execution-export">Execution &amp; Export</h4>
-<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Guard method</td><td><code>guard.is()</code>, <code>guard.check()</code>, <code>guard.graph()</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Guard method</td><td><code>guard.is()</code>, <code>guard.check()</code>, <code>guard.checkFirst()</code>, <code>guard.graph()</code></td></tr>
 <tr><td>Generated validator</td><td><code>compile</code>, <code>emitAotModule</code></td></tr>
 <tr><td>JSON Schema</td><td><code>toJsonSchema</code></td></tr></tbody></table></div>
 <h4 id="readme-ko-messages-adapters">Messages &amp; Adapters</h4>
-<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Messages / i18n</td><td><code>formatIssue</code>, <code>formatIssues</code>, <code>withMessages</code>, <code>defineMessages</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>영역</th><th>Entry points</th></tr></thead><tbody><tr><td>Messages / i18n</td><td><code>formatIssue</code>, <code>formatIssues</code>, <code>flattenIssues</code>, <code>withMessages</code>, <code>defineMessages</code></td></tr>
 <tr><td>tRPC</td><td><code>toTrpcParser</code>, <code>toAsyncTrpcParser</code></td></tr>
 <tr><td>Fastify</td><td><code>toFastifyRouteSchema</code>, <code>toFastifyValidatorCompiler</code></td></tr>
 <tr><td>React Hook Form</td><td><code>toReactHookFormResolver</code></td></tr></tbody></table></div>
@@ -1318,6 +1338,11 @@ const internalParser = toTrpcParser(UnsafeUser);</code></pre>
 <tr><td><code>__proto__</code>, <code>constructor</code> keys</td><td>pollution 없이 plain own key로 검증합니다.</td></tr>
 <tr><td>Sparse array holes</td><td>accessor 실행 없이 <code>undefined</code>로 읽습니다.</td></tr>
 <tr><td>Strict object extras</td><td><code>Reflect.ownKeys</code>로 거부합니다. symbol key와 non-enumerable property도 포함합니다.</td></tr>
+<tr><td><code>catchall</code> extras</td><td>unknown own key는 descriptor로 읽고 catchall schema로 검증합니다.</td></tr>
+<tr><td><code>strip()</code></td><td>출력 객체를 복사하지 않는 검증 전용 alias입니다. TypeSea에서는 extra key 허용 의미가 <code>passthrough()</code>와 같습니다.</td></tr>
+<tr><td><code>t.date</code></td><td>유효한 JavaScript <code>Date</code> 객체만 허용합니다. <code>.min</code>과 <code>.max</code>는 사용자가 덮어쓸 수 있는 Date method를 읽지 않고 epoch millisecond로 비교합니다.</td></tr>
+<tr><td><code>t.map</code>, <code>t.set</code>, <code>t.instanceOf</code></td><td>runtime-only contract입니다. JSON Schema와 AOT export에서는 의미를 약화시키지 않고 명시적으로 거부합니다.</td></tr>
+<tr><td><code>property</code></td><td>own data property만 검증합니다. getter-backed property는 거부합니다.</td></tr>
 <tr><td>Global-flag regexes</td><td>construction 시 clone하고, 매 test 전에 <code>lastIndex</code>를 reset합니다.</td></tr>
 <tr><td>UUID</td><td>RFC 9562 version 1-8과 nil UUID를 허용합니다.</td></tr>
 <tr><td>Cyclic input values</td><td>value x schema active-pair tracking으로 유한하게 검증합니다.</td></tr>
@@ -1384,23 +1409,30 @@ npm run release:check   # the full pre-publish gate</code></pre>
 <pre><code>interface Guard&lt;T&gt; {
   is(value: unknown): value is T;
   check(value: unknown): CheckResult&lt;T&gt;;
+  checkFirst(value: unknown): CheckResult&lt;T&gt;;
   assert(value: unknown): asserts value is T;
   graph(): Graph;
 }</code></pre>
 <div class="table-wrap"><table><thead><tr><th>Method</th><th>Use it for</th><th>Contract</th></tr></thead><tbody><tr><td><code>is</code></td><td>Hot boolean narrowing</td><td>Avoids diagnostic allocation on the success path.</td></tr>
 <tr><td><code>check</code></td><td>Validation with issues</td><td>Returns frozen <code>Result&lt;T, Issue[]&gt;</code> containers.</td></tr>
+<tr><td><code>checkFirst</code></td><td>Hot rejection diagnostics</td><td>Returns the same frozen <code>Result</code> shape, but failure contains at most one issue. Compiled and AOT guards use a dedicated first-fault collector.</td></tr>
 <tr><td><code>assert</code></td><td>Throwing integration boundaries</td><td>Throws <code>TypeSeaAssertionError</code> with copied, frozen issues.</td></tr>
 <tr><td><code>graph</code></td><td>Runtime plan introspection</td><td>Returns the validated, optimized, frozen Sea-of-Nodes graph held by the validation plan.</td></tr></tbody></table></div>
 <p>Diagnostic paths contain only object keys and zero-based array or tuple indexes. Public diagnostic validators reject malformed path segments before diagnostics cross the API boundary.</p>
 <h3 id="api-reference-en-builder-families">Builder Families</h3>
-<div class="table-wrap"><table><thead><tr><th>Family</th><th>Builders</th></tr></thead><tbody><tr><td>Scalars</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code></td></tr>
-<tr><td>Literals and containers</td><td><code>t.literal(value)</code>, <code>t.array(item)</code>, <code>t.tuple([a, b])</code>, <code>t.record(value)</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>Family</th><th>Builders</th></tr></thead><tbody><tr><td>Scalars</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.date</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code>, <code>t.null</code>, <code>t.undefined</code>, <code>t.void</code></td></tr>
+<tr><td>String checks</td><td><code>.min</code>, <code>.max</code>, <code>.length</code>, <code>.nonempty</code>, <code>.regex</code>, <code>.startsWith</code>, <code>.endsWith</code>, <code>.includes</code>, <code>.uuid</code>, <code>.email</code>, <code>.url</code>, <code>.isoDate</code>, <code>.isoDateTime</code>, <code>.ulid</code>, <code>.ipv4</code>, <code>.ipv6</code></td></tr>
+<tr><td>Number checks</td><td><code>.int</code>, <code>.finite</code>, <code>.safe</code>, <code>.gte</code>, <code>.lte</code>, <code>.min</code>, <code>.max</code>, <code>.gt</code>, <code>.lt</code>, <code>.multipleOf</code>, <code>.positive</code>, <code>.nonnegative</code>, <code>.negative</code>, <code>.nonpositive</code></td></tr>
+<tr><td>Date checks</td><td><code>.min</code>, <code>.max</code></td></tr>
+<tr><td>Literals and containers</td><td><code>t.literal(value)</code>, <code>t.enum(values)</code>, <code>t.array(item)</code>, <code>t.tuple([a, b])</code>, <code>t.tuple([head], rest)</code>, <code>t.record(value)</code>, <code>t.map(key, value)</code>, <code>t.set(item)</code>, <code>t.json()</code></td></tr>
+<tr><td>Array checks</td><td><code>.min</code>, <code>.max</code>, <code>.length</code>, <code>.nonempty</code></td></tr>
 <tr><td>Objects</td><td><code>t.object(shape)</code>, <code>t.strictObject(shape)</code></td></tr>
-<tr><td>Object transforms</td><td><code>t.extend</code>, <code>t.pick</code>, <code>t.omit</code>, <code>t.partial</code>, and matching object guard methods</td></tr>
+<tr><td>Object transforms</td><td><code>t.extend</code>, <code>t.safeExtend</code>, <code>t.merge</code>, <code>t.pick</code>, <code>t.omit</code>, <code>t.partial</code>, <code>t.deepPartial</code>, <code>t.required</code>, <code>t.strict</code>, <code>t.passthrough</code>, <code>t.strip</code>, <code>t.catchall</code>, and matching object guard methods</td></tr>
+<tr><td>Runtime object contracts</td><td><code>t.instanceOf(Ctor)</code>, <code>t.property(base, key, value)</code>, <code>guard.property(key, value)</code></td></tr>
 <tr><td>Composition</td><td><code>t.union</code>, <code>t.discriminatedUnion</code>, <code>t.intersect</code>, <code>guard.intersect</code></td></tr>
-<tr><td>Presence</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code></td></tr>
+<tr><td>Presence</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code>, <code>t.nullish</code></td></tr>
 <tr><td>Dynamic guards</td><td><code>t.lazy</code>, <code>t.refine</code></td></tr>
-<tr><td>Decoders</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.coerce</code></td></tr>
+<tr><td>Decoders</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.default</code>, <code>t.defaultValue</code>, <code>t.prefault</code>, <code>t.catch</code>, <code>t.codec</code>, <code>t.coerce</code>, <code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code></td></tr>
 <tr><td>Async decoders</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
 <p>Builder functions validate inputs before a schema can enter the validation plan, compiler, AOT emitter, diagnostic collector, or JSON Schema exporter. Forged guard-like values, invalid schema tags, invalid predicates, invalid bounds, malformed regexps, and invalid discriminated union case sets are rejected during construction.</p>
 <p>Accepted schemas are frozen before storage. Public schema collection fields use frozen arrays and frozen key lookup records instead of mutable collection objects.</p>
@@ -1410,9 +1442,13 @@ npm run release:check   # the full pre-publish gate</code></pre>
   name: t.optional(t.string),
   nickname: t.undefinedable(t.string)
 });</code></pre>
-<ul><li><code>name</code> may be absent. If <code>name</code> exists, its value must be a string.</li><li><code>nickname</code> must be present. Its value may be a string or <code>undefined</code>.</li><li><code>t.nullable(inner)</code> adds <code>null</code> to the value domain.</li><li>Presence-preserving wrappers keep optional-key semantics through <code>nullable</code>,</li></ul>
+<ul><li><code>name</code> may be absent. If <code>name</code> exists, its value must be a string.</li><li><code>nickname</code> must be present. Its value may be a string or <code>undefined</code>.</li><li><code>t.nullable(inner)</code> adds <code>null</code> to the value domain.</li><li><code>t.nullish(inner)</code> combines nullable value semantics with optional object-key</li></ul>
+<p>presence.</p>
+<ul><li>Presence-preserving wrappers keep optional-key semantics through <code>nullable</code>,</li></ul>
 <p><code>undefinedable</code>, <code>brand</code>, and <code>refine</code>.</p>
 <p>Object combinators preserve object mode. Strict object guards remain strict after <code>extend</code>, <code>pick</code>, <code>omit</code>, or <code>partial</code>; passthrough object guards keep allowing unknown keys.</p>
+<p><code>catchall(schema)</code> validates every undeclared own key with <code>schema</code>. <code>strip()</code> is validation-only in TypeSea: guards return the original value, so it has the same validation behavior as <code>passthrough()</code>. <code>pick</code> and <code>omit</code> accept either key arrays or Zod-style <code>{ key: true }</code> masks. <code>deepPartial()</code> recursively partializes pure object, array, tuple, tuple rest, record, map, set, property, union, intersection, nullable, undefinedable, optional, and brand schemas. Lazy and refinement schemas are semantic barriers.</p>
+<p><code>property</code> validates only own data descriptors. It is useful for class instances with stable fields; prototype getters and accessor-backed properties are rejected instead of executed.</p>
 <h3 id="api-reference-en-composition">Composition</h3>
 <p><code>t.union(a, b)</code> accepts a value that satisfies at least one branch.</p>
 <p><code>t.discriminatedUnion(&quot;kind&quot;, cases)</code> requires string case keys. Each case must be a statically inspectable object case whose dispatch key is a required string literal matching the case name.</p>
@@ -1433,12 +1469,26 @@ const Node: Guard&lt;ListNode&gt; = t.lazy((): Guard&lt;ListNode&gt; =&gt;
 <p>Direct cyclic schema objects are rejected at builder boundaries. Lazy guards resolve once per guard instance and keep recursive schema identity stable. A lazy chain must eventually resolve to a concrete non-lazy schema.</p>
 <h3 id="api-reference-en-decoder-pipelines">Decoder Pipelines</h3>
 <pre><code>const Count = t.pipe(t.coerce.number(), t.number.int().gte(0));
-const result = Count.decode(&quot;42&quot;);</code></pre>
+const result = Count.decode(&quot;42&quot;);
+
+const Name = t.default(t.string.min(1), &quot;anonymous&quot;);
+const NumberText = t.codec(
+  t.string.regex(/^\d+$/u, &quot;digits&quot;),
+  t.number.int().nonnegative(),
+  {
+    decode: (value) =&gt; Number(value),
+    encode: (value) =&gt; String(value)
+  }
+);</code></pre>
 <p>Decoders are for output-producing operations. They return <code>Result</code> from <code>decode()</code> and do not expose <code>is()</code> predicates, because the decoded output may not be the same runtime value as the input.</p>
 <ul><li><code>t.transform(source, mapper)</code> decodes <code>source</code>, then maps the decoded value.</li><li><code>t.pipe(source, next)</code> feeds a successful decoded value into the next guard or</li></ul>
 <p>decoder.</p>
+<ul><li><code>t.default(source, value)</code> returns a fallback output for <code>undefined</code> input.</li><li><code>t.prefault(source, value)</code> feeds a fallback input through the source.</li><li><code>t.codec(input, output, mapping)</code> validates both sides of a bidirectional</li></ul>
+<p>decode/encode pair.</p>
 <ul><li><code>t.coerce.string</code>, <code>t.coerce.number</code>, and <code>t.coerce.boolean</code> provide explicit</li></ul>
 <p>primitive coercion.</p>
+<ul><li><code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, and <code>t.string.toUpperCase()</code></li></ul>
+<p>are decoder helpers. They validate the string first, then return transformed output from <code>decode()</code>.</p>
 <ul><li><code>t.asyncRefine</code>, <code>t.asyncTransform</code>, and <code>t.asyncPipe</code> return</li></ul>
 <p><code>Promise&lt;Result&lt;T, Issue[]&gt;&gt;</code> from <code>decodeAsync()</code>.</p>
 <p>Expected async validation failures still return <code>Result</code> values.</p>
@@ -1449,8 +1499,8 @@ const result = Count.decode(&quot;42&quot;);</code></pre>
     expected_string: &quot;{path}: 문자열 필요&quot;
   })
 });</code></pre>
-<p><code>formatIssue</code>, <code>formatIssues</code>, and <code>withMessages</code> render diagnostics after validation has finished. This keeps <code>is()</code> and ordinary <code>check()</code> paths free from message allocation.</p>
-<p>Built-in locales are <code>en</code> and <code>ko</code>. Custom catalogs can use string templates with <code>{path}</code>, <code>{code}</code>, <code>{expected}</code>, and <code>{actual}</code>, or formatter callbacks. <code>withMessages(result, options)</code> preserves successful results and returns a new failed <code>Result</code> with copied, frozen issues whose <code>message</code> fields are populated.</p>
+<p><code>formatIssue</code>, <code>formatIssues</code>, <code>flattenIssues</code>, and <code>withMessages</code> render diagnostics after validation has finished. This keeps <code>is()</code> and ordinary <code>check()</code> paths free from message allocation.</p>
+<p>Built-in locales are <code>en</code> and <code>ko</code>. Custom catalogs can use string templates with <code>{path}</code>, <code>{code}</code>, <code>{expected}</code>, and <code>{actual}</code>, or formatter callbacks. <code>withMessages(result, options)</code> preserves successful results and returns a new failed <code>Result</code> with copied, frozen issues whose <code>message</code> fields are populated. <code>flattenIssues(issues, options)</code> groups rendered messages into <code>formErrors</code> and top-level <code>fieldErrors</code> buckets.</p>
 <h3 id="api-reference-en-runtime-compile">Runtime Compile</h3>
 <pre><code>const FastUser = compile(User, { name: &quot;isUser&quot; });
 
@@ -1515,7 +1565,7 @@ const optimized = optimizeGraph(graph);</code></pre>
 <pre><code>const result = toJsonSchema(User);</code></pre>
 <p><code>toJsonSchema</code> returns <code>Result&lt;JsonSchema, JsonSchemaExportIssue[]&gt;</code>. It succeeds only when TypeSea can represent the contract over JSON-compatible input values without semantic loss.</p>
 <p>Runtime-only concepts return explicit export issues:</p>
-<ul><li><code>undefined</code></li><li><code>bigint</code></li><li><code>symbol</code></li><li><code>lazy</code></li><li><code>refine</code></li><li>decoder transforms</li><li>async validation</li><li>regexps with flags</li><li>numeric literals that JSON cannot preserve, such as <code>NaN</code>, <code>Infinity</code>, and</li></ul>
+<ul><li><code>undefined</code></li><li><code>bigint</code></li><li><code>symbol</code></li><li>JavaScript <code>Date</code>, <code>Map</code>, <code>Set</code>, <code>instanceOf</code>, and <code>property</code> contracts</li><li><code>lazy</code></li><li><code>refine</code></li><li>decoder transforms</li><li>async validation</li><li>regexps with flags</li><li>numeric literals that JSON cannot preserve, such as <code>NaN</code>, <code>Infinity</code>, and</li></ul>
 <p><code>-0</code></p>
 <p><code>schemaToJsonSchema(schema)</code> is the direct schema API. It validates the supplied schema and freezes it before export. JSON Schema options are also validated; <code>schemaId</code>, when present, must be a string.</p>
 <p>Object <code>properties</code> maps are emitted as null-prototype records so special keys such as <code>__proto__</code>, <code>constructor</code>, and <code>hasOwnProperty</code> remain ordinary own schema properties.</p>
@@ -1553,23 +1603,30 @@ const optimized = optimizeGraph(graph);</code></pre>
 <pre><code>interface Guard&lt;T&gt; {
   is(value: unknown): value is T;
   check(value: unknown): CheckResult&lt;T&gt;;
+  checkFirst(value: unknown): CheckResult&lt;T&gt;;
   assert(value: unknown): asserts value is T;
   graph(): Graph;
 }</code></pre>
 <div class="table-wrap"><table><thead><tr><th>메서드</th><th>용도</th><th>계약</th></tr></thead><tbody><tr><td><code>is</code></td><td>빠른 boolean narrowing</td><td>성공 경로에서 진단 객체를 만들지 않습니다.</td></tr>
 <tr><td><code>check</code></td><td>실패 이유가 필요한 검증</td><td>동결된 <code>Result&lt;T, Issue[]&gt;</code> container를 반환합니다.</td></tr>
+<tr><td><code>checkFirst</code></td><td>hot path의 단일 실패 진단</td><td>같은 <code>Result</code> 형태를 반환하되 실패 시 issue를 최대 하나만 담습니다. compiled/AOT guard는 전용 first-fault collector를 사용합니다.</td></tr>
 <tr><td><code>assert</code></td><td>예외가 필요한 연동 지점</td><td>복사되고 동결된 issue를 담은 <code>TypeSeaAssertionError</code>를 던집니다.</td></tr>
 <tr><td><code>graph</code></td><td>검증 계획 introspection</td><td>validation plan이 보유한 validated, optimized, frozen Sea-of-Nodes graph를 반환합니다.</td></tr></tbody></table></div>
 <p>diagnostic path에는 object key와 0부터 시작하는 array 또는 tuple index만 들어갑니다. 공개 diagnostic validator는 잘못된 path segment를 거부한 뒤 diagnostic을 API 밖으로 내보냅니다.</p>
 <h3 id="api-reference-ko-builder-계열">Builder 계열</h3>
-<div class="table-wrap"><table><thead><tr><th>계열</th><th>Builder</th></tr></thead><tbody><tr><td>Scalar</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code></td></tr>
-<tr><td>Literal과 container</td><td><code>t.literal(value)</code>, <code>t.array(item)</code>, <code>t.tuple([a, b])</code>, <code>t.record(value)</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>계열</th><th>Builder</th></tr></thead><tbody><tr><td>Scalar</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.date</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code>, <code>t.null</code>, <code>t.undefined</code>, <code>t.void</code></td></tr>
+<tr><td>String check</td><td><code>.min</code>, <code>.max</code>, <code>.length</code>, <code>.nonempty</code>, <code>.regex</code>, <code>.startsWith</code>, <code>.endsWith</code>, <code>.includes</code>, <code>.uuid</code>, <code>.email</code>, <code>.url</code>, <code>.isoDate</code>, <code>.isoDateTime</code>, <code>.ulid</code>, <code>.ipv4</code>, <code>.ipv6</code></td></tr>
+<tr><td>Number check</td><td><code>.int</code>, <code>.finite</code>, <code>.safe</code>, <code>.gte</code>, <code>.lte</code>, <code>.min</code>, <code>.max</code>, <code>.gt</code>, <code>.lt</code>, <code>.multipleOf</code>, <code>.positive</code>, <code>.nonnegative</code>, <code>.negative</code>, <code>.nonpositive</code></td></tr>
+<tr><td>Date check</td><td><code>.min</code>, <code>.max</code></td></tr>
+<tr><td>Literal과 container</td><td><code>t.literal(value)</code>, <code>t.enum(values)</code>, <code>t.array(item)</code>, <code>t.tuple([a, b])</code>, <code>t.tuple([head], rest)</code>, <code>t.record(value)</code>, <code>t.map(key, value)</code>, <code>t.set(item)</code>, <code>t.json()</code></td></tr>
+<tr><td>Array check</td><td><code>.min</code>, <code>.max</code>, <code>.length</code>, <code>.nonempty</code></td></tr>
 <tr><td>Object</td><td><code>t.object(shape)</code>, <code>t.strictObject(shape)</code></td></tr>
-<tr><td>Object transform</td><td><code>t.extend</code>, <code>t.pick</code>, <code>t.omit</code>, <code>t.partial</code>, and matching object guard methods</td></tr>
+<tr><td>Object transform</td><td><code>t.extend</code>, <code>t.safeExtend</code>, <code>t.merge</code>, <code>t.pick</code>, <code>t.omit</code>, <code>t.partial</code>, <code>t.deepPartial</code>, <code>t.required</code>, <code>t.strict</code>, <code>t.passthrough</code>, <code>t.strip</code>, <code>t.catchall</code>, 그리고 같은 이름의 object guard method</td></tr>
+<tr><td>Runtime object contract</td><td><code>t.instanceOf(Ctor)</code>, <code>t.property(base, key, value)</code>, <code>guard.property(key, value)</code></td></tr>
 <tr><td>Composition</td><td><code>t.union</code>, <code>t.discriminatedUnion</code>, <code>t.intersect</code>, <code>guard.intersect</code></td></tr>
-<tr><td>Presence</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code></td></tr>
+<tr><td>Presence</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code>, <code>t.nullish</code></td></tr>
 <tr><td>Dynamic guard</td><td><code>t.lazy</code>, <code>t.refine</code></td></tr>
-<tr><td>Decoder</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.coerce</code></td></tr>
+<tr><td>Decoder</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.default</code>, <code>t.defaultValue</code>, <code>t.prefault</code>, <code>t.catch</code>, <code>t.codec</code>, <code>t.coerce</code>, <code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code></td></tr>
 <tr><td>Async decoder</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
 <p>builder function은 schema가 validation plan, compiler, AOT emitter, diagnostic collector, JSON Schema exporter로 들어가기 전에 입력을 검증합니다. 위조된 guard-like value, 잘못된 schema tag, 잘못된 predicate, 잘못된 bound, malformed regexp, 잘못된 discriminated union case set은 construction 중 거부됩니다.</p>
 <p>허용된 schema는 저장 전에 freeze됩니다. 공개 schema collection field는 변경 가능한 collection object 대신 frozen array와 frozen key lookup record를 사용합니다.</p>
@@ -1579,8 +1636,10 @@ const optimized = optimizeGraph(graph);</code></pre>
   name: t.optional(t.string),
   nickname: t.undefinedable(t.string)
 });</code></pre>
-<ul><li><code>name</code>은 없어도 됩니다. 존재한다면 값은 string이어야 합니다.</li><li><code>nickname</code>은 반드시 존재해야 합니다. 값은 string 또는 <code>undefined</code>일 수 있습니다.</li><li><code>t.nullable(inner)</code>는 value domain에 <code>null</code>을 추가합니다.</li><li><code>nullable</code>, <code>undefinedable</code>, <code>brand</code>, <code>refine</code>을 지나도 optional-key 의미는 보존됩니다.</li></ul>
+<ul><li><code>name</code>은 없어도 됩니다. 존재한다면 값은 string이어야 합니다.</li><li><code>nickname</code>은 반드시 존재해야 합니다. 값은 string 또는 <code>undefined</code>일 수 있습니다.</li><li><code>t.nullable(inner)</code>는 value domain에 <code>null</code>을 추가합니다.</li><li><code>t.nullish(inner)</code>는 nullable value와 optional key 의미를 함께 제공합니다.</li><li><code>nullable</code>, <code>undefinedable</code>, <code>brand</code>, <code>refine</code>을 지나도 optional-key 의미는 보존됩니다.</li></ul>
 <p>object combinator는 object mode를 보존합니다. strict object guard는 <code>extend</code>, <code>pick</code>, <code>omit</code>, <code>partial</code> 이후에도 strict를 유지하고, passthrough object guard는 unknown key 허용을 유지합니다.</p>
+<p><code>catchall(schema)</code>는 선언되지 않은 모든 own key를 <code>schema</code>로 검증합니다. <code>strip()</code>은 TypeSea에서 검증 전용 의미입니다. guard는 원본 값을 반환하므로, 검증 의미는 <code>passthrough()</code>와 같습니다. <code>pick</code>과 <code>omit</code>은 key array와 Zod 스타일 <code>{ key: true }</code> mask를 모두 받습니다. <code>deepPartial()</code>은 순수 object, array, tuple, tuple rest, record, map, set, property, union, intersection, nullable, undefinedable, optional, brand schema를 재귀적으로 partial 처리합니다. lazy와 refinement schema는 callback 의미를 보존하기 위해 semantic barrier로 둡니다.</p>
+<p><code>property</code>는 own data descriptor만 검증합니다. 안정적인 class field를 증명할 때 쓰기 좋고, prototype getter나 accessor property는 실행하지 않고 거부합니다.</p>
 <h3 id="api-reference-ko-합성">합성</h3>
 <p><code>t.union(a, b)</code>는 적어도 한 branch를 만족하는 값을 허용합니다.</p>
 <p><code>t.discriminatedUnion(&quot;kind&quot;, cases)</code>는 string case key를 요구합니다. 각 case는 static하게 inspect할 수 있는 object case여야 하며, dispatch key는 case name과 일치하는 required string literal이어야 합니다.</p>
@@ -1601,9 +1660,19 @@ const Node: Guard&lt;ListNode&gt; = t.lazy((): Guard&lt;ListNode&gt; =&gt;
 <p>직접 순환하는 schema object는 builder boundary에서 거부됩니다. lazy guard는 guard instance마다 한 번 resolve되고 recursive schema identity를 안정적으로 유지합니다. lazy chain은 결국 concrete non-lazy schema로 resolve되어야 합니다.</p>
 <h3 id="api-reference-ko-decoder-pipeline">Decoder Pipeline</h3>
 <pre><code>const Count = t.pipe(t.coerce.number(), t.number.int().gte(0));
-const result = Count.decode(&quot;42&quot;);</code></pre>
+const result = Count.decode(&quot;42&quot;);
+
+const Name = t.default(t.string.min(1), &quot;anonymous&quot;);
+const NumberText = t.codec(
+  t.string.regex(/^\d+$/u, &quot;digits&quot;),
+  t.number.int().nonnegative(),
+  {
+    decode: (value) =&gt; Number(value),
+    encode: (value) =&gt; String(value)
+  }
+);</code></pre>
 <p>decoder는 output을 생성하는 작업에 씁니다. <code>decode()</code>에서 <code>Result</code>를 반환하며 <code>is()</code> predicate를 노출하지 않습니다. decoded output이 input과 같은 runtime value가 아닐 수 있기 때문입니다.</p>
-<ul><li><code>t.transform(source, mapper)</code>는 <code>source</code>를 decode한 뒤 decoded value를 map합니다.</li><li><code>t.pipe(source, next)</code>는 성공한 decoded value를 다음 guard 또는 decoder에 넘깁니다.</li><li><code>t.coerce.string</code>, <code>t.coerce.number</code>, <code>t.coerce.boolean</code>은 명시적 primitive coercion을 제공합니다.</li><li><code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code>는 <code>decodeAsync()</code>에서 <code>Promise&lt;Result&lt;T, Issue[]&gt;&gt;</code>를 반환합니다.</li></ul>
+<ul><li><code>t.transform(source, mapper)</code>는 <code>source</code>를 decode한 뒤 decoded value를 map합니다.</li><li><code>t.pipe(source, next)</code>는 성공한 decoded value를 다음 guard 또는 decoder에 넘깁니다.</li><li><code>t.default(source, value)</code>는 input이 <code>undefined</code>일 때 fallback output을 바로 반환합니다.</li><li><code>t.prefault(source, value)</code>는 input이 <code>undefined</code>일 때 fallback input을 source에 다시 통과시킵니다.</li><li><code>t.codec(input, output, mapping)</code>은 bidirectional decode/encode 양쪽을 모두 검증합니다.</li><li><code>t.coerce.string</code>, <code>t.coerce.number</code>, <code>t.coerce.boolean</code>은 명시적 primitive coercion을 제공합니다.</li><li><code>t.string.trim()</code>, <code>t.string.toLowerCase()</code>, <code>t.string.toUpperCase()</code>는 decoder helper입니다. 먼저 string을 검증한 뒤 <code>decode()</code> 결과로 변환된 값을 반환합니다.</li><li><code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code>는 <code>decodeAsync()</code>에서 <code>Promise&lt;Result&lt;T, Issue[]&gt;&gt;</code>를 반환합니다.</li></ul>
 <p>예상 가능한 async validation 실패도 <code>Result</code>로 반환됩니다.</p>
 <h3 id="api-reference-ko-message">Message</h3>
 <pre><code>const checked = withMessages(User.check(input), {
@@ -1612,8 +1681,8 @@ const result = Count.decode(&quot;42&quot;);</code></pre>
     expected_string: &quot;{path}: 문자열 필요&quot;
   })
 });</code></pre>
-<p><code>formatIssue</code>, <code>formatIssues</code>, <code>withMessages</code>는 validation이 끝난 뒤 diagnostic을 렌더링합니다. 따라서 <code>is()</code>와 일반 <code>check()</code> path에서는 message allocation이 발생하지 않습니다.</p>
-<p>built-in locale은 <code>en</code>과 <code>ko</code>입니다. custom catalog는 <code>{path}</code>, <code>{code}</code>, <code>{expected}</code>, <code>{actual}</code> string template 또는 formatter callback을 쓸 수 있습니다. <code>withMessages(result, options)</code>는 successful result를 그대로 보존하고, failed <code>Result</code>에는 복사되고 동결된 issue에 <code>message</code> field를 채워 새로 반환합니다.</p>
+<p><code>formatIssue</code>, <code>formatIssues</code>, <code>flattenIssues</code>, <code>withMessages</code>는 validation이 끝난 뒤 diagnostic을 렌더링합니다. 따라서 <code>is()</code>와 일반 <code>check()</code> path에서는 message allocation이 발생하지 않습니다.</p>
+<p>built-in locale은 <code>en</code>과 <code>ko</code>입니다. custom catalog는 <code>{path}</code>, <code>{code}</code>, <code>{expected}</code>, <code>{actual}</code> string template 또는 formatter callback을 쓸 수 있습니다. <code>withMessages(result, options)</code>는 successful result를 그대로 보존하고, failed <code>Result</code>에는 복사되고 동결된 issue에 <code>message</code> field를 채워 새로 반환합니다. <code>flattenIssues(issues, options)</code>는 렌더링된 message를 <code>formErrors</code>와 top-level <code>fieldErrors</code> bucket으로 묶습니다.</p>
 <h3 id="api-reference-ko-런타임-컴파일">런타임 컴파일</h3>
 <pre><code>const FastUser = compile(User, { name: &quot;isUser&quot; });
 
@@ -1676,7 +1745,7 @@ const optimized = optimizeGraph(graph);</code></pre>
 <pre><code>const result = toJsonSchema(User);</code></pre>
 <p><code>toJsonSchema</code>는 <code>Result&lt;JsonSchema, JsonSchemaExportIssue[]&gt;</code>를 반환합니다. TypeSea가 JSON-compatible input value 위에서 contract를 의미 손실 없이 표현할 수 있을 때만 성공합니다.</p>
 <p>runtime-only concept는 명시적 export issue를 반환합니다.</p>
-<ul><li><code>undefined</code></li><li><code>bigint</code></li><li><code>symbol</code></li><li><code>lazy</code></li><li><code>refine</code></li><li>decoder transforms</li><li>async validation</li><li>flag가 있는 regexp</li><li><code>NaN</code>, <code>Infinity</code>, <code>-0</code>처럼 JSON이 보존할 수 없는 numeric literal</li></ul>
+<ul><li><code>undefined</code></li><li><code>bigint</code></li><li><code>symbol</code></li><li>JavaScript <code>Date</code>, <code>Map</code>, <code>Set</code>, <code>instanceOf</code>, <code>property</code> contract</li><li><code>lazy</code></li><li><code>refine</code></li><li>decoder transforms</li><li>async validation</li><li>flag가 있는 regexp</li><li><code>NaN</code>, <code>Infinity</code>, <code>-0</code>처럼 JSON이 보존할 수 없는 numeric literal</li></ul>
 <p><code>schemaToJsonSchema(schema)</code>는 direct schema API입니다. 전달된 schema를 validate하고 freeze한 뒤 export합니다. JSON Schema option도 validate합니다. <code>schemaId</code>가 있으면 string이어야 합니다.</p>
 <p>object <code>properties</code> map은 null-prototype record로 방출됩니다. 따라서 <code>__proto__</code>, <code>constructor</code>, <code>hasOwnProperty</code> 같은 특수 key도 ordinary own schema property로 남습니다.</p>
 <h3 id="api-reference-ko-경계-동작">경계 동작</h3>
@@ -1741,6 +1810,7 @@ const optimized = optimizeGraph(graph);</code></pre>
 <p>Lazy schemas resolve their getter once per guard instance. Recursive validation therefore sees stable schema identity, and repeated validations do not rebuild the recursive schema graph.</p>
 <p>Recursive validation uses a root-local active pair table keyed by runtime object identity and schema identity. Re-entering the same schema/value pair short-circuits that edge, which lets cyclic object graphs validate finitely while still checking the original object fields on the outer frame.</p>
 <p>Compiled <code>lazy</code> and <code>refine</code> fallbacks use the same IR-backed runtime path, so recursive behavior stays consistent across execution engines.</p>
+<p><code>checkFirst()</code> has a separate generated collector. It returns one frozen issue as soon as the first diagnostic is known, instead of running the full <code>check()</code> collector and truncating its issue array.</p>
 <h3 id="engine-notes-en-json-schema-export">JSON Schema Export</h3>
 <p>JSON Schema export succeeds only when the TypeSea schema can be represented over JSON-compatible input values without semantic loss. Runtime-only concepts return typed <code>Result</code> errors.</p>
 <p>Export diagnostics keep paths at the failed child slot instead of collapsing everything to the parent container. Nested unsupported schemas therefore remain actionable without reconstructing the schema tree manually.</p>
@@ -1786,6 +1856,7 @@ const optimized = optimizeGraph(graph);</code></pre>
 <p>lazy schema는 guard instance마다 getter를 한 번 resolve합니다. 따라서 recursive validation은 stable schema identity를 보고, 반복 validation이 recursive schema graph를 다시 만들지 않습니다.</p>
 <p>recursive validation은 root-local active pair table을 사용합니다. key는 runtime object identity와 schema identity의 pair입니다. 같은 schema/value pair에 다시 들어오면 그 edge를 short-circuit합니다. 이 방식으로 cyclic object graph도 유한하게 검증하면서, outer frame에서는 원래 object field를 계속 검사합니다.</p>
 <p>compiled <code>lazy</code>와 <code>refine</code> fallback은 같은 IR-backed runtime path를 사용하므로 recursive behavior가 execution engine 사이에서 일관됩니다.</p>
+<p><code>checkFirst()</code>는 별도의 generated collector를 사용합니다. 첫 diagnostic이 확정되는 즉시 frozen issue 하나를 반환하며, full <code>check()</code> collector를 끝까지 실행한 뒤 issue array를 자르지 않습니다.</p>
 <h3 id="engine-notes-ko-json-schema-export">JSON Schema Export</h3>
 <p>JSON Schema export는 TypeSea schema를 JSON-compatible input value 위에서 의미 손실 없이 표현할 수 있을 때만 성공합니다. runtime-only concept는 typed <code>Result</code> error를 반환합니다.</p>
 <p>export diagnostic은 모든 것을 parent container로 collapse하지 않고 failed child slot에 path를 유지합니다. 따라서 nested unsupported schema도 schema tree를 수동으로 재구성하지 않고 바로 조치할 수 있습니다.</p>

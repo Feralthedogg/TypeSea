@@ -6,7 +6,7 @@
  */
 
 import { NodeTag, PresenceTag, type ObjectModeTag } from "../kind/index.js";
-import type { LiteralValue, Schema } from "../schema/index.js";
+import type { ArrayCheck, LiteralValue, Schema } from "../schema/index.js";
 import { freezeGraph } from "./freeze.js";
 import { isPlainRegExp } from "./regexp.js";
 import type {
@@ -225,13 +225,19 @@ export class GraphBuilder {
         }));
     }
 
-    public arrayEvery(value: NodeId, item: Schema, itemGraph: Graph): NodeId {
+    public arrayEvery(
+        value: NodeId,
+        item: Schema,
+        checks: readonly ArrayCheck[],
+        itemGraph: Graph
+    ): NodeId {
         return this.push((id: NodeId): ArrayEveryNode => ({
             id,
             tag: NodeTag.ArrayEvery,
             deps: [value],
             value,
             item,
+            checks,
             itemGraph
         }));
     }
@@ -286,7 +292,9 @@ export class GraphBuilder {
         value: NodeId,
         entries: readonly ObjectShapeEntry[],
         keys: readonly string[],
-        mode: ObjectModeTag
+        mode: ObjectModeTag,
+        catchall: Schema | undefined,
+        catchallGraph: Graph | undefined
     ): NodeId {
         return this.push((id: NodeId): ObjectShapeNode => ({
             id,
@@ -296,6 +304,8 @@ export class GraphBuilder {
             entries,
             keys,
             mode,
+            catchall,
+            catchallGraph,
             allRequired: objectShapeAllRequired(entries)
         }));
     }

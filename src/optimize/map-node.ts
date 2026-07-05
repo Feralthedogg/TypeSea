@@ -154,6 +154,7 @@ export function mapNodeIds(
                 deps: [value],
                 value,
                 item: node.item,
+                checks: node.checks,
                 itemGraph: node.itemGraph
             };
         }
@@ -203,6 +204,8 @@ export function mapNodeIds(
                 entries: node.entries,
                 keys: node.keys,
                 mode: node.mode,
+                catchall: node.catchall,
+                catchallGraph: node.catchallGraph,
                 allRequired: node.allRequired
             };
         }

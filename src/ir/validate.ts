@@ -5,7 +5,12 @@
  * node ids and valid dependency edges.
  */
 
-import { NodeTag, ObjectModeTag, PresenceTag } from "../kind/index.js";
+import {
+    ArrayCheckTag,
+    NodeTag,
+    ObjectModeTag,
+    PresenceTag
+} from "../kind/index.js";
 import {
     isLiteralValue,
     isSchemaValue
@@ -179,6 +184,7 @@ function isGraphNodeValue(
                 isSingleDepNode(value, deps, "object", nodeCount);
         case NodeTag.ArrayEvery:
             return isSchemaValue(readOwnDataProperty(value, "item")) &&
+                isArrayChecks(readOwnDataProperty(value, "checks")) &&
                 isGraphValueInner(readOwnDataProperty(value, "itemGraph"), state) &&
                 isSingleDepNode(value, deps, "value", nodeCount);
         case NodeTag.TupleItems:
@@ -214,6 +220,36 @@ function isGraphNodeValue(
         default:
             return false;
     }
+}
+
+/**
+ * @brief Validate array length metadata carried by ArrayEvery nodes.
+ * @param value Candidate check vector.
+ * @returns True when every entry is a supported non-negative integer bound.
+ */
+function isArrayChecks(value: unknown): boolean {
+    if (!isUnknownArray(value)) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+        const check = value[index];
+        if (!isRecord(check)) {
+            return false;
+        }
+        switch (readOwnDataProperty(check, "tag")) {
+            case ArrayCheckTag.Min:
+            case ArrayCheckTag.Max: {
+                const bound = readOwnDataProperty(check, "value");
+                if (typeof bound !== "number" || !Number.isInteger(bound) || bound < 0) {
+                    return false;
+                }
+                break;
+            }
+            default:
+                return false;
+        }
+    }
+    return true;
 }
 
 /**
@@ -453,11 +489,17 @@ function isObjectShapePayload(
     const entries = readOwnDataProperty(value, "entries");
     const keys = readOwnDataProperty(value, "keys");
     const mode = readOwnDataProperty(value, "mode");
+    const catchall = readOwnDataProperty(value, "catchall");
+    const catchallGraph = readOwnDataProperty(value, "catchallGraph");
     const allRequired = readOwnDataProperty(value, "allRequired");
     return isObjectShapeEntries(entries, state) &&
         isStringArray(keys) &&
         objectShapeEntriesMatchKeys(entries, keys) &&
         isObjectModeTag(mode) &&
+        (
+            (catchall === undefined && catchallGraph === undefined) ||
+            (isSchemaValue(catchall) && isGraphValueInner(catchallGraph, state))
+        ) &&
         typeof allRequired === "boolean" &&
         allRequired === objectShapeAllRequired(entries);
 }

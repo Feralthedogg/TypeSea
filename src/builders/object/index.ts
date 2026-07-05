@@ -7,19 +7,34 @@
 
 export {
     ObjectGuard,
+    catchall,
+    deepPartial,
     extend,
+    merge,
     object,
     omit,
     partial,
+    passthrough,
     pick,
-    strictObject
+    required,
+    safeExtend,
+    strict,
+    strictObject,
+    strip
 } from "./guard.js";
 export type {
+    DeepPartialObjectShape,
+    DeepPartialValue,
     InferObject,
+    MaskSelectedKeys,
     MergeObjectShapes,
+    ObjectKeyMask,
     ObjectGuardMode,
     ObjectShape,
     OmitObjectShape,
+    OmitObjectShapeByMask,
     PartialObjectShape,
-    PickObjectShape
+    PickObjectShape,
+    PickObjectShapeByMask,
+    RequiredObjectShape
 } from "./types.js";

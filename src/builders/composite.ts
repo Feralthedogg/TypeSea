@@ -10,6 +10,7 @@ import {
     SchemaTag
 } from "../kind/index.js";
 import {
+    ArrayGuard,
     BaseGuard,
     type Guard,
     type Infer,
@@ -23,6 +24,7 @@ import { isRecord, readGuardSchema } from "../internal/index.js";
 import type {
     DiscriminatedUnionCases,
     InferTuple,
+    InferTupleWithRest,
     TupleShape,
     UnionInput
 } from "./types.js";
@@ -36,10 +38,11 @@ import type {
  */
 export function array<TGuard extends Guard<unknown, Presence>>(
     item: TGuard
-): BaseGuard<Infer<TGuard>[]> {
-    return new BaseGuard<Infer<TGuard>[]>({
+): ArrayGuard<Infer<TGuard>> {
+    return new ArrayGuard<Infer<TGuard>>({
         tag: SchemaTag.Array,
-        item: readGuardSchema(item, "array item")
+        item: readGuardSchema(item, "array item"),
+        checks: []
     });
 }
 
@@ -53,7 +56,20 @@ export function array<TGuard extends Guard<unknown, Presence>>(
  */
 export function tuple<const TShape extends TupleShape>(
     shape: TShape
-): BaseGuard<InferTuple<TShape>> {
+): BaseGuard<InferTuple<TShape>>;
+
+export function tuple<
+    const TShape extends TupleShape,
+    TRest extends Guard<unknown, Presence>
+>(
+    shape: TShape,
+    rest: TRest
+): BaseGuard<InferTupleWithRest<TShape, TRest>>;
+
+export function tuple<const TShape extends TupleShape>(
+    shape: TShape,
+    rest?: Guard<unknown, Presence>
+): BaseGuard<unknown> {
     const rawShape: unknown = shape;
     if (!Array.isArray(rawShape)) {
         throw new TypeError("tuple shape must be an array");
@@ -69,7 +85,10 @@ export function tuple<const TShape extends TupleShape>(
     }
     return new BaseGuard<InferTuple<TShape>>({
         tag: SchemaTag.Tuple,
-        items
+        items,
+        rest: rest === undefined
+            ? undefined
+            : readGuardSchema(rest, "tuple rest")
     });
 }
 
@@ -86,6 +105,29 @@ export function record<TGuard extends Guard<unknown, Presence>>(
     return new BaseGuard<Readonly<Record<string, Infer<TGuard>>>>({
         tag: SchemaTag.Record,
         value: readGuardSchema(value, "record value")
+    });
+}
+
+export function map<
+    TKey extends Guard<unknown, Presence>,
+    TValue extends Guard<unknown, Presence>
+>(
+    key: TKey,
+    value: TValue
+): BaseGuard<ReadonlyMap<Infer<TKey>, Infer<TValue>>> {
+    return new BaseGuard<ReadonlyMap<Infer<TKey>, Infer<TValue>>>({
+        tag: SchemaTag.Map,
+        key: readGuardSchema(key, "map key"),
+        value: readGuardSchema(value, "map value")
+    });
+}
+
+export function set<TItem extends Guard<unknown, Presence>>(
+    item: TItem
+): BaseGuard<ReadonlySet<Infer<TItem>>> {
+    return new BaseGuard<ReadonlySet<Infer<TItem>>>({
+        tag: SchemaTag.Set,
+        item: readGuardSchema(item, "set item")
     });
 }
 

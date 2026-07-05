@@ -15,12 +15,16 @@ export type PathSegment = string | number;
 export type IssueCode =
     | "expected_string"
     | "expected_number"
+    | "expected_date"
     | "expected_bigint"
     | "expected_symbol"
     | "expected_boolean"
     | "expected_never"
     | "expected_literal"
     | "expected_array"
+    | "expected_map"
+    | "expected_set"
+    | "expected_instance"
     | "expected_tuple"
     | "expected_tuple_length"
     | "expected_object"
@@ -31,6 +35,9 @@ export type IssueCode =
     | "expected_pattern"
     | "expected_gte"
     | "expected_lte"
+    | "expected_gt"
+    | "expected_lt"
+    | "expected_multiple_of"
     | "expected_required_key"
     | "expected_union"
     | "expected_discriminant"
@@ -216,6 +223,7 @@ export function isIssueCodeValue(value: unknown): value is IssueCode {
     switch (value) {
         case "expected_string":
         case "expected_number":
+        case "expected_date":
         case "expected_bigint":
         case "expected_symbol":
         case "expected_boolean":
@@ -232,6 +240,9 @@ export function isIssueCodeValue(value: unknown): value is IssueCode {
         case "expected_pattern":
         case "expected_gte":
         case "expected_lte":
+        case "expected_gt":
+        case "expected_lt":
+        case "expected_multiple_of":
         case "expected_required_key":
         case "expected_union":
         case "expected_discriminant":

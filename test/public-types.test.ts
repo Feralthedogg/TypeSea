@@ -11,6 +11,7 @@ import {
     type Infer,
     type InferAsyncDecoder,
     type InferDecoder,
+    type JsonValue,
     type RuntimeValue
 } from "../src/index.js";
 
@@ -49,17 +50,20 @@ describe("public type contracts", () => {
         const OptionalName = t.optional(t.string);
         const FastOptionalName = compile(OptionalName, { name: "optionalName" });
         const result = FastOptionalName.check("Ada");
+        const firstResult = FastOptionalName.checkFirst("Ada");
 
         expectTypeOf<GuardValue<typeof OptionalName>>().toEqualTypeOf<string>();
         expectTypeOf<GuardPresence<typeof OptionalName>>().toEqualTypeOf<"optional">();
         expectTypeOf<Infer<typeof OptionalName>>().toEqualTypeOf<string | undefined>();
         expectTypeOf<Infer<typeof FastOptionalName>>().toEqualTypeOf<string | undefined>();
         expectTypeOf<typeof result>().toEqualTypeOf<CheckResult<string | undefined>>();
+        expectTypeOf<typeof firstResult>().toEqualTypeOf<CheckResult<string | undefined>>();
         expectTypeOf<RuntimeValue<string, "optional">>().toEqualTypeOf<
             string | undefined
         >();
         expectTypeOf<RuntimeValue<string, "required">>().toEqualTypeOf<string>();
         expect(result.ok).toBe(true);
+        expect(firstResult.ok).toBe(true);
     });
 
     test("exposes compile mode types", () => {
@@ -113,7 +117,15 @@ describe("public type contracts", () => {
             active: t.boolean
         });
         const Picked = Extended.pick(["id", "active"]);
+        const MaskPicked = Extended.pick({
+            id: true,
+            active: true
+        });
         const Omitted = Extended.omit(["label"]);
+        const MaskOmitted = Extended.omit({
+            label: true
+        });
+        const DeepPartial = Extended.deepPartial();
         const Partial = t.partial(Extended);
         const Intersected = t.intersect(
             t.object({
@@ -134,12 +146,27 @@ describe("public type contracts", () => {
             readonly id: string;
             readonly active: boolean;
         }>();
+        expectTypeOf<Infer<typeof MaskPicked>>().toEqualTypeOf<{
+            readonly id: string;
+            readonly active: boolean;
+        }>();
         expectTypeOf<Infer<typeof Omitted>>().toEqualTypeOf<{
             readonly id: string;
             readonly count: number;
             readonly active: boolean;
         }>();
+        expectTypeOf<Infer<typeof MaskOmitted>>().toEqualTypeOf<{
+            readonly id: string;
+            readonly count: number;
+            readonly active: boolean;
+        }>();
         expectTypeOf<Infer<typeof Partial>>().toEqualTypeOf<{
+            readonly id?: string;
+            readonly count?: number;
+            readonly label?: string;
+            readonly active?: boolean;
+        }>();
+        expectTypeOf<Infer<typeof DeepPartial>>().toEqualTypeOf<{
             readonly id?: string;
             readonly count?: number;
             readonly label?: string;
@@ -154,9 +181,44 @@ describe("public type contracts", () => {
         >();
 
         expect(Picked.is({ id: "u", active: true })).toBe(true);
+        expect(MaskPicked.is({ id: "u", active: true })).toBe(true);
         expect(Omitted.is({ id: "u", count: 1, active: true })).toBe(true);
+        expect(MaskOmitted.is({ id: "u", count: 1, active: true })).toBe(true);
         expect(Partial.is({})).toBe(true);
+        expect(DeepPartial.is({})).toBe(true);
         expect(Intersected.is({ id: "u", active: true })).toBe(true);
+    });
+
+    test("preserves tuple rest and runtime object inference", () => {
+        class Box {
+            public readonly id: string = "box";
+        }
+
+        const Row = t.tuple([t.literal("row")], t.number);
+        const Scores = t.map(t.string, t.number);
+        const Tags = t.set(t.string);
+        const MaybeName = t.nullish(t.string);
+        const Json = t.json();
+        const BoxWithId = t.instanceOf(Box).property("id", t.string);
+
+        expectTypeOf<Infer<typeof Row>>()
+            .toEqualTypeOf<readonly ["row", ...number[]]>();
+        expectTypeOf<Infer<typeof Scores>>()
+            .toEqualTypeOf<ReadonlyMap<string, number>>();
+        expectTypeOf<Infer<typeof Tags>>()
+            .toEqualTypeOf<ReadonlySet<string>>();
+        expectTypeOf<Infer<typeof MaybeName>>()
+            .toEqualTypeOf<string | null | undefined>();
+        expectTypeOf<Infer<typeof Json>>().toEqualTypeOf<JsonValue>();
+        expectTypeOf<Infer<typeof BoxWithId>>()
+            .toEqualTypeOf<Box & Readonly<Record<"id", string>>>();
+
+        expect(Row.is(["row", 1, 2])).toBe(true);
+        expect(Scores.is(new Map([["a", 1]]))).toBe(true);
+        expect(Tags.is(new Set(["a"]))).toBe(true);
+        expect(MaybeName.is(null)).toBe(true);
+        expect(Json.is(["x", 1, null])).toBe(true);
+        expect(BoxWithId.is(new Box())).toBe(true);
     });
 
     test("preserves decoder transform, pipe, and coerce inference", () => {

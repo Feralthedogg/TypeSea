@@ -118,6 +118,9 @@ key는 runtime object identity와 schema identity의 pair입니다.
 
 compiled `lazy`와 `refine` fallback은 같은 IR-backed runtime path를 사용하므로 recursive behavior가 execution engine 사이에서 일관됩니다.
 
+`checkFirst()`는 별도의 generated collector를 사용합니다.
+첫 diagnostic이 확정되는 즉시 frozen issue 하나를 반환하며, full `check()` collector를 끝까지 실행한 뒤 issue array를 자르지 않습니다.
+
 ## JSON Schema Export
 
 JSON Schema export는 TypeSea schema를 JSON-compatible input value 위에서 의미 손실 없이 표현할 수 있을 때만 성공합니다.

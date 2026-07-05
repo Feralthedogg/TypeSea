@@ -15,6 +15,7 @@ import {
     emitTupleCheck
 } from "./check-composite.js";
 import {
+    emitDateCheck,
     emitLiteralCheck,
     emitNumberCheck,
     emitStringCheck
@@ -99,6 +100,8 @@ function emitCheckBody(
             return emitStringCheck(schema, value, path, issues, context);
         case SchemaTag.Number:
             return emitNumberCheck(schema, value, path, issues);
+        case SchemaTag.Date:
+            return emitDateCheck(schema, value, path, issues);
         case SchemaTag.BigInt:
             return `if(typeof ${value}!=="bigint"){${emitIssue(
                 issues,
@@ -126,11 +129,19 @@ function emitCheckBody(
         case SchemaTag.Literal:
             return emitLiteralCheck(schema.value, value, path, issues, context);
         case SchemaTag.Array:
-            return emitArrayCheck(schema.item, value, path, issues, context, emitCheckFunction);
+            return emitArrayCheck(schema, value, path, issues, context, emitCheckFunction);
         case SchemaTag.Tuple:
+            if (schema.rest !== undefined) {
+                return emitDynamicCheck(schema, value, path, issues, context);
+            }
             return emitTupleCheck(schema.items, value, path, issues, context, emitCheckFunction);
         case SchemaTag.Record:
             return emitRecordCheck(schema.value, value, path, issues, context, emitCheckFunction);
+        case SchemaTag.Map:
+        case SchemaTag.Set:
+        case SchemaTag.InstanceOf:
+        case SchemaTag.Property:
+            return emitDynamicCheck(schema, value, path, issues, context);
         case SchemaTag.Object:
             return emitObjectCheck(schema, value, path, issues, context, emitCheckFunction);
         case SchemaTag.Union:
@@ -182,8 +193,27 @@ function emitCheckBody(
              * inlined into generated source. The `m` helper calls the interpreter
              * diagnostic path through the dynamic schema side table.
              */
-            return `m(${String(pushSchema(context, schema))},${value},${path},${issues});`;
+            return emitDynamicCheck(schema, value, path, issues, context);
     }
+}
+
+/**
+ * @brief Emit a diagnostic fallback call for runtime-only schema nodes.
+ * @param schema Schema captured in the dynamic side table.
+ * @param value Generated candidate value expression.
+ * @param path Generated path expression.
+ * @param issues Generated issue buffer expression.
+ * @param context Shared emission context.
+ * @returns JavaScript source delegating diagnostics to the interpreter.
+ */
+function emitDynamicCheck(
+    schema: Schema,
+    value: string,
+    path: string,
+    issues: string,
+    context: EmitContext
+): string {
+    return `m(${String(pushSchema(context, schema))},${value},${path},${issues});`;
 }
 
 /**

@@ -28,6 +28,8 @@ export function createEmitContext(mode: CompileMode): EmitContext {
         functionNames: new Map<Schema, string>(),
         checkFunctions: [],
         checkFunctionNames: new Map<Schema, string>(),
+        firstFunctions: [],
+        firstFunctionNames: new Map<Schema, string>(),
         stringIndexes: new Map<string, number>()
     };
 }

@@ -42,6 +42,7 @@ function freezeGraphNode(node: GraphNode): void {
             break;
         case NodeTag.ArrayEvery:
             freezeSchema(node.item);
+            Object.freeze(node.checks);
             freezeGraph(node.itemGraph);
             break;
         case NodeTag.TupleItems:
@@ -86,6 +87,12 @@ function freezeGraphNode(node: GraphNode): void {
                     freezeGraph(entry.graph);
                     Object.freeze(entry);
                 }
+            }
+            if (node.catchall !== undefined) {
+                freezeSchema(node.catchall);
+            }
+            if (node.catchallGraph !== undefined) {
+                freezeGraph(node.catchallGraph);
             }
             Object.freeze(node.entries);
             Object.freeze(node.keys);

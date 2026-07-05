@@ -2,6 +2,24 @@
 
 All notable changes to TypeSea are recorded here.
 
+## 0.3.0 - 2026-07-05
+
+### Added
+
+- Added Date bounds with `t.date.min()` and `t.date.max()`.
+- Added tuple rest support with `t.tuple([head], rest)`.
+- Added `t.map`, `t.set`, `t.instanceOf`, `t.property`, `guard.property`, and
+  `t.json`.
+- Added scalar aliases `t.null`, `t.undefined`, `t.void`, and presence helper
+  `t.nullish`.
+- Added string decoder helpers `t.string.trim()`, `t.string.toLowerCase()`,
+  and `t.string.toUpperCase()`.
+
+### Changed
+
+- Hardened Date validation to use intrinsic Date reads instead of
+  user-overridable Date instance methods.
+
 ## 0.2.0 - 2026-07-04
 
 Initial public release of TypeSea: a zero-runtime-dependency TypeScript runtime

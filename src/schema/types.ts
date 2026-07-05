@@ -6,6 +6,8 @@
  */
 
 import {
+    ArrayCheckTag,
+    DateCheckTag,
     NumberCheckTag,
     ObjectModeTag,
     PresenceTag,
@@ -32,6 +34,7 @@ export type Schema =
     | NeverSchema
     | StringSchema
     | NumberSchema
+    | DateSchema
     | BigIntSchema
     | SymbolSchema
     | BooleanSchema
@@ -47,6 +50,10 @@ export type Schema =
     | BrandSchema
     | TupleSchema
     | RecordSchema
+    | MapSchema
+    | SetSchema
+    | InstanceOfSchema
+    | PropertySchema
     | LazySchema
     | RefineSchema;
 
@@ -67,7 +74,14 @@ export type StringCheck =
     | StringMinCheck
     | StringMaxCheck
     | StringRegexCheck
-    | StringUuidCheck;
+    | StringUuidCheck
+    | StringEmailCheck
+    | StringUrlCheck
+    | StringIsoDateCheck
+    | StringIsoDateTimeCheck
+    | StringUlidCheck
+    | StringIpv4Check
+    | StringIpv6Check;
 
 export interface StringMinCheck {
     readonly tag: typeof StringCheckTag.Min;
@@ -89,9 +103,56 @@ export interface StringUuidCheck {
     readonly tag: typeof StringCheckTag.Uuid;
 }
 
+export interface StringEmailCheck {
+    readonly tag: typeof StringCheckTag.Email;
+}
+
+export interface StringUrlCheck {
+    readonly tag: typeof StringCheckTag.Url;
+}
+
+export interface StringIsoDateCheck {
+    readonly tag: typeof StringCheckTag.IsoDate;
+}
+
+export interface StringIsoDateTimeCheck {
+    readonly tag: typeof StringCheckTag.IsoDateTime;
+}
+
+export interface StringUlidCheck {
+    readonly tag: typeof StringCheckTag.Ulid;
+}
+
+export interface StringIpv4Check {
+    readonly tag: typeof StringCheckTag.Ipv4;
+}
+
+export interface StringIpv6Check {
+    readonly tag: typeof StringCheckTag.Ipv6;
+}
+
 export interface NumberSchema {
     readonly tag: typeof SchemaTag.Number;
     readonly checks: readonly NumberCheck[];
+}
+
+export interface DateSchema {
+    readonly tag: typeof SchemaTag.Date;
+    readonly checks: readonly DateCheck[];
+}
+
+export type DateCheck =
+    | DateMinCheck
+    | DateMaxCheck;
+
+export interface DateMinCheck {
+    readonly tag: typeof DateCheckTag.Min;
+    readonly value: number;
+}
+
+export interface DateMaxCheck {
+    readonly tag: typeof DateCheckTag.Max;
+    readonly value: number;
 }
 
 export interface BigIntSchema {
@@ -105,7 +166,10 @@ export interface SymbolSchema {
 export type NumberCheck =
     | NumberIntegerCheck
     | NumberGteCheck
-    | NumberLteCheck;
+    | NumberLteCheck
+    | NumberGtCheck
+    | NumberLtCheck
+    | NumberMultipleOfCheck;
 
 export interface NumberIntegerCheck {
     readonly tag: typeof NumberCheckTag.Integer;
@@ -121,6 +185,21 @@ export interface NumberLteCheck {
     readonly value: number;
 }
 
+export interface NumberGtCheck {
+    readonly tag: typeof NumberCheckTag.Gt;
+    readonly value: number;
+}
+
+export interface NumberLtCheck {
+    readonly tag: typeof NumberCheckTag.Lt;
+    readonly value: number;
+}
+
+export interface NumberMultipleOfCheck {
+    readonly tag: typeof NumberCheckTag.MultipleOf;
+    readonly value: number;
+}
+
 export interface BooleanSchema {
     readonly tag: typeof SchemaTag.Boolean;
 }
@@ -133,15 +212,55 @@ export interface LiteralSchema {
 export interface ArraySchema {
     readonly tag: typeof SchemaTag.Array;
     readonly item: Schema;
+    readonly checks: readonly ArrayCheck[];
+}
+
+export type ArrayCheck =
+    | ArrayMinCheck
+    | ArrayMaxCheck;
+
+export interface ArrayMinCheck {
+    readonly tag: typeof ArrayCheckTag.Min;
+    readonly value: number;
+}
+
+export interface ArrayMaxCheck {
+    readonly tag: typeof ArrayCheckTag.Max;
+    readonly value: number;
 }
 
 export interface TupleSchema {
     readonly tag: typeof SchemaTag.Tuple;
     readonly items: readonly Schema[];
+    readonly rest: Schema | undefined;
 }
 
 export interface RecordSchema {
     readonly tag: typeof SchemaTag.Record;
+    readonly value: Schema;
+}
+
+export interface MapSchema {
+    readonly tag: typeof SchemaTag.Map;
+    readonly key: Schema;
+    readonly value: Schema;
+}
+
+export interface SetSchema {
+    readonly tag: typeof SchemaTag.Set;
+    readonly item: Schema;
+}
+
+export interface InstanceOfSchema {
+    readonly tag: typeof SchemaTag.InstanceOf;
+    readonly constructor: abstract new (...args: never[]) => unknown;
+    readonly name: string;
+}
+
+export interface PropertySchema {
+    readonly tag: typeof SchemaTag.Property;
+    readonly base: Schema;
+    readonly key: string;
     readonly value: Schema;
 }
 
@@ -156,6 +275,7 @@ export interface ObjectSchema {
     readonly keys: readonly string[];
     readonly keyLookup: ObjectKeyLookup;
     readonly mode: ObjectModeTag;
+    readonly catchall: Schema | undefined;
 }
 
 export type ObjectKeyLookup = Readonly<Record<string, true>>;
@@ -243,3 +363,24 @@ export interface RefineSchema {
  */
 export const UUID_PATTERN =
     /^(?:00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/iu;
+
+export const EMAIL_PATTERN =
+    /^(?!\.)(?!.*\.\.)[A-Z0-9!#$%&'*+/=?^_`{|}~.-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/iu;
+
+export const URL_PATTERN =
+    /^[A-Z][A-Z0-9+.-]*:[^\s]+$/iu;
+
+export const ISO_DATE_PATTERN =
+    /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/u;
+
+export const ISO_DATETIME_PATTERN =
+    /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):?[0-5]\d)$/u;
+
+export const ULID_PATTERN =
+    /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/iu;
+
+export const IPV4_PATTERN =
+    /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/u;
+
+export const IPV6_PATTERN =
+    /^(?:(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,7}:|(?:[0-9a-f]{1,4}:){1,6}:[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,5}(?::[0-9a-f]{1,4}){1,2}|(?:[0-9a-f]{1,4}:){1,4}(?::[0-9a-f]{1,4}){1,3}|(?:[0-9a-f]{1,4}:){1,3}(?::[0-9a-f]{1,4}){1,4}|(?:[0-9a-f]{1,4}:){1,2}(?::[0-9a-f]{1,4}){1,5}|[0-9a-f]{1,4}:(?:(?::[0-9a-f]{1,4}){1,6})|:(?:(?::[0-9a-f]{1,4}){1,7}|:))$/iu;

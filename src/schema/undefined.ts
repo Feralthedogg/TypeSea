@@ -46,10 +46,15 @@ export function schemaCanAcceptUndefined(schema: Schema): boolean {
         case SchemaTag.Never:
         case SchemaTag.String:
         case SchemaTag.Number:
+        case SchemaTag.Date:
         case SchemaTag.BigInt:
         case SchemaTag.Symbol:
         case SchemaTag.Boolean:
         case SchemaTag.Array:
+        case SchemaTag.Map:
+        case SchemaTag.Set:
+        case SchemaTag.InstanceOf:
+        case SchemaTag.Property:
         case SchemaTag.Object:
         case SchemaTag.DiscriminatedUnion:
         case SchemaTag.Tuple:

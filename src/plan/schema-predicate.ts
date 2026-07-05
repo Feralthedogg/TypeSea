@@ -6,6 +6,8 @@
  */
 
 import {
+    ArrayCheckTag,
+    DateCheckTag,
     NumberCheckTag,
     ObjectModeTag,
     PresenceTag,
@@ -13,6 +15,13 @@ import {
     StringCheckTag
 } from "../kind/index.js";
 import {
+    EMAIL_PATTERN,
+    IPV4_PATTERN,
+    IPV6_PATTERN,
+    ISO_DATETIME_PATTERN,
+    ISO_DATE_PATTERN,
+    ULID_PATTERN,
+    URL_PATTERN,
     UUID_PATTERN,
     resolveLazySchema,
     schemaCanAcceptUndefined,
@@ -24,7 +33,10 @@ import {
     hasObjectKey,
     isArrayIndexKey,
     isDataPropertyDescriptor,
+    isValidDateObject,
     isPlainRecord,
+    ordinaryHasInstance,
+    readDateTime,
     readOwnDataProperty,
     type DataPropertyDescriptor
 } from "../evaluate/shared.js";
@@ -61,6 +73,8 @@ export function executeSchemaKernel(
             return isStringSchema(schema, value);
         case SchemaTag.Number:
             return isNumberSchema(schema, value);
+        case SchemaTag.Date:
+            return isDateSchema(schema, value);
         case SchemaTag.BigInt:
             return typeof value === "bigint";
         case SchemaTag.Symbol:
@@ -70,11 +84,19 @@ export function executeSchemaKernel(
         case SchemaTag.Literal:
             return Object.is(value, schema.value);
         case SchemaTag.Array:
-            return isArraySchema(schema.item, value, state, runChild);
+            return isArraySchema(schema, value, state, runChild);
         case SchemaTag.Tuple:
-            return isTupleSchema(schema.items, value, state, runChild);
+            return isTupleSchema(schema, value, state, runChild);
         case SchemaTag.Record:
             return isRecordSchema(schema.value, value, state, runChild);
+        case SchemaTag.Map:
+            return isMapSchema(schema, value, state, runChild);
+        case SchemaTag.Set:
+            return isSetSchema(schema, value, state, runChild);
+        case SchemaTag.InstanceOf:
+            return ordinaryHasInstance(value, schema.constructor);
+        case SchemaTag.Property:
+            return isPropertySchema(schema, value, state, runChild);
         case SchemaTag.Object:
             return isObjectSchema(schema, value, state, runChild);
         case SchemaTag.Union:
@@ -151,6 +173,55 @@ function isStringSchema(
                 }
                 UUID_PATTERN.lastIndex = 0;
                 break;
+            case StringCheckTag.Email:
+                EMAIL_PATTERN.lastIndex = 0;
+                if (!EMAIL_PATTERN.test(value)) {
+                    return false;
+                }
+                EMAIL_PATTERN.lastIndex = 0;
+                break;
+            case StringCheckTag.Url:
+                URL_PATTERN.lastIndex = 0;
+                if (!URL_PATTERN.test(value)) {
+                    return false;
+                }
+                URL_PATTERN.lastIndex = 0;
+                break;
+            case StringCheckTag.IsoDate:
+                ISO_DATE_PATTERN.lastIndex = 0;
+                if (!ISO_DATE_PATTERN.test(value)) {
+                    return false;
+                }
+                ISO_DATE_PATTERN.lastIndex = 0;
+                break;
+            case StringCheckTag.IsoDateTime:
+                ISO_DATETIME_PATTERN.lastIndex = 0;
+                if (!ISO_DATETIME_PATTERN.test(value)) {
+                    return false;
+                }
+                ISO_DATETIME_PATTERN.lastIndex = 0;
+                break;
+            case StringCheckTag.Ulid:
+                ULID_PATTERN.lastIndex = 0;
+                if (!ULID_PATTERN.test(value)) {
+                    return false;
+                }
+                ULID_PATTERN.lastIndex = 0;
+                break;
+            case StringCheckTag.Ipv4:
+                IPV4_PATTERN.lastIndex = 0;
+                if (!IPV4_PATTERN.test(value)) {
+                    return false;
+                }
+                IPV4_PATTERN.lastIndex = 0;
+                break;
+            case StringCheckTag.Ipv6:
+                IPV6_PATTERN.lastIndex = 0;
+                if (!IPV6_PATTERN.test(value)) {
+                    return false;
+                }
+                IPV6_PATTERN.lastIndex = 0;
+                break;
         }
     }
     return true;
@@ -193,6 +264,57 @@ function isNumberSchema(
                     return false;
                 }
                 break;
+            case NumberCheckTag.Gt:
+                if (value <= check.value) {
+                    return false;
+                }
+                break;
+            case NumberCheckTag.Lt:
+                if (value >= check.value) {
+                    return false;
+                }
+                break;
+            case NumberCheckTag.MultipleOf:
+                if (value % check.value !== 0) {
+                    return false;
+                }
+                break;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Execute a Date schema against one runtime value.
+ * @param schema Date schema with normalized epoch-millisecond checks.
+ * @param value Candidate runtime value.
+ * @returns True when the value is a valid Date satisfying every bound.
+ */
+function isDateSchema(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Date }>,
+    value: unknown
+): boolean {
+    if (!isValidDateObject(value)) {
+        return false;
+    }
+    const time = readDateTime(value);
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            return false;
+        }
+        switch (check.tag) {
+            case DateCheckTag.Min:
+                if (time < check.value) {
+                    return false;
+                }
+                break;
+            case DateCheckTag.Max:
+                if (time > check.value) {
+                    return false;
+                }
+                break;
         }
     }
     return true;
@@ -209,7 +331,7 @@ function isNumberSchema(
  * @returns True when the value satisfies the array schema.
  */
 function isArraySchema(
-    item: Schema,
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
     value: unknown,
     state: ValidationState,
     runChild: ChildPredicateRunner
@@ -217,6 +339,10 @@ function isArraySchema(
     if (!Array.isArray(value)) {
         return false;
     }
+    if (!arrayLengthChecksPass(schema, value.length)) {
+        return false;
+    }
+    const item = schema.item;
     if (schemaCanAcceptUndefined(item)) {
         /*
          * Undefined-valid item schemas make holes valid. Use the present-index
@@ -229,6 +355,38 @@ function isArraySchema(
         if (property === null ||
             !runChild(item, property === undefined ? undefined : property.value, state)) {
             return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Test array length checks after Array.isArray succeeds.
+ * @param schema Array schema with normalized checks.
+ * @param length Candidate array length.
+ * @returns True when every configured length bound accepts the length.
+ */
+function arrayLengthChecksPass(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
+    length: number
+): boolean {
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            return false;
+        }
+        switch (check.tag) {
+            case ArrayCheckTag.Min:
+                if (length < check.value) {
+                    return false;
+                }
+                break;
+            case ArrayCheckTag.Max:
+                if (length > check.value) {
+                    return false;
+                }
+                break;
         }
     }
     return true;
@@ -279,12 +437,20 @@ function isPresentArraySchema(
  * @returns True when length and every indexed item match exactly.
  */
 function isTupleSchema(
-    items: readonly Schema[],
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Tuple }>,
     value: unknown,
     state: ValidationState,
     runChild: ChildPredicateRunner
 ): boolean {
-    if (!Array.isArray(value) || value.length !== items.length) {
+    if (!Array.isArray(value)) {
+        return false;
+    }
+    const items = schema.items;
+    const rest = schema.rest;
+    if (rest === undefined && value.length !== items.length) {
+        return false;
+    }
+    if (rest !== undefined && value.length < items.length) {
         return false;
     }
     for (let index = 0; index < items.length; index += 1) {
@@ -294,6 +460,15 @@ function isTupleSchema(
             property === null ||
             !runChild(item, property === undefined ? undefined : property.value, state)) {
             return false;
+        }
+    }
+    if (rest !== undefined) {
+        for (let index = items.length; index < value.length; index += 1) {
+            const property = readArrayIndexDataProperty(value, index);
+            if (property === null ||
+                !runChild(rest, property === undefined ? undefined : property.value, state)) {
+                return false;
+            }
         }
     }
     return true;
@@ -364,6 +539,93 @@ function isRecordSchema(
 }
 
 /**
+ * @brief Check Map schema.
+ * @param schema Map schema with key and value validators.
+ * @param value Candidate runtime value.
+ * @param state Shared recursion and cycle state.
+ * @param runChild Dispatcher for nested predicates.
+ * @returns True when every entry key and value satisfies its schema.
+ */
+function isMapSchema(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Map }>,
+    value: unknown,
+    state: ValidationState,
+    runChild: ChildPredicateRunner
+): boolean {
+    if (!(value instanceof Map)) {
+        return false;
+    }
+    const iterator = Map.prototype.entries.call(value) as
+        IterableIterator<[unknown, unknown]>;
+    for (;;) {
+        const step = iterator.next();
+        if (step.done === true) {
+            return true;
+        }
+        const pair = step.value;
+        if (!runChild(schema.key, pair[0], state) ||
+            !runChild(schema.value, pair[1], state)) {
+            return false;
+        }
+    }
+}
+
+/**
+ * @brief Check Set schema.
+ * @param schema Set schema with item validator.
+ * @param value Candidate runtime value.
+ * @param state Shared recursion and cycle state.
+ * @param runChild Dispatcher for nested predicates.
+ * @returns True when every Set item satisfies its schema.
+ */
+function isSetSchema(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Set }>,
+    value: unknown,
+    state: ValidationState,
+    runChild: ChildPredicateRunner
+): boolean {
+    if (!(value instanceof Set)) {
+        return false;
+    }
+    const iterator = Set.prototype.values.call(value) as IterableIterator<unknown>;
+    for (;;) {
+        const step = iterator.next();
+        if (step.done === true) {
+            return true;
+        }
+        if (!runChild(schema.item, step.value, state)) {
+            return false;
+        }
+    }
+}
+
+/**
+ * @brief Check property schema.
+ * @param schema Property schema with base and own data property validators.
+ * @param value Candidate runtime value.
+ * @param state Shared recursion and cycle state.
+ * @param runChild Dispatcher for nested predicates.
+ * @returns True when base and property value both pass.
+ */
+function isPropertySchema(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Property }>,
+    value: unknown,
+    state: ValidationState,
+    runChild: ChildPredicateRunner
+): boolean {
+    if (!runChild(schema.base, value, state)) {
+        return false;
+    }
+    if (((typeof value !== "object" && typeof value !== "function") || value === null)) {
+        return false;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, schema.key);
+    return descriptor !== undefined &&
+        isDataPropertyDescriptor(descriptor) &&
+        runChild(schema.value, descriptor.value, state);
+}
+
+/**
  * @brief Execute object schema validation.
  * @param schema Object schema with ordered entries and strict-mode lookup.
  * @param value Candidate runtime value.
@@ -409,6 +671,9 @@ function isObjectSchema(
         }
     }
     if (schema.mode === ObjectModeTag.Strict) {
+        if (schema.catchall !== undefined) {
+            return validateObjectCatchall(schema, record, state, runChild);
+        }
         if (allRequired) {
             return Object.getOwnPropertyNames(record).length === entries.length &&
                 Object.getOwnPropertySymbols(record).length === 0;
@@ -419,6 +684,45 @@ function isObjectSchema(
             if (typeof key !== "string" || !hasObjectKey(schema.keyLookup, key)) {
                 return false;
             }
+        }
+    }
+    if (schema.catchall !== undefined) {
+        return validateObjectCatchall(schema, record, state, runChild);
+    }
+    return true;
+}
+
+/**
+ * @brief Validate undeclared own object keys through a catchall schema.
+ * @param schema Object schema carrying known-key metadata and catchall schema.
+ * @param record Runtime object already proven to be a plain record.
+ * @param state Shared recursion and cycle state.
+ * @param runChild Dispatcher for the catchall schema.
+ * @returns True when every extra own data property satisfies the catchall.
+ */
+function validateObjectCatchall(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>,
+    record: Readonly<Record<string, unknown>>,
+    state: ValidationState,
+    runChild: ChildPredicateRunner
+): boolean {
+    const catchall = schema.catchall;
+    if (catchall === undefined) {
+        return true;
+    }
+    const keys = Reflect.ownKeys(record);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined ||
+            (typeof key === "string" && hasObjectKey(schema.keyLookup, key))) {
+            continue;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(record, key);
+        if (descriptor === undefined || !isDataPropertyDescriptor(descriptor)) {
+            return false;
+        }
+        if (!runChild(catchall, descriptor.value, state)) {
+            return false;
         }
     }
     return true;

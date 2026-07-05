@@ -66,6 +66,23 @@ export function nullable<TGuard extends Guard<unknown, Presence>>(
 }
 
 /**
+ * @brief Allow null, undefined, and absent object keys.
+ * @param guard Guard to wrap.
+ * @returns Fresh optional guard whose value domain also includes null.
+ */
+export function nullish<TGuard extends Guard<unknown, Presence>>(
+    guard: TGuard
+): BaseGuard<GuardValue<TGuard> | null, "optional"> {
+    return new BaseGuard<GuardValue<TGuard> | null, "optional">({
+        tag: SchemaTag.Optional,
+        inner: {
+            tag: SchemaTag.Nullable,
+            inner: readGuardSchema(guard, "nullish inner")
+        }
+    });
+}
+
+/**
  * @brief Resolve recursive schemas once and reuse the frozen schema handle.
  * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
  * with stable metadata.

@@ -71,6 +71,21 @@ export type DynamicIssueCheck = (
 ) => void;
 
 /**
+ * @brief First-fault fallback for non-lowered schema fragments.
+ * @details Opaque lazy and refine schemas use the interpreter for correctness,
+ * then return only the first nested issue under the generated path prefix.
+ * @param schemaIndex Slot in the side table supplied to the factory.
+ * @param value Candidate value for that schema.
+ * @param path Path prefix owned by the generated collector.
+ * @returns First nested issue, or undefined when the fallback accepts the value.
+ */
+export type DynamicFirstIssueCheck = (
+    schemaIndex: number,
+    value: unknown,
+    path: readonly PathSegment[]
+) => Issue | undefined;
+
+/**
  * @brief Runtime helper for strict-object excess key validation.
  * @details Code generation can choose safe or fast property access strategies,
  * but strict key counting remains centralized so the emitted source uses a
@@ -93,6 +108,7 @@ export interface RuntimeBundle {
     readonly is: BooleanPredicate;
     readonly check: IssueCollectorRoot;
     readonly result: CheckResultRoot;
+    readonly first: CheckResultRoot;
 }
 
 /**
@@ -116,6 +132,7 @@ export type IsFactory = (
     strings: readonly string[],
     dynamicCheck: DynamicCheck,
     dynamicIssueCheck: DynamicIssueCheck,
+    dynamicFirstIssueCheck: DynamicFirstIssueCheck,
     strictKeys: StrictKeysCheck
 ) => RuntimeBundle;
 
@@ -173,6 +190,44 @@ export function makeDynamicIssueCheck(
                 }));
             }
         }
+    };
+}
+
+/**
+ * @brief Build the first-fault fallback table reader for generated validators.
+ * @details This path is entered only for opaque schema fragments that codegen
+ * cannot inline. The nested interpreter result is re-rooted once and returned.
+ * @param schemas Schema side table captured by the compiled guard.
+ * @returns First-issue fallback callback used by emitted collectors.
+ */
+export function makeDynamicFirstIssueCheck(
+    schemas: readonly Schema[]
+): DynamicFirstIssueCheck {
+    return (
+        schemaIndex: number,
+        value: unknown,
+        path: readonly PathSegment[]
+    ): Issue | undefined => {
+        const schema = schemas[schemaIndex];
+        if (schema === undefined) {
+            return undefined;
+        }
+        const result = checkSchema<unknown>(schema, value);
+        if (result.ok) {
+            return undefined;
+        }
+        const issue = result.error[0];
+        if (issue === undefined) {
+            return undefined;
+        }
+        const nestedPath = Object.freeze(path.concat(issue.path));
+        return Object.freeze({
+            path: nestedPath,
+            code: issue.code,
+            expected: issue.expected,
+            actual: issue.actual,
+            message: issue.message
+        });
     };
 }
 

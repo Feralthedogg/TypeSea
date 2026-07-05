@@ -16,12 +16,17 @@ import {
 import {
     collectArrayIssues,
     collectDiscriminatedUnionIssues,
+    collectInstanceOfIssues,
+    collectMapIssues,
     collectObjectIssues,
+    collectPropertyIssues,
     collectRecordIssues,
     collectRefineIssues,
+    collectSetIssues,
     collectTupleIssues
 } from "./check-composite.js";
 import {
+    collectDateIssues,
     collectNumberIssues,
     collectStringIssues
 } from "./check-scalar.js";
@@ -140,6 +145,9 @@ function collectIssuesInner(
         case SchemaTag.Number:
             collectNumberIssues(schema, value, path, issues);
             return;
+        case SchemaTag.Date:
+            collectDateIssues(schema, value, path, issues);
+            return;
         case SchemaTag.BigInt:
             if (typeof value !== "bigint") {
                 pushIssue(path, issues, "expected_bigint", "bigint", actualType(value));
@@ -167,13 +175,25 @@ function collectIssuesInner(
             }
             return;
         case SchemaTag.Array:
-            collectArrayIssues(schema.item, value, path, issues, state, collectIssues);
+            collectArrayIssues(schema, value, path, issues, state, collectIssues);
             return;
         case SchemaTag.Tuple:
-            collectTupleIssues(schema.items, value, path, issues, state, collectIssues);
+            collectTupleIssues(schema, value, path, issues, state, collectIssues);
             return;
         case SchemaTag.Record:
             collectRecordIssues(schema.value, value, path, issues, state, collectIssues);
+            return;
+        case SchemaTag.Map:
+            collectMapIssues(schema, value, path, issues, state, collectIssues);
+            return;
+        case SchemaTag.Set:
+            collectSetIssues(schema, value, path, issues, state, collectIssues);
+            return;
+        case SchemaTag.InstanceOf:
+            collectInstanceOfIssues(schema, value, path, issues);
+            return;
+        case SchemaTag.Property:
+            collectPropertyIssues(schema, value, path, issues, state, collectIssues);
             return;
         case SchemaTag.Object:
             collectObjectIssues(schema, value, path, issues, state, collectIssues);

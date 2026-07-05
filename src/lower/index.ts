@@ -12,7 +12,17 @@ import {
     type UnionDispatchMask
 } from "../ir/index.js";
 import { optimizeGraph } from "../optimize/index.js";
-import { UUID_PATTERN, type Schema } from "../schema/index.js";
+import {
+    EMAIL_PATTERN,
+    IPV4_PATTERN,
+    IPV6_PATTERN,
+    ISO_DATETIME_PATTERN,
+    ISO_DATE_PATTERN,
+    ULID_PATTERN,
+    URL_PATTERN,
+    UUID_PATTERN,
+    type Schema
+} from "../schema/index.js";
 
 /**
  * @brief Convert one schema root into a Sea-of-Nodes predicate graph.
@@ -55,6 +65,8 @@ function lowerPredicate(
             return lowerString(builder, schema, value);
         case SchemaTag.Number:
             return lowerNumber(builder, schema, value);
+        case SchemaTag.Date:
+            return builder.schemaCheck(value, schema);
         case SchemaTag.BigInt:
             return builder.isBigInt(value);
         case SchemaTag.Symbol:
@@ -71,9 +83,17 @@ function lowerPredicate(
              */
             return builder.and([
                 builder.isArray(value),
-                builder.arrayEvery(value, schema.item, lowerChildGraph(schema.item))
+                builder.arrayEvery(
+                    value,
+                    schema.item,
+                    schema.checks,
+                    lowerChildGraph(schema.item)
+                )
             ]);
         case SchemaTag.Tuple:
+            if (schema.rest !== undefined) {
+                return builder.schemaCheck(value, schema);
+            }
             return builder.and([
                 builder.isArray(value),
                 builder.tupleItems(value, schema.items, lowerChildGraphs(schema.items))
@@ -83,6 +103,11 @@ function lowerPredicate(
                 builder.isObject(value),
                 builder.recordEvery(value, schema.value, lowerChildGraph(schema.value))
             ]);
+        case SchemaTag.Map:
+        case SchemaTag.Set:
+        case SchemaTag.InstanceOf:
+        case SchemaTag.Property:
+            return builder.schemaCheck(value, schema);
         case SchemaTag.Object:
             return lowerObject(builder, schema, value);
         case SchemaTag.Union:
@@ -157,6 +182,27 @@ function lowerString(
             case StringCheckTag.Uuid:
                 tests.push(builder.regex(value, UUID_PATTERN, "uuid"));
                 break;
+            case StringCheckTag.Email:
+                tests.push(builder.regex(value, EMAIL_PATTERN, "email"));
+                break;
+            case StringCheckTag.Url:
+                tests.push(builder.regex(value, URL_PATTERN, "url"));
+                break;
+            case StringCheckTag.IsoDate:
+                tests.push(builder.regex(value, ISO_DATE_PATTERN, "iso_date"));
+                break;
+            case StringCheckTag.IsoDateTime:
+                tests.push(builder.regex(value, ISO_DATETIME_PATTERN, "iso_datetime"));
+                break;
+            case StringCheckTag.Ulid:
+                tests.push(builder.regex(value, ULID_PATTERN, "ulid"));
+                break;
+            case StringCheckTag.Ipv4:
+                tests.push(builder.regex(value, IPV4_PATTERN, "ipv4"));
+                break;
+            case StringCheckTag.Ipv6:
+                tests.push(builder.regex(value, IPV6_PATTERN, "ipv6"));
+                break;
         }
     }
     return builder.and(tests);
@@ -194,6 +240,18 @@ function lowerNumber(
             case NumberCheckTag.Lte:
                 tests.push(builder.lte(value, builder.constant(check.value)));
                 break;
+            case NumberCheckTag.Gt:
+                tests.push(builder.not(builder.lte(value, builder.constant(check.value))));
+                break;
+            case NumberCheckTag.Lt:
+                tests.push(builder.not(builder.gte(value, builder.constant(check.value))));
+                break;
+            case NumberCheckTag.MultipleOf:
+                tests.push(builder.schemaCheck(value, {
+                    tag: SchemaTag.Number,
+                    checks: [check]
+                }));
+                break;
         }
     }
     return builder.and(tests);
@@ -218,7 +276,9 @@ function lowerObject(
         value,
         lowerObjectShapeEntries(schema.entries),
         schema.keys,
-        schema.mode
+        schema.mode,
+        schema.catchall,
+        schema.catchall === undefined ? undefined : lowerChildGraph(schema.catchall)
     );
 }
 
@@ -423,6 +483,8 @@ function schemaUnionMask(schema: Schema): UnionDispatchMask {
             return UnionMask.String;
         case SchemaTag.Number:
             return UnionMask.Number;
+        case SchemaTag.Date:
+            return UnionMask.Object;
         case SchemaTag.BigInt:
             return UnionMask.BigInt;
         case SchemaTag.Symbol:
@@ -436,6 +498,10 @@ function schemaUnionMask(schema: Schema): UnionDispatchMask {
             return UnionMask.Array;
         case SchemaTag.Object:
         case SchemaTag.Record:
+        case SchemaTag.Map:
+        case SchemaTag.Set:
+        case SchemaTag.InstanceOf:
+        case SchemaTag.Property:
         case SchemaTag.DiscriminatedUnion:
             return UnionMask.Object;
         case SchemaTag.Optional:

@@ -6,7 +6,7 @@
  */
 
 import { NodeTag, type ObjectModeTag, type PresenceTag } from "../kind/index.js";
-import type { LiteralValue, Schema } from "../schema/index.js";
+import type { ArrayCheck, LiteralValue, Schema } from "../schema/index.js";
 
 /**
  * @brief Dense index into Graph.nodes.
@@ -163,6 +163,7 @@ export interface ArrayEveryNode {
     readonly deps: readonly [NodeId];
     readonly value: NodeId;
     readonly item: Schema;
+    readonly checks: readonly ArrayCheck[];
     readonly itemGraph: Graph;
 }
 
@@ -238,6 +239,8 @@ export interface ObjectShapeNode {
     readonly entries: readonly ObjectShapeEntry[];
     readonly keys: readonly string[];
     readonly mode: ObjectModeTag;
+    readonly catchall: Schema | undefined;
+    readonly catchallGraph: Graph | undefined;
     readonly allRequired: boolean;
 }
 

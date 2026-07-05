@@ -67,8 +67,10 @@ import { compile, t, toJsonSchema, type Infer } from "typesea";
 
 const User = t.strictObject({
   id: t.string.uuid(),
-  age: t.number.int().gte(0),
-  role: t.union(t.literal("admin"), t.literal("user"))
+  email: t.string.email(),
+  age: t.number.int().nonnegative(),
+  role: t.enum(["admin", "user"]),
+  tags: t.array(t.string.min(1)).max(8)
 });
 
 type User = Infer<typeof User>;
@@ -92,8 +94,10 @@ const schema = toJsonSchema(User);
 ```
 
 `is()`는 할당이 적은 boolean 경로에 씁니다.
-호출자가 실패 이유와 path를 필요로 하면 `check()`를 씁니다.
+호출자가 전체 실패 이유와 path를 필요로 하면 `check()`를 씁니다.
+hot rejection path에서 기계가 읽을 첫 번째 실패만 필요하면 `checkFirst()`를 씁니다.
 스키마가 안정적이고 호출 빈도가 높다면 `compile()` 또는 `emitAotModule()`을 씁니다.
+compiled/AOT `checkFirst()`는 전체 issue list를 만든 뒤 자르지 않고 전용 first-fault collector를 사용합니다.
 
 > [!CAUTION]
 > `compile()`은 `new Function`으로 검증기를 생성합니다.
@@ -233,25 +237,30 @@ builder는 `t` table 아래에도 묶여 있습니다.
 
 | 영역 | Entry points |
 | --- | --- |
-| Scalar guard | `t.unknown`, `t.never`, `t.string`, `t.number`, `t.bigint`, `t.symbol`, `t.boolean` |
-| Literal과 container | `t.literal`, `t.array`, `t.tuple`, `t.record` |
-| Object | `t.object`, `t.strictObject`, `extend`, `pick`, `omit`, `partial` |
+| Scalar guard | `t.unknown`, `t.never`, `t.string`, `t.number`, `t.date`, `t.bigint`, `t.symbol`, `t.boolean`, `t.null`, `t.undefined`, `t.void` |
+| String check | `.min`, `.max`, `.length`, `.nonempty`, `.regex`, `.startsWith`, `.endsWith`, `.includes`, `.uuid`, `.email`, `.url`, `.isoDate`, `.isoDateTime`, `.ulid`, `.ipv4`, `.ipv6` |
+| Number check | `.int`, `.finite`, `.safe`, `.gte`, `.lte`, `.min`, `.max`, `.gt`, `.lt`, `.multipleOf`, `.positive`, `.nonnegative`, `.negative`, `.nonpositive` |
+| Date check | `.min`, `.max` |
+| Literal과 container | `t.literal`, `t.enum`, `t.array`, `t.tuple`, tuple rest, `t.record`, `t.map`, `t.set`, `t.json` |
+| Array check | `.min`, `.max`, `.length`, `.nonempty` |
+| Object | `t.object`, `t.strictObject`, `extend`, `safeExtend`, `merge`, `pick`, `omit`, `partial`, `deepPartial`, `required`, `strict`, `passthrough`, `strip`, `catchall` |
+| Runtime object contract | `t.instanceOf`, `t.property`, `guard.property` |
 | Composition | `t.union`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect` |
-| Presence wrapper | `t.optional`, `t.undefinedable`, `t.nullable` |
+| Presence wrapper | `t.optional`, `t.undefinedable`, `t.nullable`, `t.nullish` |
 | Dynamic contract | `t.lazy`, `t.refine` |
 
 ### Decoders
 
 | 영역 | Entry points |
 | --- | --- |
-| Sync decoder | `t.decoder`, `t.transform`, `t.pipe`, `t.coerce` |
+| Sync decoder | `t.decoder`, `t.transform`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()` |
 | Async decoder | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
 
 ### Execution & Export
 
 | 영역 | Entry points |
 | --- | --- |
-| Guard method | `guard.is()`, `guard.check()`, `guard.graph()` |
+| Guard method | `guard.is()`, `guard.check()`, `guard.checkFirst()`, `guard.graph()` |
 | Generated validator | `compile`, `emitAotModule` |
 | JSON Schema | `toJsonSchema` |
 
@@ -259,7 +268,7 @@ builder는 `t` table 아래에도 묶여 있습니다.
 
 | 영역 | Entry points |
 | --- | --- |
-| Messages / i18n | `formatIssue`, `formatIssues`, `withMessages`, `defineMessages` |
+| Messages / i18n | `formatIssue`, `formatIssues`, `flattenIssues`, `withMessages`, `defineMessages` |
 | tRPC | `toTrpcParser`, `toAsyncTrpcParser` |
 | Fastify | `toFastifyRouteSchema`, `toFastifyValidatorCompiler` |
 | React Hook Form | `toReactHookFormResolver` |
@@ -297,6 +306,11 @@ const internalParser = toTrpcParser(UnsafeUser);
 | `__proto__`, `constructor` keys | pollution 없이 plain own key로 검증합니다. |
 | Sparse array holes | accessor 실행 없이 `undefined`로 읽습니다. |
 | Strict object extras | `Reflect.ownKeys`로 거부합니다. symbol key와 non-enumerable property도 포함합니다. |
+| `catchall` extras | unknown own key는 descriptor로 읽고 catchall schema로 검증합니다. |
+| `strip()` | 출력 객체를 복사하지 않는 검증 전용 alias입니다. TypeSea에서는 extra key 허용 의미가 `passthrough()`와 같습니다. |
+| `t.date` | 유효한 JavaScript `Date` 객체만 허용합니다. `.min`과 `.max`는 사용자가 덮어쓸 수 있는 Date method를 읽지 않고 epoch millisecond로 비교합니다. |
+| `t.map`, `t.set`, `t.instanceOf` | runtime-only contract입니다. JSON Schema와 AOT export에서는 의미를 약화시키지 않고 명시적으로 거부합니다. |
+| `property` | own data property만 검증합니다. getter-backed property는 거부합니다. |
 | Global-flag regexes | construction 시 clone하고, 매 test 전에 `lastIndex`를 reset합니다. |
 | UUID | RFC 9562 version 1-8과 nil UUID를 허용합니다. |
 | Cyclic input values | value x schema active-pair tracking으로 유한하게 검증합니다. |

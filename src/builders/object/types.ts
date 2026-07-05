@@ -59,14 +59,57 @@ export type PartialObjectShape<TShape extends ObjectShape> = {
     readonly [TKey in keyof TShape]: BaseGuard<GuardValue<TShape[TKey]>, "optional">;
 };
 
+export type DeepPartialValue<TValue> =
+    TValue extends (infer TItem)[]
+        ? DeepPartialValue<TItem>[]
+        : TValue extends readonly (infer TItem)[]
+        ? readonly DeepPartialValue<TItem>[]
+        : TValue extends object
+            ? {
+                readonly [TKey in keyof TValue]?: DeepPartialValue<TValue[TKey]>;
+            }
+            : TValue;
+
+export type DeepPartialObjectShape<TShape extends ObjectShape> = {
+    readonly [TKey in keyof TShape]: BaseGuard<
+        DeepPartialValue<GuardValue<TShape[TKey]>>,
+        "optional"
+    >;
+};
+
+export type RequiredObjectShape<TShape extends ObjectShape> = {
+    readonly [TKey in keyof TShape]: BaseGuard<GuardValue<TShape[TKey]>>;
+};
+
+export type ObjectKeyMask<TShape extends ObjectShape> = Partial<
+    Readonly<Record<StringKeyOf<TShape>, true>>
+>;
+
+export type MaskSelectedKeys<
+    TShape extends ObjectShape,
+    TMask extends ObjectKeyMask<TShape>
+> = {
+    [TKey in keyof TMask]-?: TMask[TKey] extends true ? TKey : never;
+}[keyof TMask];
+
 export type PickObjectShape<
     TShape extends ObjectShape,
     TKey extends string
 > = Pick<TShape, Extract<keyof TShape, TKey>>;
 
+export type PickObjectShapeByMask<
+    TShape extends ObjectShape,
+    TMask extends ObjectKeyMask<TShape>
+> = Pick<TShape, Extract<keyof TShape, MaskSelectedKeys<TShape, TMask>>>;
+
 export type OmitObjectShape<
     TShape extends ObjectShape,
     TKey extends string
 > = Omit<TShape, Extract<keyof TShape, TKey>>;
+
+export type OmitObjectShapeByMask<
+    TShape extends ObjectShape,
+    TMask extends ObjectKeyMask<TShape>
+> = Omit<TShape, Extract<keyof TShape, MaskSelectedKeys<TShape, TMask>>>;
 
 export type StringKeyOf<TValue> = Extract<keyof TValue, string>;
