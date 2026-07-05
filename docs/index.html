@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
       name="description"
-      content="TypeSea documentation: zero-dependency TypeScript runtime narrowing with cached Sea-of-Nodes validation plans, runtime compilation, and AOT emission."
+      content="TypeSea documentation: complete README, API reference, and engine notes for zero-dependency TypeScript runtime validation."
     >
     <title>TypeSea Docs</title>
     <style>
@@ -29,7 +29,6 @@
         --code-comment: #8b98a9;
         --sidebar-bg: #1d2422;
         --sidebar-ink: #e9efe9;
-        --sidebar-muted: #9fae a5;
         --sidebar-muted: #9faea5;
         --sidebar-line: rgba(233, 239, 233, 0.12);
         --shadow: 0 10px 30px rgba(28, 36, 34, 0.07);
@@ -70,16 +69,9 @@
         margin: 0;
         background: var(--bg);
         color: var(--ink);
-        font-family:
-          ui-sans-serif,
-          system-ui,
-          -apple-system,
-          "Segoe UI",
-          Roboto,
-          "Helvetica Neue",
-          sans-serif;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
         font-size: 15px;
-        line-height: 1.6;
+        line-height: 1.62;
       }
 
       a {
@@ -89,13 +81,7 @@
 
       code,
       pre {
-        font-family:
-          ui-monospace,
-          "SFMono-Regular",
-          Menlo,
-          Consolas,
-          "Liberation Mono",
-          monospace;
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
       }
 
       p code,
@@ -107,12 +93,18 @@
         font-size: 0.92em;
       }
 
-      /* ---------- shell ---------- */
+      .language-radio {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
 
       .shell {
         display: grid;
         min-height: 100vh;
-        grid-template-columns: 264px minmax(0, 1fr);
+        grid-template-columns: 284px minmax(0, 1fr);
       }
 
       .sidebar {
@@ -138,7 +130,6 @@
         margin: 0;
         font-size: 22px;
         line-height: 1;
-        letter-spacing: -0.01em;
       }
 
       .brand .version {
@@ -156,12 +147,11 @@
         border-bottom: 1px solid var(--sidebar-line);
         color: var(--sidebar-muted);
         font-size: 12.5px;
-        line-height: 1.5;
       }
 
       .nav {
         flex: 1;
-        padding: 6px 12px 18px;
+        padding: 8px 12px 18px;
       }
 
       .nav-group {
@@ -177,26 +167,19 @@
       .nav a {
         display: flex;
         align-items: center;
-        min-height: 33px;
+        min-height: 32px;
         border-left: 2px solid transparent;
         border-radius: 0 7px 7px 0;
         margin: 1px 0;
         padding: 5px 12px;
         color: var(--sidebar-ink);
-        opacity: 0.82;
-        font-size: 13.5px;
+        opacity: 0.84;
+        font-size: 13px;
       }
 
       .nav a:hover,
       .nav a:focus {
         background: rgba(255, 255, 255, 0.07);
-        opacity: 1;
-      }
-
-      .nav a.active {
-        border-left-color: #34c496;
-        background: rgba(52, 196, 150, 0.1);
-        color: #9ce8cd;
         opacity: 1;
       }
 
@@ -206,8 +189,6 @@
         color: var(--sidebar-muted);
         font-size: 12px;
       }
-
-      /* ---------- content ---------- */
 
       .content {
         min-width: 0;
@@ -238,21 +219,17 @@
         font-weight: 650;
       }
 
+      .topbar-actions,
       .topbar-links {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-
-      .topbar-actions {
         display: flex;
         align-items: center;
         flex-wrap: wrap;
         justify-content: flex-end;
-        gap: 12px;
+        gap: 8px;
       }
 
-      .topbar-links a {
+      .topbar-links a,
+      .language-switch label {
         border: 1px solid var(--line);
         border-radius: 7px;
         padding: 5px 11px;
@@ -261,48 +238,19 @@
         font-size: 12.5px;
       }
 
-      .topbar-links a:hover {
-        border-color: var(--accent);
-        color: var(--accent-ink);
-      }
-
-      .language-radio {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        opacity: 0;
-        pointer-events: none;
-      }
-
       .language-switch {
         display: inline-flex;
-        align-items: center;
-        gap: 2px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 2px;
-        background: var(--surface);
+        gap: 4px;
       }
 
       .language-switch label {
-        min-width: 42px;
-        border-radius: 6px;
-        padding: 3px 8px;
-        color: var(--muted);
         cursor: pointer;
-        font-size: 12px;
         font-weight: 700;
-        line-height: 1.45;
-        text-align: center;
-      }
-
-      .language-switch label:hover,
-      .language-switch label:focus {
-        color: var(--accent-ink);
       }
 
       #language-en:checked ~ .shell label[for="language-en"],
       #language-ko:checked ~ .shell label[for="language-ko"] {
+        border-color: var(--accent);
         background: var(--accent-soft);
         color: var(--accent-ink);
       }
@@ -326,23 +274,20 @@
       }
 
       main {
-        max-width: 880px;
+        max-width: 980px;
         margin: 0 auto;
-        padding: 40px 34px 80px;
+        padding: 40px 34px 84px;
       }
 
-      section {
-        padding: 30px 0 34px;
+      section,
+      article.source-doc {
+        padding: 30px 0 36px;
         border-bottom: 1px solid var(--line);
-        scroll-margin-top: 72px;
+        scroll-margin-top: 74px;
       }
 
       section:first-child {
         padding-top: 0;
-      }
-
-      section:last-child {
-        border-bottom: 0;
       }
 
       .eyebrow {
@@ -356,15 +301,19 @@
 
       h2 {
         margin: 0 0 10px;
-        font-size: 25px;
+        font-size: 26px;
         line-height: 1.2;
-        letter-spacing: -0.01em;
       }
 
       h3 {
-        margin: 0 0 8px;
-        font-size: 16px;
+        margin: 24px 0 8px;
+        font-size: 18px;
         line-height: 1.3;
+      }
+
+      h4 {
+        margin: 20px 0 8px;
+        font-size: 15px;
       }
 
       p {
@@ -372,56 +321,26 @@
       }
 
       .lede {
-        max-width: 720px;
+        max-width: 760px;
         margin-bottom: 16px;
         color: var(--muted);
         font-size: 15.5px;
       }
 
-      /* ---------- components ---------- */
-
       .hero {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 300px;
+        grid-template-columns: minmax(0, 1fr) 310px;
         gap: 28px;
         align-items: start;
       }
 
-      .checklist {
-        display: grid;
-        gap: 8px;
-        margin: 16px 0 0;
-        padding: 0;
-        list-style: none;
-      }
-
-      .checklist li {
-        position: relative;
-        padding-left: 24px;
-        color: var(--muted);
-        font-size: 14px;
-      }
-
-      .checklist li::before {
-        position: absolute;
-        left: 0;
-        top: 1px;
-        color: var(--accent);
-        font-weight: 700;
-        content: "✓";
-      }
-
-      .checklist li strong {
-        color: var(--ink);
-        font-weight: 600;
-      }
-
-      .status-panel {
+      .status-panel,
+      .tile,
+      .admonition {
         border: 1px solid var(--line);
         border-radius: 10px;
         background: var(--surface);
         box-shadow: var(--shadow);
-        overflow: hidden;
       }
 
       .status-panel header {
@@ -452,74 +371,11 @@
         align-items: center;
         border-radius: 999px;
         padding: 2px 9px;
+        background: var(--accent-soft);
+        color: var(--accent-ink);
         font-size: 11.5px;
         font-weight: 700;
         white-space: nowrap;
-      }
-
-      .pill.green {
-        background: var(--accent-soft);
-        color: var(--accent-ink);
-      }
-
-      .pill.amber {
-        background: var(--amber-soft);
-        color: var(--amber);
-      }
-
-      .pill.violet {
-        background: var(--violet-soft);
-        color: var(--violet);
-      }
-
-      .callout {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
-        gap: 10px;
-        margin: 16px 0 0;
-        border: 1px solid var(--line);
-        border-left: 3px solid var(--accent);
-        border-radius: 8px;
-        padding: 12px 14px;
-        background: var(--surface);
-        font-size: 13.5px;
-      }
-
-      .callout.warn {
-        border-left-color: var(--amber);
-      }
-
-      .callout .icon {
-        font-size: 15px;
-        line-height: 1.5;
-      }
-
-      .callout p {
-        margin: 0;
-        color: var(--muted);
-      }
-
-      .callout strong {
-        color: var(--ink);
-      }
-
-      .code-block {
-        margin: 16px 0 0;
-        border-radius: 10px;
-        overflow-x: auto;
-        background: var(--code-bg);
-        color: var(--code-ink);
-      }
-
-      .code-block pre {
-        margin: 0;
-        padding: 16px 18px;
-        font-size: 13px;
-        line-height: 1.6;
-      }
-
-      .code-block .cm {
-        color: var(--code-comment);
       }
 
       .grid {
@@ -534,10 +390,12 @@
       }
 
       .tile {
-        border: 1px solid var(--line);
-        border-radius: 10px;
         padding: 15px 16px;
-        background: var(--surface);
+      }
+
+      .tile h3 {
+        margin-top: 0;
+        font-size: 14.5px;
       }
 
       .tile p {
@@ -546,74 +404,70 @@
         font-size: 13px;
       }
 
-      .tile > code,
-      .tile code a {
-        display: inline-block;
-        border-radius: 6px;
-        padding: 2px 7px;
-        background: var(--surface-2);
-        color: var(--accent-ink);
-        font-size: 12.5px;
-      }
-
-      .tile h3 {
-        font-size: 14.5px;
-      }
-
-      .pipeline {
+      .checklist {
         display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 10px;
-        margin-top: 18px;
-        counter-reset: stage;
+        gap: 8px;
+        margin: 16px 0 0;
+        padding: 0;
+        list-style: none;
       }
 
-      .stage {
+      .checklist li {
         position: relative;
-        border: 1px solid var(--line);
-        border-top: 3px solid var(--accent);
-        border-radius: 9px;
-        padding: 12px 13px 11px;
-        background: var(--surface);
-        counter-increment: stage;
-      }
-
-      .stage.alt {
-        border-top-color: var(--violet);
-      }
-
-      .stage::before {
-        display: block;
-        margin-bottom: 4px;
+        padding-left: 24px;
         color: var(--muted);
-        font-size: 10.5px;
+        font-size: 14px;
+      }
+
+      .checklist li::before {
+        position: absolute;
+        left: 0;
+        top: 1px;
+        color: var(--accent);
         font-weight: 700;
-        letter-spacing: 0.06em;
-        content: "STEP " counter(stage);
+        content: "✓";
       }
 
-      .stage strong {
-        display: block;
-        margin-bottom: 4px;
-        font-size: 13.5px;
+      .doc-content a {
+        color: var(--accent-ink);
+        text-decoration: underline;
+        text-underline-offset: 2px;
       }
 
-      .stage span {
-        color: var(--muted);
-        font-size: 12px;
-        line-height: 1.5;
-        display: block;
+      .doc-content ul,
+      .doc-content ol {
+        margin: 0 0 14px;
+        padding-left: 24px;
       }
 
-      .consumers {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 12px;
-        margin-top: 12px;
+      .doc-content li {
+        margin: 4px 0;
+      }
+
+      .code-block,
+      .doc-content pre {
+        margin: 16px 0;
+        border-radius: 10px;
+        overflow-x: auto;
+        background: var(--code-bg);
+        color: var(--code-ink);
+      }
+
+      .code-block pre,
+      .doc-content pre {
+        padding: 16px 18px;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .doc-content pre code {
+        background: transparent;
+        padding: 0;
+        color: inherit;
       }
 
       .table-wrap {
-        margin-top: 16px;
+        margin: 16px 0;
         border: 1px solid var(--line);
         border-radius: 10px;
         background: var(--surface);
@@ -636,11 +490,11 @@
 
       th {
         background: var(--surface-2);
+        color: var(--muted);
         font-size: 12px;
         font-weight: 700;
         letter-spacing: 0.03em;
         text-transform: uppercase;
-        color: var(--muted);
         white-space: nowrap;
       }
 
@@ -648,34 +502,59 @@
         border-bottom: 0;
       }
 
-      td.num {
-        font-variant-numeric: tabular-nums;
-        text-align: right;
-        white-space: nowrap;
+      .admonition {
+        margin: 16px 0;
+        border-left: 3px solid var(--accent);
+        padding: 13px 15px;
+        box-shadow: none;
       }
 
-      th.num {
-        text-align: right;
+      .admonition.warning,
+      .admonition.caution {
+        border-left-color: var(--amber);
       }
 
-      td .best {
-        color: var(--accent-ink);
-        font-weight: 700;
+      .admonition-title {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 750;
       }
 
-      .footnote {
-        margin-top: 10px;
+      .admonition p:last-child {
+        margin-bottom: 0;
+      }
+
+      .source-doc > header {
+        margin-bottom: 18px;
+      }
+
+      .source-doc > header p {
         color: var(--muted);
-        font-size: 12.5px;
+        font-size: 13.5px;
       }
 
-      .hidden {
-        display: none;
+      .benchmark-image {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        margin: 16px 0;
+        border-radius: 10px;
       }
 
-      /* ---------- responsive ---------- */
+      .muted-link {
+        color: var(--muted);
+      }
 
-      @media (max-width: 960px) {
+      hr {
+        height: 1px;
+        border: 0;
+        margin: 28px 0;
+        background: var(--line);
+      }
+
+      @media (max-width: 980px) {
         .shell {
           grid-template-columns: 1fr;
         }
@@ -690,16 +569,12 @@
         }
 
         .grid,
-        .consumers {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .pipeline {
+        .grid.two {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
 
-      @media (max-width: 620px) {
+      @media (max-width: 640px) {
         .topbar {
           position: static;
           flex-direction: column;
@@ -707,23 +582,17 @@
           padding: 12px 18px;
         }
 
+        .topbar-actions {
+          justify-content: flex-start;
+        }
+
         main {
           padding: 28px 18px 56px;
         }
 
-        h2 {
-          font-size: 22px;
-        }
-
         .grid,
-        .grid.two,
-        .consumers,
-        .pipeline {
+        .grid.two {
           grid-template-columns: 1fr;
-        }
-
-        .topbar-actions {
-          justify-content: flex-start;
         }
       }
     </style>
@@ -738,19 +607,13 @@
           <span class="version">v0.2.0</span>
         </div>
         <p class="brand-tagline">
-          <span class="i18n-en">
-            Zero-dependency runtime narrowing for TypeScript.
-            ESM-only &middot; Node &ge; 20.19 &middot; MIT
-          </span>
-          <span class="i18n-ko" lang="ko">
-            TypeScript를 위한 zero-dependency 런타임 narrowing.
-            ESM-only &middot; Node &ge; 20.19 &middot; MIT
-          </span>
+          <span class="i18n-en">Complete docs from README.md, docs/api.md, and docs/engine-notes.md.</span>
+          <span class="i18n-ko" lang="ko">README.md, docs/api.md, docs/engine-notes.md를 포함한 전체 문서입니다.</span>
         </p>
         <nav class="nav">
           <p class="nav-group">
-            <span class="i18n-en">Guide</span>
-            <span class="i18n-ko" lang="ko">가이드</span>
+            <span class="i18n-en">Start</span>
+            <span class="i18n-ko" lang="ko">시작</span>
           </p>
           <a href="#overview">
             <span class="i18n-en">Overview</span>
@@ -760,14 +623,6 @@
             <span class="i18n-en">Quick start</span>
             <span class="i18n-ko" lang="ko">빠른 시작</span>
           </a>
-          <a href="#semantics">
-            <span class="i18n-en">Semantics</span>
-            <span class="i18n-ko" lang="ko">의미론</span>
-          </a>
-          <p class="nav-group">
-            <span class="i18n-en">Internals</span>
-            <span class="i18n-ko" lang="ko">내부 구조</span>
-          </p>
           <a href="#architecture">
             <span class="i18n-en">Architecture</span>
             <span class="i18n-ko" lang="ko">아키텍처</span>
@@ -780,10 +635,6 @@
             <span class="i18n-en">Adapters</span>
             <span class="i18n-ko" lang="ko">어댑터</span>
           </a>
-          <p class="nav-group">
-            <span class="i18n-en">Quality</span>
-            <span class="i18n-ko" lang="ko">품질</span>
-          </p>
           <a href="#benchmarks">
             <span class="i18n-en">Benchmarks</span>
             <span class="i18n-ko" lang="ko">벤치마크</span>
@@ -793,14 +644,18 @@
             <span class="i18n-ko" lang="ko">릴리스 게이트</span>
           </a>
           <a href="#files">
-            <span class="i18n-en">Reference files</span>
-            <span class="i18n-ko" lang="ko">참고 파일</span>
+            <span class="i18n-en">Source files</span>
+            <span class="i18n-ko" lang="ko">원본 파일</span>
           </a>
+          <p class="nav-group">
+            <span class="i18n-en">Full Documents</span>
+            <span class="i18n-ko" lang="ko">전체 문서</span>
+          </p>
+          <a href="#readme">README</a>
+          <a href="#api-reference">API Reference</a>
+          <a href="#engine-notes">Engine Notes</a>
         </nav>
-        <p class="sidebar-foot">
-          <span class="i18n-en">MIT License &middot; zero runtime dependencies</span>
-          <span class="i18n-ko" lang="ko">MIT License &middot; 런타임 의존성 0개</span>
-        </p>
+        <p class="sidebar-foot">MIT License &middot; zero runtime dependencies</p>
       </aside>
 
       <div class="content">
@@ -817,119 +672,66 @@
             </div>
             <div class="topbar-links">
               <a href="https://github.com/Feralthedogg/TypeSea">GitHub</a>
-              <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">
-                <span class="i18n-en">API reference</span>
-                <span class="i18n-ko" lang="ko">API 참조</span>
-              </a>
-              <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">
-                <span class="i18n-en">Engine notes</span>
-                <span class="i18n-ko" lang="ko">엔진 노트</span>
-              </a>
+              <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">API reference</a>
+              <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">Engine notes</a>
             </div>
           </div>
         </div>
 
         <main>
-          <section id="overview" data-doc-section data-title="overview contract zero dependency esm result frozen">
-            <div class="locale-copy locale-en">
+          <section id="overview" data-doc-section>
             <div class="hero">
               <div>
-                <p class="eyebrow">Overview</p>
-                <h2>Runtime typeguards shaped like a small compiler.</h2>
+                <p class="eyebrow">
+                  <span class="i18n-en">Overview</span>
+                  <span class="i18n-ko" lang="ko">개요</span>
+                </p>
+                <h2>
+                  <span class="i18n-en">Zero-dependency TypeScript validation with compiled type guards.</span>
+                  <span class="i18n-ko" lang="ko">컴파일 가능한 타입 가드를 가진 zero-dependency TypeScript validator.</span>
+                </h2>
                 <p class="lede">
-                  TypeSea treats validation schemas as frontend syntax. Each guard lowers into a
-                  cached validation plan &mdash; a schema-specialized predicate kernel plus an
-                  optimized graph &mdash; and executes through the plan, a runtime-compiled
-                  validator, or a standalone AOT module.
+                  <span class="i18n-en">TypeSea turns immutable schemas into runtime guards, compiled validators, AOT modules, JSON Schema exports, framework adapters, and frozen diagnostic Result values.</span>
+                  <span class="i18n-ko" lang="ko">TypeSea는 immutable schema를 runtime guard, compiled validator, AOT module, JSON Schema export, framework adapter, freeze된 diagnostic Result로 연결합니다.</span>
                 </p>
                 <ul class="checklist">
-                  <li><strong>Zero dependencies</strong> &mdash; no runtime, peer, optional, or bundled packages, enforced by policy.</li>
-                  <li><strong>Hostile-input safe</strong> &mdash; descriptor reads mean user getters never execute.</li>
-                  <li><strong>Result-first</strong> &mdash; expected failures return frozen <code>Result</code> values, never <code>throw</code>.</li>
-                  <li><strong>Allocation-aware</strong> &mdash; successful <code>is()</code> avoids diagnostic allocation.</li>
-                  <li><strong>No escape hatches</strong> &mdash; <code>any</code>, <code>try</code>, and <code>catch</code> are banned from the codebase.</li>
+                  <li><strong>Zero dependencies</strong> &mdash; enforced before release.</li>
+                  <li><strong>Safe by default</strong> &mdash; descriptor reads avoid getter execution.</li>
+                  <li><strong>Fast when trusted</strong> &mdash; unsafe and unchecked modes trade hardening for direct reads.</li>
+                  <li><strong>Complete references</strong> &mdash; README, API reference, and engine notes are rendered below.</li>
                 </ul>
               </div>
               <aside class="status-panel" aria-label="Package status">
                 <header>Package status</header>
                 <div class="status-row">
                   <span>Runtime dependencies</span>
-                  <span class="pill green">zero</span>
+                  <span class="pill">zero</span>
                 </div>
                 <div class="status-row">
-                  <span>Execution engines</span>
-                  <span class="pill green">plan &middot; jit &middot; aot</span>
+                  <span>Execution paths</span>
+                  <span class="pill">plan &middot; jit &middot; aot</span>
                 </div>
                 <div class="status-row">
                   <span>Module format</span>
-                  <span class="pill violet">ESM-only</span>
+                  <span class="pill">ESM-only</span>
                 </div>
                 <div class="status-row">
                   <span>Node.js</span>
-                  <span class="pill green">&ge; 20.19</span>
-                </div>
-                <div class="status-row">
-                  <span>Adapters</span>
-                  <span class="pill amber">structural</span>
+                  <span class="pill">&ge; 20.19</span>
                 </div>
               </aside>
             </div>
-            </div>
-            <div class="locale-copy locale-ko" lang="ko">
-              <div class="hero">
-                <div>
-                  <p class="eyebrow">개요</p>
-                  <h2>작은 컴파일러처럼 동작하는 런타임 타입 가드.</h2>
-                  <p class="lede">
-                    TypeSea는 검증 스키마를 프론트엔드 문법처럼 다룹니다. 각 가드는
-                    캐시된 검증 계획으로 낮아지고, 그 계획은 스키마 특화 predicate
-                    kernel과 최적화된 graph를 함께 보유합니다. 실행은 일반 계획,
-                    런타임 컴파일 validator, 또는 독립 AOT module 중에서 선택합니다.
-                  </p>
-                  <ul class="checklist">
-                    <li><strong>Zero dependencies</strong> &mdash; runtime, peer, optional, bundled package가 없고 정책으로 강제됩니다.</li>
-                    <li><strong>Hostile-input safe</strong> &mdash; descriptor read를 사용해 사용자 getter를 실행하지 않습니다.</li>
-                    <li><strong>Result-first</strong> &mdash; 예상 가능한 실패는 <code>throw</code>가 아니라 freeze된 <code>Result</code>로 반환합니다.</li>
-                    <li><strong>Allocation-aware</strong> &mdash; 성공하는 <code>is()</code> 경로는 diagnostic allocation을 피합니다.</li>
-                    <li><strong>No escape hatches</strong> &mdash; 코드베이스에서 <code>any</code>, <code>try</code>, <code>catch</code>를 금지합니다.</li>
-                  </ul>
-                </div>
-                <aside class="status-panel" aria-label="패키지 상태">
-                  <header>패키지 상태</header>
-                  <div class="status-row">
-                    <span>런타임 의존성</span>
-                    <span class="pill green">zero</span>
-                  </div>
-                  <div class="status-row">
-                    <span>실행 엔진</span>
-                    <span class="pill green">plan &middot; jit &middot; aot</span>
-                  </div>
-                  <div class="status-row">
-                    <span>모듈 형식</span>
-                    <span class="pill violet">ESM-only</span>
-                  </div>
-                  <div class="status-row">
-                    <span>Node.js</span>
-                    <span class="pill green">&ge; 20.19</span>
-                  </div>
-                  <div class="status-row">
-                    <span>어댑터</span>
-                    <span class="pill amber">structural</span>
-                  </div>
-                </aside>
-              </div>
-            </div>
           </section>
 
-          <section id="quick-start" data-doc-section data-title="quick start install guard compile check json schema csp">
-            <div class="locale-copy locale-en">
-            <p class="eyebrow">Quick start</p>
-            <h2>Define a guard once, then choose the execution path.</h2>
-            <p class="lede">
-              The same guard narrows through <code>is()</code>, returns immutable diagnostics
-              through <code>check()</code>, exports lossless JSON Schema, or compiles into a
-              generated validator.
+          <section id="quick-start" data-doc-section>
+            <p class="eyebrow">
+              <span class="i18n-en">Quick start</span>
+              <span class="i18n-ko" lang="ko">빠른 시작</span>
             </p>
+            <h2>
+              <span class="i18n-en">Install, define, narrow, compile.</span>
+              <span class="i18n-ko" lang="ko">설치하고, 정의하고, 좁히고, 컴파일합니다.</span>
+            </h2>
             <div class="code-block">
               <pre><code>npm install typesea</code></pre>
             </div>
@@ -944,1018 +746,561 @@ const User = t.strictObject({
 
 type User = Infer&lt;typeof User&gt;;
 
-<span class="cm">// 1) Boolean narrowing &mdash; no diagnostic allocation on success</span>
 if (User.is(input)) {
-  input.id; <span class="cm">// narrowed</span>
+  input.id;
 }
 
-<span class="cm">// 2) Immutable diagnostics &mdash; frozen Result, never throws</span>
 const checked = User.check(input);
-
-<span class="cm">// 3) Hot path &mdash; generated validator code</span>
 const FastUser = compile(User, { name: "isUser" });
-
-<span class="cm">// 4) Interop &mdash; lossless-only JSON Schema export</span>
 const schema = toJsonSchema(User);</code></pre>
             </div>
-            <div class="callout warn">
-              <span class="icon">&#9888;</span>
-              <p>
-                <strong><code>compile()</code> uses <code>new Function</code></strong>, which throws under a
-                Content-Security-Policy that forbids <code>unsafe-eval</code>. In CSP-restricted
-                environments, emit validator source ahead of time with <code>emitAotModule()</code>.
-              </p>
+          </section>
+
+          <section id="architecture" data-doc-section>
+            <p class="eyebrow">Architecture</p>
+            <h2>Builder -> frozen schema -> Sea-of-Nodes validation IR -> optimize -> validation plan.</h2>
+            <p class="lede">
+              <span class="i18n-en">The graph is the source for generated validators, while the plan-owned kernel keeps ordinary guard execution out of a generic node interpreter.</span>
+              <span class="i18n-ko" lang="ko">graph는 generated validator의 source이고, plan-owned kernel은 일반 guard 실행이 generic node interpreter를 타지 않게 합니다.</span>
+            </p>
+          </section>
+
+          <section id="api" data-doc-section>
+            <p class="eyebrow">API map</p>
+            <h2>Core entry points.</h2>
+            <div class="grid">
+              <article class="tile">
+                <h3>Builders</h3>
+                <p><code>t.string</code>, <code>t.number</code>, <code>t.object</code>, <code>t.strictObject</code>, <code>t.union</code>, <code>t.array</code>, <code>t.lazy</code>.</p>
+              </article>
+              <article class="tile">
+                <h3>Validation</h3>
+                <p><code>is()</code> for narrowing, <code>check()</code> for Result diagnostics, <code>assert()</code> for throwing integration boundaries.</p>
+              </article>
+              <article class="tile">
+                <h3>Generated validators</h3>
+                <p><code>compile()</code>, <code>emitAotModule()</code>, safe mode, unsafe mode, and unchecked mode.</p>
+              </article>
+              <article class="tile">
+                <h3>Decoders</h3>
+                <p><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.coerce</code>, plus async variants.</p>
+              </article>
+              <article class="tile">
+                <h3>Messages</h3>
+                <p><code>formatIssue</code>, <code>formatIssues</code>, <code>withMessages</code>, <code>defineMessages</code>.</p>
+              </article>
+              <article class="tile">
+                <h3>Export</h3>
+                <p><code>toJsonSchema</code> and <code>schemaToJsonSchema</code> succeed only when semantics are preserved.</p>
+              </article>
             </div>
-            <div class="callout warn">
-              <span class="icon">&#9888;</span>
-              <p>
-                <strong>Unsafe FastMode:</strong> <code>compile(User, { mode: "unsafe" })</code>
-                and <code>emitAotModule(User, { mode: "unsafe" })</code> emit direct
-                property and index reads plus an allocation-free strict-key loop for trusted
-                normalized data. They may execute getters, may accept prototype-backed values,
-                strict objects do not reject symbol or non-enumerable extras, and escaped
-                static property keys may appear directly in unsafe predicate source.
-                <code>mode: "unchecked"</code> also skips strict extra-key loops for
-                already-trusted object shapes. Unsafe and unchecked successful
-                <code>check()</code> results are raw <code>{ ok: true, value }</code>
-                objects; failed diagnostics remain frozen and use the same direct-read
-                FastMode object/array/record/discriminant contract where possible.
-              </p>
+          </section>
+
+          <section id="adapters" data-doc-section>
+            <p class="eyebrow">Adapters</p>
+            <h2>Structural adapters without framework dependencies.</h2>
+            <div class="grid">
+              <article class="tile">
+                <h3>tRPC</h3>
+                <p><code>toTrpcParser</code> and <code>toAsyncTrpcParser</code>.</p>
+              </article>
+              <article class="tile">
+                <h3>Fastify</h3>
+                <p><code>toFastifyRouteSchema</code> and <code>toFastifyValidatorCompiler</code>.</p>
+              </article>
+              <article class="tile">
+                <h3>React Hook Form</h3>
+                <p><code>toReactHookFormResolver</code>.</p>
+              </article>
             </div>
+          </section>
+
+          <section id="benchmarks" data-doc-section>
+            <p class="eyebrow">Benchmarks</p>
+            <h2>Zod, Valibot, and Ajv comparisons are rendered in the README and engine notes below.</h2>
+            <p class="lede">Run <code>npm run bench -- bench/ecosystem.bench.ts --run</code> for the local benchmark suite.</p>
+            <img class="benchmark-image" src="assets/benchmark-headline.svg" alt="TypeSea benchmark comparison">
+          </section>
+
+          <section id="release" data-doc-section>
+            <p class="eyebrow">Release gate</p>
+            <h2>Use the same gate locally and in CI.</h2>
+            <div class="code-block">
+              <pre><code>npm run release:check</code></pre>
             </div>
-            <div class="locale-copy locale-ko" lang="ko">
-              <p class="eyebrow">빠른 시작</p>
-              <h2>가드는 한 번 정의하고, 실행 경로는 상황에 맞게 선택합니다.</h2>
-              <p class="lede">
-                같은 가드가 <code>is()</code>로 타입을 좁히고, <code>check()</code>로
-                immutable diagnostics를 반환하며, lossless JSON Schema를 내보내고,
-                generated validator로 컴파일될 수 있습니다.
-              </p>
-              <div class="code-block">
-                <pre><code>npm install typesea</code></pre>
-              </div>
-              <div class="code-block">
-                <pre><code>import { compile, t, toJsonSchema, type Infer } from "typesea";
+          </section>
+          <section id="files" data-doc-section>
+            <p class="eyebrow">
+              <span class="i18n-en">Source files</span>
+              <span class="i18n-ko" lang="ko">원본 파일</span>
+            </p>
+            <h2>
+              <span class="i18n-en">The site below renders every maintained documentation source.</span>
+              <span class="i18n-ko" lang="ko">아래 사이트 본문은 유지보수 중인 문서 원본 전체를 렌더링합니다.</span>
+            </h2>
+            <div class="grid">
+              <article class="tile">
+                <h3>README.md</h3>
+                <p>Project goal, benchmark headline, quick start, API summary, edge semantics, and release workflow.</p>
+                <code><a href="https://github.com/Feralthedogg/TypeSea">GitHub README</a></code>
+              </article>
+              <article class="tile">
+                <h3>docs/api.md</h3>
+                <p>Guard, builder, decoder, compile, AOT, adapter, graph, JSON Schema, edge, and Result contracts.</p>
+                <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">docs/api.md</a></code>
+              </article>
+              <article class="tile">
+                <h3>docs/engine-notes.md</h3>
+                <p>Hot path rules, type-system rules, Sea-of-Nodes validation IR, compiler notes, recursion, and benchmark scope.</p>
+                <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">docs/engine-notes.md</a></code>
+              </article>
+            </div>
+          </section>
+<article id="readme" class="source-doc doc-content" data-doc-section>
+            <header>
+              <p class="eyebrow">README</p>
+              <h2>README</h2>
+              <p>Rendered from <code>README.md</code>.</p>
+            </header>
+<h2 id="readme-typesea">TypeSea</h2>
+<p><a href="https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml/badge.svg">![CI</a>](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml) <span class="muted-link">![Socket Badge</span>](https://badge.socket.dev/npm/package/typesea/0.2.0) <span class="muted-link">![License</span>](./LICENSE) <span class="muted-link">TypeScript</span> <span class="muted-link">Dependencies</span> <span class="muted-link">Tree-shakeable</span> <span class="muted-link">Side-effect free</span> <span class="muted-link">No dependencies</span> <span class="muted-link">Module</span> <span class="muted-link">Node</span></p>
+<p><strong>TypeSea</strong> is a <strong>zero-runtime-dependency TypeScript runtime narrowing library</strong> built around <strong>immutable guards</strong>, optimized <strong>Sea-of-Nodes validation plans</strong>, runtime compilation, and AOT source generation.</p>
+<h3 id="readme-benchmark-headline">Benchmark Headline</h3>
+<p>Last local benchmark on 2026-07-04 KST: <code>npm run bench -- bench/ecosystem.bench.ts --run</code>, strict-object contract, operations per second on one machine.</p>
+<p><img class="benchmark-image" src="assets/benchmark-headline.svg" alt="TypeSea benchmark comparison"></p>
+<p>TypeSea safe compiled validators are already in Ajv's boolean hot-path class while keeping descriptor-based hostile-input semantics. Unsafe and unchecked FastMode are the bragging-rights path for trusted normalized data: direct field loads, allocation-light strict-key loops, and V8-friendly monomorphic codegen.</p>
+<blockquote><p>Goal: not &quot;probably valid&quot;, but <strong>provably parity-tested validation</strong> that never executes user code, never throws on expected failures, and never leaks mutable state across a public boundary.</p></blockquote>
+<aside class="admonition important"><strong class="admonition-title">IMPORTANT</strong><p>TypeSea is designed for <strong>hostile boundary data</strong>: property reads go through descriptors so <strong>user getters never execute</strong>, <code>__proto__</code>/<code>constructor</code> keys are handled with null-prototype lookups, user regexes are cloned and <code>lastIndex</code>-reset, and cyclic inputs validate finitely. Expected failures return frozen <code>Result</code> values — <code>any</code>, <code>try</code>, and <code>catch</code> are banned from the entire codebase and enforced by policy gates.</p></aside>
+<hr>
+<h3 id="readme-why">Why</h3>
+<p>Many validation libraries fall short when you care about:</p>
+<ul><li><strong>untrusted input that fights back</strong> (getters with side effects, prototype</li></ul>
+<p>pollution keys, forged schema objects, revoked proxies)</p>
+<ul><li><strong>identical verdicts across execution strategies</strong> (runtime plan vs compiled</li></ul>
+<p>vs AOT-generated validators)</p>
+<ul><li><strong>diagnostics without exceptions</strong> (<code>Result</code> values instead of <code>throw</code>)</li><li><strong>immutability at every public boundary</strong></li></ul>
+<p>TypeSea focuses on:</p>
+<ul><li><strong>no user-code execution during validation</strong></li><li><strong>runtime plan / compiled / AOT parity, enforced by a seeded generative fuzzer</strong></li><li><strong>injection-safe code generation</strong> (side tables, never string interpolation)</li><li><strong>explicit presence semantics</strong> (<code>optional</code> vs <code>undefinedable</code>)</li></ul>
+<hr>
+<h3 id="readme-key-properties">Key Properties</h3>
+<ul><li><strong>Zero dependencies</strong>: no runtime, peer, optional, or bundled dependencies —</li></ul>
+<p>mechanically enforced by package policy before every release.</p>
+<ul><li><strong>Three engines, one semantics</strong>: <code>is()</code>/<code>check()</code> execute a cached validation</li></ul>
+<p>plan, <code>compile()</code> emits runtime predicates from optimized IR, and <code>emitAotModule()</code> emits standalone validator source. The runtime plan owns both the graph and a schema-specialized kernel, so the graph is the source of truth for generated validators without forcing ordinary <code>is()</code> through a per-node interpreter. Parity is fuzz-tested with sparse arrays, accessor properties, symbol keys, and non-enumerable extras included.</p>
+<ul><li><strong>Frozen public surface</strong>: guards, schemas, graphs, diagnostics, and JSON</li></ul>
+<p>Schema payloads are frozen before they cross an API boundary.</p>
+<ul><li><strong>Lossless-only export</strong>: JSON Schema and AOT export succeed only when no</li></ul>
+<p>semantics would be lost; runtime-only contracts return typed issues instead of silently weakening the schema.</p>
+<aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>TypeSea is <strong>ESM-only</strong>: the package ships <code>&quot;type&quot;: &quot;module&quot;</code> with no CommonJS build. Node.js <code>&gt;= 20.19</code> can also load it via <code>require(esm)</code> through the <code>default</code> export condition.</p></aside>
+<hr>
+<h3 id="readme-quick-start">Quick Start</h3>
+<pre><code>import { compile, t, toJsonSchema, type Infer } from &quot;typesea&quot;;
 
 const User = t.strictObject({
   id: t.string.uuid(),
   age: t.number.int().gte(0),
-  role: t.union(t.literal("admin"), t.literal("user"))
+  role: t.union(t.literal(&quot;admin&quot;), t.literal(&quot;user&quot;))
 });
 
 type User = Infer&lt;typeof User&gt;;
 
-<span class="cm">// 1) Boolean narrowing &mdash; 성공 경로에서 diagnostic allocation 없음</span>
+// 1) Boolean narrowing — avoids diagnostic allocation on success
 if (User.is(input)) {
-  input.id; <span class="cm">// narrowed</span>
+  input.id; // narrowed
 }
 
-<span class="cm">// 2) Immutable diagnostics &mdash; freeze된 Result, throw 없음</span>
+// 2) Immutable diagnostics — frozen Result, never throws on expected failure
 const checked = User.check(input);
+if (!checked.ok) {
+  console.log(checked.error); // frozen issue list with paths
+}
 
-<span class="cm">// 3) Hot path &mdash; 생성된 validator 코드</span>
-const FastUser = compile(User, { name: "isUser" });
+// 3) Hot path — generated validator code
+const FastUser = compile(User, { name: &quot;isUser&quot; });
 
-<span class="cm">// 4) Interop &mdash; lossless-only JSON Schema export</span>
+// 4) Interop — lossless-only JSON Schema export
 const schema = toJsonSchema(User);</code></pre>
-              </div>
-              <div class="callout warn">
-                <span class="icon">&#9888;</span>
-                <p>
-                  <strong><code>compile()</code>은 <code>new Function</code>을 사용합니다.</strong>
-                  <code>unsafe-eval</code>을 금지하는 Content-Security-Policy 환경에서는
-                  예외가 납니다. CSP가 엄격한 환경에서는 <code>emitAotModule()</code>로
-                  validator source를 미리 생성하세요.
-                </p>
-              </div>
-              <div class="callout warn">
-                <span class="icon">&#9888;</span>
-                <p>
-                  <strong>Unsafe FastMode:</strong> <code>compile(User, { mode: "unsafe" })</code>와
-                  <code>emitAotModule(User, { mode: "unsafe" })</code>는 신뢰된 정규화 데이터에
-                  맞춰 direct property/index read와 allocation-free strict-key loop를 방출합니다.
-                  getter를 실행할 수 있고, prototype-backed value를 받을 수 있으며, strict object가
-                  symbol 또는 non-enumerable extra를 거부하지 않습니다. <code>mode: "unchecked"</code>는
-                  이미 신뢰된 object shape에서 strict extra-key loop까지 건너뜁니다.
-                </p>
-              </div>
-            </div>
-          </section>
+<p>Use <code>is()</code> for the allocation-light boolean path. Use <code>check()</code> when callers need immutable diagnostics. Use <code>compile()</code> or <code>emitAotModule()</code> when a stable schema is hot enough to deserve generated validator code.</p>
+<aside class="admonition caution"><strong class="admonition-title">CAUTION</strong><p><code>compile()</code> builds the validator with <code>new Function</code>, which throws under a Content-Security-Policy that forbids <code>unsafe-eval</code>. In CSP-restricted environments, generate validator source ahead of time with <code>emitAotModule()</code> instead.</p></aside>
+<h4 id="readme-unsafe-fastmode">Unsafe FastMode</h4>
+<pre><code>const FastButLooseUser = compile(User, {
+  name: &quot;isUserFast&quot;,
+  mode: &quot;unsafe&quot;
+});
 
-          <section id="semantics" data-doc-section data-title="semantics presence optional undefinedable nullable edge nan proto uuid strict">
-            <div class="locale-copy locale-en">
-            <p class="eyebrow">Semantics</p>
-            <h2>Explicit presence, deliberate edge behavior.</h2>
-            <p class="lede">
-              Object presence is a first-class concept, and edge cases that break typical
-              validators are deliberate, documented decisions pinned by tests.
-            </p>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Wrapper</th>
-                    <th>Key may be absent</th>
-                    <th>Value may be <code>undefined</code></th>
-                    <th>Inferred type</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><code>t.optional(inner)</code></td>
-                    <td>yes</td>
-                    <td>no</td>
-                    <td><code>key?: T</code></td>
-                  </tr>
-                  <tr>
-                    <td><code>t.undefinedable(inner)</code></td>
-                    <td>no</td>
-                    <td>yes</td>
-                    <td><code>key: T | undefined</code></td>
-                  </tr>
-                  <tr>
-                    <td><code>t.nullable(inner)</code></td>
-                    <td>&mdash;</td>
-                    <td>value may be <code>null</code></td>
-                    <td><code>key: T | null</code></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Input</th>
-                    <th>Behavior</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><code>NaN</code>, <code>Infinity</code></td>
-                    <td><code>t.number</code> accepts finite numbers only; <code>t.literal(NaN)</code> matches <code>NaN</code> via <code>Object.is</code>.</td>
-                  </tr>
-                  <tr>
-                    <td>Getter-backed properties</td>
-                    <td>Never executed &mdash; reads go through descriptors, accessors count as missing data.</td>
-                  </tr>
-                  <tr>
-                    <td><code>__proto__</code>, <code>constructor</code> keys</td>
-                    <td>Validated as plain own keys through null-prototype lookups; no pollution.</td>
-                  </tr>
-                  <tr>
-                    <td>Strict-object extras</td>
-                    <td>Rejected via <code>Reflect.ownKeys</code> &mdash; including symbol keys and non-enumerable properties.</td>
-                  </tr>
-                  <tr>
-                    <td>Sparse array holes</td>
-                    <td>Read as <code>undefined</code> without executing accessors.</td>
-                  </tr>
-                  <tr>
-                    <td>Global-flag regexes</td>
-                    <td>Cloned at construction; <code>lastIndex</code> reset before every test.</td>
-                  </tr>
-                  <tr>
-                    <td>UUID strings</td>
-                    <td>RFC 9562 versions 1&ndash;8 plus the nil UUID.</td>
-                  </tr>
-                  <tr>
-                    <td>Cyclic input values</td>
-                    <td>Validate finitely via (value &times; schema) active-pair tracking.</td>
-                  </tr>
-                  <tr>
-                    <td>Nesting depth</td>
-                    <td>Capped at 1024 frames &mdash; deep input fails instead of overflowing the stack.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            </div>
-            <div class="locale-copy locale-ko" lang="ko">
-              <p class="eyebrow">의미론</p>
-              <h2>presence는 명시적으로, edge behavior는 의도적으로.</h2>
-              <p class="lede">
-                객체 key의 존재 여부는 TypeSea에서 일급 개념입니다. 일반 validator를
-                깨뜨리기 쉬운 입력도 테스트로 고정된 명시적 동작을 갖습니다.
-              </p>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Wrapper</th>
-                      <th>Key 생략 가능</th>
-                      <th>값이 <code>undefined</code> 가능</th>
-                      <th>추론 타입</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td><code>t.optional(inner)</code></td>
-                      <td>예</td>
-                      <td>아니오</td>
-                      <td><code>key?: T</code></td>
-                    </tr>
-                    <tr>
-                      <td><code>t.undefinedable(inner)</code></td>
-                      <td>아니오</td>
-                      <td>예</td>
-                      <td><code>key: T | undefined</code></td>
-                    </tr>
-                    <tr>
-                      <td><code>t.nullable(inner)</code></td>
-                      <td>&mdash;</td>
-                      <td><code>null</code> 허용</td>
-                      <td><code>key: T | null</code></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>입력</th>
-                      <th>동작</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td><code>NaN</code>, <code>Infinity</code></td>
-                      <td><code>t.number</code>는 finite number만 받습니다. <code>t.literal(NaN)</code>은 <code>Object.is</code>로 <code>NaN</code>을 매칭합니다.</td>
-                    </tr>
-                    <tr>
-                      <td>Getter-backed properties</td>
-                      <td>실행하지 않습니다. descriptor를 통해 읽고 accessor는 missing data로 취급합니다.</td>
-                    </tr>
-                    <tr>
-                      <td><code>__proto__</code>, <code>constructor</code> keys</td>
-                      <td>null-prototype lookup을 통해 plain own key로 검증하며 pollution을 만들지 않습니다.</td>
-                    </tr>
-                    <tr>
-                      <td>Strict-object extras</td>
-                      <td><code>Reflect.ownKeys</code>로 거부합니다. symbol key와 non-enumerable property도 포함합니다.</td>
-                    </tr>
-                    <tr>
-                      <td>Sparse array holes</td>
-                      <td>accessor 실행 없이 <code>undefined</code>처럼 읽습니다.</td>
-                    </tr>
-                    <tr>
-                      <td>Global-flag regexes</td>
-                      <td>생성 시 clone하고, 매 검사 전에 <code>lastIndex</code>를 reset합니다.</td>
-                    </tr>
-                    <tr>
-                      <td>UUID strings</td>
-                      <td>RFC 9562 versions 1&ndash;8과 nil UUID를 허용합니다.</td>
-                    </tr>
-                    <tr>
-                      <td>Cyclic input values</td>
-                      <td>(value &times; schema) active-pair tracking으로 유한하게 검증합니다.</td>
-                    </tr>
-                    <tr>
-                      <td>Nesting depth</td>
-                      <td>1024 frame에서 제한합니다. 깊은 입력은 stack overflow 대신 실패합니다.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
+const FastTrustedShapeUser = compile(User, {
+  name: &quot;isUserTrustedShape&quot;,
+  mode: &quot;unchecked&quot;
+});</code></pre>
+<p><code>compile(..., { mode: &quot;unsafe&quot; })</code> and <code>emitAotModule(..., { mode: &quot;unsafe&quot; })</code> emit the V8-friendliest predicate TypeSea can generate: required object fields are read with direct bracket access, arrays and tuples use direct indexed loads, discriminants avoid descriptor reads, and strict-object extras are checked with an allocation-free <code>for...in</code> loop. This mode is for trusted, already-normalized data on extremely hot paths.</p>
+<p>The default is still <code>mode: &quot;safe&quot;</code>. Unsafe mode may execute getters, may accept prototype-backed values, and strict objects do not reject symbol or non-enumerable extras. Use it only when the caller owns the object graph or has already normalized input into plain data records. Unsafe generated predicates may also embed escaped static property keys directly in source so V8 can use ordinary property-load inline caches.</p>
+<p><code>mode: &quot;unchecked&quot;</code> goes one step further: it trusts the object shape and skips strict extra-key loops entirely. That is the fastest path for already-owned DTOs, but strict objects no longer reject any extra keys.</p>
+<p>In unsafe and unchecked modes, successful compiled <code>check()</code> calls return a raw <code>{ ok: true, value }</code> object instead of freezing the success result. Failed diagnostics are still frozen. Safe mode keeps the fully frozen Result contract. FastMode diagnostic collectors also use the same trusted direct-read object shape where possible, so their issue codes can be less hostile-input-specific than safe mode for missing/accessor-backed fields and sparse/accessor-backed array or record slots. Discriminant diagnostics also read tags directly.</p>
+<hr>
+<h3 id="readme-presence-semantics">Presence Semantics</h3>
+<p>Object presence is explicit — two different wrappers express two different contracts:</p>
+<div class="table-wrap"><table><thead><tr><th>Wrapper</th><th>Key may be absent</th><th>Value may be <code>undefined</code></th><th>Inferred type</th></tr></thead><tbody><tr><td><code>t.optional(inner)</code></td><td>yes</td><td>no</td><td><code>key?: T</code></td></tr>
+<tr><td><code>t.undefinedable(inner)</code></td><td>no</td><td>yes</td><td><code>key: T | undefined</code></td></tr>
+<tr><td><code>t.nullable(inner)</code></td><td>—</td><td>value may be <code>null</code></td><td><code>key: T | null</code></td></tr></tbody></table></div>
+<aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>Presence survives wrapper composition: <code>t.nullable(t.optional(x))</code> still means &quot;the key may be absent&quot; — inference and runtime agree on this under <code>exactOptionalPropertyTypes</code>.</p></aside>
+<hr>
+<h3 id="readme-execution-model">Execution Model</h3>
+<p>TypeSea keeps the public schema tree for builder validation and diagnostics, then lowers each schema identity into a cached validation plan. The plan owns an optimized Sea-of-Nodes graph and a schema-specialized predicate kernel. <code>Guard.is()</code> uses the kernel to avoid per-node interpreter dispatch, while <code>compile()</code> and <code>emitAotModule()</code> emit predicates from the optimized graph. <code>check()</code> first asks the same plan for the verdict; failed values then replay the schema-aware diagnostic collector to produce issue paths and codes.</p>
+<pre><code>builder -&gt; frozen schema -&gt; lower -&gt; Sea-of-Nodes IR -&gt; optimize
+optimize -&gt; ValidationPlan { graph, schema kernel }
+schema kernel -&gt; Guard.is() / check() preflight
+graph -&gt; compile() predicate / emitAotModule() predicate / Guard.graph()
+failed check() -&gt; schema-aware diagnostic collector</code></pre>
+<aside class="admonition important"><strong class="admonition-title">IMPORTANT</strong><p>Generated validators keep <strong>user-controlled values out of source text</strong>: literals, regexps, object keys, keysets, and dynamic schema fallbacks live in <strong>side tables</strong> referenced by numeric index. Hostile property names cannot escape into generated code — this is pinned by dedicated injection-audit tests.</p></aside>
+<hr>
+<h3 id="readme-performance-snapshot">Performance Snapshot</h3>
+<p>Last local benchmark on 2026-07-04 KST, using <code>npm run bench -- bench/ecosystem.bench.ts --run</code> on the benchmark strict-object contract. These are operations per second on one machine, not release guarantees.</p>
+<div class="table-wrap"><table><thead><tr><th>Valid object path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>513,701</td></tr>
+<tr><td>TypeSea compiled safe <code>is()</code></td><td>4,297,306</td></tr>
+<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>36,297,653</td></tr>
+<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>42,581,174</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>1,343,756</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>1,406,528</td></tr>
+<tr><td>Ajv compiled</td><td>4,275,389</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Valid diagnostic path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>503,232</td></tr>
+<tr><td>TypeSea compiled safe <code>check()</code></td><td>3,903,929</td></tr>
+<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>35,568,425</td></tr>
+<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>40,084,605</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>1,355,014</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>1,378,266</td></tr>
+<tr><td>Ajv compiled</td><td>4,278,587</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Invalid object path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>is()</code></td><td>3,636,369</td></tr>
+<tr><td>TypeSea compiled safe <code>is()</code></td><td>42,080,241</td></tr>
+<tr><td>TypeSea compiled unsafe <code>is()</code></td><td>49,654,076</td></tr>
+<tr><td>TypeSea compiled unchecked <code>is()</code></td><td>50,482,732</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>84,272</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>878,521</td></tr>
+<tr><td>Ajv compiled</td><td>27,820,643</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Invalid diagnostic path</th><th>hz</th></tr></thead><tbody><tr><td>TypeSea interpreted <code>check()</code></td><td>420,446</td></tr>
+<tr><td>TypeSea compiled safe <code>check()</code></td><td>2,086,129</td></tr>
+<tr><td>TypeSea compiled unsafe <code>check()</code></td><td>3,077,367</td></tr>
+<tr><td>TypeSea compiled unchecked <code>check()</code></td><td>3,673,508</td></tr>
+<tr><td>Zod <code>safeParse</code></td><td>79,613</td></tr>
+<tr><td>Valibot <code>safeParse</code></td><td>887,991</td></tr>
+<tr><td>Ajv compiled</td><td>28,713,035</td></tr></tbody></table></div>
+<p>The safe compiled path stays close to Ajv while retaining TypeSea hostile-input semantics: descriptor-based property reads, symbol/non-enumerable strict-key rejection, presence semantics, immutable diagnostics, and TypeScript guard inference. Unsafe and unchecked compiled modes are faster because they deliberately give up parts of that hostile-input contract.</p>
+<hr>
+<h3 id="readme-api-reference">API Reference</h3>
+<p>All public entry points are exported from the package root; builders are also grouped under the <code>t</code> table.</p>
+<h4 id="readme-builders">Builders</h4>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Scalar guards</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code></td></tr>
+<tr><td>Literal and containers</td><td><code>t.literal</code>, <code>t.array</code>, <code>t.tuple</code>, <code>t.record</code></td></tr>
+<tr><td>Objects</td><td><code>t.object</code>, <code>t.strictObject</code>, <code>extend</code>, <code>pick</code>, <code>omit</code>, <code>partial</code></td></tr>
+<tr><td>Composition</td><td><code>t.union</code>, <code>t.discriminatedUnion</code>, <code>t.intersect</code>, <code>guard.intersect</code></td></tr>
+<tr><td>Presence wrappers</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code></td></tr>
+<tr><td>Dynamic contracts</td><td><code>t.lazy</code>, <code>t.refine</code></td></tr></tbody></table></div>
+<h4 id="readme-decoders">Decoders</h4>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Sync decoders</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.coerce</code></td></tr>
+<tr><td>Async decoders</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
+<h4 id="readme-execution-export">Execution &amp; Export</h4>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Guard methods</td><td><code>guard.is()</code>, <code>guard.check()</code>, <code>guard.graph()</code></td></tr>
+<tr><td>Generated validators</td><td><code>compile</code>, <code>emitAotModule</code></td></tr>
+<tr><td>JSON Schema</td><td><code>toJsonSchema</code></td></tr></tbody></table></div>
+<h4 id="readme-messages-adapters">Messages &amp; Adapters</h4>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Entry points</th></tr></thead><tbody><tr><td>Messages / i18n</td><td><code>formatIssue</code>, <code>formatIssues</code>, <code>withMessages</code>, <code>defineMessages</code></td></tr>
+<tr><td>tRPC</td><td><code>toTrpcParser</code>, <code>toAsyncTrpcParser</code></td></tr>
+<tr><td>Fastify</td><td><code>toFastifyRouteSchema</code>, <code>toFastifyValidatorCompiler</code></td></tr>
+<tr><td>React Hook Form</td><td><code>toReactHookFormResolver</code></td></tr></tbody></table></div>
+<p>Adapters accept compiled guards too. Compile once at startup, then pass the compiled guard into parser or validator-compiler adapters so framework hot paths reuse the generated predicate.</p>
+<pre><code>const FastUser = compile(User);
+const trpcParser = toTrpcParser(FastUser);
+const fastifyCompiler = toFastifyValidatorCompiler(FastUser);
 
-          <section id="architecture" data-doc-section data-title="architecture sea of nodes ir lower optimize plan kernel graph codegen">
-            <div class="locale-copy locale-en">
-            <p class="eyebrow">Architecture</p>
-            <h2>Every schema lowers into a cached validation plan.</h2>
-            <p class="lede">
-              The public schema tree is kept for builder validation and diagnostics. Each schema
-              identity lowers once into the Sea-of-Nodes validation IR, is optimized, and is cached
-              as a validation plan owning both a schema-specialized predicate kernel and the
-              optimized graph consumed by generated validators.
-            </p>
-            <div class="pipeline" aria-label="TypeSea validation pipeline">
-              <div class="stage">
-                <strong>Builder</strong>
-                <span>Immutable guards validate construction inputs up front.</span>
-              </div>
-              <div class="stage">
-                <strong>Frozen schema</strong>
-                <span>The tree stores semantics and diagnostic structure.</span>
-              </div>
-              <div class="stage alt">
-                <strong>Sea-of-Nodes IR</strong>
-                <span>Lowering shares loads, predicates, keysets, and discriminant dispatch.</span>
-              </div>
-              <div class="stage alt">
-                <strong>Optimize</strong>
-                <span>Folding, reachability, and dense node ids keep invariants simple.</span>
-              </div>
-              <div class="stage">
-                <strong>Validation plan</strong>
-                <span>Cached per schema identity: predicate kernel + optimized graph.</span>
-              </div>
-            </div>
-            <div class="consumers">
-              <div class="tile">
-                <h3>Plan kernel</h3>
-                <p>Drives <code>is()</code> and the <code>check()</code> verdict preflight without per-node interpreter dispatch.</p>
-                <code>guard.is()</code>
-              </div>
-              <div class="tile">
-                <h3>Optimized graph</h3>
-                <p>Source of truth for runtime-compiled and AOT-emitted predicates, and for introspection.</p>
-                <code>compile() &middot; emitAotModule() &middot; graph()</code>
-              </div>
-              <div class="tile">
-                <h3>Diagnostic collector</h3>
-                <p>Failed <code>check()</code> calls replay the schema-aware collector for issue paths and codes.</p>
-                <code>guard.check()</code>
-              </div>
-            </div>
-            <div class="callout">
-              <span class="icon">&#128274;</span>
-              <p>
-                <strong>Injection-safe codegen:</strong> user-controlled literals, regexps, object
-                keys, keysets, and dynamic schema fallbacks live in side tables referenced by
-                numeric index. Hostile property names cannot escape into generated source &mdash;
-                pinned by dedicated injection-audit tests.
-              </p>
-            </div>
-            </div>
-            <div class="locale-copy locale-ko" lang="ko">
-              <p class="eyebrow">아키텍처</p>
-              <h2>모든 스키마는 캐시된 validation plan으로 낮아집니다.</h2>
-              <p class="lede">
-                public schema tree는 builder validation과 diagnostics를 위해 유지합니다.
-                각 schema identity는 한 번만 Sea-of-Nodes validation IR로 lowering되고,
-                최적화된 뒤 schema-specialized predicate kernel과 generated validator가
-                소비하는 optimized graph를 함께 가진 validation plan으로 캐시됩니다.
-              </p>
-              <div class="pipeline" aria-label="TypeSea validation pipeline">
-                <div class="stage">
-                  <strong>Builder</strong>
-                  <span>immutable guard가 construction input을 먼저 검증합니다.</span>
-                </div>
-                <div class="stage">
-                  <strong>Frozen schema</strong>
-                  <span>tree는 semantics와 diagnostic 구조를 보관합니다.</span>
-                </div>
-                <div class="stage alt">
-                  <strong>Sea-of-Nodes IR</strong>
-                  <span>load, predicate, keyset, discriminant dispatch를 공유합니다.</span>
-                </div>
-                <div class="stage alt">
-                  <strong>Optimize</strong>
-                  <span>folding, reachability, dense node id로 invariant를 단순하게 유지합니다.</span>
-                </div>
-                <div class="stage">
-                  <strong>Validation plan</strong>
-                  <span>schema identity마다 캐시됩니다: predicate kernel + optimized graph.</span>
-                </div>
-              </div>
-              <div class="consumers">
-                <div class="tile">
-                  <h3>Plan kernel</h3>
-                  <p><code>is()</code>와 <code>check()</code> verdict preflight를 per-node interpreter dispatch 없이 구동합니다.</p>
-                  <code>guard.is()</code>
-                </div>
-                <div class="tile">
-                  <h3>Optimized graph</h3>
-                  <p>runtime compile, AOT predicate emission, introspection의 source of truth입니다.</p>
-                  <code>compile() &middot; emitAotModule() &middot; graph()</code>
-                </div>
-                <div class="tile">
-                  <h3>Diagnostic collector</h3>
-                  <p>실패한 <code>check()</code>는 issue path와 code를 만들기 위해 schema-aware collector를 replay합니다.</p>
-                  <code>guard.check()</code>
-                </div>
-              </div>
-              <div class="callout">
-                <span class="icon">&#128274;</span>
-                <p>
-                  <strong>Injection-safe codegen:</strong> user-controlled literal, regexp,
-                  object key, keyset, dynamic schema fallback은 numeric index로 참조되는
-                  side table에 보관합니다. hostile property name이 generated source로
-                  탈출하지 못하며, dedicated injection-audit test로 고정되어 있습니다.
-                </p>
-              </div>
-            </div>
-          </section>
+// Trusted normalized data only: trades hostile-input hardening for direct reads.
+const UnsafeUser = compile(User, { mode: &quot;unsafe&quot; });
+const internalParser = toTrpcParser(UnsafeUser);</code></pre>
+<aside class="admonition tip"><strong class="admonition-title">TIP</strong><p>Match the inference alias to the source kind: <code>Infer&lt;&gt;</code> for guards, <code>InferDecoder&lt;&gt;</code> for decoders, <code>InferAsyncDecoder&lt;&gt;</code> for async decoders. Applying <code>Infer&lt;&gt;</code> to a decoder resolves to <code>never</code> — if a downstream type suddenly collapses, this is the first thing to check.</p></aside>
+<hr>
+<h3 id="readme-edge-semantics">Edge Semantics</h3>
+<p>Deliberate, documented, and pinned by tests:</p>
+<div class="table-wrap"><table><thead><tr><th>Input</th><th>Behavior</th></tr></thead><tbody><tr><td><code>NaN</code>, <code>Infinity</code></td><td>rejected by <code>t.number</code> (finite numbers only); <code>t.literal(NaN)</code> matches <code>NaN</code></td></tr>
+<tr><td><code>-0</code> vs <code>0</code></td><td>literals match via <code>Object.is</code>; diagnostics format <code>-0</code> distinctly</td></tr>
+<tr><td>Getter-backed properties</td><td>never executed; treated as missing/invalid data</td></tr>
+<tr><td><code>__proto__</code>, <code>constructor</code> keys</td><td>validated as plain own keys, no pollution</td></tr>
+<tr><td>Sparse array holes</td><td>read as <code>undefined</code> without executing accessors</td></tr>
+<tr><td>Strict object extras</td><td>rejected via <code>Reflect.ownKeys</code> — including symbol keys and non-enumerable properties</td></tr>
+<tr><td>Global-flag regexes</td><td>cloned at construction; <code>lastIndex</code> reset before every test</td></tr>
+<tr><td>UUID</td><td>accepts RFC 9562 versions 1–8 plus the nil UUID</td></tr>
+<tr><td>Cyclic input values</td><td>validate finitely via (value × schema) active-pair tracking</td></tr>
+<tr><td>Nesting depth</td><td>capped at 256 recursive frames; deeper input fails instead of overflowing the stack</td></tr></tbody></table></div>
+<hr>
+<h3 id="readme-best-practices-pitfalls">Best Practices &amp; Pitfalls</h3>
+<aside class="admonition warning"><strong class="admonition-title">WARNING</strong><p><strong>Recursive guards need an explicit type annotation.</strong> TypeScript cannot infer a self-referential initializer (TS7022):</p>
+<pre><code>interface ListNode {
+  readonly value: string;
+  readonly next?: ListNode;
+}
 
-          <section id="api" data-doc-section data-title="api builders decoder async messages json schema execution">
-            <div class="locale-copy locale-en">
-            <p class="eyebrow">API map</p>
-            <h2>Small public surface, strict contracts.</h2>
-            <p class="lede">
-              Every entry point is exported from the package root; builders are also grouped under
-              the <code>t</code> table. The full signatures live in the
-              <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md"><code>API reference</code></a>.
-            </p>
-            <div class="grid">
-              <article class="tile">
-                <h3>Builders</h3>
-                <p>Scalars, literals, arrays, tuples, records, unions, intersections, and lazy recursion.</p>
-                <code>t.strictObject</code>
-              </article>
-              <article class="tile">
-                <h3>Object combinators</h3>
-                <p>Shape-preserving <code>extend</code>, <code>pick</code>, <code>omit</code>, and <code>partial</code>.</p>
-                <code>guard.extend</code>
-              </article>
-              <article class="tile">
-                <h3>Presence wrappers</h3>
-                <p>Explicit key-absence vs undefined-value vs null-value contracts.</p>
-                <code>t.optional</code>
-              </article>
-              <article class="tile">
-                <h3>Decoders</h3>
-                <p>Result-returning transform, pipe, and coercion; async variants keep expected failures in <code>Result</code>.</p>
-                <code>t.pipe</code>
-              </article>
-              <article class="tile">
-                <h3>Execution</h3>
-                <p>Runtime-compiled validators and standalone AOT module emission from the optimized graph.</p>
-                <code>compile</code>
-              </article>
-              <article class="tile">
-                <h3>Messages &amp; export</h3>
-                <p>Locale-aware issue formatting (English and Korean built in) and lossless JSON Schema export.</p>
-                <code>toJsonSchema</code>
-              </article>
-            </div>
-            </div>
-            <div class="locale-copy locale-ko" lang="ko">
-              <p class="eyebrow">API 지도</p>
-              <h2>작은 public surface, 엄격한 contract.</h2>
-              <p class="lede">
-                모든 entry point는 package root에서 export됩니다. builder는 <code>t</code>
-                table 아래에도 묶여 있습니다. 전체 signature는
-                <a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md"><code>API reference</code></a>에 있습니다.
-              </p>
-              <div class="grid">
-                <article class="tile">
-                  <h3>Builders</h3>
-                  <p>scalar, literal, array, tuple, record, union, intersection, lazy recursion.</p>
-                  <code>t.strictObject</code>
-                </article>
-                <article class="tile">
-                  <h3>Object combinators</h3>
-                  <p>shape를 보존하는 <code>extend</code>, <code>pick</code>, <code>omit</code>, <code>partial</code>.</p>
-                  <code>guard.extend</code>
-                </article>
-                <article class="tile">
-                  <h3>Presence wrappers</h3>
-                  <p>key absence, undefined value, null value를 분리한 contract.</p>
-                  <code>t.optional</code>
-                </article>
-                <article class="tile">
-                  <h3>Decoders</h3>
-                  <p>Result-returning transform, pipe, coercion. async variant도 예상 실패를 <code>Result</code>로 유지합니다.</p>
-                  <code>t.pipe</code>
-                </article>
-                <article class="tile">
-                  <h3>Execution</h3>
-                  <p>optimized graph에서 runtime-compiled validator와 standalone AOT module을 생성합니다.</p>
-                  <code>compile</code>
-                </article>
-                <article class="tile">
-                  <h3>Messages &amp; export</h3>
-                  <p>영어/한국어 built-in issue formatting과 lossless JSON Schema export.</p>
-                  <code>toJsonSchema</code>
-                </article>
-              </div>
-            </div>
-          </section>
+const Node: Guard&lt;ListNode&gt; = t.lazy((): Guard&lt;ListNode&gt; =&gt;
+  t.object({ value: t.string, next: t.optional(Node) })
+);</code></pre></aside>
+<ul><li>**Boundary data enters as <code>unknown</code>.** Do not pre-narrow with <code>as</code> — the</li></ul>
+<p>builder API is typed so that narrowing happens through validation.</p>
+<ul><li>**Recursive contracts go through <code>t.lazy</code>.** Direct schema object cycles are</li></ul>
+<p>rejected at construction.</p>
+<ul><li><strong>Choose the engine by schema lifetime.</strong> One-off schemas: runtime plan.</li></ul>
+<p>Stable hot schemas: <code>compile()</code>. CSP environments or build-time generation: <code>emitAotModule()</code>.</p>
+<ul><li><strong>Decoders do not embed in object shapes.</strong> Compose transformations with</li></ul>
+<p><code>t.pipe</code> around a validated shape instead of mixing decoders into <code>t.object</code> entries.</p>
+<hr>
+<h3 id="readme-verification">Verification</h3>
+<p>Every gate that CI runs is a local npm script:</p>
+<pre><code>npm run check           # policy, docs, typecheck, lint, tests, build, dist, API snapshot, pack
+npm run check:consumer  # tarball install + runtime/type smoke in a temp project
+npm run bench -- --run  # benchmark smoke
+npm run pack:dry        # package contents dry run
+npm run release:check   # the full pre-publish gate (everything above)</code></pre>
+<p><code>npm run release:check</code> runs the same gate expected before publishing: typecheck, lint, tests, build, docs smoke, dist policy, public API snapshot, package contents, consumer install, benchmark smoke, and pack dry run. CI executes it on Node 20.19, 22, and 24; releases publish with npm provenance.</p>
+<aside class="admonition note"><strong class="admonition-title">NOTE</strong><p>Benchmark comparison packages (Zod, Valibot, Ajv) are dev dependencies only — package policy rejects them from every runtime dependency field. The benchmark suite reports both boolean-path and diagnostic-path (<code>check()</code> vs <code>safeParse</code>) comparisons, so numbers stay apples-to-apples.</p></aside>
+<hr>
+<h3 id="readme-documentation">Documentation</h3>
+<ul><li><a href="#overview">Documentation site</a></li><li><a href="#api-reference">API reference</a></li><li><a href="#engine-notes">Engine notes</a></li></ul>
+<hr>
+<h3 id="readme-license">License</h3>
+<p>MIT License. See <a href="https://github.com/Feralthedogg/TypeSea/blob/main/LICENSE">LICENSE</a>.</p>
+          </article>
+<article id="api-reference" class="source-doc doc-content" data-doc-section>
+            <header>
+              <p class="eyebrow">API Reference</p>
+              <h2>API Reference</h2>
+              <p>Rendered from <code>docs/api.md</code>.</p>
+            </header>
+<h2 id="api-reference-typesea-api-reference">TypeSea API Reference</h2>
+<p>TypeSea accepts untrusted input as <code>unknown</code> and narrows it through immutable guard values. The public API is small by design; most complexity lives behind builder validation, graph introspection, diagnostics, and export checks.</p>
+<h3 id="api-reference-import">Import</h3>
+<pre><code>import {
+  compile,
+  emitAotModule,
+  t,
+  toJsonSchema,
+  type Guard,
+  type Infer
+} from &quot;typesea&quot;;</code></pre>
+<p>The package exposes one root entry point. Subpath imports are intentionally not part of the public API. TypeSea is ESM-only and does not publish a CommonJS condition.</p>
+<h3 id="api-reference-guard-contract">Guard Contract</h3>
+<pre><code>interface Guard&lt;T&gt; {
+  is(value: unknown): value is T;
+  check(value: unknown): CheckResult&lt;T&gt;;
+  assert(value: unknown): asserts value is T;
+  graph(): Graph;
+}</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Method</th><th>Use it for</th><th>Contract</th></tr></thead><tbody><tr><td><code>is</code></td><td>Hot boolean narrowing</td><td>Avoids diagnostic allocation on the success path.</td></tr>
+<tr><td><code>check</code></td><td>Validation with issues</td><td>Returns frozen <code>Result&lt;T, Issue[]&gt;</code> containers.</td></tr>
+<tr><td><code>assert</code></td><td>Throwing integration boundaries</td><td>Throws <code>TypeSeaAssertionError</code> with copied, frozen issues.</td></tr>
+<tr><td><code>graph</code></td><td>Runtime plan introspection</td><td>Returns the validated, optimized, frozen Sea-of-Nodes graph held by the validation plan.</td></tr></tbody></table></div>
+<p>Diagnostic paths contain only object keys and zero-based array or tuple indexes. Public diagnostic validators reject malformed path segments before diagnostics cross the API boundary.</p>
+<h3 id="api-reference-builder-families">Builder Families</h3>
+<div class="table-wrap"><table><thead><tr><th>Family</th><th>Builders</th></tr></thead><tbody><tr><td>Scalars</td><td><code>t.unknown</code>, <code>t.never</code>, <code>t.string</code>, <code>t.number</code>, <code>t.bigint</code>, <code>t.symbol</code>, <code>t.boolean</code></td></tr>
+<tr><td>Literals and containers</td><td><code>t.literal(value)</code>, <code>t.array(item)</code>, <code>t.tuple([a, b])</code>, <code>t.record(value)</code></td></tr>
+<tr><td>Objects</td><td><code>t.object(shape)</code>, <code>t.strictObject(shape)</code></td></tr>
+<tr><td>Object transforms</td><td><code>t.extend</code>, <code>t.pick</code>, <code>t.omit</code>, <code>t.partial</code>, and matching object guard methods</td></tr>
+<tr><td>Composition</td><td><code>t.union</code>, <code>t.discriminatedUnion</code>, <code>t.intersect</code>, <code>guard.intersect</code></td></tr>
+<tr><td>Presence</td><td><code>t.optional</code>, <code>t.undefinedable</code>, <code>t.nullable</code></td></tr>
+<tr><td>Dynamic guards</td><td><code>t.lazy</code>, <code>t.refine</code></td></tr>
+<tr><td>Decoders</td><td><code>t.decoder</code>, <code>t.transform</code>, <code>t.pipe</code>, <code>t.coerce</code></td></tr>
+<tr><td>Async decoders</td><td><code>t.asyncDecoder</code>, <code>t.asyncRefine</code>, <code>t.asyncTransform</code>, <code>t.asyncPipe</code></td></tr></tbody></table></div>
+<p>Builder functions validate inputs before a schema can enter the validation plan, compiler, AOT emitter, diagnostic collector, or JSON Schema exporter. Forged guard-like values, invalid schema tags, invalid predicates, invalid bounds, malformed regexps, and invalid discriminated union case sets are rejected during construction.</p>
+<p>Accepted schemas are frozen before storage. Public schema collection fields use frozen arrays and frozen key lookup records instead of mutable collection objects.</p>
+<h3 id="api-reference-object-presence">Object Presence</h3>
+<p>TypeSea separates key presence from value domain.</p>
+<pre><code>const Shape = t.object({
+  name: t.optional(t.string),
+  nickname: t.undefinedable(t.string)
+});</code></pre>
+<ul><li><code>name</code> may be absent. If <code>name</code> exists, its value must be a string.</li><li><code>nickname</code> must be present. Its value may be a string or <code>undefined</code>.</li><li><code>t.nullable(inner)</code> adds <code>null</code> to the value domain.</li><li>Presence-preserving wrappers keep optional-key semantics through <code>nullable</code>,</li></ul>
+<p><code>undefinedable</code>, <code>brand</code>, and <code>refine</code>.</p>
+<p>Object combinators preserve object mode. Strict object guards remain strict after <code>extend</code>, <code>pick</code>, <code>omit</code>, or <code>partial</code>; passthrough object guards keep allowing unknown keys.</p>
+<h3 id="api-reference-composition">Composition</h3>
+<p><code>t.union(a, b)</code> accepts a value that satisfies at least one branch.</p>
+<p><code>t.discriminatedUnion(&quot;kind&quot;, cases)</code> requires string case keys. Each case must be a statically inspectable object case whose dispatch key is a required string literal matching the case name.</p>
+<p><code>t.intersect(a, b)</code> and <code>guard.intersect(other)</code> require the same input value to satisfy both guards. <code>check()</code> collects diagnostics from both sides.</p>
+<h3 id="api-reference-recursion">Recursion</h3>
+<p>Recursive contracts must use <code>t.lazy</code>.</p>
+<pre><code>interface ListNode {
+  readonly value: string;
+  readonly next?: ListNode;
+}
 
-          <section id="adapters" data-doc-section data-title="adapters trpc fastify react hook form resolver">
-            <div class="locale-copy locale-en">
-            <p class="eyebrow">Ecosystem adapters</p>
-            <h2>Structural adapters without importing frameworks.</h2>
-            <p class="lede">
-              Adapter functions return objects or functions shaped for the target ecosystem.
-              TypeSea does not import tRPC, Fastify, or React Hook Form at runtime.
-            </p>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Target</th>
-                    <th>Export</th>
-                    <th>Behavior</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>tRPC</td>
-                    <td><code>toTrpcParser</code> / <code>toAsyncTrpcParser</code></td>
-                    <td>Parser objects that return decoded values or throw <code>TypeSeaAssertionError</code>.</td>
-                  </tr>
-                  <tr>
-                    <td>Fastify</td>
-                    <td><code>toFastifyRouteSchema</code></td>
-                    <td>Lossless JSON Schema fragments for body, querystring, params, or headers.</td>
-                  </tr>
-                  <tr>
-                    <td>Fastify</td>
-                    <td><code>toFastifyValidatorCompiler</code></td>
-                    <td>Route validators dispatched by <code>httpPart</code>, producing <code>{ value }</code> or <code>{ error }</code>.</td>
-                  </tr>
-                  <tr>
-                    <td>React Hook Form</td>
-                    <td><code>toReactHookFormResolver</code></td>
-                    <td>Async resolver returning a nested field-error tree that RHF traverses by path.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            </div>
-            <div class="locale-copy locale-ko" lang="ko">
-              <p class="eyebrow">생태계 어댑터</p>
-              <h2>프레임워크를 import하지 않는 structural adapter.</h2>
-              <p class="lede">
-                adapter function은 대상 생태계가 기대하는 모양의 object 또는 function을 반환합니다.
-                TypeSea는 runtime에서 tRPC, Fastify, React Hook Form을 import하지 않습니다.
-              </p>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>대상</th>
-                      <th>Export</th>
-                      <th>동작</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>tRPC</td>
-                      <td><code>toTrpcParser</code> / <code>toAsyncTrpcParser</code></td>
-                      <td>decoded value를 반환하거나 <code>TypeSeaAssertionError</code>를 throw하는 parser object.</td>
-                    </tr>
-                    <tr>
-                      <td>Fastify</td>
-                      <td><code>toFastifyRouteSchema</code></td>
-                      <td>body, querystring, params, headers용 lossless JSON Schema fragment.</td>
-                    </tr>
-                    <tr>
-                      <td>Fastify</td>
-                      <td><code>toFastifyValidatorCompiler</code></td>
-                      <td><code>httpPart</code>로 route validator를 dispatch하고 <code>{ value }</code> 또는 <code>{ error }</code>를 생성합니다.</td>
-                    </tr>
-                    <tr>
-                      <td>React Hook Form</td>
-                      <td><code>toReactHookFormResolver</code></td>
-                      <td>RHF가 path로 탐색할 수 있는 nested field-error tree를 반환하는 async resolver.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
+const Node: Guard&lt;ListNode&gt; = t.lazy((): Guard&lt;ListNode&gt; =&gt;
+  t.object({
+    value: t.string,
+    next: t.optional(Node)
+  })
+);</code></pre>
+<p>Direct cyclic schema objects are rejected at builder boundaries. Lazy guards resolve once per guard instance and keep recursive schema identity stable. A lazy chain must eventually resolve to a concrete non-lazy schema.</p>
+<h3 id="api-reference-decoder-pipelines">Decoder Pipelines</h3>
+<pre><code>const Count = t.pipe(t.coerce.number(), t.number.int().gte(0));
+const result = Count.decode(&quot;42&quot;);</code></pre>
+<p>Decoders are for output-producing operations. They return <code>Result</code> from <code>decode()</code> and do not expose <code>is()</code> predicates, because the decoded output may not be the same runtime value as the input.</p>
+<ul><li><code>t.transform(source, mapper)</code> decodes <code>source</code>, then maps the decoded value.</li><li><code>t.pipe(source, next)</code> feeds a successful decoded value into the next guard or</li></ul>
+<p>decoder.</p>
+<ul><li><code>t.coerce.string</code>, <code>t.coerce.number</code>, and <code>t.coerce.boolean</code> provide explicit</li></ul>
+<p>primitive coercion.</p>
+<ul><li><code>t.asyncRefine</code>, <code>t.asyncTransform</code>, and <code>t.asyncPipe</code> return</li></ul>
+<p><code>Promise&lt;Result&lt;T, Issue[]&gt;&gt;</code> from <code>decodeAsync()</code>.</p>
+<p>Expected async validation failures still return <code>Result</code> values.</p>
+<h3 id="api-reference-messages">Messages</h3>
+<pre><code>const checked = withMessages(User.check(input), {
+  locale: &quot;ko&quot;,
+  catalog: defineMessages({
+    expected_string: &quot;{path}: 문자열 필요&quot;
+  })
+});</code></pre>
+<p><code>formatIssue</code>, <code>formatIssues</code>, and <code>withMessages</code> render diagnostics after validation has finished. This keeps <code>is()</code> and ordinary <code>check()</code> paths free from message allocation.</p>
+<p>Built-in locales are <code>en</code> and <code>ko</code>. Custom catalogs can use string templates with <code>{path}</code>, <code>{code}</code>, <code>{expected}</code>, and <code>{actual}</code>, or formatter callbacks. <code>withMessages(result, options)</code> preserves successful results and returns a new failed <code>Result</code> with copied, frozen issues whose <code>message</code> fields are populated.</p>
+<h3 id="api-reference-runtime-compile">Runtime Compile</h3>
+<pre><code>const FastUser = compile(User, { name: &quot;isUser&quot; });
 
-          <section id="benchmarks" data-doc-section data-title="benchmarks performance zod valibot ajv compiled interpreted">
-            <div class="locale-copy locale-en">
-            <p class="eyebrow">Benchmarks</p>
-            <h2>Measured honestly, gated on every release.</h2>
-            <p class="lede">
-              The suite compares the runtime plan against compiled TypeSea, and both against
-              Zod, Valibot, and Ajv over one JSON-compatible strict-object contract. Comparison
-              packages are development-only measurement tools, and diagnostic-path
-              (<code>check()</code> vs <code>safeParse</code>) rows keep the numbers
-              apples-to-apples.
-            </p>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Valid object path</th>
-                    <th class="num">ops/sec</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>TypeSea runtime plan <code>is()</code></td>
-                    <td class="num">513,701</td>
-                  </tr>
-                  <tr>
-                    <td>TypeSea compiled safe <code>is()</code></td>
-                    <td class="num">4,297,306</td>
-                  </tr>
-                  <tr>
-                    <td>TypeSea compiled unsafe <code>is()</code></td>
-                    <td class="num">36,297,653</td>
-                  </tr>
-                  <tr>
-                    <td>TypeSea compiled unchecked <code>is()</code></td>
-                    <td class="num"><span class="best">42,581,174</span></td>
-                  </tr>
-                  <tr>
-                    <td>Zod <code>safeParse</code></td>
-                    <td class="num">1,343,756</td>
-                  </tr>
-                  <tr>
-                    <td>Valibot <code>safeParse</code></td>
-                    <td class="num">1,406,528</td>
-                  </tr>
-                  <tr>
-                    <td>Ajv compiled</td>
-                    <td class="num">4,275,389</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Valid diagnostic path</th>
-                    <th class="num">ops/sec</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>TypeSea runtime plan <code>check()</code></td>
-                    <td class="num">503,232</td>
-                  </tr>
-                  <tr>
-                    <td>TypeSea compiled safe <code>check()</code></td>
-                    <td class="num">3,903,929</td>
-                  </tr>
-                  <tr>
-                    <td>TypeSea compiled unsafe <code>check()</code></td>
-                    <td class="num">35,568,425</td>
-                  </tr>
-                  <tr>
-                    <td>TypeSea compiled unchecked <code>check()</code></td>
-                    <td class="num"><span class="best">40,084,605</span></td>
-                  </tr>
-                  <tr>
-                    <td>Zod <code>safeParse</code></td>
-                    <td class="num">1,355,014</td>
-                  </tr>
-                  <tr>
-                    <td>Valibot <code>safeParse</code></td>
-                    <td class="num">1,378,266</td>
-                  </tr>
-                  <tr>
-                    <td>Ajv compiled</td>
-                    <td class="num">4,278,587</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Invalid object path</th>
-                    <th class="num">ops/sec</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>TypeSea runtime plan <code>is()</code></td>
-                    <td class="num">3,636,369</td>
-                  </tr>
-                  <tr>
-                    <td>TypeSea compiled safe <code>is()</code></td>
-                    <td class="num">42,080,241</td>
-                  </tr>
-                  <tr>
-                    <td>TypeSea compiled unsafe <code>is()</code></td>
-                    <td class="num">49,654,076</td>
-                  </tr>
-                  <tr>
-                    <td>TypeSea compiled unchecked <code>is()</code></td>
-                    <td class="num"><span class="best">50,482,732</span></td>
-                  </tr>
-                  <tr>
-                    <td>Zod <code>safeParse</code></td>
-                    <td class="num">84,272</td>
-                  </tr>
-                  <tr>
-                    <td>Valibot <code>safeParse</code></td>
-                    <td class="num">878,521</td>
-                  </tr>
-                  <tr>
-                    <td>Ajv compiled</td>
-                    <td class="num">27,820,643</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Invalid diagnostic path</th>
-                    <th class="num">ops/sec</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>TypeSea runtime plan <code>check()</code></td>
-                    <td class="num">420,446</td>
-                  </tr>
-                  <tr>
-                    <td>TypeSea compiled safe <code>check()</code></td>
-                    <td class="num">2,086,129</td>
-                  </tr>
-                  <tr>
-                    <td>TypeSea compiled unsafe <code>check()</code></td>
-                    <td class="num">3,077,367</td>
-                  </tr>
-                  <tr>
-                    <td>TypeSea compiled unchecked <code>check()</code></td>
-                    <td class="num">3,673,508</td>
-                  </tr>
-                  <tr>
-                    <td>Zod <code>safeParse</code></td>
-                    <td class="num">79,613</td>
-                  </tr>
-                  <tr>
-                    <td>Valibot <code>safeParse</code></td>
-                    <td class="num">887,991</td>
-                  </tr>
-                  <tr>
-                    <td>Ajv compiled</td>
-                    <td class="num"><span class="best">28,713,035</span></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p class="footnote">
-              Local benchmark, 2026-07-04 KST, single machine &mdash; regression telemetry,
-              not throughput guarantees. Safe compiled mode keeps descriptor-based reads,
-              strict symbol/non-enumerable key rejection, and immutable diagnostics. Unsafe
-              and unchecked modes are faster because they are only for trusted normalized data.
-            </p>
-            <div class="code-block">
-              <pre><code>npm run bench -- bench/ecosystem.bench.ts --run</code></pre>
-            </div>
-            </div>
-            <div class="locale-copy locale-ko" lang="ko">
-              <p class="eyebrow">벤치마크</p>
-              <h2>정직하게 측정하고, 모든 릴리스에서 게이트합니다.</h2>
-              <p class="lede">
-                benchmark suite는 TypeSea runtime plan과 compiled TypeSea를 비교하고,
-                동일한 JSON-compatible strict-object contract에서 Zod, Valibot, Ajv와도
-                비교합니다. 비교 라이브러리는 development-only 측정 도구이며,
-                diagnostic path는 <code>check()</code>와 <code>safeParse</code>를 비교해
-                기준을 맞춥니다.
-              </p>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Valid object path</th>
-                      <th class="num">ops/sec</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>TypeSea runtime plan <code>is()</code></td>
-                      <td class="num">513,701</td>
-                    </tr>
-                    <tr>
-                      <td>TypeSea compiled safe <code>is()</code></td>
-                      <td class="num">4,297,306</td>
-                    </tr>
-                    <tr>
-                      <td>TypeSea compiled unsafe <code>is()</code></td>
-                      <td class="num">36,297,653</td>
-                    </tr>
-                    <tr>
-                      <td>TypeSea compiled unchecked <code>is()</code></td>
-                      <td class="num"><span class="best">42,581,174</span></td>
-                    </tr>
-                    <tr>
-                      <td>Zod <code>safeParse</code></td>
-                      <td class="num">1,343,756</td>
-                    </tr>
-                    <tr>
-                      <td>Valibot <code>safeParse</code></td>
-                      <td class="num">1,406,528</td>
-                    </tr>
-                    <tr>
-                      <td>Ajv compiled</td>
-                      <td class="num">4,275,389</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Valid diagnostic path</th>
-                      <th class="num">ops/sec</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>TypeSea runtime plan <code>check()</code></td>
-                      <td class="num">503,232</td>
-                    </tr>
-                    <tr>
-                      <td>TypeSea compiled safe <code>check()</code></td>
-                      <td class="num">3,903,929</td>
-                    </tr>
-                    <tr>
-                      <td>TypeSea compiled unsafe <code>check()</code></td>
-                      <td class="num">35,568,425</td>
-                    </tr>
-                    <tr>
-                      <td>TypeSea compiled unchecked <code>check()</code></td>
-                      <td class="num"><span class="best">40,084,605</span></td>
-                    </tr>
-                    <tr>
-                      <td>Zod <code>safeParse</code></td>
-                      <td class="num">1,355,014</td>
-                    </tr>
-                    <tr>
-                      <td>Valibot <code>safeParse</code></td>
-                      <td class="num">1,378,266</td>
-                    </tr>
-                    <tr>
-                      <td>Ajv compiled</td>
-                      <td class="num">4,278,587</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Invalid object path</th>
-                      <th class="num">ops/sec</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>TypeSea runtime plan <code>is()</code></td>
-                      <td class="num">3,636,369</td>
-                    </tr>
-                    <tr>
-                      <td>TypeSea compiled safe <code>is()</code></td>
-                      <td class="num">42,080,241</td>
-                    </tr>
-                    <tr>
-                      <td>TypeSea compiled unsafe <code>is()</code></td>
-                      <td class="num">49,654,076</td>
-                    </tr>
-                    <tr>
-                      <td>TypeSea compiled unchecked <code>is()</code></td>
-                      <td class="num"><span class="best">50,482,732</span></td>
-                    </tr>
-                    <tr>
-                      <td>Zod <code>safeParse</code></td>
-                      <td class="num">84,272</td>
-                    </tr>
-                    <tr>
-                      <td>Valibot <code>safeParse</code></td>
-                      <td class="num">878,521</td>
-                    </tr>
-                    <tr>
-                      <td>Ajv compiled</td>
-                      <td class="num">27,820,643</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Invalid diagnostic path</th>
-                      <th class="num">ops/sec</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>TypeSea runtime plan <code>check()</code></td>
-                      <td class="num">420,446</td>
-                    </tr>
-                    <tr>
-                      <td>TypeSea compiled safe <code>check()</code></td>
-                      <td class="num">2,086,129</td>
-                    </tr>
-                    <tr>
-                      <td>TypeSea compiled unsafe <code>check()</code></td>
-                      <td class="num">3,077,367</td>
-                    </tr>
-                    <tr>
-                      <td>TypeSea compiled unchecked <code>check()</code></td>
-                      <td class="num">3,673,508</td>
-                    </tr>
-                    <tr>
-                      <td>Zod <code>safeParse</code></td>
-                      <td class="num">79,613</td>
-                    </tr>
-                    <tr>
-                      <td>Valibot <code>safeParse</code></td>
-                      <td class="num">887,991</td>
-                    </tr>
-                    <tr>
-                      <td>Ajv compiled</td>
-                      <td class="num"><span class="best">28,713,035</span></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <p class="footnote">
-                로컬 benchmark, 2026-07-04 KST, 단일 머신 기준입니다. throughput 보장이 아니라
-                regression telemetry입니다. Safe compiled mode는 descriptor-based read,
-                strict symbol/non-enumerable key rejection, immutable diagnostics를 유지합니다.
-                Unsafe/unchecked mode는 신뢰된 정규화 데이터 전용이기 때문에 더 빠릅니다.
-              </p>
-              <div class="code-block">
-                <pre><code>npm run bench -- bench/ecosystem.bench.ts --run</code></pre>
-              </div>
-            </div>
-          </section>
+FastUser.is(input);
+FastUser.check(input);</code></pre>
+<p><code>compile</code> emits generated predicate functions from the optimized Sea-of-Nodes validation graph plus diagnostics collectors for failed values. Static scalar, object, array, record, union, and strict-key nodes lower to straight-line JavaScript or indexed loops where possible. Dynamic schema edges such as <code>lazy</code> and <code>refine</code> keep semantics by using the same IR-backed runtime fallback as ordinary guards.</p>
+<p>The optional <code>name</code> is a debugging and profiling hint. TypeSea normalizes it into a strict-mode-safe JavaScript function name, prefixes reserved names, and caps generated name length. Direct compiled guard construction validates the predicate, collector, and source arguments. Collector diagnostics are validated, copied, and frozen before <code>check()</code> returns them.</p>
+<p>Generated source never interpolates user-controlled values directly. Literals, regexps, property keys, keysets, and dynamic schema fallbacks are captured in side tables and referenced by numeric index.</p>
+<h4 id="api-reference-unsafe-compile-mode">Unsafe Compile Mode</h4>
+<pre><code>const FastButLooseUser = compile(User, {
+  name: &quot;isUserFast&quot;,
+  mode: &quot;unsafe&quot;
+});</code></pre>
+<p><code>CompileOptions[&quot;mode&quot;]</code> and <code>AotCompileOptions[&quot;mode&quot;]</code> are <code>&quot;safe&quot; | &quot;unsafe&quot; | &quot;unchecked&quot; | undefined</code>; omitted options default to <code>&quot;safe&quot;</code>. Safe mode keeps TypeSea's hostile-input contract: descriptor-based property reads, no getter execution, and strict-object rejection for symbol and non-enumerable extras.</p>
+<p>Unsafe mode is an explicit performance escape hatch for trusted, normalized plain data:</p>
+<ul><li>Required object fields read with <code>value[key]</code> when the field schema rejects</li></ul>
+<p><code>undefined</code>.</p>
+<ul><li>Discriminant dispatch reads the tag with direct bracket access.</li><li>Arrays and tuples read items with direct indexed loads.</li><li>Strict-object extra-key rejection uses an allocation-free own-enumerable</li></ul>
+<p><code>for...in</code> loop.</p>
+<p>This may execute getters, may accept prototype-backed values, and does not reject symbol or non-enumerable extras on strict objects. Because compiled <code>check()</code> first trusts the generated predicate verdict, an unsafe predicate that returns <code>true</code> also returns a successful <code>check()</code> result. Use unsafe mode only after the input has crossed a trusted normalization boundary.</p>
+<p>Unsafe mode may embed escaped static property keys directly into generated predicate source so V8 can attach ordinary property-load inline caches. Safe mode keeps property keys in side tables.</p>
+<p>Unchecked mode uses the unsafe direct-read shape and also skips strict-object extra-key loops. It is only for input whose object shape has already been trusted or normalized; strict objects no longer reject extra keys in this mode. Unsafe and unchecked compiled <code>check()</code> calls also return raw successful Result objects without <code>Object.freeze()</code>. Failure diagnostics remain frozen. Safe mode keeps frozen success and failure Result objects. FastMode diagnostic collectors use direct field reads and FastMode strict-key rules for object diagnostics where possible, so missing/accessor issue codes are not guaranteed to match safe mode. Array and tuple diagnostics also use direct indexed reads in fast modes, so sparse slots are diagnosed from the loaded <code>undefined</code> value. Record diagnostics use direct <code>record[key]</code> reads; unchecked mode also visits inherited enumerable keys. Discriminant diagnostics read the tag directly and compare string cases with <code>===</code>.</p>
+<h3 id="api-reference-aot-emit">AOT Emit</h3>
+<pre><code>const emitted = emitAotModule(User, { name: &quot;aotUser&quot; });
+const unsafeEmitted = emitAotModule(User, {
+  name: &quot;aotUserFast&quot;,
+  mode: &quot;unsafe&quot;
+});
+const uncheckedEmitted = emitAotModule(User, {
+  name: &quot;aotUserTrustedShape&quot;,
+  mode: &quot;unchecked&quot;
+});</code></pre>
+<p><code>emitAotModule</code> returns <code>Result&lt;AotModule, AotIssue[]&gt;</code>. A successful result contains standalone ESM validator source plus declaration source. The generated module exports <code>is</code>, <code>check</code>, <code>assert</code>, and a default frozen guard-like object, without requiring dynamic source compilation at module load time.</p>
+<p>AOT generation is lossless-only. Schemas that require runtime callbacks or identity that cannot be serialized return explicit AOT issues.</p>
+<h3 id="api-reference-ecosystem-adapters">Ecosystem Adapters</h3>
+<pre><code>const parser = toTrpcParser(User);
+const routeSchema = toFastifyRouteSchema(User);
+const validatorCompiler = toFastifyValidatorCompiler(User);
+const resolver = toReactHookFormResolver(User);</code></pre>
+<p>Adapters are structural and zero-dependency. TypeSea does not import tRPC, Fastify, or React Hook Form.</p>
+<p>Compiled guards can be passed to the same adapters. This is the preferred shape for hot request paths: compile once during startup, then let the adapter reuse the generated predicate.</p>
+<pre><code>const FastUser = compile(User);
+const fastParser = toTrpcParser(FastUser);
+const fastValidatorCompiler = toFastifyValidatorCompiler(FastUser);</code></pre>
+<p>Use the default compiled mode at public input boundaries. For trusted, already-normalized internal data, the faster modes can be wired through adapters the same way.</p>
+<pre><code>const UnsafeUser = compile(User, { mode: &quot;unsafe&quot; });
+const internalParser = toTrpcParser(UnsafeUser);
 
-          <section id="release" data-doc-section data-title="release gate policy typecheck lint test dist api pack consumer provenance">
-            <div class="locale-copy locale-en">
-            <p class="eyebrow">Release gate</p>
-            <h2>Publishing requires the full local gate.</h2>
-            <p class="lede">
-              One script runs everything CI runs: source policy, docs smoke, typecheck, lint,
-              tests, build, dist policy, public API snapshot, package contents, clean consumer
-              install, benchmark smoke, and pack dry run. CI executes the same gate on
-              Node 20.19, 22, and 24; releases publish with npm provenance.
-            </p>
-            <div class="code-block">
-              <pre><code>npm run release:check</code></pre>
-            </div>
-            <div class="callout">
-              <span class="icon">&#128737;</span>
-              <p>
-                <strong><code>prepack</code> re-runs the full check</strong>, so even a bare
-                <code>npm publish</code> cannot skip the gate. Package policy rejects any runtime
-                dependency fields before the tarball is accepted.
-              </p>
-            </div>
-            </div>
-            <div class="locale-copy locale-ko" lang="ko">
-              <p class="eyebrow">릴리스 게이트</p>
-              <h2>publish 전에는 전체 local gate를 통과해야 합니다.</h2>
-              <p class="lede">
-                하나의 script가 CI와 같은 검사를 실행합니다: source policy, docs smoke,
-                typecheck, lint, tests, build, dist policy, public API snapshot,
-                package contents, clean consumer install, benchmark smoke, pack dry run.
-                CI는 Node 20.19, 22, 24에서 같은 gate를 실행하고, release는 npm provenance와
-                함께 publish됩니다.
-              </p>
-              <div class="code-block">
-                <pre><code>npm run release:check</code></pre>
-              </div>
-              <div class="callout">
-                <span class="icon">&#128737;</span>
-                <p>
-                  <strong><code>prepack</code>은 전체 check를 다시 실행합니다.</strong>
-                  따라서 bare <code>npm publish</code>도 gate를 건너뛸 수 없습니다.
-                  package policy는 tarball을 받기 전에 runtime dependency field를 거부합니다.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <section id="files" data-doc-section data-title="reference files api engine notes github">
-            <div class="locale-copy locale-en">
-            <p class="eyebrow">Reference files</p>
-            <h2>Detailed contracts live in focused documents.</h2>
-            <div class="grid two">
-              <article class="tile">
-                <h3>API reference</h3>
-                <p>Guard, decoder, AOT, adapter, graph, and JSON Schema behavior with edge semantics.</p>
-                <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">docs/api.md</a></code>
-              </article>
-              <article class="tile">
-                <h3>Engine notes</h3>
-                <p>V8-facing implementation rules and Sea-of-Nodes validation IR semantics.</p>
-                <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">docs/engine-notes.md</a></code>
-              </article>
-            </div>
-            </div>
-            <div class="locale-copy locale-ko" lang="ko">
-              <p class="eyebrow">참고 파일</p>
-              <h2>세부 contract는 목적별 문서에 있습니다.</h2>
-              <div class="grid two">
-                <article class="tile">
-                  <h3>API reference</h3>
-                  <p>Guard, decoder, AOT, adapter, graph, JSON Schema behavior와 edge semantics.</p>
-                  <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md">docs/api.md</a></code>
-                </article>
-                <article class="tile">
-                  <h3>Engine notes</h3>
-                  <p>V8-facing implementation rule과 Sea-of-Nodes validation IR semantics.</p>
-                  <code><a href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md">docs/engine-notes.md</a></code>
-                </article>
-              </div>
-            </div>
-          </section>
+const TrustedShapeUser = compile(User, { mode: &quot;unchecked&quot; });
+const internalValidatorCompiler = toFastifyValidatorCompiler(TrustedShapeUser);</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Adapter</th><th>Export</th><th>Behavior</th></tr></thead><tbody><tr><td>tRPC</td><td><code>toTrpcParser</code>, <code>toAsyncTrpcParser</code></td><td>Return parser objects that emit decoded values or throw <code>TypeSeaAssertionError</code>.</td></tr>
+<tr><td>Fastify route schema</td><td><code>toFastifyRouteSchema</code></td><td>Converts guards to JSON Schema route fragments.</td></tr>
+<tr><td>Fastify validator compiler</td><td><code>toFastifyValidatorCompiler</code></td><td>Returns compiler-shaped validators that produce <code>{ value }</code> or <code>{ error }</code>.</td></tr>
+<tr><td>React Hook Form</td><td><code>toReactHookFormResolver</code></td><td>Returns an async resolver with TypeSea messages mapped to field errors.</td></tr></tbody></table></div>
+<h3 id="api-reference-graph-and-ir">Graph and IR</h3>
+<pre><code>const graph = User.graph();
+const optimized = optimizeGraph(graph);</code></pre>
+<p><code>Guard.graph()</code> returns the optimized Sea-of-Nodes validation graph held by the runtime validation plan. The same plan also owns the specialized predicate kernel used by <code>is()</code>. The graph is the source for <code>compile()</code> and <code>emitAotModule()</code>, while the kernel keeps ordinary guard execution out of a generic per-node interpreter. Public graph values are validated, dependency-checked, dense, and frozen.</p>
+<p><code>optimizeGraph(graph)</code> validates direct graph inputs before optimizing them. Regex graph nodes accept only plain <code>RegExp</code> values and store non-extensible regexps, cloning extensible inputs before the graph is frozen.</p>
+<p><code>SchemaCheck</code> records dynamic runtime schema logic such as <code>lazy</code> or <code>refine</code>. It keeps the IR truthful instead of pretending a callback-backed edge is a static primitive.</p>
+<h3 id="api-reference-json-schema">JSON Schema</h3>
+<pre><code>const result = toJsonSchema(User);</code></pre>
+<p><code>toJsonSchema</code> returns <code>Result&lt;JsonSchema, JsonSchemaExportIssue[]&gt;</code>. It succeeds only when TypeSea can represent the contract over JSON-compatible input values without semantic loss.</p>
+<p>Runtime-only concepts return explicit export issues:</p>
+<ul><li><code>undefined</code></li><li><code>bigint</code></li><li><code>symbol</code></li><li><code>lazy</code></li><li><code>refine</code></li><li>decoder transforms</li><li>async validation</li><li>regexps with flags</li><li>numeric literals that JSON cannot preserve, such as <code>NaN</code>, <code>Infinity</code>, and</li></ul>
+<p><code>-0</code></p>
+<p><code>schemaToJsonSchema(schema)</code> is the direct schema API. It validates the supplied schema and freezes it before export. JSON Schema options are also validated; <code>schemaId</code>, when present, must be a string.</p>
+<p>Object <code>properties</code> maps are emitted as null-prototype records so special keys such as <code>__proto__</code>, <code>constructor</code>, and <code>hasOwnProperty</code> remain ordinary own schema properties.</p>
+<h3 id="api-reference-edge-semantics">Edge Semantics</h3>
+<ul><li>Literal guards use <code>Object.is</code>, so <code>t.literal(Number.NaN)</code> matches <code>NaN</code> and</li></ul>
+<p><code>t.literal(-0)</code> does not match <code>0</code>.</p>
+<ul><li><code>t.number</code> accepts only finite JavaScript numbers. <code>NaN</code>, <code>Infinity</code>, and</li></ul>
+<p><code>-Infinity</code> are rejected before configured numeric predicates run.</p>
+<ul><li>String length bounds must be non-negative integers.</li><li>Numeric comparison bounds must be finite.</li><li>Predicate callbacks must return strict <code>true</code>; truthy non-boolean values do</li></ul>
+<p>not pass validation.</p>
+<ul><li><code>RegExp</code> checks reset <code>lastIndex</code> before each test, so global and sticky</li></ul>
+<p>regexps do not leak state across validations.</p>
+<ul><li>String regex builders and direct string regex schemas accept only plain</li></ul>
+<p><code>RegExp</code> instances. Accepted regex checks are cloned before storage.</p>
+<h3 id="api-reference-result-contract">Result Contract</h3>
+<pre><code>type Result&lt;T, E&gt; =
+  | { ok: true; value: T }
+  | { ok: false; error: E };</code></pre>
+<p>Expected validation failures use <code>Result</code>. Result containers are frozen at runtime. Successful values are not recursively frozen because they are caller-owned data.</p>
+          </article>
+<article id="engine-notes" class="source-doc doc-content" data-doc-section>
+            <header>
+              <p class="eyebrow">Engine Notes</p>
+              <h2>Engine Notes</h2>
+              <p>Rendered from <code>docs/engine-notes.md</code>.</p>
+            </header>
+<h2 id="engine-notes-engine-notes">Engine Notes</h2>
+<p>TypeSea is written for predictable machine behavior after TypeScript emits JavaScript. The goal is not obscurity; the goal is to make object shapes, allocation sites, branch behavior, and validation contracts visible in code.</p>
+<h3 id="engine-notes-hot-path-rules">Hot Path Rules</h3>
+<ul><li>Use prototype methods instead of per-instance method closures.</li><li>Use numeric tags for schema, check, issue, and IR node variants.</li><li>Initialize class fields in one constructor order.</li><li>Keep successful <code>is()</code> validation free of diagnostic allocation.</li><li>Allocate <code>Issue</code> objects and path arrays only when diagnostics are requested.</li><li>Prefer indexed loops on recursive validation paths.</li><li>Precompute object-entry arrays during schema construction.</li><li>After required object fields have proved their data-property descriptors, load</li></ul>
+<p>descriptor values directly instead of rechecking missing-property fallbacks.</p>
+<ul><li>For all-required strict objects, reject extras by counting own string names</li></ul>
+<p>and own symbols after field validation. Optional strict objects keep the full key membership scan.</p>
+<ul><li>Keep <code>compile()</code> and <code>emitAotModule()</code> safe by default. Unsafe mode is an</li></ul>
+<p>explicit opt-in that may use direct property/index loads and own-enumerable strict-key loops after the caller accepts getter/prototype/symbol-extra risk.</p>
+<ul><li>Mark constructed guards out-of-band so normal receivers avoid repeated schema</li></ul>
+<p>validation while forged receivers still fall back to structural checks.</p>
+<ul><li>Use <code>Readonly&lt;Record&lt;string, unknown&gt;&gt;</code> after object guards.</li><li>Store generated-validator literals, regexps, keysets, and dynamic fallbacks in</li></ul>
+<p>side tables instead of interpolating user-controlled values into source text.</p>
+<h3 id="engine-notes-type-system-rules">Type-System Rules</h3>
+<ul><li><code>optional(inner)</code> means an object key may be absent.</li><li><code>undefinedable(inner)</code> means the key must exist when used in an object shape,</li></ul>
+<p>but its value may be <code>undefined</code>.</p>
+<ul><li><code>nullable(inner)</code> means the value may be <code>null</code>.</li><li>Presence-preserving wrappers do not erase optional-key semantics.</li><li><code>number</code> means finite JavaScript number.</li><li><code>unknown</code> is the only accepted boundary type for untrusted input.</li><li>Builder validation is the hard barrier before a schema reaches the engine.</li></ul>
+<h3 id="engine-notes-ir-rules">IR Rules</h3>
+<p>The public schema tree is the semantic source used by builders and diagnostic collectors. Boolean validation executes a cached <code>ValidationPlan</code>: schema identity is lowered into Sea-of-Nodes IR, the optimizer runs, and the plan keeps both the frozen graph and a schema-specialized predicate kernel.</p>
+<p>The graph is not decorative. <code>compile()</code>, AOT emission, and <code>Guard.graph()</code> all consume the optimized graph held by the plan. Ordinary <code>Guard.is()</code> deliberately uses the sibling schema-specialized kernel instead of a generic node interpreter, because per-node dispatch and scratch-slot bookkeeping cost more than they buy on the most common hot path.</p>
+<p>Current lowering hash-conses pure value and predicate nodes. Strict object schemas lower an explicit keyset check into the IR, so extra-key rejection does not depend on out-of-band schema knowledge. Required and optional object fields separate key presence from data-property presence, which keeps accessor-backed properties from executing getters or being misclassified as valid values.</p>
+<p><code>Guard.graph()</code> returns the same optimized graph held by the validation plan. Public graph values are validated and frozen before leaving the API. The first optimizer pass performs reachable node elimination and compacts node ids so every dependency points at an existing dense node index. <code>compile()</code> and AOT emission use this graph as their predicate source.</p>
+<p>Array, tuple, and record schemas lower to native composite IR nodes whose child schemas are executed through child validation plans. <code>SchemaCheck</code> is reserved for dynamic schemas such as <code>lazy</code> and <code>refine</code>; the graph records that callback or resolver-backed semantics are required instead of pretending they are static predicates.</p>
+<h3 id="engine-notes-runtime-compiler">Runtime Compiler</h3>
+<p>Compiled guards emit boolean predicates from optimized Sea-of-Nodes graphs and schema-aware diagnostics collectors for failed values. Runtime <code>is()</code> uses the plan-owned schema-specialized kernel to avoid recursive node dispatch and scratch buffer churn. <code>check()</code> first asks the plan predicate for the pass/fail verdict; successful values skip diagnostic collection, while failed values replay the diagnostic collector to build paths and issue codes.</p>
+<p>User-controlled literals, regexps, object keys, keysets, dynamic schemas, and diagnostic names live in side tables captured by the generated factory. The generated source contains numeric side-table indexes, fixed helper strings, and sanitized function names.</p>
+<p>Scalar nodes emit direct JavaScript tests where the semantics are local: finite-number checks, integer checks, string length bounds, literal equality, and regexp tests all lower without helper calls on the generated hot path.</p>
+<p>Array and record IR nodes emit indexed loops. Static child schemas are inlined into those loops from their optimized graphs, which avoids function-call boundaries for small scalar or union element contracts. Tuple nodes preserve descriptor-based element access, and dynamic edges use the same IR-backed runtime fallback as ordinary guard execution, preserving behavior for <code>lazy</code> and <code>refine</code>.</p>
+<p>Strict object IR emits two shapes. When every declared key is required, generated validators run the strict-key count before field descriptor reads: they compare <code>Object.getOwnPropertyNames(value).length</code> with the declared key count and require <code>Object.getOwnPropertySymbols(value).length === 0</code>. V8 optimizes this count-only path better than a generic <code>Reflect.ownKeys</code> count, and it rejects obvious extra-key objects before touching field descriptors. Optional strict objects still emit the full own-key membership scan because a missing optional key cannot be distinguished by the final key count alone.</p>
+<p><code>compile(..., { mode: &quot;unsafe&quot; })</code> and <code>emitAotModule(..., { mode: &quot;unsafe&quot; })</code> switch generated predicates to a trusted-data code shape. Required object fields whose schemas reject <code>undefined</code> use direct <code>value[key]</code> loads without descriptor or own-key checks. Required fields that can accept <code>undefined</code> retain an own-key presence guard so missing required keys do not collapse into valid <code>undefined</code> values. Optional fields take the direct-load fast path for present non-<code>undefined</code> values and fall back to an own-key check only for the ambiguous <code>undefined</code> case.</p>
+<p>Unsafe array, tuple, record, and discriminant paths also prefer direct loads. Strict objects use a <code>for...in</code> own-enumerable key loop instead of allocating own-key arrays. Object keys that are ASCII identifier names emit as dot-property loads such as <code>value.id</code>; other keys emit as escaped string-literal bracket loads. That is intentionally not hostile-input equivalent: getters can execute, prototype-backed values can be accepted, symbol or non-enumerable strict extras are not rejected, and static property names may appear in unsafe generated predicate source.</p>
+<p><code>mode: &quot;unchecked&quot;</code> keeps the unsafe direct-read shape and removes strict extra-key loops. It is a trusted-shape path for objects already normalized by the caller; strict objects no longer reject any extra keys there.</p>
+<p>Fast modes also remove <code>Object.freeze()</code> from successful compiled <code>check()</code> results. The returned object keeps the same <code>{ ok: true, value }</code> shape, but it is intentionally not frozen. Failed diagnostics stay frozen because those objects are off the success hot path and are often retained for reporting. Object diagnostics in fast modes are generated from the same direct-read contract as predicates. Required fields load through <code>value.key</code>, optional fields use direct load plus an own-key fallback for <code>undefined</code>, unsafe strict objects scan own enumerable string keys, and unchecked strict objects skip the strict-key diagnostic scan. Array and tuple diagnostics in fast modes read items through direct indexes instead of descriptor probes. Record diagnostics read through <code>record[key]</code>; unchecked mode intentionally keeps inherited enumerable keys visible. Discriminant diagnostics read the tag directly and compare literal string cases with strict equality.</p>
+<h3 id="engine-notes-recursion">Recursion</h3>
+<p>Lazy schemas resolve their getter once per guard instance. Recursive validation therefore sees stable schema identity, and repeated validations do not rebuild the recursive schema graph.</p>
+<p>Recursive validation uses a root-local active pair table keyed by runtime object identity and schema identity. Re-entering the same schema/value pair short-circuits that edge, which lets cyclic object graphs validate finitely while still checking the original object fields on the outer frame.</p>
+<p>Compiled <code>lazy</code> and <code>refine</code> fallbacks use the same IR-backed runtime path, so recursive behavior stays consistent across execution engines.</p>
+<h3 id="engine-notes-json-schema-export">JSON Schema Export</h3>
+<p>JSON Schema export succeeds only when the TypeSea schema can be represented over JSON-compatible input values without semantic loss. Runtime-only concepts return typed <code>Result</code> errors.</p>
+<p>Export diagnostics keep paths at the failed child slot instead of collapsing everything to the parent container. Nested unsupported schemas therefore remain actionable without reconstructing the schema tree manually.</p>
+<p>Literal checks use <code>Object.is</code> in runtime-plan and compiled paths. Diagnostics use the same literal formatting, including <code>-0</code>, so compiled and runtime-plan <code>check()</code> results stay byte-for-byte comparable in tests.</p>
+<h3 id="engine-notes-benchmark-scope">Benchmark Scope</h3>
+<p>The benchmark suite keeps two questions separate:</p>
+<ul><li><code>compile.bench.ts</code> compares TypeSea runtime-plan and compiled validators over</li></ul>
+<p>the same TypeSea schema.</p>
+<ul><li><code>ecosystem.bench.ts</code> compares TypeSea runtime-plan, TypeSea compiled, Zod,</li></ul>
+<p>Valibot, and Ajv over one JSON-compatible strict-object contract.</p>
+<p>Zod, Valibot, and Ajv are dev dependencies for measurement only. They are not imported by <code>src</code>, and package policy rejects runtime, peer, optional, or bundled dependency fields before release.</p>
+<p>Last local benchmark on 2026-07-04 KST reported these ecosystem paths over the JSON-compatible strict-object benchmark:</p>
+<div class="table-wrap"><table><thead><tr><th>Case</th><th>TypeSea runtime plan</th><th>TypeSea compiled safe</th><th>TypeSea compiled unsafe</th><th>TypeSea compiled unchecked</th><th>Ajv compiled</th></tr></thead><tbody><tr><td>Valid <code>is()</code></td><td>513,701 hz</td><td>4,297,306 hz</td><td>36,297,653 hz</td><td>42,581,174 hz</td><td>4,275,389 hz</td></tr>
+<tr><td>Valid <code>check()</code></td><td>503,232 hz</td><td>3,903,929 hz</td><td>35,568,425 hz</td><td>40,084,605 hz</td><td>4,278,587 hz</td></tr>
+<tr><td>Invalid <code>is()</code></td><td>3,636,369 hz</td><td>42,080,241 hz</td><td>49,654,076 hz</td><td>50,482,732 hz</td><td>27,820,643 hz</td></tr>
+<tr><td>Invalid <code>check()</code></td><td>420,446 hz</td><td>2,086,129 hz</td><td>3,077,367 hz</td><td>3,673,508 hz</td><td>28,713,035 hz</td></tr></tbody></table></div>
+<p>Benchmark numbers are machine-local telemetry. They are useful for catching regressions, not for promising a fixed throughput floor. Unsafe and unchecked numbers are not hostile-input equivalent to safe mode.</p>
+          </article>
         </main>
       </div>
     </div>
-
   </body>
 </html>
