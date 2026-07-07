@@ -331,7 +331,7 @@ function readWarmupOptions(
  * @brief Normalize a guard-or-entry warmup input.
  */
 function readWarmupEntry(input: WarmupInput): WarmupEntry {
-    if (!isRecord(input)) {
+    if (!isObjectLike(input)) {
         throw new TypeError("warmup input must be a guard or warmup entry");
     }
     const maybeKey = readOwnDataProperty(input, "key");
@@ -353,7 +353,7 @@ function readWarmupEntry(input: WarmupInput): WarmupEntry {
         (typeof maybeKey !== "string" || maybeKey.length === 0)) {
         throw new TypeError("warmup key must be a non-empty string");
     }
-    if (maybeGuard !== undefined && !isRecord(maybeGuard)) {
+    if (maybeGuard !== undefined && !isObjectLike(maybeGuard)) {
         throw new TypeError("warmup guard must be a TypeSea guard");
     }
     if (maybeFactory !== undefined && typeof maybeFactory !== "function") {
@@ -488,4 +488,11 @@ function readOwnDataProperty(
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * @brief Accept objects and function objects that can carry own schema slots.
+ */
+function isObjectLike(value: unknown): value is object {
+    return value !== null && (typeof value === "object" || typeof value === "function");
 }

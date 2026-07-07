@@ -76,7 +76,7 @@ virtual module은 id로 resolve되고, Rollup, Vite, esbuild macro path는 plugi
 source text 안의 schema expression을 임의로 평가하지 않습니다.
 
 semantic이 local한 scalar node는 direct JavaScript test로 emit됩니다.
-finite-number check, integer check, string length bound, literal equality, regexp test는 generated hot path에서 helper call 없이 낮아집니다.
+finite-number check, integer check, BigInt bound, string length bound, literal equality, regexp test는 generated hot path에서 helper call 없이 낮아집니다.
 
 array와 record IR node는 indexed loop를 emit합니다.
 static child schema는 optimized graph에서 해당 loop 안으로 inline됩니다.
@@ -172,7 +172,7 @@ benchmark suite는 두 질문을 분리합니다.
 Zod, Valibot, Ajv는 측정용 dev dependency입니다.
 `src`에서 import하지 않으며, package policy는 release 전에 runtime, peer, optional, bundled dependency field를 거부합니다.
 
-2026-07-06 KST의 마지막 로컬 벤치마크는 JSON-compatible strict-object benchmark에서 아래 ecosystem path를 보고했습니다.
+2026-07-06 KST의 마지막 clean 로컬 벤치마크는 JSON-compatible strict-object benchmark에서 아래 ecosystem path를 보고했습니다.
 커밋된 기준 데이터는 `bench/results/latest.json`이며, `npm run bench:record`가 전체 Vitest bench 3회의 중앙값으로 summary와 README SVG를 다시 생성합니다.
 `npm run bench:compare`는 committed summary를 release regression floor와 비교합니다.
 대상은 unchecked valid hot path, safe invalid fast-fail, safe valid throughput, presence-dispatch object union path입니다.

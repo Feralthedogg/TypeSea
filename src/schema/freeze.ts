@@ -10,6 +10,7 @@ import { isPlainRegExp } from "./common.js";
 import type {
     DiscriminatedUnionCase,
     ObjectEntry,
+    PatternPropertyEntry,
     Schema,
     StringCheck,
     StringRegexCheck
@@ -55,14 +56,25 @@ function freezeSchemaInner(schema: Schema, frozen: WeakSet<object>): Schema {
             }
             return Object.freeze(schema);
         case SchemaTag.Record:
+            if (schema.key !== undefined) {
+                freezeSchemaInner(schema.key, frozen);
+            }
+            if (schema.requiredKeys !== undefined) {
+                Object.freeze(schema.requiredKeys);
+            }
             freezeSchemaInner(schema.value, frozen);
             return Object.freeze(schema);
         case SchemaTag.Map:
             freezeSchemaInner(schema.key, frozen);
             freezeSchemaInner(schema.value, frozen);
+            freezeArray(schema.checks, frozen);
             return Object.freeze(schema);
         case SchemaTag.Set:
             freezeSchemaInner(schema.item, frozen);
+            freezeArray(schema.checks, frozen);
+            return Object.freeze(schema);
+        case SchemaTag.File:
+            freezeFileChecks(schema.checks, frozen);
             return Object.freeze(schema);
         case SchemaTag.Property:
             freezeSchemaInner(schema.base, frozen);
@@ -77,6 +89,7 @@ function freezeSchemaInner(schema: Schema, frozen: WeakSet<object>): Schema {
             Object.freeze(schema.keyLookup);
             return Object.freeze(schema);
         case SchemaTag.Union:
+        case SchemaTag.Xor:
             freezeSchemaArray(schema.options, frozen);
             return Object.freeze(schema);
         case SchemaTag.Intersection:
@@ -94,17 +107,55 @@ function freezeSchemaInner(schema: Schema, frozen: WeakSet<object>): Schema {
         case SchemaTag.Brand:
             freezeSchemaInner(schema.inner, frozen);
             return Object.freeze(schema);
+        case SchemaTag.Metadata:
+            freezeSchemaInner(schema.inner, frozen);
+            if (schema.metadata.examples !== undefined) {
+                Object.freeze(schema.metadata.examples);
+            }
+            Object.freeze(schema.metadata);
+            return Object.freeze(schema);
+        case SchemaTag.Message:
+            freezeSchemaInner(schema.inner, frozen);
+            return Object.freeze(schema);
+        case SchemaTag.Readonly:
+            freezeSchemaInner(schema.inner, frozen);
+            return Object.freeze(schema);
+        case SchemaTag.KeyedObject:
+            freezeSchemaInner(schema.inner, frozen);
+            Object.freeze(schema.keys);
+            return Object.freeze(schema);
+        case SchemaTag.PropertyCount:
+            freezeSchemaInner(schema.inner, frozen);
+            return Object.freeze(schema);
+        case SchemaTag.PropertyNames:
+            freezeSchemaInner(schema.inner, frozen);
+            freezeSchemaInner(schema.key, frozen);
+            return Object.freeze(schema);
+        case SchemaTag.PatternProperties:
+            freezeSchemaInner(schema.inner, frozen);
+            freezePatternPropertyEntries(schema.entries, frozen);
+            Object.freeze(schema.keys);
+            Object.freeze(schema.keyLookup);
+            if (schema.additional !== undefined) {
+                freezeSchemaInner(schema.additional, frozen);
+            }
+            return Object.freeze(schema);
         case SchemaTag.Refine:
             freezeSchemaInner(schema.inner, frozen);
+            if (schema.path !== undefined) {
+                Object.freeze(schema.path);
+            }
             return Object.freeze(schema);
         case SchemaTag.Unknown:
         case SchemaTag.Never:
-        case SchemaTag.BigInt:
         case SchemaTag.Symbol:
         case SchemaTag.Boolean:
         case SchemaTag.InstanceOf:
         case SchemaTag.Literal:
         case SchemaTag.Lazy:
+            return Object.freeze(schema);
+        case SchemaTag.BigInt:
+            Object.freeze(schema.checks);
             return Object.freeze(schema);
     }
 }
@@ -124,6 +175,28 @@ function freezeArray(
             frozen.add(value);
             Object.freeze(value);
         }
+    }
+    Object.freeze(values);
+}
+
+/**
+ * @brief Freeze file checks and nested MIME lists.
+ */
+function freezeFileChecks(
+    values: readonly object[],
+    frozen: WeakSet<object>
+): void {
+    for (let index = 0; index < values.length; index += 1) {
+        const value = values[index];
+        if (value === undefined || frozen.has(value)) {
+            continue;
+        }
+        const maybeMime = value as { readonly values?: readonly string[] };
+        if (Array.isArray(maybeMime.values)) {
+            Object.freeze(maybeMime.values);
+        }
+        frozen.add(value);
+        Object.freeze(value);
     }
     Object.freeze(values);
 }
@@ -210,6 +283,30 @@ function freezeObjectEntries(
             freezeSchemaInner(entry.schema, frozen);
             Object.freeze(entry);
         }
+    }
+    Object.freeze(entries);
+}
+
+/**
+ * @brief Freeze JSON Schema pattern-property entries.
+ */
+function freezePatternPropertyEntries(
+    entries: readonly PatternPropertyEntry[],
+    frozen: WeakSet<object>
+): void {
+    for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (entry === undefined) {
+            continue;
+        }
+        if (!isPlainRegExp(entry.regex)) {
+            throw new TypeError("patternProperties entry must use a plain RegExp");
+        }
+        if (Object.isExtensible(entry.regex)) {
+            Object.preventExtensions(entry.regex);
+        }
+        freezeSchemaInner(entry.schema, frozen);
+        Object.freeze(entry);
     }
     Object.freeze(entries);
 }

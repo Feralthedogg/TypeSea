@@ -22,8 +22,10 @@ export type IssueCode =
     | "expected_never"
     | "expected_literal"
     | "expected_array"
+    | "expected_promise"
     | "expected_map"
     | "expected_set"
+    | "expected_file"
     | "expected_instance"
     | "expected_tuple"
     | "expected_tuple_length"
@@ -39,6 +41,7 @@ export type IssueCode =
     | "expected_lt"
     | "expected_multiple_of"
     | "expected_required_key"
+    | "expected_key_count"
     | "expected_union"
     | "expected_discriminant"
     | "expected_refinement"
@@ -56,6 +59,7 @@ export interface Issue {
     readonly expected: string | undefined;
     readonly actual: string | undefined;
     readonly message: string | undefined;
+    readonly input?: unknown;
 }
 
 /**
@@ -89,15 +93,27 @@ export function makeIssue(
     code: IssueCode,
     expected: string | undefined,
     actual: string | undefined,
-    message: string | undefined
+    message: string | undefined,
+    input?: unknown
 ): Issue {
-    return {
+    const issue: {
+        path: readonly PathSegment[];
+        code: IssueCode;
+        expected: string | undefined;
+        actual: string | undefined;
+        message: string | undefined;
+        input?: unknown;
+    } = {
         path,
         code,
         expected,
         actual,
         message
     };
+    if (arguments.length >= 6) {
+        issue.input = input;
+    }
+    return issue;
 }
 
 /**
@@ -169,6 +185,7 @@ function copyIssue(value: unknown): Issue {
     const expected = value["expected"];
     const actual = value["actual"];
     const message = value["message"];
+    const input = value["input"];
     if (!isIssueCodeValue(code)) {
         throw new TypeError("issue code is invalid");
     }
@@ -177,7 +194,9 @@ function copyIssue(value: unknown): Issue {
         !isOptionalString(message)) {
         throw new TypeError("issue text fields must be strings or undefined");
     }
-    return makeIssue(path, code, expected, actual, message);
+    return hasOwn(value, "input")
+        ? makeIssue(path, code, expected, actual, message, input)
+        : makeIssue(path, code, expected, actual, message);
 }
 
 /**
@@ -230,8 +249,10 @@ export function isIssueCodeValue(value: unknown): value is IssueCode {
         case "expected_never":
         case "expected_literal":
         case "expected_array":
+        case "expected_promise":
         case "expected_map":
         case "expected_set":
+        case "expected_file":
         case "expected_instance":
         case "expected_tuple":
         case "expected_tuple_length":
@@ -247,6 +268,7 @@ export function isIssueCodeValue(value: unknown): value is IssueCode {
         case "expected_lt":
         case "expected_multiple_of":
         case "expected_required_key":
+        case "expected_key_count":
         case "expected_union":
         case "expected_discriminant":
         case "expected_refinement":
@@ -278,6 +300,13 @@ function isOptionalString(value: unknown): value is string | undefined {
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * @brief Check own property membership without invoking user getters.
+ */
+function hasOwn(value: object, key: string): boolean {
+    return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 /**

@@ -285,25 +285,25 @@ function emitHelperPrelude(body: string, rootPathIsFrozen: boolean): string {
     pushHelper(chunks, needed, "ev", "const ev=function(v,i,f){const d=gp(v,i);if(d!==undefined&&!h.call(d,\"value\"))return false;return f(d===undefined?undefined:d.value);};");
     pushHelper(chunks, needed, "er", "const er=function(v,f){if(!o(v))return false;for(const key in v){if(!h.call(v,key))continue;const d=gp(v,key);if(d===undefined||!h.call(d,\"value\")||!f(d.value))return false;}return true;};");
     pushHelper(chunks, needed, "dj", "const dj=function(v,key,ks){if(!o(v))return false;const d=g(v,key);if(d===undefined||typeof d.value!==\"string\")return false;const i=ks.indexOf(d.value);return i>=0&&arguments[i+3](v);};");
-    pushHelper(chunks, needed, "a", "const a=function(v){if(v===null)return \"null\";if(Array.isArray(v))return \"array\";if(v instanceof Date)return \"date\";if(v instanceof Map)return \"map\";if(v instanceof Set)return \"set\";if(typeof v===\"bigint\")return \"bigint\";if(typeof v===\"symbol\")return \"symbol\";if(typeof v===\"number\"&&Number.isNaN(v))return \"nan\";return typeof v;};");
+    pushHelper(chunks, needed, "a", "const a=function(v){if(v===null)return \"null\";if(Array.isArray(v))return \"array\";if(v instanceof Date)return \"date\";if(typeof File===\"function\"&&v instanceof File)return \"file\";if(v instanceof Map)return \"map\";if(v instanceof Set)return \"set\";if(typeof v===\"number\"&&Number.isNaN(v))return \"nan\";return typeof v;};");
     pushHelper(chunks, needed, "le", "const le=function(v){if(v===null)return \"null\";if(v===undefined)return \"undefined\";if(typeof v===\"string\")return JSON.stringify(v);if(typeof v===\"number\"&&Object.is(v,-0))return \"-0\";if(typeof v===\"symbol\")return String(v);return String(v);};");
     pushHelper(chunks, needed, "w", "const w=function(){const x=new Array(u.length);for(let i=0;i<u.length;i+=1)x[i]=Object.freeze([u[i]]);return x;}();");
     pushHelper(chunks, needed, "q", rootPathIsFrozen
-        ? "const q=function(s,p,c,e,x){s.push(Object.freeze({path:z,code:c,expected:e,actual:x,message:undefined}));};"
-        : "const q=function(s,p,c,e,x){const y=p.length===0?z:Object.freeze(p.slice());s.push(Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined}));};");
+        ? "const q=function(s,p,c,e,x,m){s.push(Object.freeze({path:z,code:c,expected:e,actual:x,message:m}));};"
+        : "const q=function(s,p,c,e,x,m){const y=p.length===0?z:Object.freeze(p.slice());s.push(Object.freeze({path:y,code:c,expected:e,actual:x,message:m}));};");
     pushHelper(chunks, needed, "q1", rootPathIsFrozen
-        ? "const q1=function(s,p,k,c,e,x){s.push(Object.freeze({path:Object.freeze([k]),code:c,expected:e,actual:x,message:undefined}));};"
-        : "const q1=function(s,p,k,c,e,x){const n=p.length;const y=n===0?[k]:p.slice();if(n!==0)y.push(k);Object.freeze(y);s.push(Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined}));};");
+        ? "const q1=function(s,p,k,c,e,x,m){s.push(Object.freeze({path:Object.freeze([k]),code:c,expected:e,actual:x,message:m}));};"
+        : "const q1=function(s,p,k,c,e,x,m){const n=p.length;const y=n===0?[k]:p.slice();if(n!==0)y.push(k);Object.freeze(y);s.push(Object.freeze({path:y,code:c,expected:e,actual:x,message:m}));};");
     pushHelper(chunks, needed, "q1s", rootPathIsFrozen
-        ? "const q1s=function(s,p,i,c,e,x){s.push(Object.freeze({path:w[i],code:c,expected:e,actual:x,message:undefined}));};"
-        : "const q1s=function(s,p,i,c,e,x){const n=p.length;if(n===0){s.push(Object.freeze({path:w[i],code:c,expected:e,actual:x,message:undefined}));return;}const y=p.slice();y.push(u[i]);Object.freeze(y);s.push(Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined}));};");
+        ? "const q1s=function(s,p,i,c,e,x,m){s.push(Object.freeze({path:w[i],code:c,expected:e,actual:x,message:m}));};"
+        : "const q1s=function(s,p,i,c,e,x,m){const n=p.length;if(n===0){s.push(Object.freeze({path:w[i],code:c,expected:e,actual:x,message:m}));return;}const y=p.slice();y.push(u[i]);Object.freeze(y);s.push(Object.freeze({path:y,code:c,expected:e,actual:x,message:m}));};");
     pushHelper(chunks, needed, "q2", rootPathIsFrozen
-        ? "const q2=function(s,p,a,b,c,e,x){s.push(Object.freeze({path:Object.freeze([a,b]),code:c,expected:e,actual:x,message:undefined}));};"
-        : "const q2=function(s,p,a,b,c,e,x){const n=p.length;const y=n===0?[a,b]:p.slice();if(n!==0){y.push(a);y.push(b);}Object.freeze(y);s.push(Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined}));};");
-    pushHelper(chunks, needed, "fq", "const fq=function(p,c,e,x){const y=p.length===0?z:Object.freeze(p.slice());return Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined});};");
-    pushHelper(chunks, needed, "fq1", "const fq1=function(p,k,c,e,x){const n=p.length;const y=n===0?[k]:p.slice();if(n!==0)y.push(k);Object.freeze(y);return Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined});};");
-    pushHelper(chunks, needed, "fq1s", "const fq1s=function(p,i,c,e,x){if(p.length===0)return Object.freeze({path:w[i],code:c,expected:e,actual:x,message:undefined});const y=p.slice();y.push(u[i]);Object.freeze(y);return Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined});};");
-    pushHelper(chunks, needed, "fq2", "const fq2=function(p,a,b,c,e,x){const n=p.length;const y=n===0?[a,b]:p.slice();if(n!==0){y.push(a);y.push(b);}Object.freeze(y);return Object.freeze({path:y,code:c,expected:e,actual:x,message:undefined});};");
+        ? "const q2=function(s,p,a,b,c,e,x,m){s.push(Object.freeze({path:Object.freeze([a,b]),code:c,expected:e,actual:x,message:m}));};"
+        : "const q2=function(s,p,a,b,c,e,x,m){const n=p.length;const y=n===0?[a,b]:p.slice();if(n!==0){y.push(a);y.push(b);}Object.freeze(y);s.push(Object.freeze({path:y,code:c,expected:e,actual:x,message:m}));};");
+    pushHelper(chunks, needed, "fq", "const fq=function(p,c,e,x,m){const y=p.length===0?z:Object.freeze(p.slice());return Object.freeze({path:y,code:c,expected:e,actual:x,message:m});};");
+    pushHelper(chunks, needed, "fq1", "const fq1=function(p,k,c,e,x,m){const n=p.length;const y=n===0?[k]:p.slice();if(n!==0)y.push(k);Object.freeze(y);return Object.freeze({path:y,code:c,expected:e,actual:x,message:m});};");
+    pushHelper(chunks, needed, "fq1s", "const fq1s=function(p,i,c,e,x,m){if(p.length===0)return Object.freeze({path:w[i],code:c,expected:e,actual:x,message:m});const y=p.slice();y.push(u[i]);Object.freeze(y);return Object.freeze({path:y,code:c,expected:e,actual:x,message:m});};");
+    pushHelper(chunks, needed, "fq2", "const fq2=function(p,a,b,c,e,x,m){const n=p.length;const y=n===0?[a,b]:p.slice();if(n!==0){y.push(a);y.push(b);}Object.freeze(y);return Object.freeze({path:y,code:c,expected:e,actual:x,message:m});};");
     return chunks.join("");
 }
 

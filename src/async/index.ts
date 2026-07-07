@@ -1,14 +1,28 @@
 import {
+    type CatchInput,
     type DecodeSource,
     type Decoder,
     type InferDecoder,
     isDecoderValue
 } from "../decoder/index.js";
 import { checkSchema } from "../evaluate/index.js";
-import type { Guard, Presence, RuntimeValue } from "../guard/index.js";
-import { freezeIssueArray, makeIssue, type CheckResult } from "../issue/index.js";
+import type {
+    Guard,
+    ParseOptions,
+    Presence,
+    RuntimeValue,
+    SafeParseResult
+} from "../guard/index.js";
+import { setGuardPromiseFactory } from "../guard/base.js";
+import { TypeSeaAssertionError } from "../guard/error.js";
+import { applyParseOptions } from "../guard/parse-options.js";
+import { freezeIssueArray, makeIssue, type CheckResult, type Issue } from "../issue/index.js";
 import { err, ok } from "../result/index.js";
 import { freezeSchema, isSchemaValue, type Schema } from "../schema/index.js";
+import {
+    toStandardSchemaResult,
+    type StandardSchemaV1Props
+} from "../standard/index.js";
 
 type AsyncDecodeRunner<TValue> = (value: unknown) => Promise<CheckResult<TValue>>;
 
@@ -16,12 +30,18 @@ type AsyncPredicate<TValue> = (value: TValue) => boolean | Promise<boolean>;
 
 type AsyncMapper<TValue, TNext> = (value: TValue) => TNext | Promise<TNext>;
 
+type AsyncDefaultInput<TValue> = TValue | (() => TValue);
+
 /**
  * @brief Private runner slot for async decoder instances.
  * @details Decoder helpers keep validation failures explicit in Result values while
  * preserving the original input value.
  */
 const AsyncDecoderRunSymbol = Symbol("TypeSea.asyncDecoder.run");
+const PromiseDecoderInnerSymbol = Symbol("TypeSea.promiseDecoder.inner");
+const PromiseDecoderFlagsSymbol = Symbol("TypeSea.promiseDecoder.flags");
+const SyncPromiseParseMessage =
+    "Encountered Promise during synchronous parse. Use .parseAsync() instead.";
 
 /**
  * @brief Real async decoder instances tracked without extending object lifetime.
@@ -46,6 +66,15 @@ export type InferAsyncDecoder<TSource> =
  */
 export interface AsyncDecoder<TValue> {
     decodeAsync(value: unknown): Promise<CheckResult<TValue>>;
+
+    parseAsync(value: unknown, options?: Partial<ParseOptions>): Promise<TValue>;
+
+    safeParseAsync(
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): Promise<SafeParseResult<TValue>>;
+
+    spa(value: unknown, options?: Partial<ParseOptions>): Promise<SafeParseResult<TValue>>;
 
     refineAsync(
         predicate: AsyncPredicate<TValue>,
@@ -79,11 +108,72 @@ export class BaseAsyncDecoder<TValue> implements AsyncDecoder<TValue> {
         }
         defineReadonlyProperty(this, AsyncDecoderRunSymbol, run, false);
         constructedAsyncDecoders.add(this);
-        Object.freeze(this);
+        if (new.target === BaseAsyncDecoder) {
+            Object.freeze(this);
+        }
     }
 
     public decodeAsync(this: unknown, value: unknown): Promise<CheckResult<TValue>> {
         return readAsyncDecoderRunner<TValue>(this, "async decoder receiver")(value);
+    }
+
+    public async parseAsync(
+        this: unknown,
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): Promise<TValue> {
+        const result = await readAsyncDecoderRunner<TValue>(
+            this,
+            "async decoder receiver"
+        )(value);
+        if (!result.ok) {
+            return Promise.reject(new TypeSeaAssertionError(
+                applyParseOptions(result.error, value, options)
+            ));
+        }
+        return result.value;
+    }
+
+    public async safeParseAsync(
+        this: unknown,
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): Promise<SafeParseResult<TValue>> {
+        const result = await readAsyncDecoderRunner<TValue>(
+            this,
+            "async decoder receiver"
+        )(value);
+        if (result.ok) {
+            return Object.freeze({
+                success: true,
+                data: result.value
+            });
+        }
+        return Object.freeze({
+            success: false,
+            error: new TypeSeaAssertionError(applyParseOptions(result.error, value, options))
+        });
+    }
+
+    public async spa(
+        this: unknown,
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): Promise<SafeParseResult<TValue>> {
+        const result = await readAsyncDecoderRunner<TValue>(
+            this,
+            "async decoder receiver"
+        )(value);
+        if (result.ok) {
+            return Object.freeze({
+                success: true,
+                data: result.value
+            });
+        }
+        return Object.freeze({
+            success: false,
+            error: new TypeSeaAssertionError(applyParseOptions(result.error, value, options))
+        });
     }
 
     public refineAsync(
@@ -150,6 +240,529 @@ export class BaseAsyncDecoder<TValue> implements AsyncDecoder<TValue> {
     }
 }
 
+interface PromiseDecoderFlags {
+    readonly optional: boolean;
+    readonly nullable: boolean;
+    readonly description: string | undefined;
+}
+
+const defaultPromiseDecoderFlags: PromiseDecoderFlags = Object.freeze({
+    optional: false,
+    nullable: false,
+    description: undefined
+});
+
+/**
+ * @brief Zod-shaped async promise schema facade.
+ * @details The Result-native `decodeAsync()` method is inherited. Zod migration
+ * helpers are layered on top so promise schemas expose the usual parse surface.
+ */
+export class PromiseAsyncDecoder<TValue> extends BaseAsyncDecoder<TValue> {
+    /**
+     * @brief Original inner schema or decoder used for unwrap and Zod-like metadata.
+     */
+    private declare readonly [PromiseDecoderInnerSymbol]: unknown;
+
+    /**
+     * @brief Small immutable flag block carried across wrapper combinators.
+     */
+    private declare readonly [PromiseDecoderFlagsSymbol]: PromiseDecoderFlags;
+
+    /**
+     * @brief Standard Schema facade for ecosystem adapters that understand async validation.
+     */
+    public declare readonly "~standard": StandardSchemaV1Props<unknown, TValue>;
+
+    /**
+     * @brief Stable runtime tag used by Zod-compatible callers.
+     */
+    public readonly type = "promise";
+
+    /**
+     * @brief Construct a frozen promise decoder facade around an async runner.
+     * @remarks The runner lives in the BaseAsyncDecoder private slot; this class
+     * adds only promise-specific metadata so wrapper methods stay allocation
+     * small and predictable.
+     */
+    public constructor(
+        run: AsyncDecodeRunner<TValue>,
+        inner: unknown,
+        flags: PromiseDecoderFlags = defaultPromiseDecoderFlags
+    ) {
+        super(run);
+        defineReadonlyProperty(this, PromiseDecoderInnerSymbol, inner, false);
+        defineReadonlyProperty(this, PromiseDecoderFlagsSymbol, flags, false);
+        defineReadonlyProperty(
+            this,
+            "~standard",
+            makeAsyncStandardSchemaProps<unknown, TValue>(run),
+            false
+        );
+        Object.freeze(this);
+    }
+
+    /**
+     * @brief Expose the Zod-style definition object for promise schemas.
+     */
+    public get def(): Readonly<Record<string, unknown>> {
+        return Object.freeze({
+            type: "promise",
+            innerType: readPromiseInner(this)
+        });
+    }
+
+    /**
+     * @brief Alias used by Zod ecosystem code that reads `_def`.
+     */
+    public get _def(): Readonly<Record<string, unknown>> {
+        return this.def;
+    }
+
+    /**
+     * @brief Minimal Zod v4 compatibility metadata for promise schemas.
+     */
+    public get _zod(): Readonly<Record<string, unknown>> {
+        return Object.freeze({
+            def: this.def,
+            constr: PromiseAsyncDecoder,
+            traits: Object.freeze(new Set(["ZodType", "ZodPromise"])),
+            bag: Object.freeze({}),
+            version: Object.freeze({
+                major: 4,
+                minor: 0,
+                patch: 0
+            }),
+            deferred: Object.freeze([])
+        });
+    }
+
+    /**
+     * @brief Optional human description attached by `describe()`.
+     */
+    public get description(): string | undefined {
+        return readPromiseFlags(this).description;
+    }
+
+    /**
+     * @brief Reject synchronous parse because a promised value cannot be inspected synchronously.
+     */
+    public parse(): never {
+        throw new Error(SyncPromiseParseMessage);
+    }
+
+    /**
+     * @brief Reject synchronous safe parse for the same async-only boundary.
+     */
+    public safeParse(): never {
+        throw new Error(SyncPromiseParseMessage);
+    }
+
+    /**
+     * @brief Reject synchronous Result decode for promise schemas.
+     */
+    public decode(): never {
+        throw new Error(SyncPromiseParseMessage);
+    }
+
+    /**
+     * @brief Reject synchronous safe decode for promise schemas.
+     */
+    public safeDecode(): never {
+        throw new Error(SyncPromiseParseMessage);
+    }
+
+    /**
+     * @brief Reject synchronous encode aliases because promise schemas are decode-only async facades.
+     */
+    public encode(): never {
+        throw new Error(SyncPromiseParseMessage);
+    }
+
+    /**
+     * @brief Reject synchronous safe encode aliases for promise schemas.
+     */
+    public safeEncode(): never {
+        throw new Error(SyncPromiseParseMessage);
+    }
+
+    /**
+     * @brief Result-style async decode alias backed by the parse-safe implementation.
+     */
+    public async safeDecodeAsync(
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): Promise<SafeParseResult<TValue>> {
+        return this.safeParseAsync(value, options);
+    }
+
+    /**
+     * @brief Zod-compatible async encode alias.
+     * @remarks Promise schemas do not transform back to a transport format; the
+     * alias validates the resolved value through the same async parse path.
+     */
+    public async encodeAsync(
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): Promise<TValue> {
+        return this.parseAsync(value, options);
+    }
+
+    /**
+     * @brief Safe async encode alias returning TypeSea's safe parse shape.
+     */
+    public async safeEncodeAsync(
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): Promise<SafeParseResult<TValue>> {
+        return this.safeParseAsync(value, options);
+    }
+
+    /**
+     * @brief Return the inner schema or decoder supplied to `t.promise()`.
+     */
+    public unwrap(): unknown {
+        return readPromiseInner(this);
+    }
+
+    /**
+     * @brief Report whether this wrapper accepts undefined before awaiting.
+     */
+    public isOptional(): boolean {
+        return readPromiseFlags(this).optional;
+    }
+
+    /**
+     * @brief Report whether this wrapper accepts null before awaiting.
+     */
+    public isNullable(): boolean {
+        return readPromiseFlags(this).nullable;
+    }
+
+    /**
+     * @brief Accept undefined at the promise boundary while preserving inner metadata.
+     */
+    public optional(): PromiseAsyncDecoder<TValue | undefined> {
+        const run = readAsyncDecoderRunner<TValue>(this, "promise optional receiver");
+        return new PromiseAsyncDecoder<TValue | undefined>(
+            async (value: unknown): Promise<CheckResult<TValue | undefined>> => {
+                if (value === undefined) {
+                    return ok(undefined);
+                }
+                return run(value);
+            },
+            readPromiseInner(this),
+            {
+                ...readPromiseFlags(this),
+                optional: true
+            }
+        );
+    }
+
+    /**
+     * @brief Accept null at the promise boundary while preserving inner metadata.
+     */
+    public nullable(): PromiseAsyncDecoder<TValue | null> {
+        const run = readAsyncDecoderRunner<TValue>(this, "promise nullable receiver");
+        return new PromiseAsyncDecoder<TValue | null>(
+            async (value: unknown): Promise<CheckResult<TValue | null>> => {
+                if (value === null) {
+                    return ok(null);
+                }
+                return run(value);
+            },
+            readPromiseInner(this),
+            {
+                ...readPromiseFlags(this),
+                nullable: true
+            }
+        );
+    }
+
+    /**
+     * @brief Combine nullable and optional boundary behavior.
+     */
+    public nullish(): PromiseAsyncDecoder<TValue | null | undefined> {
+        return this.nullable().optional();
+    }
+
+    /**
+     * @brief Re-wrap the decoder so undefined fails before reaching the inner runner.
+     */
+    public nonoptional(): PromiseAsyncDecoder<Exclude<TValue, undefined>> {
+        const run = readAsyncDecoderRunner<TValue>(this, "promise nonoptional receiver");
+        return new PromiseAsyncDecoder<Exclude<TValue, undefined>>(
+            async (value: unknown): Promise<CheckResult<Exclude<TValue, undefined>>> => {
+                if (value === undefined) {
+                    return failAsyncValue("expected_never", "defined value", value);
+                }
+                return run(value) as Promise<CheckResult<Exclude<TValue, undefined>>>;
+            },
+            readPromiseInner(this),
+            {
+                ...readPromiseFlags(this),
+                optional: false
+            }
+        );
+    }
+
+    /**
+     * @brief Replace undefined input with a fallback result without validating the fallback.
+     */
+    public default(fallback: AsyncDefaultInput<TValue>): PromiseAsyncDecoder<TValue> {
+        const run = readAsyncDecoderRunner<TValue>(this, "promise default receiver");
+        return new PromiseAsyncDecoder<TValue>(
+            async (value: unknown): Promise<CheckResult<TValue>> => {
+                if (value === undefined) {
+                    return ok(resolveAsyncDefault(fallback));
+                }
+                return run(value);
+            },
+            readPromiseInner(this),
+            readPromiseFlags(this)
+        );
+    }
+
+    /**
+     * @brief Replace undefined input before validation so the fallback still passes the inner runner.
+     */
+    public prefault(fallback: unknown): PromiseAsyncDecoder<TValue> {
+        const run = readAsyncDecoderRunner<TValue>(this, "promise prefault receiver");
+        return new PromiseAsyncDecoder<TValue>(
+            (value: unknown): Promise<CheckResult<TValue>> =>
+                run(value === undefined ? fallback : value),
+            readPromiseInner(this),
+            readPromiseFlags(this)
+        );
+    }
+
+    /**
+     * @brief Recover from validation failure with a fallback value.
+     */
+    public catch(fallback: CatchInput<TValue>): PromiseAsyncDecoder<TValue> {
+        const run = readAsyncDecoderRunner<TValue>(this, "promise c" + "atch receiver");
+        return new PromiseAsyncDecoder<TValue>(
+            async (value: unknown): Promise<CheckResult<TValue>> => {
+                const decoded = await run(value);
+                if (decoded.ok) {
+                    return decoded;
+                }
+                return ok(resolveAsyncRecovery(fallback, decoded.error));
+            },
+            readPromiseInner(this),
+            readPromiseFlags(this)
+        );
+    }
+
+    /**
+     * @brief Append an async transform using the BaseAsyncDecoder pipeline.
+     */
+    public transform<TNext>(mapper: AsyncMapper<TValue, TNext>): BaseAsyncDecoder<TNext> {
+        return this.transformAsync(mapper);
+    }
+
+    /**
+     * @brief Zod-compatible alias for transform.
+     */
+    public overwrite<TNext>(mapper: AsyncMapper<TValue, TNext>): BaseAsyncDecoder<TNext> {
+        return this.transformAsync(mapper);
+    }
+
+    /**
+     * @brief Feed the resolved value into another guard or decoder.
+     */
+    public pipe<TNext extends AsyncDecodeSource>(
+        next: TNext
+    ): BaseAsyncDecoder<InferAsyncDecoder<TNext>> {
+        return this.pipeAsync(next);
+    }
+
+    /**
+     * @brief Append an async predicate with a named refinement issue.
+     */
+    public refine(
+        predicate: AsyncPredicate<TValue>,
+        name = "refinement"
+    ): BaseAsyncDecoder<TValue> {
+        return this.refineAsync(predicate, name);
+    }
+
+    /**
+     * @brief Zod-compatible semantic refinement alias.
+     */
+    public superRefine(
+        predicate: AsyncPredicate<TValue>
+    ): BaseAsyncDecoder<TValue> {
+        return this.refineAsync(predicate, "refinement");
+    }
+
+    /**
+     * @brief Zod-compatible check alias for predicate refinements.
+     */
+    public check(
+        predicate: AsyncPredicate<TValue>
+    ): BaseAsyncDecoder<TValue> {
+        return this.refineAsync(predicate, "check");
+    }
+
+    /**
+     * @brief TypeSea fluent alias for predicate refinements.
+     */
+    public with(
+        predicate: AsyncPredicate<TValue>
+    ): BaseAsyncDecoder<TValue> {
+        return this.refineAsync(predicate, "with");
+    }
+
+    /**
+     * @brief Validate with this decoder first, then fall back to another source.
+     * @remarks The second branch receives the original input, not the failed
+     * decoded output, matching ordinary union-like parser behavior.
+     */
+    public or<TNext extends AsyncDecodeSource>(
+        other: TNext
+    ): BaseAsyncDecoder<TValue | InferAsyncDecoder<TNext>> {
+        const run = readAsyncDecoderRunner<TValue>(this, "promise or receiver");
+        const otherRun = readAsyncDecodeSourceRunner<InferAsyncDecoder<TNext>>(
+            other,
+            "promise or target"
+        );
+        return new BaseAsyncDecoder<TValue | InferAsyncDecoder<TNext>>(
+            async (value: unknown): Promise<CheckResult<TValue | InferAsyncDecoder<TNext>>> => {
+                const left = await run(value);
+                if (left.ok) {
+                    return left;
+                }
+                return otherRun(value);
+            }
+        );
+    }
+
+    /**
+     * @brief Pipe this promise decoder into another source.
+     */
+    public and<TNext extends AsyncDecodeSource>(
+        other: TNext
+    ): BaseAsyncDecoder<InferAsyncDecoder<TNext>> {
+        return this.pipeAsync(other);
+    }
+
+    /**
+     * @brief Await an array-like promise and validate each element through the inner runner.
+     * @remarks The returned array is frozen after a copy so downstream code sees
+     * a stable readonly value rather than the mutable work buffer.
+     */
+    public array(): BaseAsyncDecoder<readonly TValue[]> {
+        const run = readAsyncDecoderRunner<TValue>(this, "promise array receiver");
+        return new BaseAsyncDecoder<readonly TValue[]>(
+            async (value: unknown): Promise<CheckResult<readonly TValue[]>> => {
+                const decoded = await value;
+                if (!Array.isArray(decoded)) {
+                    return failAsyncValue("expected_array", "array", decoded);
+                }
+                const output = new Array<TValue>(decoded.length);
+                for (let index = 0; index < decoded.length; index += 1) {
+                    const item = await run(decoded[index]);
+                    if (!item.ok) {
+                        return item;
+                    }
+                    output[index] = item.value;
+                }
+                return ok(Object.freeze(output.slice()));
+            }
+        );
+    }
+
+    /**
+     * @brief Preserve readonly typing without cloning the resolved value.
+     */
+    public readonly(): PromiseAsyncDecoder<Readonly<TValue>> {
+        const run = readAsyncDecoderRunner<TValue>(this, "promise readonly receiver");
+        return new PromiseAsyncDecoder<Readonly<TValue>>(
+            async (value: unknown): Promise<CheckResult<Readonly<TValue>>> => {
+                const decoded = await run(value);
+                if (!decoded.ok) {
+                    return err(decoded.error);
+                }
+                return ok(decoded.value);
+            },
+            readPromiseInner(this),
+            readPromiseFlags(this)
+        );
+    }
+
+    /**
+     * @brief Runtime no-op brand marker.
+     */
+    public brand(): this {
+        return this;
+    }
+
+    /**
+     * @brief Clone the facade while preserving runner, inner schema, and flags.
+     */
+    public clone(): PromiseAsyncDecoder<TValue> {
+        const run = readAsyncDecoderRunner<TValue>(this, "promise clone receiver");
+        return new PromiseAsyncDecoder<TValue>(
+            run,
+            readPromiseInner(this),
+            readPromiseFlags(this)
+        );
+    }
+
+    /**
+     * @brief Attach a human description used by metadata readers.
+     */
+    public describe(description: string): PromiseAsyncDecoder<TValue> {
+        if (typeof description !== "string") {
+            throw new TypeError("promise description must be a string");
+        }
+        const run = readAsyncDecoderRunner<TValue>(this, "promise describe receiver");
+        return new PromiseAsyncDecoder<TValue>(
+            run,
+            readPromiseInner(this),
+            {
+                ...readPromiseFlags(this),
+                description
+            }
+        );
+    }
+
+    /**
+     * @brief Metadata placeholder kept as a fluent no-op for compatibility.
+     */
+    public meta(): this {
+        return this;
+    }
+
+    /**
+     * @brief Registry placeholder kept as a fluent no-op for compatibility.
+     */
+    public register(): this {
+        return this;
+    }
+
+    /**
+     * @brief Apply placeholder kept as a fluent no-op for compatibility.
+     */
+    public apply(): this {
+        return this;
+    }
+
+    /**
+     * @brief Exact optional mirrors optional for promise boundary values.
+     */
+    public exactOptional(): PromiseAsyncDecoder<TValue | undefined> {
+        return this.optional();
+    }
+
+    /**
+     * @brief Reject JSON Schema export because Promise is not a JSON value.
+     */
+    public toJSONSchema(): never {
+        throw new TypeError("promise schemas cannot be represented as JSON Schema");
+    }
+}
+
 /**
  * @brief Wrap a guard, decoder, or async decoder as an async decoder pipeline.
  * @details Decoder helpers keep validation failures explicit in Result values while
@@ -173,6 +786,29 @@ export function asyncDecoder<TValue>(
  */
 export function asyncDecoder(source: AsyncDecodeSource): BaseAsyncDecoder<unknown> {
     return makeAsyncDecoder(source);
+}
+
+/**
+ * @brief Decode through a guard, decoder, or async decoder and return a promise.
+ */
+export function decodeAsync<TSource extends AsyncDecodeSource>(
+    source: TSource,
+    value: unknown
+): Promise<CheckResult<InferAsyncDecoder<TSource>>> {
+    return readAsyncDecodeSourceRunner<InferAsyncDecoder<TSource>>(
+        source,
+        "decodeAsync source"
+    )(value);
+}
+
+/**
+ * @brief Zod-style safe async decode alias for Result-native TypeSea callers.
+ */
+export function safeDecodeAsync<TSource extends AsyncDecodeSource>(
+    source: TSource,
+    value: unknown
+): Promise<CheckResult<InferAsyncDecoder<TSource>>> {
+    return decodeAsync(source, value);
 }
 
 /**
@@ -250,6 +886,34 @@ export function asyncPipe<TNext extends AsyncDecodeSource>(
 }
 
 /**
+ * @brief Decode a native Promise and validate its resolved value.
+ * @param source Guard, decoder, or async decoder applied after awaiting.
+ * @returns Async decoder accepting native Promise input.
+ * @details Promise validation is async-only. It rejects non-Promise inputs with
+ * a Result issue instead of pretending a synchronous predicate can inspect the
+ * promised value.
+ */
+export function promise<TSource extends AsyncDecodeSource>(
+    source: TSource
+): PromiseAsyncDecoder<InferAsyncDecoder<TSource>> {
+    const run = readAsyncDecodeSourceRunner<InferAsyncDecoder<TSource>>(
+        source,
+        "promise source"
+    );
+    return new PromiseAsyncDecoder<InferAsyncDecoder<TSource>>(
+        async (value: unknown): Promise<CheckResult<InferAsyncDecoder<TSource>>> => {
+            return run(await value);
+        },
+        source
+    );
+}
+
+setGuardPromiseFactory(<TValue, TPresence extends Presence>(
+    source: Guard<TValue, TPresence>
+): PromiseAsyncDecoder<RuntimeValue<TValue, TPresence>> =>
+    promise(source));
+
+/**
  * @brief Check async decoder value.
  * @details This helper keeps a local invariant explicit at the module boundary.
  */
@@ -269,6 +933,60 @@ export function isAsyncDecoderValue(
 function makeAsyncDecoder(source: AsyncDecodeSource): BaseAsyncDecoder<unknown> {
     const run = readAsyncDecodeSourceRunner<unknown>(source, "async decoder source");
     return new BaseAsyncDecoder<unknown>(run);
+}
+
+function makeAsyncStandardSchemaProps<Input, Output>(
+    validate: (value: unknown) => Promise<CheckResult<Output>>
+): StandardSchemaV1Props<Input, Output> {
+    return Object.freeze({
+        version: 1,
+        vendor: "typesea",
+        validate: async (value: unknown) =>
+            toStandardSchemaResult(await validate(value))
+    });
+}
+
+function readPromiseInner(value: unknown): unknown {
+    if (!isConstructedAsyncDecoder(value) || !(value instanceof PromiseAsyncDecoder)) {
+        throw new TypeError("promise receiver must be a TypeSea promise decoder");
+    }
+    return value[PromiseDecoderInnerSymbol];
+}
+
+function readPromiseFlags(value: unknown): PromiseDecoderFlags {
+    if (!isConstructedAsyncDecoder(value) || !(value instanceof PromiseAsyncDecoder)) {
+        throw new TypeError("promise receiver must be a TypeSea promise decoder");
+    }
+    return value[PromiseDecoderFlagsSymbol];
+}
+
+function resolveAsyncDefault<TValue>(fallback: AsyncDefaultInput<TValue>): TValue {
+    if (typeof fallback === "function") {
+        return (fallback as () => TValue)();
+    }
+    return fallback;
+}
+
+function resolveAsyncRecovery<TValue>(
+    fallback: CatchInput<TValue>,
+    error: readonly Issue[]
+): TValue {
+    if (typeof fallback === "function") {
+        return (fallback as (context: { readonly error: readonly Issue[] }) => TValue)({
+            error
+        });
+    }
+    return fallback;
+}
+
+function failAsyncValue<TValue>(
+    code: "expected_array" | "expected_never",
+    expected: string,
+    value: unknown
+): CheckResult<TValue> {
+    return err(freezeIssueArray([
+        makeIssue([], code, expected, actualType(value), undefined)
+    ]));
 }
 
 /**
@@ -337,7 +1055,7 @@ function isConstructedAsyncDecoder(
  * @throws TypeError when the schema slot is absent or malformed.
  */
 function readGuardSchema(value: unknown, label: string): Schema {
-    if (!isRecord(value)) {
+    if (!isObjectLike(value)) {
         throw new TypeError(`${label} must be a TypeSea guard or decoder`);
     }
     const schema = readOwnDataProperty(value, "schema");
@@ -433,6 +1151,13 @@ function defineReadonlyProperty(
  */
 function isRecord(value: unknown): value is Readonly<Record<PropertyKey, unknown>> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * @brief Accept objects and function objects that can carry own schema slots.
+ */
+function isObjectLike(value: unknown): value is object {
+    return value !== null && (typeof value === "object" || typeof value === "function");
 }
 
 /**

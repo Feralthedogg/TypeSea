@@ -96,8 +96,9 @@ paths rewrite only static `compileCached("id", ...)` calls whose id was declared
 in plugin config. No schema expression is evaluated from source text.
 
 Scalar nodes emit direct JavaScript tests where the semantics are local:
-finite-number checks, integer checks, string length bounds, literal equality,
-and regexp tests all lower without helper calls on the generated hot path.
+finite-number checks, integer checks, BigInt bounds, string length bounds,
+literal equality, and regexp tests all lower without helper calls on the
+generated hot path.
 
 Array and record IR nodes emit indexed loops. Static child schemas are inlined
 into those loops from their optimized graphs, which avoids function-call
@@ -221,7 +222,7 @@ Zod, Valibot, and Ajv are dev dependencies for measurement only. They are not
 imported by `src`, and package policy rejects runtime, peer, optional, or
 bundled dependency fields before release.
 
-Last local benchmark on 2026-07-06 KST reported these ecosystem paths over the
+Last clean local benchmark on 2026-07-06 KST reported these ecosystem paths over the
 JSON-compatible strict-object benchmark. The committed source of truth is
 `bench/results/latest.json`; `npm run bench:record` refreshes that summary and
 the README SVG from the median of 3 full Vitest runs.

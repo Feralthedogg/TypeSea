@@ -12,16 +12,24 @@ import {
     SchemaTag
 } from "../kind/index.js";
 import type { Issue, PathSegment } from "../issue/index.js";
+import { freezeIssueArray } from "../issue/index.js";
 import type {
     DiscriminatedUnionCase,
+    LiteralValue,
     RefinementIssueCollector,
+    RefinementWhenPredicate,
     Schema
 } from "../schema/index.js";
-import { schemaCanAcceptUndefined } from "../schema/index.js";
+import {
+    objectEntryCanBeOmitted,
+    recordKeyInput,
+    schemaCanAcceptUndefined
+} from "../schema/index.js";
 import {
     pushIssue,
     pushIssueAtPath
 } from "./issue.js";
+import { isSchemaWithState } from "./predicate.js";
 import {
     actualType,
     findDiscriminatedUnionCase,
@@ -33,11 +41,15 @@ import {
     literalToExpected,
     ordinaryHasInstance,
     readMapEntries,
+    readMapSize,
     readOwnDataProperty,
+    readSetSize,
     readSetValues,
     type DataPropertyDescriptor
 } from "./shared.js";
 import type { ValidationState } from "./state.js";
+
+const EMPTY_ISSUES: readonly Issue[] = Object.freeze([]);
 
 /**
  * @brief issue collector.
@@ -138,7 +150,8 @@ function collectArrayLengthIssues(
                         issues,
                         "expected_min_length",
                         `length >= ${String(check.value)}`,
-                        `length ${String(value.length)}`
+                        `length ${String(value.length)}`,
+                        check.message
                     );
                 }
                 break;
@@ -149,7 +162,8 @@ function collectArrayLengthIssues(
                         issues,
                         "expected_max_length",
                         `length <= ${String(check.value)}`,
-                        `length ${String(value.length)}`
+                        `length ${String(value.length)}`,
+                        check.message
                     );
                 }
                 break;
@@ -342,7 +356,7 @@ function readArrayKeyDataProperty(
  * @post Every pushed record key is popped before return.
  */
 export function collectRecordIssues(
-    item: Schema,
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Record }>,
     value: unknown,
     path: PathSegment[],
     issues: Issue[],
@@ -354,6 +368,7 @@ export function collectRecordIssues(
         return;
     }
     const keys = Object.keys(value);
+    collectMissingRecordKeyIssues(schema.requiredKeys, value, path, issues);
     /*
      * Records intentionally validate enumerable own string keys. Symbols and
      * non-enumerable slots are outside record value semantics.
@@ -365,11 +380,46 @@ export function collectRecordIssues(
         }
         const property = readOwnDataProperty(value, key);
         path.push(key);
+        if (schema.key !== undefined) {
+            const keyInput = recordKeyInput(schema.key, key);
+            if (schema.loose && !isSchemaWithState(schema.key, keyInput, state)) {
+                path.pop();
+                continue;
+            }
+            collectChild(schema.key, keyInput, path, issues, state);
+        }
         if (property === undefined) {
             pushIssue(path, issues, "expected_record", "data property", "accessor or missing");
         } else {
-            collectChild(item, property.value, path, issues, state);
+            collectChild(schema.value, property.value, path, issues, state);
         }
+        path.pop();
+    }
+}
+
+/**
+ * @brief Collect exhaustive record-key diagnostics.
+ */
+function collectMissingRecordKeyIssues(
+    requiredKeys: readonly string[] | undefined,
+    value: Readonly<Record<string, unknown>>,
+    path: PathSegment[],
+    issues: Issue[]
+): void {
+    if (requiredKeys === undefined) {
+        return;
+    }
+    for (let index = 0; index < requiredKeys.length; index += 1) {
+        const key = requiredKeys[index];
+        if (key === undefined) {
+            continue;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (descriptor?.enumerable === true) {
+            continue;
+        }
+        path.push(key);
+        pushIssue(path, issues, "expected_record", "enumerable data property", "missing");
         path.pop();
     }
 }
@@ -396,6 +446,7 @@ export function collectMapIssues(
         pushIssue(path, issues, "expected_map", "Map", actualType(value));
         return;
     }
+    collectMapSizeIssues(schema, value, path, issues);
     let index = 0;
     for (;;) {
         const step = iterator.next();
@@ -413,6 +464,23 @@ export function collectMapIssues(
         path.pop();
         index += 1;
     }
+}
+
+/**
+ * @brief Collect Map size issues.
+ */
+function collectMapSizeIssues(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Map }>,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[]
+): void {
+    const size = readMapSize(value);
+    if (size === undefined) {
+        pushIssue(path, issues, "expected_map", "Map", actualType(value));
+        return;
+    }
+    collectSizeIssues(schema.checks, size, path, issues);
 }
 
 /**
@@ -437,6 +505,7 @@ export function collectSetIssues(
         pushIssue(path, issues, "expected_set", "Set", actualType(value));
         return;
     }
+    collectSetSizeIssues(schema, value, path, issues);
     let index = 0;
     for (;;) {
         const step = iterator.next();
@@ -447,6 +516,66 @@ export function collectSetIssues(
         collectChild(schema.item, step.value, path, issues, state);
         path.pop();
         index += 1;
+    }
+}
+
+/**
+ * @brief Collect Set size issues.
+ */
+function collectSetSizeIssues(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Set }>,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[]
+): void {
+    const size = readSetSize(value);
+    if (size === undefined) {
+        pushIssue(path, issues, "expected_set", "Set", actualType(value));
+        return;
+    }
+    collectSizeIssues(schema.checks, size, path, issues);
+}
+
+/**
+ * @brief Collect collection size issues.
+ */
+function collectSizeIssues(
+    checks: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>["checks"],
+    size: number,
+    path: PathSegment[],
+    issues: Issue[]
+): void {
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        switch (check.tag) {
+            case ArrayCheckTag.Min:
+                if (size < check.value) {
+                    pushIssue(
+                        path,
+                        issues,
+                        "expected_min_length",
+                        `>= ${String(check.value)} items`,
+                        `${String(size)} items`,
+                        check.message
+                    );
+                }
+                break;
+            case ArrayCheckTag.Max:
+                if (size > check.value) {
+                    pushIssue(
+                        path,
+                        issues,
+                        "expected_max_length",
+                        `<= ${String(check.value)} items`,
+                        `${String(size)} items`,
+                        check.message
+                    );
+                }
+                break;
+        }
     }
 }
 
@@ -538,10 +667,11 @@ export function collectObjectIssues(
         const property = readOwnDataProperty(record, entry.key);
         path.push(entry.key);
         if (property === undefined) {
-            if (
-                entry.presence === PresenceTag.Optional &&
-                !Object.prototype.hasOwnProperty.call(record, entry.key)
-            ) {
+            const presence = objectEntryCanBeOmitted(entry)
+                ? PresenceTag.Optional
+                : PresenceTag.Required;
+            if (!Object.prototype.hasOwnProperty.call(record, entry.key) &&
+                presence === PresenceTag.Optional) {
                 /*
                  * Missing optional key is valid. An own accessor at the same key
                  * is not valid because readOwnDataProperty would have returned
@@ -550,7 +680,7 @@ export function collectObjectIssues(
                 path.pop();
                 continue;
             }
-            if (entry.presence === PresenceTag.Required) {
+            if (presence === PresenceTag.Required) {
                 pushIssue(path, issues, "expected_required_key", "present key", "missing");
             } else {
                 pushIssue(path, issues, "expected_object", "data property", "accessor");
@@ -658,32 +788,34 @@ export function collectDiscriminatedUnionIssues(
         return;
     }
     const discriminant = discriminantProperty.value;
-    if (typeof discriminant !== "string") {
-        path.push(key);
-        pushIssue(
-            path,
-            issues,
-            "expected_discriminant",
-            "string discriminant",
-            actualType(discriminant)
-        );
-        path.pop();
-        return;
-    }
     const selected = findDiscriminatedUnionCase(cases, discriminant);
     if (selected === undefined) {
         path.push(key);
+        const actual = isLiteralDiagnosticValue(discriminant)
+            ? literalToExpected(discriminant)
+            : actualType(discriminant);
         pushIssue(
             path,
             issues,
             "expected_discriminant",
             "known discriminant",
-            literalToExpected(discriminant)
+            actual
         );
         path.pop();
         return;
     }
     collectChild(selected, value, path, issues, state);
+}
+
+function isLiteralDiagnosticValue(value: unknown): value is LiteralValue {
+    const valueType = typeof value;
+    return value === null ||
+        valueType === "string" ||
+        valueType === "number" ||
+        valueType === "bigint" ||
+        valueType === "boolean" ||
+        valueType === "symbol" ||
+        valueType === "undefined";
 }
 
 /**
@@ -703,6 +835,10 @@ export function collectRefineIssues(
     inner: Schema,
     predicate: (value: unknown) => boolean,
     collect: RefinementIssueCollector | undefined,
+    refinePath: readonly PathSegment[] | undefined,
+    message: string | undefined,
+    abort: boolean | undefined,
+    when: RefinementWhenPredicate | undefined,
     name: string,
     value: unknown,
     path: PathSegment[],
@@ -712,24 +848,74 @@ export function collectRefineIssues(
 ): void {
     const before = issues.length;
     collectChild(inner, value, path, issues, state);
-    if (issues.length !== before) {
+    const innerFailed = issues.length !== before;
+    if (when === undefined && innerFailed) {
+        return;
+    }
+    if (when !== undefined &&
+        !isStrictTrue(when(Object.freeze({
+            value,
+            issues: copyIssuesSince(issues, before)
+        })))) {
         return;
     }
     /*
-     * Refinement predicates run only after the inner schema produced no new
-     * issues. That keeps structural failures more specific than predicate
-     * failures.
+     * Without `when`, refinement predicates run only after the inner schema
+     * produced no new issues. With `when`, callers explicitly opt into running
+     * against the original value and the inner issue snapshot.
      */
     if (collect !== undefined) {
         const reported = collect(value);
         if (reported !== undefined && reported.length !== 0) {
-            pushRefinementIssues(path, issues, name, actualType(value), reported);
+            pushRefinementIssues(
+                path,
+                issues,
+                refinePath,
+                name,
+                actualType(value),
+                message,
+                abort,
+                reported
+            );
         }
         return;
     }
     if (!isStrictTrue(predicate(value))) {
-        pushIssue(path, issues, "expected_refinement", name, actualType(value));
+        pushIssueAtPath(
+            path.concat(refinePath ?? []),
+            issues,
+            "expected_refinement",
+            name,
+            actualType(value),
+            message
+        );
     }
+}
+
+/**
+ * @brief Copy issues emitted by an inner diagnostic pass for `when` payloads.
+ * @param issues Shared mutable diagnostic buffer.
+ * @param start First issue index owned by the inner pass.
+ * @returns Frozen copy safe to expose to user predicates.
+ */
+function copyIssuesSince(issues: readonly Issue[], start: number): readonly Issue[] {
+    if (start >= issues.length) {
+        return EMPTY_ISSUES;
+    }
+    const copied: Issue[] = [];
+    for (let index = start; index < issues.length; index += 1) {
+        const issue = issues[index];
+        if (issue !== undefined) {
+            copied.push({
+                path: issue.path.slice(),
+                code: issue.code,
+                expected: issue.expected,
+                actual: issue.actual,
+                message: issue.message
+            });
+        }
+    }
+    return freezeIssueArray(copied);
 }
 
 /**
@@ -743,8 +929,11 @@ export function collectRefineIssues(
 function pushRefinementIssues(
     basePath: readonly PathSegment[],
     issues: Issue[],
+    refinePath: readonly PathSegment[] | undefined,
     name: string,
     actual: string,
+    fallbackMessage: string | undefined,
+    abort: boolean | undefined,
     reported: readonly {
         readonly path: readonly PathSegment[];
         readonly message: string | undefined;
@@ -754,13 +943,16 @@ function pushRefinementIssues(
         const issue = reported[index];
         if (issue !== undefined) {
             pushIssueAtPath(
-                basePath.concat(issue.path),
+                basePath.concat(refinePath ?? [], issue.path),
                 issues,
                 "expected_refinement",
                 name,
                 actual,
-                issue.message
+                issue.message ?? fallbackMessage
             );
+            if (abort === true) {
+                return;
+            }
         }
     }
 }

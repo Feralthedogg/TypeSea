@@ -2,7 +2,7 @@ import { emitCompiledSourceBundle } from "../compile/index.js";
 import type { CompileMode } from "../compile/index.js";
 import type { Guard, Presence } from "../guard/index.js";
 import type { PathSegment } from "../issue/index.js";
-import { SchemaTag } from "../kind/index.js";
+import { BigIntCheckTag, SchemaTag } from "../kind/index.js";
 import { err, ok, type Result } from "../result/index.js";
 import {
     freezeSchema,
@@ -20,6 +20,8 @@ export type AotIssueCode =
     | "unsupported_aot_lazy"
     | "unsupported_aot_refine"
     | "unsupported_aot_date"
+    | "unsupported_aot_bigint_checks"
+    | "unsupported_aot_readonly"
     | "unsupported_aot_runtime_object"
     | "unsupported_aot_symbol_literal";
 
@@ -109,7 +111,7 @@ export function emitAotModule(
  * the generator traverses schema data.
  */
 function readAotSchema(guard: unknown): Schema {
-    if (!isRecord(guard)) {
+    if (!isObjectLike(guard)) {
         throw new TypeError("AOT guard must be a TypeSea guard");
     }
     const schema = readOwnDataProperty(guard, "schema");
@@ -223,10 +225,14 @@ function scanAotSchema(
             }
             return;
         case SchemaTag.Record:
+            if (schema.key !== undefined) {
+                scanAotSchema(schema.key, path.concat("propertyNames"), issues, seen);
+            }
             scanAotSchema(schema.value, path.concat("additionalProperties"), issues, seen);
             return;
         case SchemaTag.Map:
         case SchemaTag.Set:
+        case SchemaTag.File:
         case SchemaTag.InstanceOf:
         case SchemaTag.Property:
             pushIssue(
@@ -248,6 +254,7 @@ function scanAotSchema(
             }
             return;
         case SchemaTag.Union:
+        case SchemaTag.Xor:
             scanSchemaArray(schema.options, path, issues, seen);
             return;
         case SchemaTag.Intersection:
@@ -258,6 +265,27 @@ function scanAotSchema(
         case SchemaTag.Undefinedable:
         case SchemaTag.Nullable:
         case SchemaTag.Brand:
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+        case SchemaTag.KeyedObject:
+        case SchemaTag.PropertyCount:
+            scanAotSchema(schema.inner, path.concat("inner"), issues, seen);
+            return;
+        case SchemaTag.PropertyNames:
+            scanAotSchema(schema.inner, path.concat("inner"), issues, seen);
+            scanAotSchema(schema.key, path.concat("propertyNames"), issues, seen);
+            return;
+        case SchemaTag.PatternProperties:
+            scanAotSchema(schema.inner, path.concat("inner"), issues, seen);
+            scanPatternProperties(schema, path, issues, seen);
+            return;
+        case SchemaTag.Readonly:
+            pushIssue(
+                path,
+                issues,
+                "unsupported_aot_readonly",
+                "AOT modules cannot preserve readonly Object.freeze side effects yet"
+            );
             scanAotSchema(schema.inner, path.concat("inner"), issues, seen);
             return;
         case SchemaTag.DiscriminatedUnion:
@@ -288,7 +316,17 @@ function scanAotSchema(
         case SchemaTag.Never:
         case SchemaTag.String:
         case SchemaTag.Number:
+            return;
         case SchemaTag.BigInt:
+            if (hasBigIntModuloCheck(schema)) {
+                pushIssue(
+                    path,
+                    issues,
+                    "unsupported_aot_bigint_checks",
+                    "AOT modules cannot preserve BigInt multipleOf checks yet"
+                );
+            }
+            return;
         case SchemaTag.Symbol:
         case SchemaTag.Boolean:
             return;
@@ -315,6 +353,22 @@ function scanSchemaArray(
 }
 
 /**
+ * @brief Detect BigInt constraints that still require runtime schema fallback.
+ */
+function hasBigIntModuloCheck(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.BigInt }>
+): boolean {
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check?.tag === BigIntCheckTag.MultipleOf) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * @brief scan object entries.
  * @details AOT helpers serialize only portable data because standalone modules cannot close
  * over runtime side tables.
@@ -333,6 +387,26 @@ function scanObjectEntries(
         if (entry !== undefined) {
             scanAotSchema(entry.schema, path.concat(entry.key), issues, seen);
         }
+    }
+}
+
+/**
+ * @brief scan pattern-property entries.
+ */
+function scanPatternProperties(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.PatternProperties }>,
+    path: readonly PathSegment[],
+    issues: AotIssue[],
+    seen: WeakSet<object>
+): void {
+    for (let index = 0; index < schema.entries.length; index += 1) {
+        const entry = schema.entries[index];
+        if (entry !== undefined) {
+            scanAotSchema(entry.schema, path.concat("patternProperties", entry.source), issues, seen);
+        }
+    }
+    if (schema.additional !== undefined) {
+        scanAotSchema(schema.additional, path.concat("additionalProperties"), issues, seen);
     }
 }
 
@@ -521,6 +595,13 @@ function freezeAotIssues(issues: readonly AotIssue[]): readonly AotIssue[] {
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * @brief Accept objects and function objects that can carry own schema slots.
+ */
+function isObjectLike(value: unknown): value is object {
+    return value !== null && (typeof value === "object" || typeof value === "function");
 }
 
 /**

@@ -141,7 +141,11 @@ export function foldNumeric(
     if (!left.found || !right.found) {
         return keep(node);
     }
-    const valid = typeof left.value === "number" && typeof right.value === "number";
+    const valid = (
+        typeof left.value === "number" && typeof right.value === "number"
+    ) || (
+        typeof left.value === "bigint" && typeof right.value === "bigint"
+    );
     const result = valid && (node.tag === NodeTag.Gte
         ? left.value >= right.value
         : left.value <= right.value);

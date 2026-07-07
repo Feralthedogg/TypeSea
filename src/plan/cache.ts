@@ -90,7 +90,9 @@ function schemaRequiresTrackingInner(
                 (schema.rest !== undefined &&
                     schemaRequiresTrackingInner(schema.rest, seen));
         case SchemaTag.Record:
-            return schemaRequiresTrackingInner(schema.value, seen);
+            return (schema.key !== undefined &&
+                schemaRequiresTrackingInner(schema.key, seen)) ||
+                schemaRequiresTrackingInner(schema.value, seen);
         case SchemaTag.Map:
             return schemaRequiresTrackingInner(schema.key, seen) ||
                 schemaRequiresTrackingInner(schema.value, seen);
@@ -109,6 +111,7 @@ function schemaRequiresTrackingInner(
             }
             return false;
         case SchemaTag.Union:
+        case SchemaTag.Xor:
             return schemaArrayRequiresTracking(schema.options, seen);
         case SchemaTag.Intersection:
             return schemaRequiresTrackingInner(schema.left, seen) ||
@@ -117,7 +120,17 @@ function schemaRequiresTrackingInner(
         case SchemaTag.Undefinedable:
         case SchemaTag.Nullable:
         case SchemaTag.Brand:
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+        case SchemaTag.KeyedObject:
+        case SchemaTag.PropertyCount:
             return schemaRequiresTrackingInner(schema.inner, seen);
+        case SchemaTag.PropertyNames:
+            return schemaRequiresTrackingInner(schema.inner, seen) ||
+                schemaRequiresTrackingInner(schema.key, seen);
+        case SchemaTag.PatternProperties:
+            return schemaRequiresTrackingInner(schema.inner, seen) ||
+                patternPropertiesRequireTracking(schema, seen);
         case SchemaTag.DiscriminatedUnion:
             for (let index = 0; index < schema.cases.length; index += 1) {
                 const unionCase = schema.cases[index];
@@ -128,12 +141,14 @@ function schemaRequiresTrackingInner(
             }
             return false;
         case SchemaTag.Refine:
+        case SchemaTag.Readonly:
             return schemaRequiresTrackingInner(schema.inner, seen);
         case SchemaTag.Unknown:
         case SchemaTag.Never:
         case SchemaTag.String:
         case SchemaTag.Number:
         case SchemaTag.Date:
+        case SchemaTag.File:
         case SchemaTag.InstanceOf:
         case SchemaTag.BigInt:
         case SchemaTag.Symbol:
@@ -141,6 +156,24 @@ function schemaRequiresTrackingInner(
         case SchemaTag.Literal:
             return false;
     }
+}
+
+/**
+ * @brief Scan pattern-property children for recursion tracking needs.
+ */
+function patternPropertiesRequireTracking(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.PatternProperties }>,
+    seen: WeakSet<object>
+): boolean {
+    for (let index = 0; index < schema.entries.length; index += 1) {
+        const entry = schema.entries[index];
+        if (entry !== undefined &&
+            schemaRequiresTrackingInner(entry.schema, seen)) {
+            return true;
+        }
+    }
+    return schema.additional !== undefined &&
+        schemaRequiresTrackingInner(schema.additional, seen);
 }
 
 /**

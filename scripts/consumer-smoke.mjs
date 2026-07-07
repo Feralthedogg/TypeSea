@@ -56,6 +56,12 @@ async function main() {
     await writeFile(join(workspace, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
     await writeFile(join(workspace, "index.mjs"), runtimeSource());
     await writeFile(join(workspace, "index.ts"), typeSource());
+    await writeFile(join(workspace, "mini.mjs"), miniRuntimeSource());
+    await writeFile(join(workspace, "mini.ts"), miniTypeSource());
+    await writeFile(join(workspace, "zod.mjs"), zodRuntimeSource());
+    await writeFile(join(workspace, "zod.ts"), zodTypeSource());
+    await writeFile(join(workspace, "seaflow.mjs"), seaflowRuntimeSource());
+    await writeFile(join(workspace, "seaflow.ts"), seaflowTypeSource());
     await writeFile(join(workspace, "subpath.ts"), subpathTypeSource());
     await writeFile(join(workspace, "tsconfig.json"), tsconfigSource());
     for (let index = 0; index < blockedSubpaths.length; index += 1) {
@@ -80,6 +86,18 @@ async function main() {
     if (!runtime.ok) {
         return runtime;
     }
+    const miniRuntime = await run("node", ["mini.mjs"], workspace);
+    if (!miniRuntime.ok) {
+        return miniRuntime;
+    }
+    const zodRuntime = await run("node", ["zod.mjs"], workspace);
+    if (!zodRuntime.ok) {
+        return zodRuntime;
+    }
+    const seaflowRuntime = await run("node", ["seaflow.mjs"], workspace);
+    if (!seaflowRuntime.ok) {
+        return seaflowRuntime;
+    }
     for (let index = 0; index < blockedSubpaths.length; index += 1) {
         const subpath = blockedSubpaths[index];
         if (subpath === undefined) {
@@ -96,13 +114,81 @@ async function main() {
     }
     const typeSubpath = await runExpectFailure(
         "npx",
-        ["tsc", "subpath.ts", "--module", "NodeNext", "--moduleResolution", "NodeNext", "--target", "ES2023", "--noEmit"],
+        [
+            "tsc",
+            "subpath.ts",
+            "--ignoreConfig",
+            "--module",
+            "NodeNext",
+            "--moduleResolution",
+            "NodeNext",
+            "--target",
+            "ES2023",
+            "--noEmit"
+        ],
         workspace
     );
     if (!typeSubpath.ok) {
         return typeSubpath;
     }
-    return run("npx", ["tsc", "-p", "tsconfig.json", "--noEmit"], workspace);
+    const typeRoot = await run("npx", ["tsc", "-p", "tsconfig.json", "--noEmit"], workspace);
+    if (!typeRoot.ok) {
+        return typeRoot;
+    }
+    const miniTypes = await run(
+        "npx",
+        [
+            "tsc",
+            "mini.ts",
+            "--ignoreConfig",
+            "--module",
+            "NodeNext",
+            "--moduleResolution",
+            "NodeNext",
+            "--target",
+            "ES2023",
+            "--noEmit"
+        ],
+        workspace
+    );
+    if (!miniTypes.ok) {
+        return miniTypes;
+    }
+    const seaflowTypes = await run(
+        "npx",
+        [
+            "tsc",
+            "seaflow.ts",
+            "--ignoreConfig",
+            "--module",
+            "NodeNext",
+            "--moduleResolution",
+            "NodeNext",
+            "--target",
+            "ES2023",
+            "--noEmit"
+        ],
+        workspace
+    );
+    if (!seaflowTypes.ok) {
+        return seaflowTypes;
+    }
+    return run(
+        "npx",
+        [
+            "tsc",
+            "zod.ts",
+            "--ignoreConfig",
+            "--module",
+            "NodeNext",
+            "--moduleResolution",
+            "NodeNext",
+            "--target",
+            "ES2023",
+            "--noEmit"
+        ],
+        workspace
+    );
 }
 
 /**
@@ -165,7 +251,7 @@ function parsePackOutput(stdout) {
  */
 function runtimeSource() {
     return [
-        "import { compile, t, toJsonSchema } from 'typesea';",
+        "import { compile, t, toJSONSchema, toJsonSchema } from 'typesea';",
         "const User = t.strictObject({",
         "  id: t.string.uuid(),",
         "  age: t.number.int().gte(0),",
@@ -175,8 +261,271 @@ function runtimeSource() {
         "const value = { id: '550e8400-e29b-41d4-a716-446655440000', age: 37, tags: ['ok'] };",
         "if (!User.is(value) || !FastUser.is(value) || !FastUser.check(value).ok) process.exit(1);",
         "const json = toJsonSchema(User);",
-        "if (!json.ok) process.exit(1);",
+        "const jsonAlias = toJSONSchema(User);",
+        "if (!json.ok || !jsonAlias.ok) process.exit(1);",
+        "const openapi = toJsonSchema(t.object({ name: t.nullable(t.string.min(1)) }), { target: 'openapi-3.0' });",
+        "if (!openapi.ok || typeof openapi.value === 'boolean' || openapi.value.$schema !== undefined) process.exit(1);",
+        "const draft4 = toJsonSchema(t.literal('ok'), { target: 'draft-04' });",
+        "if (!draft4.ok || typeof draft4.value === 'boolean' || draft4.value.enum?.[0] !== 'ok') process.exit(1);",
+        "const openMode = 'a' + 'ny';",
+        "const weakened = toJsonSchema(t.symbol, { unrepresentable: openMode });",
+        "if (!weakened.ok || typeof weakened.value === 'boolean' || weakened.value.$schema !== 'http://json-schema.org/draft-07/schema#') process.exit(1);",
+        "const withUri = toJSONSchema(t.string.meta({ id: 'ConsumerName' }), { uri: id => `https://schemas.example/${id}.json` });",
+        "if (!withUri.ok || typeof withUri.value === 'boolean' || withUri.value.$id !== 'https://schemas.example/ConsumerName.json') process.exit(1);",
+        "const docs = t.registry();",
+        "docs.add(User, { id: 'ConsumerUser', title: 'Consumer User' });",
+        "const documented = toJSONSchema(User, { metadata: docs, uri: id => `https://schemas.example/${id}.json` });",
+        "if (!documented.ok || typeof documented.value === 'boolean' || documented.value.$id !== 'https://schemas.example/ConsumerUser.json') process.exit(1);",
+        "const bundle = toJSONSchema(docs, { uri: id => `https://schemas.example/${id}.json` });",
+        "if (!bundle.ok || bundle.value.schemas.ConsumerUser?.$id !== 'https://schemas.example/ConsumerUser.json') process.exit(1);",
+        "const ReusedText = t.string.min(1).meta({ id: 'ConsumerText' });",
+        "const reused = toJSONSchema(t.object({ a: ReusedText, b: ReusedText }), { reused: 'ref' });",
+        "if (!reused.ok || typeof reused.value === 'boolean' || reused.value.definitions?.ConsumerText === undefined) process.exit(1);",
+        "let RecursiveNode;",
+        "RecursiveNode = t.lazy(() => t.object({ value: t.string, children: t.array(RecursiveNode) }));",
+        "const recursive = toJSONSchema(RecursiveNode);",
+        "if (!recursive.ok || typeof recursive.value === 'boolean' || recursive.value.properties?.children?.items?.$ref !== '#') process.exit(1);",
+        "const uploadSchema = toJSONSchema(t.file().max(1024).mime('image/png'));",
+        "if (!uploadSchema.ok || typeof uploadSchema.value === 'boolean' || uploadSchema.value.contentMediaType !== 'image/png') process.exit(1);",
+        "const overridden = toJSONSchema(t.object({ name: t.string }), { override: ctx => { if (ctx.path[0] === 'name') ctx.jsonSchema.title = 'Name'; } });",
+        "if (!overridden.ok || typeof overridden.value === 'boolean' || overridden.value.properties?.name?.title !== 'Name') process.exit(1);",
+        "const NumberText = t.stringToInt();",
+        "const asyncDecoded = await t.decodeAsync(NumberText, '42');",
+        "const asyncEncoded = await t.encodeAsync(NumberText, 42);",
+        "if (!asyncDecoded.ok || asyncDecoded.value !== 42 || !asyncEncoded.ok || asyncEncoded.value !== '42') process.exit(1);",
         "console.log('consumer runtime ok');",
+        ""
+    ].join("\n");
+}
+
+function seaflowRuntimeSource() {
+    return [
+        "import { fuzzCases } from 'typesea/seaflow';",
+        "import { t } from 'typesea';",
+        "const User = t.strictObject({ id: t.string.uuid(), age: t.number.int().gte(0) });",
+        "const cases = [...fuzzCases(User, { intensity: 'high', maxYields: 32 })];",
+        "if (cases.length === 0) process.exit(1);",
+        "if (!cases.some(item => item.reason === 'object.proto')) process.exit(1);",
+        "if (!cases.every(item => User.is(item.value) === item.valid)) process.exit(1);",
+        "console.log('consumer seaflow runtime ok');",
+        ""
+    ].join("\n");
+}
+
+/**
+ * @brief Run mini entry runtime source.
+ * @details Script helpers keep release and policy checks deterministic for CI and local runs.
+ */
+function miniRuntimeSource() {
+    return [
+        "import * as mini from 'typesea/mini';",
+        "const User = mini.object({",
+        "  id: mini.string().uuid(),",
+        "  name: mini.optional(mini.apply(mini.string(), mini.minLength(1), mini.maxLength(32)))",
+        "});",
+        "if (!User.is({ id: '550e8400-e29b-41d4-a716-446655440000', name: 'TypeSea' })) process.exit(1);",
+        "const Trimmed = mini.apply(mini.string(), mini.trim());",
+        "const decoded = mini.decode(Trimmed, ' sea ');",
+        "if (!decoded.ok || decoded.value !== 'sea') process.exit(1);",
+        "const NumberText = mini.stringToInt();",
+        "const asyncDecoded = await mini.decodeAsync(NumberText, '42');",
+        "const asyncEncoded = await mini.encodeAsync(NumberText, 42);",
+        "if (!asyncDecoded.ok || asyncDecoded.value !== 42 || !asyncEncoded.ok || asyncEncoded.value !== '42') process.exit(1);",
+        "console.log('consumer mini runtime ok');",
+        ""
+    ].join("\n");
+}
+
+/**
+ * @brief Run Zod facade runtime source.
+ * @details Script helpers keep release and policy checks deterministic for CI and local runs.
+ */
+function zodRuntimeSource() {
+    return [
+        "import * as z from 'typesea/zod';",
+        "import zDefault from 'typesea/zod';",
+        "import z3, { DIRTY, OK, getParsedType, ostring } from 'typesea/v3';",
+        "import z4, { core as v4Core, string as z4String } from 'typesea/v4';",
+        "import * as z4Mini from 'typesea/v4-mini';",
+        "import * as z4NestedMini from 'typesea/v4/mini';",
+        "import { en, ko } from 'typesea/locales';",
+        "import { en as v4En } from 'typesea/v4/locales';",
+        "import { en as v4WildcardEn } from 'typesea/v4/locales/en';",
+        "import v4WildcardDefault from 'typesea/v4/locales/en.js';",
+        "import { $ZodCheck, $ZodString, _safeParse as coreSafeParse, _string as coreString, version as coreVersion } from 'typesea/v4/core';",
+        "const User = z.strictObject({",
+        "  id: z.string().uuid(),",
+        "  status: z.union([z.literal('active'), z.literal('disabled')]),",
+        "  nickname: z.exactOptional(z.string().min(1)),",
+        "  score: z.number().int().gte(0)",
+        "});",
+        "const UserKey = z.keyof(User);",
+        "const recovered = z.catch(z.string().min(2), 'fallback').safeParse('x');",
+        "const FunctionalName = z.minLength(2)(z.string());",
+        "const TrimmedName = z.trim()(z.string());",
+        "const CheckedName = z.string().check(z.minLength(2));",
+        "const CheckedTrimmedName = z.string().check(z.trim());",
+        "const valid = User.safeParse({ id: '550e8400-e29b-41d4-a716-446655440000', status: 'active', score: 1 });",
+        "const omitted = User.safeParse({ id: '550e8400-e29b-41d4-a716-446655440000', status: 'active', score: 1 });",
+        "const undefinedNick = User.safeParse({ id: '550e8400-e29b-41d4-a716-446655440000', status: 'active', nickname: undefined, score: 1 });",
+        "const invalid = User.safeParse({ id: 'bad', status: 'active', score: 1 });",
+        "if (!valid.success || !omitted.success || undefinedNick.success || invalid.success) process.exit(1);",
+        "if (!UserKey.is('status') || UserKey.is('missing')) process.exit(1);",
+        "if (!recovered.success || recovered.data !== 'fallback') process.exit(1);",
+        "if (!FunctionalName.is('ok') || FunctionalName.is('x')) process.exit(1);",
+        "if (!CheckedName.is('ok') || CheckedName.is('x')) process.exit(1);",
+        "if (z.string().decode('ok') !== 'ok') process.exit(1);",
+        "if (z.string().safeDecode(1).success) process.exit(1);",
+        "if (z.string().encode('ok') !== 'ok') process.exit(1);",
+        "if (z.string().safeEncode(1).success) process.exit(1);",
+        "if (z.string()._zod.def.type !== 'string' || !z.string()._zod.traits.has('ZodString')) process.exit(1);",
+        "if (z.literal('ready').value !== 'ready') process.exit(1);",
+        "if (z.string().exactOptional().is(undefined)) process.exit(1);",
+        "const trimmed = TrimmedName.safeParse(' sea ');",
+        "const checkedTrimmed = CheckedTrimmedName.safeParse(' sea ');",
+        "if (!trimmed.success || trimmed.data !== 'sea') process.exit(1);",
+        "if (!checkedTrimmed.success || checkedTrimmed.data !== 'sea') process.exit(1);",
+        "if (!z.unknown().is(Symbol('value'))) process.exit(1);",
+        "if (!zDefault.string().is('value')) process.exit(1);",
+        "if (!zDefault.minLength(2)(zDefault.string()).is('ok')) process.exit(1);",
+        "if (!ostring().is(undefined) || !ostring().is('value')) process.exit(1);",
+        "if (z3.getParsedType(new Map()) !== 'map') process.exit(1);",
+        "if (getParsedType(NaN) !== 'nan' || OK('x').status !== 'valid' || DIRTY('x').status !== 'dirty') process.exit(1);",
+        "if (!z4.string().is('value') || !z4String().is('value')) process.exit(1);",
+        "if (!z4Mini.string().is('value') || !z4NestedMini.string().is('value')) process.exit(1);",
+        "if ($ZodString !== z.ZodString || v4Core.$ZodString !== z.ZodString) process.exit(1);",
+        "const coreChecked = coreSafeParse(coreString(), 'value');",
+        "if (!coreChecked.success || new $ZodCheck({ check: 'probe' })._zod.def.check !== 'probe') process.exit(1);",
+        "if (coreVersion.major !== 4) process.exit(1);",
+        "if (typeof en !== 'function' || typeof ko !== 'function' || typeof v4En !== 'function' || typeof v4WildcardEn !== 'function' || typeof v4WildcardDefault !== 'function') process.exit(1);",
+        "if (typeof v4WildcardDefault().customError !== 'function' || typeof v4WildcardDefault().localeError !== 'function') process.exit(1);",
+        "if (z.TimePrecision.Millisecond !== 3) process.exit(1);",
+        "if (!z.null().is(null) || !z.undefined().is(undefined) || !z.void().is(undefined)) process.exit(1);",
+        "console.log('consumer zod facade runtime ok');",
+        ""
+    ].join("\n");
+}
+
+/**
+ * @brief Run mini entry type source.
+ * @details Script helpers keep release and policy checks deterministic for CI and local runs.
+ */
+function miniTypeSource() {
+    return [
+        "import * as mini from 'typesea/mini';",
+        "const User = mini.object({",
+        "  id: mini.apply(mini.string(), mini.minLength(1)),",
+        "  tags: mini.apply(mini.array(mini.string()), mini.minSize(1))",
+        "});",
+        "type User = mini.Infer<typeof User>;",
+        "const value: User = { id: 'u_1', tags: ['a'] };",
+        "const NumberText = mini.stringToInt();",
+        "const decodedAsync = mini.decodeAsync(NumberText, '1');",
+        "const encodedAsync = mini.encodeAsync(NumberText, 1);",
+        "value.tags[0]?.toUpperCase();",
+        "void decodedAsync;",
+        "void encodedAsync;",
+        ""
+    ].join("\n");
+}
+
+function seaflowTypeSource() {
+    return [
+        "import { fuzzCases, type SeaFlowCase, type SeaFlowOptions } from 'typesea/seaflow';",
+        "import { t } from 'typesea';",
+        "const options: SeaFlowOptions = { intensity: 'low', maxYields: 4 };",
+        "const cases: SeaFlowCase[] = [...fuzzCases(t.string.min(1), options)];",
+        "cases[0]?.reason.toUpperCase();",
+        ""
+    ].join("\n");
+}
+
+/**
+ * @brief Run Zod facade type source.
+ * @details Script helpers keep release and policy checks deterministic for CI and local runs.
+ */
+function zodTypeSource() {
+    return [
+        "import * as z from 'typesea/zod';",
+        "import zDefault from 'typesea/zod';",
+        "import z3, { DIRTY, OK, getParsedType, ostring } from 'typesea/v3';",
+        "import z4, { core as v4Core, string as z4String, type infer as z4Infer } from 'typesea/v4';",
+        "import * as z4Mini from 'typesea/v4-mini';",
+        "import * as z4NestedMini from 'typesea/v4/mini';",
+        "import { en, ko } from 'typesea/locales';",
+        "import { en as v4En } from 'typesea/v4/locales';",
+        "import { en as v4WildcardEn } from 'typesea/v4/locales/en';",
+        "import v4WildcardDefault from 'typesea/v4/locales/en.js';",
+        "import { $ZodCheck, $ZodString, _safeParse as coreSafeParse, _string as coreString, version as coreVersion } from 'typesea/v4/core';",
+        "const User = z.strictObject({",
+        "  id: z.string().uuid(),",
+        "  status: z.union([z.literal('active'), z.literal('disabled')]),",
+        "  nickname: z.exactOptional(z.string().min(1)),",
+        "  score: z.number().int().gte(0)",
+        "});",
+        "const UserKey = z.keyof(User);",
+        "type User = z.infer<typeof User>;",
+        "type UserInput = z.input<typeof User>;",
+        "type UserOutput = z.output<typeof User>;",
+        "const value: User = { id: '550e8400-e29b-41d4-a716-446655440000', status: 'active', score: 1 };",
+        "const namedValue: User = { id: '550e8400-e29b-41d4-a716-446655440000', status: 'active', nickname: 'Ada', score: 1 };",
+        "const input: UserInput = value;",
+        "const output: UserOutput = value;",
+        "const checked = User.safeParse(input);",
+        "const recovered = z.catch(z.string().min(2), 'fallback').safeParse('x');",
+        "const keyChecked = UserKey.safeParse('status');",
+        "const functionalName = z.minLength(2)(z.string());",
+        "const lowerName = z.toLowerCase()(z.string());",
+        "const checkedName = z.string().check(z.minLength(2));",
+        "const checkedLowerName = z.string().check(z.toLowerCase());",
+        "const exactName = z.string().exactOptional();",
+        "const v4Name = z4.object({ name: z4String().min(1) });",
+        "const miniName = z4Mini.apply(z4Mini.string(), z4Mini.minLength(1));",
+        "const nestedMiniName = z4NestedMini.apply(z4NestedMini.string(), z4NestedMini.maxLength(32));",
+        "const zodDefType: string = z.string()._zod.def.type;",
+        "const literalValue: 'ready' = z.literal('ready').value;",
+        "const optionalText = ostring();",
+        "const parsedKind: string = getParsedType(new Set());",
+        "const validStatus = OK('x');",
+        "const dirtyStatus = DIRTY('x');",
+        "const coreChecked = coreSafeParse(coreString(), 'TypeSea');",
+        "const coreProbe = new $ZodCheck({ check: 'probe' });",
+        "type V4Name = z4Infer<typeof v4Name>;",
+        "const v4Value: V4Name = { name: 'TypeSea' };",
+        "if (checked.success) {",
+        "  checked.data.id.toUpperCase();",
+        "}",
+        "zDefault.string().parse('value');",
+        "zDefault.maxLength(8)(zDefault.string()).parse('TypeSea');",
+        "void output;",
+        "void namedValue;",
+        "void recovered;",
+        "void keyChecked;",
+        "void functionalName;",
+        "void lowerName;",
+        "void checkedName;",
+        "void checkedLowerName;",
+        "void exactName;",
+        "void zodDefType;",
+        "void literalValue;",
+        "void optionalText;",
+        "void parsedKind;",
+        "void validStatus;",
+        "void dirtyStatus;",
+        "void z3;",
+        "void v4Value;",
+        "void miniName;",
+        "void nestedMiniName;",
+        "void en;",
+        "void ko;",
+        "void v4En;",
+        "void v4WildcardEn;",
+        "void v4WildcardDefault;",
+        "void $ZodString;",
+        "void coreChecked;",
+        "void coreProbe;",
+        "void coreVersion;",
+        "void v4Core;",
         ""
     ].join("\n");
 }
@@ -211,17 +560,53 @@ function subpathTypeSource() {
  */
 function typeSource() {
     return [
-        "import { compile, t, type Infer, type JsonSchema } from 'typesea';",
+        "import { compile, isSchemaRegistryValue, schemaRegistryToJsonSchema, t, toJSONSchema, type GlobalRegistryMetadata, type Infer, type JsonSchema, type JsonSchemaCyclesMode, type JsonSchemaOverride, type JsonSchemaRegistryDocument, type JsonSchemaReusedMode, type JsonSchemaTarget, type JsonSchemaUnrepresentableMode, type JsonSchemaUriMapper, type SchemaRegistryEntry } from 'typesea';",
         "const User = t.object({ id: t.string, age: t.number.int(), name: t.optional(t.string) });",
         "type User = Infer<typeof User>;",
+        "const target: JsonSchemaTarget = 'openapi-3.0';",
+        "const legacyTarget: JsonSchemaTarget = 'draft-4';",
+        "const fallbackMode: JsonSchemaUnrepresentableMode = `${'a'}${'ny'}`;",
+        "const uriMapper: JsonSchemaUriMapper = id => id;",
+        "const cyclesMode: JsonSchemaCyclesMode = 'ref';",
+        "const reusedMode: JsonSchemaReusedMode = 'ref';",
+        "const overrideHook: JsonSchemaOverride = ctx => { ctx.jsonSchema.description = ctx.target; };",
         "const input: unknown = { id: 'u_1', age: 1 };",
         "const FastUser = compile(User);",
+        "const schemaAliasResult = toJSONSchema(User);",
+        "const docs = t.registry<GlobalRegistryMetadata>();",
+        "docs.add(User, { id: 'TypeUser', title: 'Type User' });",
+        "const registryBundle = schemaRegistryToJsonSchema(docs);",
+        "const registryBundleAlias = toJSONSchema(docs);",
+        "const documentedSchema = toJSONSchema(User, { metadata: docs });",
+        "const NumberText = t.stringToInt();",
+        "const typedDecodedAsync = t.decodeAsync(NumberText, '1');",
+        "const typedEncodedAsync = t.encodeAsync(NumberText, 1);",
+        "const registryEntries: readonly SchemaRegistryEntry<GlobalRegistryMetadata>[] = docs.entries();",
+        "const registryDocument: JsonSchemaRegistryDocument | undefined = registryBundle.ok ? registryBundle.value : undefined;",
+        "if (registryBundleAlias.ok) {",
+        "  const bundleDocument: JsonSchemaRegistryDocument = registryBundleAlias.value;",
+        "  void bundleDocument;",
+        "}",
         "if (FastUser.is(input)) {",
         "  const user: User = input;",
         "  user.id.toUpperCase();",
         "}",
         "const schema: JsonSchema = true;",
         "void schema;",
+        "void target;",
+        "void legacyTarget;",
+        "void fallbackMode;",
+        "void uriMapper;",
+        "void cyclesMode;",
+        "void reusedMode;",
+        "void overrideHook;",
+        "void schemaAliasResult;",
+        "void registryEntries;",
+        "void registryDocument;",
+        "void documentedSchema;",
+        "void typedDecodedAsync;",
+        "void typedEncodedAsync;",
+        "void isSchemaRegistryValue(docs);",
         ""
     ].join("\n");
 }

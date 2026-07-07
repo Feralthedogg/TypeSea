@@ -3593,6 +3593,12 @@ function branchKeyMustRejectUndefined(
         case SchemaTag.Brand:
         case SchemaTag.Nullable:
         case SchemaTag.Refine:
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+        case SchemaTag.KeyedObject:
+        case SchemaTag.PropertyCount:
+        case SchemaTag.PropertyNames:
+        case SchemaTag.PatternProperties:
             return branchKeyMustRejectUndefined(schema.inner, key);
         default:
             return false;

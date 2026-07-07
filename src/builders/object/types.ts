@@ -19,16 +19,17 @@ export type ObjectShape = Readonly<Record<string, Guard<unknown, Presence>>>;
 
 export type ObjectGuardMode =
     | typeof ObjectModeTag.Passthrough
-    | typeof ObjectModeTag.Strict;
+    | typeof ObjectModeTag.Strict
+    | typeof ObjectModeTag.Strip;
 
 export type OptionalKeys<TShape extends ObjectShape> = {
-    [TKey in keyof TShape]-?: GuardPresence<TShape[TKey]> extends "optional"
+    [TKey in keyof TShape]-?: GuardPresence<TShape[TKey]> extends "optional" | "exactOptional"
         ? TKey
         : never;
 }[keyof TShape];
 
 export type RequiredKeys<TShape extends ObjectShape> = {
-    [TKey in keyof TShape]-?: GuardPresence<TShape[TKey]> extends "optional"
+    [TKey in keyof TShape]-?: GuardPresence<TShape[TKey]> extends "optional" | "exactOptional"
         ? never
         : TKey;
 }[keyof TShape];
@@ -59,6 +60,19 @@ export type PartialObjectShape<TShape extends ObjectShape> = {
     readonly [TKey in keyof TShape]: BaseGuard<GuardValue<TShape[TKey]>, "optional">;
 };
 
+export type PartialObjectShapeByMask<
+    TShape extends ObjectShape,
+    TMask extends ObjectKeyMask<TShape>
+> = Simplify<
+    Omit<TShape, Extract<keyof TShape, MaskSelectedKeys<TShape, TMask>>> &
+    {
+        readonly [TKey in Extract<
+            keyof TShape,
+            MaskSelectedKeys<TShape, TMask>
+        >]: BaseGuard<GuardValue<TShape[TKey]>, "optional">;
+    }
+>;
+
 export type DeepPartialValue<TValue> =
     TValue extends (infer TItem)[]
         ? DeepPartialValue<TItem>[]
@@ -80,6 +94,19 @@ export type DeepPartialObjectShape<TShape extends ObjectShape> = {
 export type RequiredObjectShape<TShape extends ObjectShape> = {
     readonly [TKey in keyof TShape]: BaseGuard<GuardValue<TShape[TKey]>>;
 };
+
+export type RequiredObjectShapeByMask<
+    TShape extends ObjectShape,
+    TMask extends ObjectKeyMask<TShape>
+> = Simplify<
+    Omit<TShape, Extract<keyof TShape, MaskSelectedKeys<TShape, TMask>>> &
+    {
+        readonly [TKey in Extract<
+            keyof TShape,
+            MaskSelectedKeys<TShape, TMask>
+        >]: BaseGuard<GuardValue<TShape[TKey]>>;
+    }
+>;
 
 export type ObjectKeyMask<TShape extends ObjectShape> = Partial<
     Readonly<Record<StringKeyOf<TShape>, true>>

@@ -1,4 +1,6 @@
 import {
+    BigIntCheckTag,
+    KeyRuleTag,
     NumberCheckTag,
     PresenceTag,
     SchemaTag,
@@ -18,9 +20,12 @@ import {
     IPV6_PATTERN,
     ISO_DATETIME_PATTERN,
     ISO_DATE_PATTERN,
+    KSUID_PATTERN,
     ULID_PATTERN,
     URL_PATTERN,
     UUID_PATTERN,
+    XID_PATTERN,
+    resolveObjectEntryPresence,
     type Schema
 } from "../schema/index.js";
 
@@ -68,7 +73,7 @@ function lowerPredicate(
         case SchemaTag.Date:
             return builder.schemaCheck(value, schema);
         case SchemaTag.BigInt:
-            return builder.isBigInt(value);
+            return lowerBigInt(builder, schema, value);
         case SchemaTag.Symbol:
             return builder.isSymbol(value);
         case SchemaTag.Boolean:
@@ -99,12 +104,16 @@ function lowerPredicate(
                 builder.tupleItems(value, schema.items, lowerChildGraphs(schema.items))
             ]);
         case SchemaTag.Record:
+            if (schema.key !== undefined) {
+                return builder.schemaCheck(value, schema);
+            }
             return builder.and([
                 builder.isObject(value),
                 builder.recordEvery(value, schema.value, lowerChildGraph(schema.value))
             ]);
         case SchemaTag.Map:
         case SchemaTag.Set:
+        case SchemaTag.File:
         case SchemaTag.InstanceOf:
         case SchemaTag.Property:
             return builder.schemaCheck(value, schema);
@@ -112,6 +121,8 @@ function lowerPredicate(
             return lowerObject(builder, schema, value);
         case SchemaTag.Union:
             return lowerUnion(builder, schema.options, value);
+        case SchemaTag.Xor:
+            return builder.schemaCheck(value, schema);
         case SchemaTag.Intersection:
             return builder.and([
                 lowerPredicate(builder, schema.left, value),
@@ -132,6 +143,21 @@ function lowerPredicate(
             return lowerDiscriminatedUnion(builder, schema.key, schema.cases, value);
         case SchemaTag.Brand:
             return lowerPredicate(builder, schema.inner, value);
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+        case SchemaTag.Readonly:
+            return lowerPredicate(builder, schema.inner, value);
+        case SchemaTag.KeyedObject:
+            return builder.and([
+                lowerPredicate(builder, schema.inner, value),
+                lowerKeyRule(builder, schema.keys, schema.rule, value)
+            ]);
+        case SchemaTag.PropertyCount:
+            return builder.schemaCheck(value, schema);
+        case SchemaTag.PropertyNames:
+            return builder.schemaCheck(value, schema);
+        case SchemaTag.PatternProperties:
+            return builder.schemaCheck(value, schema);
         case SchemaTag.Lazy:
         case SchemaTag.Refine:
             /*
@@ -141,6 +167,80 @@ function lowerPredicate(
              */
             return builder.schemaCheck(value, schema);
     }
+}
+
+/**
+ * @brief Lower a selected-key cardinality rule into primitive IR predicates.
+ * @param builder Graph builder owning the current graph.
+ * @param keys Selected own data keys.
+ * @param rule Key-count rule.
+ * @param value Candidate object value node.
+ * @returns Node id for the key rule predicate.
+ */
+function lowerKeyRule(
+    builder: GraphBuilder,
+    keys: readonly string[],
+    rule: KeyRuleTag,
+    value: NodeId
+): NodeId {
+    if (rule === KeyRuleTag.AtLeastOne) {
+        return lowerAtLeastOneKey(builder, keys, value);
+    }
+    return lowerExactlyOneKey(builder, keys, value);
+}
+
+/**
+ * @brief Lower an at-least-one selected-key rule.
+ */
+function lowerAtLeastOneKey(
+    builder: GraphBuilder,
+    keys: readonly string[],
+    value: NodeId
+): NodeId {
+    const tests: NodeId[] = [];
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key !== undefined) {
+            tests.push(builder.hasOwnData(value, key));
+        }
+    }
+    return builder.or(tests);
+}
+
+/**
+ * @brief Lower an exactly-one selected-key rule.
+ * @details This expands to one branch per selected key. The form is deliberate:
+ * it uses only boolean algebra nodes so common subexpression interning keeps
+ * repeated key probes shared across branches.
+ */
+function lowerExactlyOneKey(
+    builder: GraphBuilder,
+    keys: readonly string[],
+    value: NodeId
+): NodeId {
+    const present: NodeId[] = [];
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key !== undefined) {
+            present.push(builder.hasOwnData(value, key));
+        }
+    }
+    const branches: NodeId[] = [];
+    for (let index = 0; index < present.length; index += 1) {
+        const selected = present[index];
+        if (selected === undefined) {
+            continue;
+        }
+        const tests: NodeId[] = [];
+        for (let other = 0; other < present.length; other += 1) {
+            const node = present[other];
+            if (node !== undefined) {
+                tests.push(other === index ? node : builder.not(node));
+            }
+        }
+        branches.push(builder.and(tests));
+    }
+    return builder.or(branches);
 }
 
 /**
@@ -197,6 +297,12 @@ function lowerString(
             case StringCheckTag.Ulid:
                 tests.push(builder.regex(value, ULID_PATTERN, "ulid"));
                 break;
+            case StringCheckTag.Xid:
+                tests.push(builder.regex(value, XID_PATTERN, "xid"));
+                break;
+            case StringCheckTag.Ksuid:
+                tests.push(builder.regex(value, KSUID_PATTERN, "ksuid"));
+                break;
             case StringCheckTag.Ipv4:
                 tests.push(builder.regex(value, IPV4_PATTERN, "ipv4"));
                 break;
@@ -249,6 +355,52 @@ function lowerNumber(
             case NumberCheckTag.MultipleOf:
                 tests.push(builder.schemaCheck(value, {
                     tag: SchemaTag.Number,
+                    checks: [check]
+                }));
+                break;
+        }
+    }
+    return builder.and(tests);
+}
+
+/**
+ * @brief Lower a BigInt schema into primitive type and bound predicates.
+ * @details BigInt bounds can use the same ordered compare IR as finite numbers
+ * because the generated expression compares same-primitive operands. Modulo
+ * constraints stay behind SchemaCheck until the IR grows a remainder node.
+ * @param builder Graph builder owning the current graph.
+ * @param schema BigInt schema with scalar checks.
+ * @param value Node id that produces the candidate value.
+ * @returns Node id for the combined BigInt predicate.
+ */
+function lowerBigInt(
+    builder: GraphBuilder,
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.BigInt }>,
+    value: NodeId
+): NodeId {
+    const tests: NodeId[] = [builder.isBigInt(value)];
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        switch (check.tag) {
+            case BigIntCheckTag.Gte:
+                tests.push(builder.gte(value, builder.constant(check.value)));
+                break;
+            case BigIntCheckTag.Lte:
+                tests.push(builder.lte(value, builder.constant(check.value)));
+                break;
+            case BigIntCheckTag.Gt:
+                tests.push(builder.not(builder.lte(value, builder.constant(check.value))));
+                break;
+            case BigIntCheckTag.Lt:
+                tests.push(builder.not(builder.gte(value, builder.constant(check.value))));
+                break;
+            case BigIntCheckTag.MultipleOf:
+                tests.push(builder.schemaCheck(value, {
+                    tag: SchemaTag.BigInt,
                     checks: [check]
                 }));
                 break;
@@ -335,7 +487,7 @@ function lowerObjectShapeEntries(
                 key: entry.key,
                 schema: entry.schema,
                 graph: lowerChildGraph(entry.schema),
-                presence: entry.presence
+                presence: resolveObjectEntryPresence(entry)
             };
         }
     }
@@ -550,6 +702,7 @@ function schemaUnionMask(schema: Schema): UnionDispatchMask {
         case SchemaTag.Record:
         case SchemaTag.Map:
         case SchemaTag.Set:
+        case SchemaTag.File:
         case SchemaTag.InstanceOf:
         case SchemaTag.Property:
         case SchemaTag.DiscriminatedUnion:
@@ -560,7 +713,15 @@ function schemaUnionMask(schema: Schema): UnionDispatchMask {
         case SchemaTag.Nullable:
             return UnionMask.Null | schemaUnionMask(schema.inner);
         case SchemaTag.Brand:
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+        case SchemaTag.Readonly:
             return schemaUnionMask(schema.inner);
+        case SchemaTag.KeyedObject:
+        case SchemaTag.PropertyCount:
+        case SchemaTag.PropertyNames:
+        case SchemaTag.PatternProperties:
+            return UnionMask.Object;
         case SchemaTag.Intersection:
             /*
              * Intersections accept values accepted by both sides, so their
@@ -568,6 +729,7 @@ function schemaUnionMask(schema: Schema): UnionDispatchMask {
              */
             return schemaUnionMask(schema.left) & schemaUnionMask(schema.right);
         case SchemaTag.Union:
+        case SchemaTag.Xor:
             return unionOptionsMask(schema.options);
         case SchemaTag.Lazy:
         case SchemaTag.Refine:
@@ -642,13 +804,25 @@ function lowerDiscriminatedUnion(
     }>["cases"],
     value: NodeId
 ): NodeId {
-    const literals = new Array<string>(cases.length);
     const schemas = new Array<Schema>(cases.length);
+    let stringDispatch = true;
     for (let index = 0; index < cases.length; index += 1) {
         const unionCase = cases[index];
         if (unionCase !== undefined) {
-            literals[index] = unionCase.literal;
             schemas[index] = unionCase.schema;
+            if (typeof unionCase.literal !== "string") {
+                stringDispatch = false;
+            }
+        }
+    }
+    if (!stringDispatch) {
+        return lowerUnion(builder, schemas, value);
+    }
+    const literals = new Array<string>(cases.length);
+    for (let index = 0; index < cases.length; index += 1) {
+        const unionCase = cases[index];
+        if (unionCase !== undefined && typeof unionCase.literal === "string") {
+            literals[index] = unionCase.literal;
         }
     }
     return builder.discriminantDispatch(

@@ -24,13 +24,14 @@ export function pushIssue(
     issues: Issue[],
     code: Issue["code"],
     expected: string | undefined,
-    actual: string | undefined
+    actual: string | undefined,
+    message?: string
 ): void {
     /*
      * Diagnostic walkers reuse one path stack for speed. Copying here gives each
      * issue immutable path semantics without forcing callers to allocate eagerly.
      */
-    issues.push(makeIssue(path.slice(), code, expected, actual, undefined));
+    issues.push(makeIssue(path.slice(), code, expected, actual, message));
 }
 
 /**

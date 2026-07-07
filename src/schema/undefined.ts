@@ -5,8 +5,8 @@
  * validation, compilation, or export.
  */
 
-import { SchemaTag } from "../kind/index.js";
-import type { Schema } from "./types.js";
+import { PresenceTag, SchemaTag } from "../kind/index.js";
+import type { ObjectEntry, Schema } from "./types.js";
 
 /**
  * @brief Return whether `undefined` may satisfy a schema.
@@ -33,6 +33,8 @@ export function schemaCanAcceptUndefined(schema: Schema): boolean {
             return schema.value === undefined;
         case SchemaTag.Union:
             return schemaArrayCanAcceptUndefined(schema.options);
+        case SchemaTag.Xor:
+            return schemaArrayUndefinedAcceptCount(schema.options) === 1;
         case SchemaTag.Intersection:
             /*
              * Intersections require both branches to accept the same value. If
@@ -42,7 +44,15 @@ export function schemaCanAcceptUndefined(schema: Schema): boolean {
                 schemaCanAcceptUndefined(schema.right);
         case SchemaTag.Nullable:
         case SchemaTag.Brand:
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+        case SchemaTag.Readonly:
             return schemaCanAcceptUndefined(schema.inner);
+        case SchemaTag.KeyedObject:
+        case SchemaTag.PropertyCount:
+        case SchemaTag.PropertyNames:
+        case SchemaTag.PatternProperties:
+            return false;
         case SchemaTag.Never:
         case SchemaTag.String:
         case SchemaTag.Number:
@@ -53,6 +63,7 @@ export function schemaCanAcceptUndefined(schema: Schema): boolean {
         case SchemaTag.Array:
         case SchemaTag.Map:
         case SchemaTag.Set:
+        case SchemaTag.File:
         case SchemaTag.InstanceOf:
         case SchemaTag.Property:
         case SchemaTag.Object:
@@ -86,6 +97,7 @@ export function schemaMustRejectUndefined(schema: Schema): boolean {
         case SchemaTag.Array:
         case SchemaTag.Map:
         case SchemaTag.Set:
+        case SchemaTag.File:
         case SchemaTag.InstanceOf:
         case SchemaTag.Property:
         case SchemaTag.Object:
@@ -102,14 +114,51 @@ export function schemaMustRejectUndefined(schema: Schema): boolean {
             return schema.value !== undefined;
         case SchemaTag.Union:
             return schemaArrayMustRejectUndefined(schema.options);
+        case SchemaTag.Xor:
+            return schemaArrayUndefinedAcceptCount(schema.options) !== 1;
         case SchemaTag.Intersection:
             return schemaMustRejectUndefined(schema.left) ||
                 schemaMustRejectUndefined(schema.right);
         case SchemaTag.Nullable:
         case SchemaTag.Brand:
         case SchemaTag.Refine:
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+        case SchemaTag.Readonly:
             return schemaMustRejectUndefined(schema.inner);
+        case SchemaTag.KeyedObject:
+        case SchemaTag.PropertyCount:
+        case SchemaTag.PropertyNames:
+        case SchemaTag.PatternProperties:
+            return true;
     }
+}
+
+/**
+ * @brief Resolve object-field presence after deferred getter normalization.
+ * @details Zod-style object shape getters cannot be executed while the object
+ * guard is being constructed. Getter entries therefore carry a deferred
+ * presence tag and resolve it only when execution needs missing-key semantics.
+ * @param entry Object entry whose presence should be interpreted.
+ * @returns Required or optional presence after resolving getter-backed entries.
+ */
+export function resolveObjectEntryPresence(entry: ObjectEntry): PresenceTag {
+    if (entry.presence !== PresenceTag.Deferred) {
+        return entry.presence;
+    }
+    if (entry.schema.tag !== SchemaTag.Lazy || entry.schema.objectPresence === undefined) {
+        return PresenceTag.Required;
+    }
+    return entry.schema.objectPresence();
+}
+
+/**
+ * @brief Return whether a missing own object key is accepted by an entry.
+ * @param entry Object entry being checked.
+ * @returns True when the field may be omitted.
+ */
+export function objectEntryCanBeOmitted(entry: ObjectEntry): boolean {
+    return resolveObjectEntryPresence(entry) === PresenceTag.Optional;
 }
 
 /**
@@ -127,6 +176,20 @@ function schemaArrayCanAcceptUndefined(schemas: readonly Schema[]): boolean {
         }
     }
     return false;
+}
+
+/**
+ * @brief Count schemas that statically accept undefined.
+ */
+function schemaArrayUndefinedAcceptCount(schemas: readonly Schema[]): number {
+    let count = 0;
+    for (let index = 0; index < schemas.length; index += 1) {
+        const schema = schemas[index];
+        if (schema !== undefined && schemaCanAcceptUndefined(schema)) {
+            count += 1;
+        }
+    }
+    return count;
 }
 
 /**

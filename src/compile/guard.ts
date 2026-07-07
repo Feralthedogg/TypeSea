@@ -9,12 +9,24 @@ import {
     BaseGuard,
     TypeSeaAssertionError,
     type Guard,
+    type ParseOptions,
     type Presence,
-    type RuntimeValue
+    type RuntimeValue,
+    type SafeParseResult,
+    type WithCheckSource
 } from "../guard/index.js";
+import {
+    applyParseOptions,
+    hasGlobalErrorMap
+} from "../guard/parse-options.js";
+import { isWithCheckSource } from "../guard/with-check.js";
 import type { CheckResult } from "../issue/index.js";
 import { finalizeIssueArray } from "../issue/index.js";
 import { err, ok } from "../result/index.js";
+import {
+    finalizeAcceptedValue,
+    schemaNeedsFinalization
+} from "../evaluate/finalize.js";
 import {
     freezeSchema,
     isSchemaValue,
@@ -82,6 +94,7 @@ export class CompiledBaseGuard<
     readonly #trustedCollector: boolean;
     readonly #checkResult: CheckResultRoot | undefined;
     readonly #checkFirstResult: CheckResultRoot | undefined;
+    readonly #needsFinalization: boolean;
 
     public declare readonly source: string;
 
@@ -107,6 +120,7 @@ export class CompiledBaseGuard<
         this.#test = test;
         this.#collect = collect;
         this.#trustedCollector = trustedCollector && trustedCollectors.has(collect);
+        this.#needsFinalization = schemaNeedsFinalization(schema);
         this.#checkResult = checkResult !== undefined &&
             trustedCheckResults.has(checkResult)
             ? checkResult
@@ -123,7 +137,8 @@ export class CompiledBaseGuard<
                 this,
                 test,
                 this.#checkResult,
-                this.#checkFirstResult
+                this.#checkFirstResult,
+                this.#needsFinalization
             );
         }
         Object.freeze(this);
@@ -136,37 +151,158 @@ export class CompiledBaseGuard<
         return isStrictTrue(this.#test(value));
     }
 
+    public override check<TNext>(
+        source: WithCheckSource<RuntimeValue<TValue, TPresence>> & ((guard: this) => TNext)
+    ): TNext;
+
+    public override check(
+        source: WithCheckSource<RuntimeValue<TValue, TPresence>>
+    ): BaseGuard<TValue, TPresence>;
+
+    public override check(
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): CheckResult<RuntimeValue<TValue, TPresence>>;
+
     public override check(
         this: CompiledBaseGuard<TValue, TPresence>,
-        value: unknown
-    ): CheckResult<RuntimeValue<TValue, TPresence>> {
-        if (this.#checkResult !== undefined) {
-            return this.#checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): unknown {
+        if (isWithCheckSource(value)) {
+            return super.check(value, options);
         }
-        return runCompiledCheck<RuntimeValue<TValue, TPresence>>(
-            this.#collect,
-            this.#trustedCollector,
-            value
+        const result = finalizeCompiledResult(
+            this.schema,
+            this.#checkResult !== undefined
+                ? this.#checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>
+                : runCompiledCheck<RuntimeValue<TValue, TPresence>>(
+                    this.#collect,
+                    this.#trustedCollector,
+                    value
+                ),
+            this.#needsFinalization
         );
+        if (result.ok) {
+            return result;
+        }
+        return err(applyParseOptions(result.error, value, options));
     }
 
     public override checkFirst(
         this: CompiledBaseGuard<TValue, TPresence>,
-        value: unknown
+        value: unknown,
+        options?: Partial<ParseOptions>
     ): CheckResult<RuntimeValue<TValue, TPresence>> {
-        if (this.#checkFirstResult !== undefined) {
-            return this.#checkFirstResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
-        }
-        return runCompiledCheckFirst<RuntimeValue<TValue, TPresence>>(
-            this.#collect,
-            this.#trustedCollector,
-            value
+        const result = finalizeCompiledResult(
+            this.schema,
+            this.#checkFirstResult !== undefined
+                ? this.#checkFirstResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>
+                : runCompiledCheckFirst<RuntimeValue<TValue, TPresence>>(
+                    this.#collect,
+                    this.#trustedCollector,
+                    value
+                ),
+            this.#needsFinalization
         );
+        if (result.ok) {
+            return result;
+        }
+        return err(applyParseOptions(result.error, value, options));
+    }
+
+    public override parse(
+        this: CompiledBaseGuard<TValue, TPresence>,
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): RuntimeValue<TValue, TPresence> {
+        const result = this.#checkResult === undefined
+            ? runCompiledCheck<RuntimeValue<TValue, TPresence>>(
+                this.#collect,
+                this.#trustedCollector,
+                value
+            )
+            : this.#checkResult(value);
+        if (!result.ok) {
+            throw new TypeSeaAssertionError(applyParseOptions(result.error, value, options));
+        }
+        const accepted = result.value as RuntimeValue<TValue, TPresence>;
+        return this.#needsFinalization
+            ? finalizeAcceptedValue(this.schema, accepted)
+            : accepted;
+    }
+
+    public override safeParse(
+        this: CompiledBaseGuard<TValue, TPresence>,
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): SafeParseResult<RuntimeValue<TValue, TPresence>> {
+        const result = this.#checkResult === undefined
+            ? runCompiledCheck<RuntimeValue<TValue, TPresence>>(
+                this.#collect,
+                this.#trustedCollector,
+                value
+            )
+            : this.#checkResult(value);
+        if (result.ok) {
+            const accepted = result.value as RuntimeValue<TValue, TPresence>;
+            const data = this.#needsFinalization
+                ? finalizeAcceptedValue(this.schema, accepted)
+                : accepted;
+            return Object.freeze({
+                success: true,
+                data
+            });
+        }
+        return Object.freeze({
+            success: false,
+            error: new TypeSeaAssertionError(applyParseOptions(result.error, value, options))
+        });
+    }
+
+    public override parseAsync(
+        this: CompiledBaseGuard<TValue, TPresence>,
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): Promise<RuntimeValue<TValue, TPresence>> {
+        const result = this.#checkResult === undefined
+            ? runCompiledCheck<RuntimeValue<TValue, TPresence>>(
+                this.#collect,
+                this.#trustedCollector,
+                value
+            )
+            : this.#checkResult(value);
+        if (!result.ok) {
+            return Promise.reject(new TypeSeaAssertionError(
+                applyParseOptions(result.error, value, options)
+            ));
+        }
+        const accepted = result.value as RuntimeValue<TValue, TPresence>;
+        return Promise.resolve(this.#needsFinalization
+            ? finalizeAcceptedValue(this.schema, accepted)
+            : accepted);
+    }
+
+    public override safeParseAsync(
+        this: CompiledBaseGuard<TValue, TPresence>,
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): Promise<SafeParseResult<RuntimeValue<TValue, TPresence>>> {
+        return Promise.resolve(this.safeParse(value, options));
+    }
+
+    public override spa(
+        this: CompiledBaseGuard<TValue, TPresence>,
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): Promise<SafeParseResult<RuntimeValue<TValue, TPresence>>> {
+        return this.safeParseAsync(value, options);
     }
 
     public override assert(
         this: CompiledBaseGuard<TValue, TPresence>,
-        value: unknown
+        value: unknown,
+        options?: Partial<ParseOptions>
     ): asserts value is RuntimeValue<TValue, TPresence> {
         const result = this.#checkResult === undefined
             ? runCompiledCheck<RuntimeValue<TValue, TPresence>>(
@@ -176,7 +312,10 @@ export class CompiledBaseGuard<
             )
             : this.#checkResult(value);
         if (!result.ok) {
-            throw new TypeSeaAssertionError(result.error);
+            throw new TypeSeaAssertionError(applyParseOptions(result.error, value, options));
+        }
+        if (this.#needsFinalization) {
+            finalizeAcceptedValue(this.schema, value);
         }
     }
 }
@@ -359,7 +498,8 @@ function defineTrustedHotMethods<
     guard: CompiledBaseGuard<TValue, TPresence>,
     test: BooleanPredicate,
     checkResult: CheckResultRoot,
-    checkFirstResult: CheckResultRoot
+    checkFirstResult: CheckResultRoot,
+    needsFinalization: boolean
 ): void {
     const self = guard;
     /*
@@ -385,63 +525,195 @@ function defineTrustedHotMethods<
         },
         false
     );
-    defineReadonlyProperty(
-        guard,
-        "check",
-        /**
-         * @brief Execute compiled trusted check.
-         * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
-         */
-        function compiledTrustedCheck(
-            this: unknown,
-            value: unknown
-        ): CheckResult<RuntimeValue<TValue, TPresence>> {
-            if (this !== self) {
-                throw new TypeError("compiled guard method receiver is invalid");
-            }
-            return checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
-        },
-        false
-    );
-    defineReadonlyProperty(
-        guard,
-        "assert",
-        /**
-         * @brief Execute compiled trusted assert.
-         * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
-         */
-        function compiledTrustedAssert(
-            this: unknown,
-            value: unknown
-        ): asserts value is RuntimeValue<TValue, TPresence> {
-            if (this !== self) {
-                throw new TypeError("compiled guard method receiver is invalid");
-            }
-            const result = checkResult(value);
-            if (!result.ok) {
-                throw new TypeSeaAssertionError(result.error);
-            }
-        },
-        false
-    );
-    defineReadonlyProperty(
-        guard,
-        "checkFirst",
-        /**
-         * @brief Execute compiled trusted checkFirst.
-         * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
-         */
-        function compiledTrustedCheckFirst(
-            this: unknown,
-            value: unknown
-        ): CheckResult<RuntimeValue<TValue, TPresence>> {
-            if (this !== self) {
-                throw new TypeError("compiled guard method receiver is invalid");
-            }
-            return checkFirstResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
-        },
-        false
-    );
+    if (needsFinalization) {
+        defineReadonlyProperty(
+            guard,
+            "check",
+            /**
+             * @brief Execute compiled trusted check.
+             * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
+             */
+            function compiledTrustedCheck(
+                this: unknown,
+                value: unknown,
+                options?: Partial<ParseOptions>
+            ): CheckResult<RuntimeValue<TValue, TPresence>> {
+                if (this !== self) {
+                    throw new TypeError("compiled guard method receiver is invalid");
+                }
+                const result = checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
+                if (result.ok) {
+                    return ok(finalizeAcceptedValue(self.schema, result.value));
+                }
+                return err(applyParseOptions(result.error, value, options));
+            },
+            false
+        );
+    } else {
+        defineReadonlyProperty(
+            guard,
+            "check",
+            /**
+             * @brief Execute compiled trusted check.
+             * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
+             */
+            function compiledTrustedCheck(
+                this: unknown,
+                value: unknown
+            ): CheckResult<RuntimeValue<TValue, TPresence>> {
+                if (this !== self) {
+                    throw new TypeError("compiled guard method receiver is invalid");
+                }
+                // eslint-disable-next-line prefer-rest-params -- Rest arrays allocate on this hot path.
+                const args = arguments;
+                if (args.length < 2 && !hasGlobalErrorMap) {
+                    return checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
+                }
+                const options = args[1] as Partial<ParseOptions> | undefined;
+                if (options === undefined && !hasGlobalErrorMap) {
+                    return checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
+                }
+                const result = checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
+                if (result.ok) {
+                    return result;
+                }
+                return err(applyParseOptions(result.error, value, options));
+            },
+            false
+        );
+    }
+    if (needsFinalization) {
+        defineReadonlyProperty(
+            guard,
+            "assert",
+            /**
+             * @brief Execute compiled trusted assert.
+             * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
+             */
+            function compiledTrustedAssert(
+                this: unknown,
+                value: unknown,
+                options?: Partial<ParseOptions>
+            ): asserts value is RuntimeValue<TValue, TPresence> {
+                if (this !== self) {
+                    throw new TypeError("compiled guard method receiver is invalid");
+                }
+                const result = checkResult(value);
+                if (!result.ok) {
+                    throw new TypeSeaAssertionError(
+                        applyParseOptions(result.error, value, options)
+                    );
+                }
+                finalizeAcceptedValue(self.schema, value);
+            },
+            false
+        );
+        defineReadonlyProperty(
+            guard,
+            "checkFirst",
+            /**
+             * @brief Execute compiled trusted checkFirst.
+             * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
+             */
+            function compiledTrustedCheckFirst(
+                this: unknown,
+                value: unknown,
+                options?: Partial<ParseOptions>
+            ): CheckResult<RuntimeValue<TValue, TPresence>> {
+                if (this !== self) {
+                    throw new TypeError("compiled guard method receiver is invalid");
+                }
+                const result = checkFirstResult(value) as CheckResult<
+                    RuntimeValue<TValue, TPresence>
+                >;
+                if (result.ok) {
+                    return ok(finalizeAcceptedValue(self.schema, result.value));
+                }
+                return err(applyParseOptions(result.error, value, options));
+            },
+            false
+        );
+    } else {
+        defineReadonlyProperty(
+            guard,
+            "assert",
+            /**
+             * @brief Execute compiled trusted assert.
+             * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
+             */
+            function compiledTrustedAssert(
+                this: unknown,
+                value: unknown
+            ): asserts value is RuntimeValue<TValue, TPresence> {
+                if (this !== self) {
+                    throw new TypeError("compiled guard method receiver is invalid");
+                }
+                const result = checkResult(value);
+                if (!result.ok) {
+                    // eslint-disable-next-line prefer-rest-params -- Rest arrays allocate on this hot path.
+                    const args = arguments;
+                    const options = args[1] as Partial<ParseOptions> | undefined;
+                    throw new TypeSeaAssertionError(
+                        (args.length < 2 || options === undefined) && !hasGlobalErrorMap
+                            ? result.error
+                            : applyParseOptions(result.error, value, options)
+                    );
+                }
+            },
+            false
+        );
+        defineReadonlyProperty(
+            guard,
+            "checkFirst",
+            /**
+             * @brief Execute compiled trusted checkFirst.
+             * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
+             */
+            function compiledTrustedCheckFirst(
+                this: unknown,
+                value: unknown
+            ): CheckResult<RuntimeValue<TValue, TPresence>> {
+                if (this !== self) {
+                    throw new TypeError("compiled guard method receiver is invalid");
+                }
+                // eslint-disable-next-line prefer-rest-params -- Rest arrays allocate on this hot path.
+                const args = arguments;
+                if (args.length < 2 && !hasGlobalErrorMap) {
+                    return checkFirstResult(value) as CheckResult<
+                        RuntimeValue<TValue, TPresence>
+                    >;
+                }
+                const options = args[1] as Partial<ParseOptions> | undefined;
+                if (options === undefined && !hasGlobalErrorMap) {
+                    return checkFirstResult(value) as CheckResult<
+                        RuntimeValue<TValue, TPresence>
+                    >;
+                }
+                const result = checkFirstResult(value) as CheckResult<
+                    RuntimeValue<TValue, TPresence>
+                >;
+                if (result.ok) {
+                    return result;
+                }
+                return err(applyParseOptions(result.error, value, options));
+            },
+            false
+        );
+    }
+}
+
+/**
+ * @brief Apply output finalization to a compiled success Result.
+ */
+function finalizeCompiledResult<TValue>(
+    schema: Schema,
+    result: CheckResult<TValue>,
+    needsFinalization: boolean
+): CheckResult<TValue> {
+    if (!result.ok || !needsFinalization) {
+        return result;
+    }
+    return ok(finalizeAcceptedValue(schema, result.value));
 }
 
 /**
@@ -454,7 +726,7 @@ function defineTrustedHotMethods<
  * code or mutate the schema between validation and codegen.
  */
 function readCompileSchema(guard: unknown): Schema {
-    if (!isRecord(guard)) {
+    if (!isObjectLike(guard)) {
         throw new TypeError("compile guard must be a TypeSea guard");
     }
     const schema = readOwnDataProperty(guard, "schema");
@@ -757,4 +1029,11 @@ function readConsoleWarn(): (message: string) => void {
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * @brief Accept objects and function objects that can carry own schema slots.
+ */
+function isObjectLike(value: unknown): value is object {
+    return value !== null && (typeof value === "object" || typeof value === "function");
 }

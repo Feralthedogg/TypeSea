@@ -6,6 +6,7 @@
  */
 
 import {
+    BigIntCheckTag,
     DateCheckTag,
     NumberCheckTag,
     SchemaTag,
@@ -17,13 +18,15 @@ import {
     IPV6_PATTERN,
     ISO_DATETIME_PATTERN,
     ISO_DATE_PATTERN,
+    KSUID_PATTERN,
     ULID_PATTERN,
     URL_PATTERN,
     UUID_PATTERN,
+    XID_PATTERN,
     type LiteralValue,
     type Schema
 } from "../schema/index.js";
-import { pushLiteral } from "./context.js";
+import { pushLiteral, stringRef } from "./context.js";
 import {
     emitIssue,
     emitIssueAtSegment,
@@ -63,7 +66,8 @@ export function emitStringCheck(
             path,
             "expected_string",
             "string",
-            `a(${value})`
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
         )}return;}`
     ];
     const checks = schema.checks;
@@ -83,7 +87,8 @@ export function emitStringCheck(
                     path,
                     "expected_min_length",
                     `length >= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case StringCheckTag.Max:
@@ -92,35 +97,130 @@ export function emitStringCheck(
                     path,
                     "expected_max_length",
                     `length <= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case StringCheckTag.Regex:
-                parts.push(emitPatternIssue(value, path, issues, check.regex, check.name, context));
+                parts.push(emitPatternIssue(
+                    value,
+                    path,
+                    issues,
+                    check.regex,
+                    check.name,
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.Uuid:
-                parts.push(emitPatternIssue(value, path, issues, UUID_PATTERN, "uuid", context));
+                parts.push(emitPatternIssue(
+                    value,
+                    path,
+                    issues,
+                    UUID_PATTERN,
+                    "uuid",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.Email:
-                parts.push(emitPatternIssue(value, path, issues, EMAIL_PATTERN, "email", context));
+                parts.push(emitPatternIssue(
+                    value,
+                    path,
+                    issues,
+                    EMAIL_PATTERN,
+                    "email",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.Url:
-                parts.push(emitPatternIssue(value, path, issues, URL_PATTERN, "url", context));
+                parts.push(emitPatternIssue(
+                    value,
+                    path,
+                    issues,
+                    URL_PATTERN,
+                    "url",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.IsoDate:
-                parts.push(emitPatternIssue(value, path, issues, ISO_DATE_PATTERN, "iso_date", context));
+                parts.push(emitPatternIssue(
+                    value,
+                    path,
+                    issues,
+                    ISO_DATE_PATTERN,
+                    "iso_date",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.IsoDateTime:
-                parts.push(emitPatternIssue(value, path, issues, ISO_DATETIME_PATTERN, "iso_datetime", context));
+                parts.push(emitPatternIssue(
+                    value,
+                    path,
+                    issues,
+                    ISO_DATETIME_PATTERN,
+                    "iso_datetime",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.Ulid:
-                parts.push(emitPatternIssue(value, path, issues, ULID_PATTERN, "ulid", context));
+                parts.push(emitPatternIssue(
+                    value,
+                    path,
+                    issues,
+                    ULID_PATTERN,
+                    "ulid",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
+                break;
+            case StringCheckTag.Xid:
+                parts.push(emitPatternIssue(
+                    value,
+                    path,
+                    issues,
+                    XID_PATTERN,
+                    "xid",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
+                break;
+            case StringCheckTag.Ksuid:
+                parts.push(emitPatternIssue(
+                    value,
+                    path,
+                    issues,
+                    KSUID_PATTERN,
+                    "ksuid",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.Ipv4:
-                parts.push(emitPatternIssue(value, path, issues, IPV4_PATTERN, "ipv4", context));
+                parts.push(emitPatternIssue(
+                    value,
+                    path,
+                    issues,
+                    IPV4_PATTERN,
+                    "ipv4",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.Ipv6:
-                parts.push(emitPatternIssue(value, path, issues, IPV6_PATTERN, "ipv6", context));
+                parts.push(emitPatternIssue(
+                    value,
+                    path,
+                    issues,
+                    IPV6_PATTERN,
+                    "ipv6",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
         }
     }
@@ -138,7 +238,8 @@ export function emitDateCheck(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Date }>,
     value: string,
     path: string,
-    issues: string
+    issues: string,
+    context: EmitContext
 ): string {
     const invalid = `!dg(${value})`;
     const checks = schema.checks;
@@ -148,7 +249,8 @@ export function emitDateCheck(
             path,
             "expected_date",
             "valid Date",
-            `a(${value})`
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
         )}}`;
     }
     const parts = [`if(${invalid}){${emitIssue(
@@ -156,7 +258,8 @@ export function emitDateCheck(
         path,
         "expected_date",
         "valid Date",
-        `a(${value})`
+        `a(${value})`,
+        checkMessageExpression(schema.message, context)
     )}}else{`];
     for (let index = 0; index < checks.length; index += 1) {
         const check = checks[index];
@@ -171,7 +274,8 @@ export function emitDateCheck(
                     path,
                     "expected_gte",
                     `>= ${new Date(check.value).toISOString()}`,
-                    actual
+                    actual,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case DateCheckTag.Max:
@@ -180,7 +284,8 @@ export function emitDateCheck(
                     path,
                     "expected_lte",
                     `<= ${new Date(check.value).toISOString()}`,
-                    actual
+                    actual,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
         }
@@ -236,7 +341,8 @@ export function emitLeafCheckAtSegment(
                 value,
                 path,
                 segmentExpression,
-                issues
+                issues,
+                context
             );
         case SchemaTag.Date:
             if (schema.checks.length !== 0) {
@@ -248,17 +354,18 @@ export function emitLeafCheckAtSegment(
                 segmentExpression,
                 "expected_date",
                 "valid Date",
-                `a(${value})`
+                `a(${value})`,
+                checkMessageExpression(schema.message, context)
             )}}`;
         case SchemaTag.BigInt:
-            return `if(typeof ${value}!=="bigint"){${emitIssueAtSegment(
-                issues,
+            return emitBigIntCheckAtSegment(
+                schema,
+                value,
                 path,
                 segmentExpression,
-                "expected_bigint",
-                "bigint",
-                `a(${value})`
-            )}}`;
+                issues,
+                context
+            );
         case SchemaTag.Symbol:
             return `if(typeof ${value}!=="symbol"){${emitIssueAtSegment(
                 issues,
@@ -266,7 +373,8 @@ export function emitLeafCheckAtSegment(
                 segmentExpression,
                 "expected_symbol",
                 "symbol",
-                `a(${value})`
+                `a(${value})`,
+                checkMessageExpression(schema.message, context)
             )}}`;
         case SchemaTag.Boolean:
             return `if(typeof ${value}!=="boolean"){${emitIssueAtSegment(
@@ -275,7 +383,8 @@ export function emitLeafCheckAtSegment(
                 segmentExpression,
                 "expected_boolean",
                 "boolean",
-                `a(${value})`
+                `a(${value})`,
+                checkMessageExpression(schema.message, context)
             )}}`;
         case SchemaTag.Literal:
             return emitLiteralCheckAtSegment(
@@ -342,7 +451,8 @@ export function emitUndefinedLeafCheckAtSegment(
                 segmentExpression,
                 "expected_string",
                 "string",
-                stringLiteral("undefined")
+                stringLiteral("undefined"),
+                checkMessageExpression(schema.message, context)
             );
         case SchemaTag.Number:
             return emitIssueAtSegment(
@@ -351,7 +461,8 @@ export function emitUndefinedLeafCheckAtSegment(
                 segmentExpression,
                 "expected_number",
                 "number",
-                stringLiteral("undefined")
+                stringLiteral("undefined"),
+                checkMessageExpression(schema.message, context)
             );
         case SchemaTag.Date:
             return emitIssueAtSegment(
@@ -360,7 +471,8 @@ export function emitUndefinedLeafCheckAtSegment(
                 segmentExpression,
                 "expected_date",
                 "valid Date",
-                stringLiteral("undefined")
+                stringLiteral("undefined"),
+                checkMessageExpression(schema.message, context)
             );
         case SchemaTag.BigInt:
             return emitIssueAtSegment(
@@ -369,7 +481,8 @@ export function emitUndefinedLeafCheckAtSegment(
                 segmentExpression,
                 "expected_bigint",
                 "bigint",
-                stringLiteral("undefined")
+                stringLiteral("undefined"),
+                checkMessageExpression(schema.message, context)
             );
         case SchemaTag.Symbol:
             return emitIssueAtSegment(
@@ -378,7 +491,8 @@ export function emitUndefinedLeafCheckAtSegment(
                 segmentExpression,
                 "expected_symbol",
                 "symbol",
-                stringLiteral("undefined")
+                stringLiteral("undefined"),
+                checkMessageExpression(schema.message, context)
             );
         case SchemaTag.Boolean:
             return emitIssueAtSegment(
@@ -387,7 +501,8 @@ export function emitUndefinedLeafCheckAtSegment(
                 segmentExpression,
                 "expected_boolean",
                 "boolean",
-                stringLiteral("undefined")
+                stringLiteral("undefined"),
+                checkMessageExpression(schema.message, context)
             );
         case SchemaTag.Literal:
             return emitUndefinedLiteralCheckAtSegment(
@@ -454,7 +569,8 @@ export function emitLeafCheckAtTwoSegments(
                 path,
                 firstSegmentExpression,
                 secondSegmentExpression,
-                issues
+                issues,
+                context
             );
         case SchemaTag.Date:
             if (schema.checks.length !== 0) {
@@ -467,18 +583,19 @@ export function emitLeafCheckAtTwoSegments(
                 secondSegmentExpression,
                 "expected_date",
                 "valid Date",
-                `a(${value})`
+                `a(${value})`,
+                checkMessageExpression(schema.message, context)
             )}}`;
         case SchemaTag.BigInt:
-            return `if(typeof ${value}!=="bigint"){${emitIssueAtTwoSegments(
-                issues,
+            return emitBigIntCheckAtTwoSegments(
+                schema,
+                value,
                 path,
                 firstSegmentExpression,
                 secondSegmentExpression,
-                "expected_bigint",
-                "bigint",
-                `a(${value})`
-            )}}`;
+                issues,
+                context
+            );
         case SchemaTag.Symbol:
             return `if(typeof ${value}!=="symbol"){${emitIssueAtTwoSegments(
                 issues,
@@ -487,7 +604,8 @@ export function emitLeafCheckAtTwoSegments(
                 secondSegmentExpression,
                 "expected_symbol",
                 "symbol",
-                `a(${value})`
+                `a(${value})`,
+                checkMessageExpression(schema.message, context)
             )}}`;
         case SchemaTag.Boolean:
             return `if(typeof ${value}!=="boolean"){${emitIssueAtTwoSegments(
@@ -497,7 +615,8 @@ export function emitLeafCheckAtTwoSegments(
                 secondSegmentExpression,
                 "expected_boolean",
                 "boolean",
-                `a(${value})`
+                `a(${value})`,
+                checkMessageExpression(schema.message, context)
             )}}`;
         case SchemaTag.Literal:
             return emitLiteralCheckAtTwoSegments(
@@ -565,7 +684,8 @@ export function emitUndefinedLeafCheckAtTwoSegments(
                 secondSegmentExpression,
                 "expected_string",
                 "string",
-                stringLiteral("undefined")
+                stringLiteral("undefined"),
+                checkMessageExpression(schema.message, context)
             );
         case SchemaTag.Number:
             return emitIssueAtTwoSegments(
@@ -575,7 +695,8 @@ export function emitUndefinedLeafCheckAtTwoSegments(
                 secondSegmentExpression,
                 "expected_number",
                 "number",
-                stringLiteral("undefined")
+                stringLiteral("undefined"),
+                checkMessageExpression(schema.message, context)
             );
         case SchemaTag.Date:
             return emitIssueAtTwoSegments(
@@ -585,7 +706,8 @@ export function emitUndefinedLeafCheckAtTwoSegments(
                 secondSegmentExpression,
                 "expected_date",
                 "valid Date",
-                stringLiteral("undefined")
+                stringLiteral("undefined"),
+                checkMessageExpression(schema.message, context)
             );
         case SchemaTag.BigInt:
             return emitIssueAtTwoSegments(
@@ -595,7 +717,8 @@ export function emitUndefinedLeafCheckAtTwoSegments(
                 secondSegmentExpression,
                 "expected_bigint",
                 "bigint",
-                stringLiteral("undefined")
+                stringLiteral("undefined"),
+                checkMessageExpression(schema.message, context)
             );
         case SchemaTag.Symbol:
             return emitIssueAtTwoSegments(
@@ -605,7 +728,8 @@ export function emitUndefinedLeafCheckAtTwoSegments(
                 secondSegmentExpression,
                 "expected_symbol",
                 "symbol",
-                stringLiteral("undefined")
+                stringLiteral("undefined"),
+                checkMessageExpression(schema.message, context)
             );
         case SchemaTag.Boolean:
             return emitIssueAtTwoSegments(
@@ -615,7 +739,8 @@ export function emitUndefinedLeafCheckAtTwoSegments(
                 secondSegmentExpression,
                 "expected_boolean",
                 "boolean",
-                stringLiteral("undefined")
+                stringLiteral("undefined"),
+                checkMessageExpression(schema.message, context)
             );
         case SchemaTag.Literal:
             return emitUndefinedLiteralCheckAtTwoSegments(
@@ -663,7 +788,8 @@ function emitStringCheckAtSegment(
             segmentExpression,
             "expected_string",
             "string",
-            `a(${value})`
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
         )}}`;
     }
     const parts: string[] = [
@@ -673,7 +799,8 @@ function emitStringCheckAtSegment(
             segmentExpression,
             "expected_string",
             "string",
-            `a(${value})`
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
         )}}else{`
     ];
     for (let index = 0; index < checks.length; index += 1) {
@@ -689,7 +816,8 @@ function emitStringCheckAtSegment(
                     segmentExpression,
                     "expected_min_length",
                     `length >= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case StringCheckTag.Max:
@@ -699,7 +827,8 @@ function emitStringCheckAtSegment(
                     segmentExpression,
                     "expected_max_length",
                     `length <= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case StringCheckTag.Regex:
@@ -710,7 +839,8 @@ function emitStringCheckAtSegment(
                     issues,
                     check.regex,
                     check.name,
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.Uuid:
@@ -721,7 +851,8 @@ function emitStringCheckAtSegment(
                     issues,
                     UUID_PATTERN,
                     "uuid",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.Email:
@@ -732,7 +863,8 @@ function emitStringCheckAtSegment(
                     issues,
                     EMAIL_PATTERN,
                     "email",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.Url:
@@ -743,7 +875,8 @@ function emitStringCheckAtSegment(
                     issues,
                     URL_PATTERN,
                     "url",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.IsoDate:
@@ -754,7 +887,8 @@ function emitStringCheckAtSegment(
                     issues,
                     ISO_DATE_PATTERN,
                     "iso_date",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.IsoDateTime:
@@ -765,7 +899,8 @@ function emitStringCheckAtSegment(
                     issues,
                     ISO_DATETIME_PATTERN,
                     "iso_datetime",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.Ulid:
@@ -776,7 +911,32 @@ function emitStringCheckAtSegment(
                     issues,
                     ULID_PATTERN,
                     "ulid",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
+                break;
+            case StringCheckTag.Xid:
+                parts.push(emitPatternIssueAtSegment(
+                    value,
+                    path,
+                    segmentExpression,
+                    issues,
+                    XID_PATTERN,
+                    "xid",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
+                break;
+            case StringCheckTag.Ksuid:
+                parts.push(emitPatternIssueAtSegment(
+                    value,
+                    path,
+                    segmentExpression,
+                    issues,
+                    KSUID_PATTERN,
+                    "ksuid",
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.Ipv4:
@@ -787,7 +947,8 @@ function emitStringCheckAtSegment(
                     issues,
                     IPV4_PATTERN,
                     "ipv4",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.Ipv6:
@@ -798,7 +959,8 @@ function emitStringCheckAtSegment(
                     issues,
                     IPV6_PATTERN,
                     "ipv6",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
         }
@@ -838,7 +1000,8 @@ function emitStringCheckAtTwoSegments(
             secondSegmentExpression,
             "expected_string",
             "string",
-            `a(${value})`
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
         )}}`;
     }
     const parts: string[] = [
@@ -849,7 +1012,8 @@ function emitStringCheckAtTwoSegments(
             secondSegmentExpression,
             "expected_string",
             "string",
-            `a(${value})`
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
         )}}else{`
     ];
     for (let index = 0; index < checks.length; index += 1) {
@@ -866,7 +1030,8 @@ function emitStringCheckAtTwoSegments(
                     secondSegmentExpression,
                     "expected_min_length",
                     `length >= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case StringCheckTag.Max:
@@ -877,7 +1042,8 @@ function emitStringCheckAtTwoSegments(
                     secondSegmentExpression,
                     "expected_max_length",
                     `length <= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case StringCheckTag.Regex:
@@ -889,7 +1055,8 @@ function emitStringCheckAtTwoSegments(
                     issues,
                     check.regex,
                     check.name,
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.Uuid:
@@ -901,7 +1068,8 @@ function emitStringCheckAtTwoSegments(
                     issues,
                     UUID_PATTERN,
                     "uuid",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.Email:
@@ -913,7 +1081,8 @@ function emitStringCheckAtTwoSegments(
                     issues,
                     EMAIL_PATTERN,
                     "email",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.Url:
@@ -925,7 +1094,8 @@ function emitStringCheckAtTwoSegments(
                     issues,
                     URL_PATTERN,
                     "url",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.IsoDate:
@@ -937,7 +1107,8 @@ function emitStringCheckAtTwoSegments(
                     issues,
                     ISO_DATE_PATTERN,
                     "iso_date",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.IsoDateTime:
@@ -949,7 +1120,8 @@ function emitStringCheckAtTwoSegments(
                     issues,
                     ISO_DATETIME_PATTERN,
                     "iso_datetime",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.Ulid:
@@ -961,7 +1133,34 @@ function emitStringCheckAtTwoSegments(
                     issues,
                     ULID_PATTERN,
                     "ulid",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
+                break;
+            case StringCheckTag.Xid:
+                parts.push(emitPatternIssueAtTwoSegments(
+                    value,
+                    path,
+                    firstSegmentExpression,
+                    secondSegmentExpression,
+                    issues,
+                    XID_PATTERN,
+                    "xid",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
+                break;
+            case StringCheckTag.Ksuid:
+                parts.push(emitPatternIssueAtTwoSegments(
+                    value,
+                    path,
+                    firstSegmentExpression,
+                    secondSegmentExpression,
+                    issues,
+                    KSUID_PATTERN,
+                    "ksuid",
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.Ipv4:
@@ -973,7 +1172,8 @@ function emitStringCheckAtTwoSegments(
                     issues,
                     IPV4_PATTERN,
                     "ipv4",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
             case StringCheckTag.Ipv6:
@@ -985,7 +1185,8 @@ function emitStringCheckAtTwoSegments(
                     issues,
                     IPV6_PATTERN,
                     "ipv6",
-                    context
+                    context,
+                    checkMessageExpression(check.message, context)
                 ));
                 break;
         }
@@ -1008,7 +1209,8 @@ export function emitNumberCheck(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Number }>,
     value: string,
     path: string,
-    issues: string
+    issues: string,
+    context: EmitContext
 ): string {
     const parts: string[] = [
         `if(typeof ${value}!=="number"||!Number.isFinite(${value})){${emitIssue(
@@ -1016,7 +1218,8 @@ export function emitNumberCheck(
             path,
             "expected_number",
             "number",
-            `a(${value})`
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
         )}return;}`
     ];
     const checks = schema.checks;
@@ -1036,7 +1239,8 @@ export function emitNumberCheck(
                     path,
                     "expected_integer",
                     stringLiteral("integer"),
-                    stringLiteral("number")
+                    stringLiteral("number"),
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.Gte:
@@ -1045,7 +1249,8 @@ export function emitNumberCheck(
                     path,
                     "expected_gte",
                     `>= ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.Lte:
@@ -1054,7 +1259,8 @@ export function emitNumberCheck(
                     path,
                     "expected_lte",
                     `<= ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.Gt:
@@ -1063,7 +1269,8 @@ export function emitNumberCheck(
                     path,
                     "expected_gt",
                     `> ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.Lt:
@@ -1072,7 +1279,8 @@ export function emitNumberCheck(
                     path,
                     "expected_lt",
                     `< ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.MultipleOf:
@@ -1081,12 +1289,232 @@ export function emitNumberCheck(
                     path,
                     "expected_multiple_of",
                     `multiple of ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
         }
     }
     return parts.join("");
+}
+
+/**
+ * @brief emit bigint check.
+ * @details BigInt constraints use source-level BigInt literals so generated
+ * validators do not need side-table reads for scalar bounds.
+ * @param schema BigInt schema with scalar checks.
+ * @param value Generated expression for the candidate value.
+ * @param path Generated expression for the current diagnostic path.
+ * @param issues Generated expression for the issue buffer.
+ * @returns JavaScript source for root BigInt diagnostics.
+ */
+export function emitBigIntCheck(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.BigInt }>,
+    value: string,
+    path: string,
+    issues: string,
+    context: EmitContext
+): string {
+    const parts: string[] = [
+        `if(typeof ${value}!=="bigint"){${emitIssue(
+            issues,
+            path,
+            "expected_bigint",
+            "bigint",
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
+        )}return;}`
+    ];
+    emitBigIntConstraints(schema, value, (condition, code, expected, message) => {
+        parts.push(`if(${condition}){${emitIssue(
+            issues,
+            path,
+            code,
+            expected,
+            `String(${value})+"n"`,
+            checkMessageExpression(message, context)
+        )}}`);
+    });
+    return parts.join("");
+}
+
+/**
+ * @brief emit bigint check at one appended path segment.
+ * @param schema BigInt schema with scalar checks.
+ * @param value Generated expression for the candidate value.
+ * @param path Generated expression for the current diagnostic path.
+ * @param segmentExpression Generated expression for the appended segment.
+ * @param issues Generated expression for the issue buffer.
+ * @returns JavaScript source for one-segment BigInt diagnostics.
+ */
+function emitBigIntCheckAtSegment(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.BigInt }>,
+    value: string,
+    path: string,
+    segmentExpression: string,
+    issues: string,
+    context: EmitContext
+): string {
+    const checks = schema.checks;
+    if (checks.length === 0) {
+        return `if(typeof ${value}!=="bigint"){${emitIssueAtSegment(
+            issues,
+            path,
+            segmentExpression,
+            "expected_bigint",
+            "bigint",
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
+        )}}`;
+    }
+    const parts: string[] = [
+        `if(typeof ${value}!=="bigint"){${emitIssueAtSegment(
+            issues,
+            path,
+            segmentExpression,
+            "expected_bigint",
+            "bigint",
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
+        )}}else{`
+    ];
+    emitBigIntConstraints(schema, value, (condition, code, expected, message) => {
+        parts.push(`if(${condition}){${emitIssueAtSegment(
+            issues,
+            path,
+            segmentExpression,
+            code,
+            expected,
+            `String(${value})+"n"`,
+            checkMessageExpression(message, context)
+        )}}`);
+    });
+    parts.push("}");
+    return parts.join("");
+}
+
+/**
+ * @brief emit bigint check at two appended path segments.
+ * @param schema BigInt schema with scalar checks.
+ * @param value Generated expression for the candidate value.
+ * @param path Generated expression for the current diagnostic path.
+ * @param firstSegmentExpression Generated expression for the parent segment.
+ * @param secondSegmentExpression Generated expression for the child segment.
+ * @param issues Generated expression for the issue buffer.
+ * @returns JavaScript source for two-segment BigInt diagnostics.
+ */
+function emitBigIntCheckAtTwoSegments(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.BigInt }>,
+    value: string,
+    path: string,
+    firstSegmentExpression: string,
+    secondSegmentExpression: string,
+    issues: string,
+    context: EmitContext
+): string {
+    const checks = schema.checks;
+    if (checks.length === 0) {
+        return `if(typeof ${value}!=="bigint"){${emitIssueAtTwoSegments(
+            issues,
+            path,
+            firstSegmentExpression,
+            secondSegmentExpression,
+            "expected_bigint",
+            "bigint",
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
+        )}}`;
+    }
+    const parts: string[] = [
+        `if(typeof ${value}!=="bigint"){${emitIssueAtTwoSegments(
+            issues,
+            path,
+            firstSegmentExpression,
+            secondSegmentExpression,
+            "expected_bigint",
+            "bigint",
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
+        )}}else{`
+    ];
+    emitBigIntConstraints(schema, value, (condition, code, expected, message) => {
+        parts.push(`if(${condition}){${emitIssueAtTwoSegments(
+            issues,
+            path,
+            firstSegmentExpression,
+            secondSegmentExpression,
+            code,
+            expected,
+            `String(${value})+"n"`,
+            checkMessageExpression(message, context)
+        )}}`);
+    });
+    parts.push("}");
+    return parts.join("");
+}
+
+/**
+ * @brief Emit every BigInt scalar constraint through a small callback.
+ * @details The callback keeps root, one-segment, and two-segment paths aligned
+ * without duplicating the constraint switch.
+ */
+function emitBigIntConstraints(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.BigInt }>,
+    value: string,
+    emit: (
+        condition: string,
+        code: string,
+        expected: string,
+        message: string | undefined
+    ) => void
+): void {
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        const literal = bigintSource(check.value);
+        const expectedValue = bigintDisplay(check.value);
+        switch (check.tag) {
+            case BigIntCheckTag.Gte:
+                emit(`${value}<${literal}`, "expected_gte", `>= ${expectedValue}`, check.message);
+                break;
+            case BigIntCheckTag.Lte:
+                emit(`${value}>${literal}`, "expected_lte", `<= ${expectedValue}`, check.message);
+                break;
+            case BigIntCheckTag.Gt:
+                emit(`${value}<=${literal}`, "expected_gt", `> ${expectedValue}`, check.message);
+                break;
+            case BigIntCheckTag.Lt:
+                emit(`${value}>=${literal}`, "expected_lt", `< ${expectedValue}`, check.message);
+                break;
+            case BigIntCheckTag.MultipleOf:
+                emit(
+                    `${value}%${literal}!==0n`,
+                    "expected_multiple_of",
+                    `multiple of ${expectedValue}`,
+                    check.message
+                );
+                break;
+        }
+    }
+}
+
+/**
+ * @brief Render a BigInt literal for generated JavaScript source.
+ * @details Negative values are parenthesized so modulo and comparison sites do
+ * not depend on unary precedence when snippets are concatenated.
+ */
+function bigintSource(value: bigint): string {
+    return value < 0n ? `(${String(value)}n)` : `${String(value)}n`;
+}
+
+/**
+ * @brief Render a BigInt for user-facing diagnostic text.
+ */
+function bigintDisplay(value: bigint): string {
+    return `${String(value)}n`;
 }
 
 /**
@@ -1105,7 +1533,8 @@ function emitNumberCheckAtSegment(
     value: string,
     path: string,
     segmentExpression: string,
-    issues: string
+    issues: string,
+    context: EmitContext
 ): string {
     const checks = schema.checks;
     if (checks.length === 0) {
@@ -1119,7 +1548,8 @@ function emitNumberCheckAtSegment(
             segmentExpression,
             "expected_number",
             "number",
-            `a(${value})`
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
         )}}`;
     }
     const parts: string[] = [
@@ -1129,7 +1559,8 @@ function emitNumberCheckAtSegment(
             segmentExpression,
             "expected_number",
             "number",
-            `a(${value})`
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
         )}}else{`
     ];
     for (let index = 0; index < checks.length; index += 1) {
@@ -1145,7 +1576,8 @@ function emitNumberCheckAtSegment(
                     segmentExpression,
                     "expected_integer",
                     stringLiteral("integer"),
-                    stringLiteral("number")
+                    stringLiteral("number"),
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.Gte:
@@ -1155,7 +1587,8 @@ function emitNumberCheckAtSegment(
                     segmentExpression,
                     "expected_gte",
                     `>= ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.Lte:
@@ -1165,7 +1598,8 @@ function emitNumberCheckAtSegment(
                     segmentExpression,
                     "expected_lte",
                     `<= ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.Gt:
@@ -1175,7 +1609,8 @@ function emitNumberCheckAtSegment(
                     segmentExpression,
                     "expected_gt",
                     `> ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.Lt:
@@ -1185,7 +1620,8 @@ function emitNumberCheckAtSegment(
                     segmentExpression,
                     "expected_lt",
                     `< ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.MultipleOf:
@@ -1195,7 +1631,8 @@ function emitNumberCheckAtSegment(
                     segmentExpression,
                     "expected_multiple_of",
                     `multiple of ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
         }
@@ -1222,7 +1659,8 @@ function emitNumberCheckAtTwoSegments(
     path: string,
     firstSegmentExpression: string,
     secondSegmentExpression: string,
-    issues: string
+    issues: string,
+    context: EmitContext
 ): string {
     const checks = schema.checks;
     if (checks.length === 0) {
@@ -1233,7 +1671,8 @@ function emitNumberCheckAtTwoSegments(
             secondSegmentExpression,
             "expected_number",
             "number",
-            `a(${value})`
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
         )}}`;
     }
     const parts: string[] = [
@@ -1244,7 +1683,8 @@ function emitNumberCheckAtTwoSegments(
             secondSegmentExpression,
             "expected_number",
             "number",
-            `a(${value})`
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
         )}}else{`
     ];
     for (let index = 0; index < checks.length; index += 1) {
@@ -1261,7 +1701,8 @@ function emitNumberCheckAtTwoSegments(
                     secondSegmentExpression,
                     "expected_integer",
                     stringLiteral("integer"),
-                    stringLiteral("number")
+                    stringLiteral("number"),
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.Gte:
@@ -1272,7 +1713,8 @@ function emitNumberCheckAtTwoSegments(
                     secondSegmentExpression,
                     "expected_gte",
                     `>= ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.Lte:
@@ -1283,7 +1725,8 @@ function emitNumberCheckAtTwoSegments(
                     secondSegmentExpression,
                     "expected_lte",
                     `<= ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.Gt:
@@ -1294,7 +1737,8 @@ function emitNumberCheckAtTwoSegments(
                     secondSegmentExpression,
                     "expected_gt",
                     `> ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.Lt:
@@ -1305,7 +1749,8 @@ function emitNumberCheckAtTwoSegments(
                     secondSegmentExpression,
                     "expected_lt",
                     `< ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case NumberCheckTag.MultipleOf:
@@ -1316,7 +1761,8 @@ function emitNumberCheckAtTwoSegments(
                     secondSegmentExpression,
                     "expected_multiple_of",
                     `multiple of ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
         }
@@ -1491,4 +1937,14 @@ function emitUndefinedLiteralCheckAtTwoSegments(
         `le(l[${String(index)}])`,
         stringLiteral("undefined")
     );
+}
+
+/**
+ * @brief Emit the message operand for a schema check.
+ */
+function checkMessageExpression(
+    message: string | undefined,
+    context: EmitContext
+): string | undefined {
+    return message === undefined ? undefined : stringRef(context, message);
 }

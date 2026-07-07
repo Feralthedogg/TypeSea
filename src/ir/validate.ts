@@ -757,7 +757,9 @@ function isPresenceTag(value: unknown): value is PresenceTag {
  * @returns True for passthrough or strict mode.
  */
 function isObjectModeTag(value: unknown): value is ObjectModeTag {
-    return value === ObjectModeTag.Passthrough || value === ObjectModeTag.Strict;
+    return value === ObjectModeTag.Passthrough ||
+        value === ObjectModeTag.Strict ||
+        value === ObjectModeTag.Strip;
 }
 
 /**

@@ -25,7 +25,7 @@ export function readGuardSchema(
     guard: unknown,
     label: string
 ): Schema {
-    if (!isRecord(guard)) {
+    if (!isObjectLike(guard)) {
         throw new TypeError(`${label} must be a TypeSea guard`);
     }
     const schema = readOwnDataProperty(guard, "schema");
@@ -97,7 +97,14 @@ export function isStrictTrue(value: unknown): boolean {
 export function isGuardValue(
     value: unknown
 ): value is Guard<unknown, Presence> {
-    return isRecord(value) && isSchemaValue(readOwnDataProperty(value, "schema"));
+    return isObjectLike(value) && isSchemaValue(readOwnDataProperty(value, "schema"));
+}
+
+/**
+ * @brief Accept objects and function objects that can carry own schema slots.
+ */
+function isObjectLike(value: unknown): value is object {
+    return value !== null && (typeof value === "object" || typeof value === "function");
 }
 
 /**

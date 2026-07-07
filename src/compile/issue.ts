@@ -28,7 +28,8 @@ export function emitPatternIssue(
     issues: string,
     regex: RegExp,
     name: string,
-    context: EmitContext
+    context: EmitContext,
+    messageExpression?: string
 ): string {
     const source = regex === UUID_PATTERN ? UUID_PATTERN : regex;
     const index = pushRegex(context, source);
@@ -45,7 +46,8 @@ export function emitPatternIssue(
         path,
         "expected_pattern",
         stringRef(context, name),
-        stringLiteral("string")
+        stringLiteral("string"),
+        messageExpression
     )}}`;
 }
 
@@ -69,7 +71,8 @@ export function emitPatternIssueAtSegment(
     issues: string,
     regex: RegExp,
     name: string,
-    context: EmitContext
+    context: EmitContext,
+    messageExpression?: string
 ): string {
     const source = regex === UUID_PATTERN ? UUID_PATTERN : regex;
     const index = pushRegex(context, source);
@@ -83,7 +86,8 @@ export function emitPatternIssueAtSegment(
         segmentExpression,
         "expected_pattern",
         stringRef(context, name),
-        stringLiteral("string")
+        stringLiteral("string"),
+        messageExpression
     )}}`;
 }
 
@@ -109,7 +113,8 @@ export function emitPatternIssueAtTwoSegments(
     issues: string,
     regex: RegExp,
     name: string,
-    context: EmitContext
+    context: EmitContext,
+    messageExpression?: string
 ): string {
     const source = regex === UUID_PATTERN ? UUID_PATTERN : regex;
     const index = pushRegex(context, source);
@@ -124,7 +129,8 @@ export function emitPatternIssueAtTwoSegments(
         secondSegmentExpression,
         "expected_pattern",
         stringRef(context, name),
-        stringLiteral("string")
+        stringLiteral("string"),
+        messageExpression
     )}}`;
 }
 
@@ -155,14 +161,16 @@ export function emitIssue(
     path: string,
     code: string,
     expected: string,
-    actualExpression: string
+    actualExpression: string,
+    messageExpression?: string
 ): string {
     return emitIssueExpr(
         issues,
         path,
         code,
         stringLiteral(expected),
-        actualExpression
+        actualExpression,
+        messageExpression
     );
 }
 
@@ -184,7 +192,8 @@ export function emitIssueAtSegment(
     segmentExpression: string,
     code: string,
     expected: string,
-    actualExpression: string
+    actualExpression: string,
+    messageExpression?: string
 ): string {
     return emitIssueExprAtSegment(
         issues,
@@ -192,7 +201,8 @@ export function emitIssueAtSegment(
         segmentExpression,
         code,
         stringLiteral(expected),
-        actualExpression
+        actualExpression,
+        messageExpression
     );
 }
 
@@ -216,7 +226,8 @@ export function emitIssueAtTwoSegments(
     secondSegmentExpression: string,
     code: string,
     expected: string,
-    actualExpression: string
+    actualExpression: string,
+    messageExpression?: string
 ): string {
     return emitIssueExprAtTwoSegments(
         issues,
@@ -225,7 +236,8 @@ export function emitIssueAtTwoSegments(
         secondSegmentExpression,
         code,
         stringLiteral(expected),
-        actualExpression
+        actualExpression,
+        messageExpression
     );
 }
 
@@ -245,9 +257,18 @@ export function emitIssueExpr(
     path: string,
     code: string,
     expectedExpression: string,
-    actualExpression: string
+    actualExpression: string,
+    messageExpression?: string
 ): string {
-    return `q(${issues},${path},${stringLiteral(code)},${expectedExpression},${actualExpression});`;
+    const args = issueArguments(
+        issues,
+        path,
+        stringLiteral(code),
+        expectedExpression,
+        actualExpression,
+        messageExpression
+    );
+    return `q(${args});`;
 }
 
 /**
@@ -268,8 +289,10 @@ export function emitIssueExprAtSegment(
     segmentExpression: string,
     code: string,
     expectedExpression: string,
-    actualExpression: string
+    actualExpression: string,
+    messageExpression?: string
 ): string {
+    const codeExpression = stringLiteral(code);
     const stringIndex = readStringRefIndex(segmentExpression);
     if (stringIndex !== undefined) {
         /*
@@ -277,9 +300,27 @@ export function emitIssueExprAtSegment(
          * Dynamic segments still go through q1 because their value is known only
          * inside the generated validator.
          */
-        return `q1s(${issues},${path},${stringIndex},${stringLiteral(code)},${expectedExpression},${actualExpression});`;
+        const args = issueArguments(
+            issues,
+            path,
+            stringIndex,
+            codeExpression,
+            expectedExpression,
+            actualExpression,
+            messageExpression
+        );
+        return `q1s(${args});`;
     }
-    return `q1(${issues},${path},${segmentExpression},${stringLiteral(code)},${expectedExpression},${actualExpression});`;
+    const args = issueArguments(
+        issues,
+        path,
+        segmentExpression,
+        codeExpression,
+        expectedExpression,
+        actualExpression,
+        messageExpression
+    );
+    return `q1(${args});`;
 }
 
 /**
@@ -302,9 +343,35 @@ export function emitIssueExprAtTwoSegments(
     secondSegmentExpression: string,
     code: string,
     expectedExpression: string,
-    actualExpression: string
+    actualExpression: string,
+    messageExpression?: string
 ): string {
-    return `q2(${issues},${path},${firstSegmentExpression},${secondSegmentExpression},${stringLiteral(code)},${expectedExpression},${actualExpression});`;
+    const args = issueArguments(
+        issues,
+        path,
+        firstSegmentExpression,
+        secondSegmentExpression,
+        stringLiteral(code),
+        expectedExpression,
+        actualExpression,
+        messageExpression
+    );
+    return `q2(${args});`;
+}
+
+function issueArguments(
+    ...parts: readonly (string | undefined)[]
+): string {
+    const last = parts[parts.length - 1];
+    const limit = last === undefined ? parts.length - 1 : parts.length;
+    let result = "";
+    for (let index = 0; index < limit; index += 1) {
+        if (index !== 0) {
+            result += ",";
+        }
+        result += parts[index] ?? "";
+    }
+    return result;
 }
 
 /**

@@ -8,7 +8,10 @@
 
 import {
     ArrayCheckTag,
+    BigIntCheckTag,
     DateCheckTag,
+    FileCheckTag,
+    KeyRuleTag,
     NumberCheckTag,
     ObjectModeTag,
     PresenceTag,
@@ -33,9 +36,13 @@ import {
     IPV6_PATTERN,
     ISO_DATETIME_PATTERN,
     ISO_DATE_PATTERN,
+    KSUID_PATTERN,
     ULID_PATTERN,
     URL_PATTERN,
     UUID_PATTERN,
+    XID_PATTERN,
+    objectEntryCanBeOmitted,
+    recordKeyInput,
     resolveLazySchema,
     schemaCanAcceptUndefined,
     type DiscriminatedUnionCase,
@@ -50,8 +57,11 @@ import {
     isValidDateObject,
     ordinaryHasInstance,
     readDateTime,
+    readFileInfo,
     readMapEntries,
+    readMapSize,
     readOwnDataProperty,
+    readSetSize,
     readSetValues,
     type DataPropertyDescriptor,
     type UnknownRecord
@@ -255,7 +265,7 @@ async function isSchemaAsyncInner(
         case SchemaTag.Date:
             return isDateSchema(schema, value);
         case SchemaTag.BigInt:
-            return typeof value === "bigint";
+            return isBigIntSchema(schema, value);
         case SchemaTag.Symbol:
             return typeof value === "symbol";
         case SchemaTag.Boolean:
@@ -267,11 +277,13 @@ async function isSchemaAsyncInner(
         case SchemaTag.Tuple:
             return isTupleSchema(schema, value, state);
         case SchemaTag.Record:
-            return isRecordSchema(schema.value, value, state);
+            return isRecordSchema(schema, value, state);
         case SchemaTag.Map:
             return isMapSchema(schema, value, state);
         case SchemaTag.Set:
             return isSetSchema(schema, value, state);
+        case SchemaTag.File:
+            return isFileSchema(schema, value);
         case SchemaTag.InstanceOf:
             return ordinaryHasInstance(value, schema.constructor);
         case SchemaTag.Property:
@@ -280,6 +292,8 @@ async function isSchemaAsyncInner(
             return isObjectSchema(schema, value, state);
         case SchemaTag.Union:
             return isUnionSchema(schema.options, value, state);
+        case SchemaTag.Xor:
+            return isXorSchema(schema.options, value, state);
         case SchemaTag.Intersection:
             return (await isSchemaAsync(schema.left, value, state)) &&
                 await isSchemaAsync(schema.right, value, state);
@@ -299,6 +313,23 @@ async function isSchemaAsyncInner(
             );
         case SchemaTag.Brand:
             return isSchemaAsync(schema.inner, value, state);
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+            return isSchemaAsync(schema.inner, value, state);
+        case SchemaTag.KeyedObject:
+            return (await isSchemaAsync(schema.inner, value, state)) &&
+                isKeyedObjectSchema(schema.keys, schema.rule, value);
+        case SchemaTag.PropertyCount:
+            return (await isSchemaAsync(schema.inner, value, state)) &&
+                isPropertyCountSchema(schema.min, schema.max, value);
+        case SchemaTag.PropertyNames:
+            return (await isSchemaAsync(schema.inner, value, state)) &&
+                await isPropertyNamesSchema(schema.key, value, state);
+        case SchemaTag.PatternProperties:
+            return (await isSchemaAsync(schema.inner, value, state)) &&
+                await isPatternPropertiesSchema(schema, value, state);
+        case SchemaTag.Readonly:
+            return isSchemaAsync(schema.inner, value, state);
         case SchemaTag.Lazy:
             return isSchemaAsync(
                 resolveLazySchema(schema, state.validation.resolving),
@@ -309,6 +340,134 @@ async function isSchemaAsyncInner(
             return (await isSchemaAsync(schema.inner, value, state)) &&
                 schema.predicate(value);
     }
+}
+
+/**
+ * @brief Execute a keyed-object rule in the cooperative interpreter.
+ */
+function isKeyedObjectSchema(
+    keys: readonly string[],
+    rule: KeyRuleTag,
+    value: unknown
+): boolean {
+    if (!isPlainRecord(value)) {
+        return false;
+    }
+    const count = countOwnDataKeys(value, keys);
+    if (rule === KeyRuleTag.AtLeastOne) {
+        return count > 0;
+    }
+    return count === 1;
+}
+
+/**
+ * @brief Execute a JSON Schema property-count rule.
+ */
+function isPropertyCountSchema(
+    min: number | undefined,
+    max: number | undefined,
+    value: unknown
+): boolean {
+    if (!isPlainRecord(value)) {
+        return false;
+    }
+    const count = Object.keys(value).length;
+    return (min === undefined || count >= min) &&
+        (max === undefined || count <= max);
+}
+
+/**
+ * @brief Execute a JSON Schema property-name rule in the cooperative interpreter.
+ */
+async function isPropertyNamesSchema(
+    keySchema: Schema,
+    value: unknown,
+    state: AsyncValidationState
+): Promise<boolean> {
+    if (!isPlainRecord(value)) {
+        return false;
+    }
+    const keys = Object.keys(value);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key !== undefined && !await isSchemaAsync(keySchema, key, state)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Execute JSON Schema pattern-property rules in the cooperative interpreter.
+ */
+async function isPatternPropertiesSchema(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.PatternProperties }>,
+    value: unknown,
+    state: AsyncValidationState
+): Promise<boolean> {
+    if (!isPlainRecord(value)) {
+        return false;
+    }
+    const keys = Object.keys(value);
+    for (let index = 0; index < keys.length; index += 1) {
+        await maybeYield(state);
+        const key = keys[index];
+        if (key === undefined ||
+            !await isPatternPropertyKey(schema, value, key, state)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Execute pattern-property rules for one key.
+ */
+async function isPatternPropertyKey(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.PatternProperties }>,
+    value: Readonly<Record<string, unknown>>,
+    key: string,
+    state: AsyncValidationState
+): Promise<boolean> {
+    let matched = false;
+    for (let index = 0; index < schema.entries.length; index += 1) {
+        const entry = schema.entries[index];
+        if (entry === undefined || !testPattern(entry.regex, key)) {
+            continue;
+        }
+        matched = true;
+        const property = readOwnDataProperty(value, key);
+        if (property === undefined ||
+            !await isSchemaAsync(entry.schema, property.value, state)) {
+            return false;
+        }
+    }
+    if (matched || hasObjectKey(schema.keyLookup, key)) {
+        return true;
+    }
+    if (schema.additional !== undefined) {
+        const property = readOwnDataProperty(value, key);
+        return property !== undefined &&
+            await isSchemaAsync(schema.additional, property.value, state);
+    }
+    return schema.allowAdditional;
+}
+
+/**
+ * @brief Count selected own data properties without invoking accessors.
+ */
+function countOwnDataKeys(
+    value: Readonly<Record<string, unknown>>,
+    keys: readonly string[]
+): number {
+    let count = 0;
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key !== undefined && readOwnDataProperty(value, key) !== undefined) {
+            count += 1;
+        }
+    }
+    return count;
 }
 
 /**
@@ -370,6 +529,16 @@ function isStringSchema(
                 break;
             case StringCheckTag.Ulid:
                 if (!testPattern(ULID_PATTERN, value)) {
+                    return false;
+                }
+                break;
+            case StringCheckTag.Xid:
+                if (!testPattern(XID_PATTERN, value)) {
+                    return false;
+                }
+                break;
+            case StringCheckTag.Ksuid:
+                if (!testPattern(KSUID_PATTERN, value)) {
                     return false;
                 }
                 break;
@@ -441,6 +610,53 @@ function isNumberSchema(
 }
 
 /**
+ * @brief Execute bigint checks without coercing numbers.
+ */
+function isBigIntSchema(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.BigInt }>,
+    value: unknown
+): boolean {
+    if (typeof value !== "bigint") {
+        return false;
+    }
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            return false;
+        }
+        switch (check.tag) {
+            case BigIntCheckTag.Gte:
+                if (value < check.value) {
+                    return false;
+                }
+                break;
+            case BigIntCheckTag.Lte:
+                if (value > check.value) {
+                    return false;
+                }
+                break;
+            case BigIntCheckTag.Gt:
+                if (value <= check.value) {
+                    return false;
+                }
+                break;
+            case BigIntCheckTag.Lt:
+                if (value >= check.value) {
+                    return false;
+                }
+                break;
+            case BigIntCheckTag.MultipleOf:
+                if (value % check.value !== 0n) {
+                    return false;
+                }
+                break;
+        }
+    }
+    return true;
+}
+
+/**
  * @brief Execute date checks through Date intrinsics.
  */
 function isDateSchema(
@@ -471,6 +687,66 @@ function isDateSchema(
         }
     }
     return true;
+}
+
+/**
+ * @brief Execute File checks without yielding.
+ * @param schema File schema with size and MIME checks.
+ * @param value Candidate runtime value.
+ * @returns True when value is a host File satisfying every check.
+ */
+function isFileSchema(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.File }>,
+    value: unknown
+): boolean {
+    const file = readFileInfo(value);
+    if (file === undefined) {
+        return false;
+    }
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            return false;
+        }
+        switch (check.tag) {
+            case FileCheckTag.Min:
+                if (file.size < check.value) {
+                    return false;
+                }
+                break;
+            case FileCheckTag.Max:
+                if (file.size > check.value) {
+                    return false;
+                }
+                break;
+            case FileCheckTag.Mime:
+                if (!fileMimeMatches(file.type, check.values)) {
+                    return false;
+                }
+                break;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Match exact MIME type or top-level wildcard.
+ */
+function fileMimeMatches(type: string, patterns: readonly string[]): boolean {
+    for (let index = 0; index < patterns.length; index += 1) {
+        const pattern = patterns[index];
+        if (pattern === undefined) {
+            return false;
+        }
+        if (Object.is(pattern, type)) {
+            return true;
+        }
+        if (pattern.endsWith("/*") && type.startsWith(pattern.slice(0, -1))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -582,11 +858,14 @@ async function isTupleSchema(
  * @brief Execute record validation over enumerable own string keys.
  */
 async function isRecordSchema(
-    item: Schema,
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Record }>,
     value: unknown,
     state: AsyncValidationState
 ): Promise<boolean> {
     if (!isPlainRecord(value)) {
+        return false;
+    }
+    if (!hasRequiredRecordKeys(schema.requiredKeys, value)) {
         return false;
     }
     const keys = Object.keys(value);
@@ -597,8 +876,42 @@ async function isRecordSchema(
             return false;
         }
         const property = readOwnDataProperty(value, key);
+        if (schema.key !== undefined) {
+            const keyInput = recordKeyInput(schema.key, key);
+            const keyAccepted = await isSchemaAsync(schema.key, keyInput, state);
+            if (!keyAccepted) {
+                if (schema.loose) {
+                    continue;
+                }
+                return false;
+            }
+        }
         if (property === undefined ||
-            !await isSchemaAsync(item, property.value, state)) {
+            !await isSchemaAsync(schema.value, property.value, state)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Check exhaustive record keys without executing accessors.
+ */
+function hasRequiredRecordKeys(
+    keys: readonly string[] | undefined,
+    value: Readonly<Record<string, unknown>>
+): boolean {
+    if (keys === undefined) {
+        return true;
+    }
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined) {
+            return false;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (descriptor?.enumerable !== true ||
+            !isDataPropertyDescriptor(descriptor)) {
             return false;
         }
     }
@@ -617,6 +930,9 @@ async function isMapSchema(
     if (iterator === undefined) {
         return false;
     }
+    if (!sizeChecksPass(schema.checks, readMapSize(value))) {
+        return false;
+    }
     for (;;) {
         await maybeYield(state);
         const step = iterator.next();
@@ -632,6 +948,47 @@ async function isMapSchema(
 }
 
 /**
+ * @brief Check Set size constraints without executing user accessors.
+ */
+function setSizeChecksPass(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Set }>,
+    value: unknown
+): boolean {
+    return sizeChecksPass(schema.checks, readSetSize(value));
+}
+
+/**
+ * @brief Check collection size constraints without executing user accessors.
+ */
+function sizeChecksPass(
+    checks: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>["checks"],
+    size: number | undefined
+): boolean {
+    if (size === undefined) {
+        return false;
+    }
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        switch (check.tag) {
+            case ArrayCheckTag.Min:
+                if (size < check.value) {
+                    return false;
+                }
+                break;
+            case ArrayCheckTag.Max:
+                if (size > check.value) {
+                    return false;
+                }
+                break;
+        }
+    }
+    return true;
+}
+
+/**
  * @brief Execute Set validation cooperatively.
  */
 async function isSetSchema(
@@ -641,6 +998,9 @@ async function isSetSchema(
 ): Promise<boolean> {
     const iterator = readSetValues(value);
     if (iterator === undefined) {
+        return false;
+    }
+    if (!setSizeChecksPass(schema, value)) {
         return false;
     }
     for (;;) {
@@ -694,13 +1054,13 @@ async function isObjectSchema(
         if (entry === undefined) {
             return false;
         }
-        if (entry.presence === PresenceTag.Optional) {
+        if (entry.presence !== PresenceTag.Required) {
             allRequired = false;
         }
         const property = readOwnDataProperty(value, entry.key);
         if (property === undefined) {
-            if (entry.presence === PresenceTag.Optional &&
-                !Object.prototype.hasOwnProperty.call(value, entry.key)) {
+            if (!Object.prototype.hasOwnProperty.call(value, entry.key) &&
+                objectEntryCanBeOmitted(entry)) {
                 continue;
             }
             return false;
@@ -782,6 +1142,28 @@ async function isUnionSchema(
 }
 
 /**
+ * @brief Execute exclusive union validation cooperatively.
+ */
+async function isXorSchema(
+    options: readonly Schema[],
+    value: unknown,
+    state: AsyncValidationState
+): Promise<boolean> {
+    let matches = 0;
+    for (let index = 0; index < options.length; index += 1) {
+        await maybeYield(state);
+        const option = options[index];
+        if (option !== undefined && await isSchemaAsync(option, value, state)) {
+            matches += 1;
+            if (matches > 1) {
+                return false;
+            }
+        }
+    }
+    return matches === 1;
+}
+
+/**
  * @brief Execute discriminant dispatch without prototype reads.
  */
 async function isDiscriminatedUnionSchema(
@@ -794,8 +1176,7 @@ async function isDiscriminatedUnionSchema(
         return false;
     }
     const discriminantProperty = readOwnDataProperty(value, key);
-    if (discriminantProperty === undefined ||
-        typeof discriminantProperty.value !== "string") {
+    if (discriminantProperty === undefined) {
         return false;
     }
     const selected = findDiscriminatedUnionCase(cases, discriminantProperty.value);
@@ -955,7 +1336,7 @@ function yieldToEventLoop(): Promise<void> {
  * @brief Read a TypeSea schema from a guard-like value.
  */
 function readAsyncSchema(guard: unknown): Schema {
-    if (!isRecord(guard)) {
+    if (!isObjectLike(guard)) {
         throw new TypeError("async validation guard must be a TypeSea guard");
     }
     const descriptor = Object.getOwnPropertyDescriptor(guard, "schema");
@@ -971,4 +1352,11 @@ function readAsyncSchema(guard: unknown): Schema {
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * @brief Accept objects and function objects that can carry own schema slots.
+ */
+function isObjectLike(value: unknown): value is object {
+    return value !== null && (typeof value === "object" || typeof value === "function");
 }

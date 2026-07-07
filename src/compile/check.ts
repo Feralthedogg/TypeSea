@@ -5,7 +5,7 @@
  * stable across runtime and AOT emission.
  */
 
-import { SchemaTag } from "../kind/index.js";
+import { KeyRuleTag, SchemaTag } from "../kind/index.js";
 import type { Schema } from "../schema/index.js";
 import {
     emitArrayCheck,
@@ -15,13 +15,14 @@ import {
     emitTupleCheck
 } from "./check-composite.js";
 import {
+    emitBigIntCheck,
     emitDateCheck,
     emitLiteralCheck,
     emitNumberCheck,
     emitStringCheck
 } from "./check-scalar.js";
-import { pushSchema } from "./context.js";
-import { emitIssue } from "./issue.js";
+import { pushSchema, stringRef } from "./context.js";
+import { emitIssue, emitIssueExpr } from "./issue.js";
 import { emitUnion } from "./union-preflight.js";
 import type { EmitContext, FunctionSource } from "./types.js";
 
@@ -99,24 +100,19 @@ function emitCheckBody(
         case SchemaTag.String:
             return emitStringCheck(schema, value, path, issues, context);
         case SchemaTag.Number:
-            return emitNumberCheck(schema, value, path, issues);
+            return emitNumberCheck(schema, value, path, issues, context);
         case SchemaTag.Date:
-            return emitDateCheck(schema, value, path, issues);
+            return emitDateCheck(schema, value, path, issues, context);
         case SchemaTag.BigInt:
-            return `if(typeof ${value}!=="bigint"){${emitIssue(
-                issues,
-                path,
-                "expected_bigint",
-                "bigint",
-                `a(${value})`
-            )}}`;
+            return emitBigIntCheck(schema, value, path, issues, context);
         case SchemaTag.Symbol:
             return `if(typeof ${value}!=="symbol"){${emitIssue(
                 issues,
                 path,
                 "expected_symbol",
                 "symbol",
-                `a(${value})`
+                `a(${value})`,
+                checkMessageExpression(schema.message, context)
             )}}`;
         case SchemaTag.Boolean:
             return `if(typeof ${value}!=="boolean"){${emitIssue(
@@ -124,7 +120,8 @@ function emitCheckBody(
                 path,
                 "expected_boolean",
                 "boolean",
-                `a(${value})`
+                `a(${value})`,
+                checkMessageExpression(schema.message, context)
             )}}`;
         case SchemaTag.Literal:
             return emitLiteralCheck(schema.value, value, path, issues, context);
@@ -136,9 +133,13 @@ function emitCheckBody(
             }
             return emitTupleCheck(schema.items, value, path, issues, context, emitCheckFunction);
         case SchemaTag.Record:
+            if (schema.key !== undefined) {
+                return emitDynamicCheck(schema, value, path, issues, context);
+            }
             return emitRecordCheck(schema.value, value, path, issues, context, emitCheckFunction);
         case SchemaTag.Map:
         case SchemaTag.Set:
+        case SchemaTag.File:
         case SchemaTag.InstanceOf:
         case SchemaTag.Property:
             return emitDynamicCheck(schema, value, path, issues, context);
@@ -152,6 +153,8 @@ function emitCheckBody(
                 "union",
                 `a(${value})`
             )}}`;
+        case SchemaTag.Xor:
+            return emitDynamicCheck(schema, value, path, issues, context);
         case SchemaTag.Intersection:
             return [
                 emitCheckCall(schema.left, value, path, issues, context),
@@ -186,6 +189,36 @@ function emitCheckBody(
             );
         case SchemaTag.Brand:
             return emitCheckCall(schema.inner, value, path, issues, context);
+        case SchemaTag.Metadata:
+            return emitCheckCall(schema.inner, value, path, issues, context);
+        case SchemaTag.Message:
+            return emitMessageCheck(schema.inner, schema.message, value, path, issues, context);
+        case SchemaTag.KeyedObject:
+            return emitKeyedObjectCheck(
+                schema.inner,
+                schema.keys,
+                schema.rule,
+                value,
+                path,
+                issues,
+                context
+            );
+        case SchemaTag.PropertyCount:
+            return emitPropertyCountCheck(
+                schema.inner,
+                schema.min,
+                schema.max,
+                value,
+                path,
+                issues,
+                context
+            );
+        case SchemaTag.PropertyNames:
+            return emitDynamicCheck(schema, value, path, issues, context);
+        case SchemaTag.PatternProperties:
+            return emitDynamicCheck(schema, value, path, issues, context);
+        case SchemaTag.Readonly:
+            return emitCheckCall(schema.inner, value, path, issues, context);
         case SchemaTag.Lazy:
         case SchemaTag.Refine:
             /*
@@ -195,6 +228,160 @@ function emitCheckBody(
              */
             return emitDynamicCheck(schema, value, path, issues, context);
     }
+}
+
+/**
+ * @brief Emit a diagnostic wrapper that applies a schema-local message.
+ * @param inner Wrapped schema.
+ * @param message Message assigned to child issues without their own message.
+ * @param value Generated candidate expression.
+ * @param path Generated path expression.
+ * @param issues Generated issue buffer expression.
+ * @param context Shared emission context.
+ * @returns JavaScript source for the wrapped diagnostic collector.
+ */
+function emitMessageCheck(
+    inner: Schema,
+    message: string,
+    value: string,
+    path: string,
+    issues: string,
+    context: EmitContext
+): string {
+    const messageExpression = stringRef(context, message);
+    return `{const n=${issues}.length;${emitCheckCall(
+        inner,
+        value,
+        path,
+        issues,
+        context
+    )}for(let i=n;i<${issues}.length;i+=1){const e=${issues}[i];if(e!==undefined&&e.message===undefined)${issues}[i]=Object.freeze({path:e.path,code:e.code,expected:e.expected,actual:e.actual,message:${messageExpression}});}}`;
+}
+
+/**
+ * @brief Emit diagnostics for an object plus a selected-key rule.
+ */
+function emitKeyedObjectCheck(
+    inner: Schema,
+    keys: readonly string[],
+    rule: KeyRuleTag,
+    value: string,
+    path: string,
+    issues: string,
+    context: EmitContext
+): string {
+    return `{const n=${issues}.length;${emitCheckCall(
+        inner,
+        value,
+        path,
+        issues,
+        context
+    )}if(${issues}.length===n){${emitKeyedObjectIssue(keys, rule, value, path, issues, context)}}}`;
+}
+
+/**
+ * @brief Emit the selected-key diagnostic after the object schema passes.
+ */
+function emitKeyedObjectIssue(
+    keys: readonly string[],
+    rule: KeyRuleTag,
+    value: string,
+    path: string,
+    issues: string,
+    context: EmitContext
+): string {
+    const expected = rule === KeyRuleTag.AtLeastOne
+        ? `at least one of ${keys.join(", ")}`
+        : `exactly one of ${keys.join(", ")}`;
+    const count = emitKeyCount(keys, value, context);
+    if (rule === KeyRuleTag.AtLeastOne) {
+        return `{let c=0;${count}if(c===0){${emitIssueExpr(
+            issues,
+            path,
+            "expected_key_count",
+            stringRef(context, expected),
+            "\"0 matching keys\""
+        )}}}`;
+    }
+    return `{let c=0;${count}if(c!==1){${emitIssueExpr(
+        issues,
+        path,
+        "expected_key_count",
+        stringRef(context, expected),
+        "String(c)+\" matching keys\""
+    )}}}`;
+}
+
+/**
+ * @brief Emit selected own-data key counting snippets.
+ */
+function emitKeyCount(
+    keys: readonly string[],
+    value: string,
+    context: EmitContext
+): string {
+    const parts = new Array<string>(keys.length);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key !== undefined) {
+            parts[index] = `if(hd(${value},${stringRef(context, key)}))c+=1;`;
+        }
+    }
+    return parts.join("");
+}
+
+/**
+ * @brief Emit diagnostics for an object property-count rule.
+ */
+function emitPropertyCountCheck(
+    inner: Schema,
+    min: number | undefined,
+    max: number | undefined,
+    value: string,
+    path: string,
+    issues: string,
+    context: EmitContext
+): string {
+    return `{const n=${issues}.length;${emitCheckCall(
+        inner,
+        value,
+        path,
+        issues,
+        context
+    )}if(${issues}.length===n){${emitPropertyCountIssue(min, max, value, path, issues, context)}}}`;
+}
+
+/**
+ * @brief Emit the property-count diagnostic after object validation passes.
+ */
+function emitPropertyCountIssue(
+    min: number | undefined,
+    max: number | undefined,
+    value: string,
+    path: string,
+    issues: string,
+    context: EmitContext
+): string {
+    const parts: string[] = [`const c=Object.keys(${value}).length;`];
+    if (min !== undefined) {
+        parts.push(`if(c<${String(min)}){${emitIssueExpr(
+            issues,
+            path,
+            "expected_key_count",
+            stringRef(context, `at least ${String(min)} properties`),
+            "String(c)+\" properties\""
+        )}}`);
+    }
+    if (max !== undefined) {
+        parts.push(`if(c>${String(max)}){${emitIssueExpr(
+            issues,
+            path,
+            "expected_key_count",
+            stringRef(context, `at most ${String(max)} properties`),
+            "String(c)+\" properties\""
+        )}}`);
+    }
+    return `{${parts.join("")}}`;
 }
 
 /**
@@ -235,4 +422,14 @@ function emitCheckCall(
     context: EmitContext
 ): string {
     return `${emitCheckFunction(schema, context)}(${value},${path},${issues});`;
+}
+
+/**
+ * @brief Emit an optional static message side-table reference.
+ */
+function checkMessageExpression(
+    message: string | undefined,
+    context: EmitContext
+): string | undefined {
+    return message === undefined ? undefined : stringRef(context, message);
 }

@@ -11,12 +11,13 @@ import {
     BaseGuard,
     setArrayGuardFactory
 } from "./base.js";
+import { readCheckMessage } from "./check-message.js";
 import {
     checkArrayLengthBound,
     readArrayConstructorSchema,
     readArrayMethodSchema
 } from "./read.js";
-import type { Presence } from "./types.js";
+import type { CheckMessageInput, Presence } from "./types.js";
 
 /**
  * @brief Persistent builder for homogeneous array predicates.
@@ -39,13 +40,26 @@ export class ArrayGuard<
     }
 
     /**
+     * @brief Return the item guard carried by this array schema.
+     * @details Zod exposes this as `array.element`. TypeSea stores the item as a
+     * schema node, so the facade returns a schema-backed guard without mutating
+     * the array guard.
+     * @returns Guard for one logical array item.
+     */
+    public get element(): BaseGuard<TItem> {
+        const schema = readArrayMethodSchema(this, "array element receiver");
+        return new BaseGuard<TItem>(schema.item);
+    }
+
+    /**
      * @brief Require an inclusive minimum array length.
      * @param value Non-negative integer lower bound.
      * @returns Fresh ArrayGuard with an appended minimum length check.
      */
-    public min(value: number): ArrayGuard<TItem, TPresence> {
+    public min(value: number, options?: CheckMessageInput): ArrayGuard<TItem, TPresence> {
         const schema = readArrayMethodSchema(this, "array min receiver");
         const bound = checkArrayLengthBound(value, "min");
+        const message = readCheckMessage(options);
         return new ArrayGuard<TItem, TPresence>({
             tag: SchemaTag.Array,
             item: schema.item,
@@ -53,7 +67,8 @@ export class ArrayGuard<
                 ...schema.checks,
                 {
                     tag: ArrayCheckTag.Min,
-                    value: bound
+                    value: bound,
+                    message
                 }
             ]
         });
@@ -64,9 +79,10 @@ export class ArrayGuard<
      * @param value Non-negative integer upper bound.
      * @returns Fresh ArrayGuard with an appended maximum length check.
      */
-    public max(value: number): ArrayGuard<TItem, TPresence> {
+    public max(value: number, options?: CheckMessageInput): ArrayGuard<TItem, TPresence> {
         const schema = readArrayMethodSchema(this, "array max receiver");
         const bound = checkArrayLengthBound(value, "max");
+        const message = readCheckMessage(options);
         return new ArrayGuard<TItem, TPresence>({
             tag: SchemaTag.Array,
             item: schema.item,
@@ -74,7 +90,8 @@ export class ArrayGuard<
                 ...schema.checks,
                 {
                     tag: ArrayCheckTag.Max,
-                    value: bound
+                    value: bound,
+                    message
                 }
             ]
         });
@@ -87,9 +104,10 @@ export class ArrayGuard<
      * @details Exact length is represented as two ordinary bounds so every
      * backend can reuse the same comparison and diagnostic paths.
      */
-    public length(value: number): ArrayGuard<TItem, TPresence> {
+    public length(value: number, options?: CheckMessageInput): ArrayGuard<TItem, TPresence> {
         const schema = readArrayMethodSchema(this, "array length receiver");
         const bound = checkArrayLengthBound(value, "exact");
+        const message = readCheckMessage(options);
         return new ArrayGuard<TItem, TPresence>({
             tag: SchemaTag.Array,
             item: schema.item,
@@ -97,11 +115,13 @@ export class ArrayGuard<
                 ...schema.checks,
                 {
                     tag: ArrayCheckTag.Min,
-                    value: bound
+                    value: bound,
+                    message
                 },
                 {
                     tag: ArrayCheckTag.Max,
-                    value: bound
+                    value: bound,
+                    message
                 }
             ]
         });
@@ -111,8 +131,9 @@ export class ArrayGuard<
      * @brief Require at least one array element.
      * @returns Fresh ArrayGuard with a minimum length of one.
      */
-    public nonempty(): ArrayGuard<TItem, TPresence> {
+    public nonempty(options?: CheckMessageInput): ArrayGuard<TItem, TPresence> {
         const schema = readArrayMethodSchema(this, "array nonempty receiver");
+        const message = readCheckMessage(options);
         return new ArrayGuard<TItem, TPresence>({
             tag: SchemaTag.Array,
             item: schema.item,
@@ -120,7 +141,8 @@ export class ArrayGuard<
                 ...schema.checks,
                 {
                     tag: ArrayCheckTag.Min,
-                    value: 1
+                    value: 1,
+                    message
                 }
             ]
         });

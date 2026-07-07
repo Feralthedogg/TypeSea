@@ -54,10 +54,11 @@ export function objectSchema(
         if (key === undefined) {
             throw new TypeError("Object key disappeared during construction");
         }
-        const guard = shape[key];
-        const entrySchema = normalizeObjectEntrySchema(
-            readGuardSchema(guard, `object property ${key}`)
-        );
+        const descriptor = Object.getOwnPropertyDescriptor(shape, key);
+        if (descriptor === undefined) {
+            throw new TypeError(`object property ${key} disappeared during construction`);
+        }
+        const entrySchema = readObjectShapeEntrySchema(shape, key, descriptor);
         entries[index] = {
             key,
             schema: entrySchema.schema,
@@ -65,6 +66,63 @@ export function objectSchema(
         };
     }
     return objectSchemaFromEntries(entries, mode, undefined);
+}
+
+/**
+ * @brief Read one object-shape entry without forcing recursive getters.
+ * @details Data slots keep the historical eager validation path. Accessor slots
+ * are treated as schema thunks so Zod-style recursive object getters can refer
+ * to the guard that is still being initialized.
+ * @param shape User-supplied object shape.
+ * @param key Shape key currently being normalized.
+ * @param descriptor Own property descriptor for the shape entry.
+ * @returns Schema stored by the entry or a lazy schema that resolves it later.
+ */
+function readObjectShapeEntrySchema(
+    shape: ObjectShape,
+    key: string,
+    descriptor: PropertyDescriptor
+): NormalizedObjectEntrySchema {
+    if (Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+        return normalizeObjectEntrySchema(
+            readGuardSchema(descriptor.value, `object property ${key}`)
+        );
+    }
+    const get = descriptor.get?.bind(shape) as (() => unknown) | undefined;
+    if (get === undefined) {
+        throw new TypeError(`object property ${key} must be a TypeSea guard`);
+    }
+    return objectShapeGetterSchema(key, get);
+}
+
+/**
+ * @brief Convert a recursive shape getter into a cached lazy schema.
+ * @details The getter belongs to the schema definition object, not to runtime
+ * input data. Validation still rejects input accessors; this path only defers
+ * developer-authored schema lookup until the recursive binding exists.
+ * @param key Shape key associated with the getter.
+ * @param get Getter function returning a TypeSea guard.
+ * @returns Lazy schema whose first successful resolution is cached.
+ */
+function objectShapeGetterSchema(
+    key: string,
+    get: () => unknown
+): NormalizedObjectEntrySchema {
+    let cached: NormalizedObjectEntrySchema | undefined;
+    const read = (): NormalizedObjectEntrySchema => {
+        cached ??= normalizeObjectEntrySchema(
+            readGuardSchema(get(), `object property ${key}`)
+        );
+        return cached;
+    };
+    return {
+        schema: {
+            tag: SchemaTag.Lazy,
+            get: (): Schema => read().schema,
+            objectPresence: (): PresenceTag => read().presence
+        },
+        presence: PresenceTag.Deferred
+    };
 }
 
 /**
@@ -250,7 +308,11 @@ export function omitObjectSchema(
  * @param schema Source object schema.
  * @returns Rebuilt object schema with optional entries.
  */
-export function partialObjectSchema(schema: ObjectSchema): ObjectSchema {
+export function partialObjectSchema(
+    schema: ObjectSchema,
+    selection?: readonly string[]
+): ObjectSchema {
+    const selected = selection === undefined ? undefined : makeSelectionLookup(selection);
     const entries = new Array<ObjectEntry>(schema.entries.length);
     for (let index = 0; index < schema.entries.length; index += 1) {
         const entry = schema.entries[index];
@@ -258,7 +320,9 @@ export function partialObjectSchema(schema: ObjectSchema): ObjectSchema {
             entries[index] = {
                 key: entry.key,
                 schema: entry.schema,
-                presence: PresenceTag.Optional
+                presence: selected === undefined || selected[entry.key] === true
+                    ? PresenceTag.Optional
+                    : entry.presence
             };
         }
     }
@@ -298,7 +362,11 @@ export function deepPartialObjectSchema(schema: ObjectSchema): ObjectSchema {
  * presence metadata. Requiring a field therefore only needs to flip that
  * metadata back to Required while preserving each value-domain schema.
  */
-export function requiredObjectSchema(schema: ObjectSchema): ObjectSchema {
+export function requiredObjectSchema(
+    schema: ObjectSchema,
+    selection?: readonly string[]
+): ObjectSchema {
+    const selected = selection === undefined ? undefined : makeSelectionLookup(selection);
     const entries = new Array<ObjectEntry>(schema.entries.length);
     for (let index = 0; index < schema.entries.length; index += 1) {
         const entry = schema.entries[index];
@@ -306,11 +374,29 @@ export function requiredObjectSchema(schema: ObjectSchema): ObjectSchema {
             entries[index] = {
                 key: entry.key,
                 schema: entry.schema,
-                presence: PresenceTag.Required
+                presence: selected === undefined || selected[entry.key] === true
+                    ? PresenceTag.Required
+                    : entry.presence
             };
         }
     }
     return objectSchemaFromEntries(entries, schema.mode, schema.catchall);
+}
+
+/**
+ * @brief Build a fixed lookup for selected object keys.
+ * @param selection Validated key list from the object API.
+ * @returns Null-prototype lookup used while rewriting object entries.
+ */
+function makeSelectionLookup(selection: readonly string[]): Readonly<Record<string, true>> {
+    const lookup: Record<string, true> = Object.create(null) as Record<string, true>;
+    for (let index = 0; index < selection.length; index += 1) {
+        const key = selection[index];
+        if (key !== undefined) {
+            lookup[key] = true;
+        }
+    }
+    return Object.freeze(lookup);
 }
 
 /**
@@ -407,18 +493,22 @@ function deepPartialSchema(schema: Schema): Schema {
         case SchemaTag.Record:
             return {
                 tag: SchemaTag.Record,
-                value: deepPartialSchema(schema.value)
+                key: schema.key,
+                value: deepPartialSchema(schema.value),
+                loose: schema.loose
             };
         case SchemaTag.Map:
             return {
                 tag: SchemaTag.Map,
                 key: deepPartialSchema(schema.key),
-                value: deepPartialSchema(schema.value)
+                value: deepPartialSchema(schema.value),
+                checks: schema.checks
             };
         case SchemaTag.Set:
             return {
                 tag: SchemaTag.Set,
-                item: deepPartialSchema(schema.item)
+                item: deepPartialSchema(schema.item),
+                checks: schema.checks
             };
         case SchemaTag.Property:
             return {
@@ -428,8 +518,9 @@ function deepPartialSchema(schema: Schema): Schema {
                 value: deepPartialSchema(schema.value)
             };
         case SchemaTag.Union:
+        case SchemaTag.Xor:
             return {
-                tag: SchemaTag.Union,
+                tag: schema.tag,
                 options: mapDeepPartialSchemas(schema.options)
             };
         case SchemaTag.Intersection:
@@ -458,6 +549,48 @@ function deepPartialSchema(schema: Schema): Schema {
                 tag: SchemaTag.Brand,
                 inner: deepPartialSchema(schema.inner),
                 brand: schema.brand
+            };
+        case SchemaTag.Metadata:
+            return {
+                tag: SchemaTag.Metadata,
+                inner: deepPartialSchema(schema.inner),
+                metadata: schema.metadata
+            };
+        case SchemaTag.Message:
+            return {
+                tag: SchemaTag.Message,
+                inner: deepPartialSchema(schema.inner),
+                message: schema.message
+            };
+        case SchemaTag.KeyedObject:
+            return {
+                tag: SchemaTag.KeyedObject,
+                inner: deepPartialSchema(schema.inner),
+                keys: schema.keys,
+                rule: schema.rule
+            };
+        case SchemaTag.PropertyCount:
+            return {
+                tag: SchemaTag.PropertyCount,
+                inner: deepPartialSchema(schema.inner),
+                min: schema.min,
+                max: schema.max
+            };
+        case SchemaTag.PropertyNames:
+            return {
+                tag: SchemaTag.PropertyNames,
+                inner: deepPartialSchema(schema.inner),
+                key: schema.key
+            };
+        case SchemaTag.PatternProperties:
+            return {
+                tag: SchemaTag.PatternProperties,
+                inner: deepPartialSchema(schema.inner),
+                entries: schema.entries,
+                keys: schema.keys,
+                keyLookup: schema.keyLookup,
+                additional: schema.additional,
+                allowAdditional: schema.allowAdditional
             };
         default:
             return schema;
@@ -584,6 +717,72 @@ function normalizeObjectEntrySchema(schema: Schema): NormalizedObjectEntrySchema
                 }),
                 schema
             );
+        case SchemaTag.Metadata:
+            return normalizeWrappedObjectEntrySchema(
+                schema.inner,
+                (inner): Schema => ({
+                    tag: SchemaTag.Metadata,
+                    inner,
+                    metadata: schema.metadata
+                }),
+                schema
+            );
+        case SchemaTag.Message:
+            return normalizeWrappedObjectEntrySchema(
+                schema.inner,
+                (inner): Schema => ({
+                    tag: SchemaTag.Message,
+                    inner,
+                    message: schema.message
+                }),
+                schema
+            );
+        case SchemaTag.KeyedObject:
+            return normalizeWrappedObjectEntrySchema(
+                schema.inner,
+                (inner): Schema => ({
+                    tag: SchemaTag.KeyedObject,
+                    inner,
+                    keys: schema.keys,
+                    rule: schema.rule
+                }),
+                schema
+            );
+        case SchemaTag.PropertyCount:
+            return normalizeWrappedObjectEntrySchema(
+                schema.inner,
+                (inner): Schema => ({
+                    tag: SchemaTag.PropertyCount,
+                    inner,
+                    min: schema.min,
+                    max: schema.max
+                }),
+                schema
+            );
+        case SchemaTag.PropertyNames:
+            return normalizeWrappedObjectEntrySchema(
+                schema.inner,
+                (inner): Schema => ({
+                    tag: SchemaTag.PropertyNames,
+                    inner,
+                    key: schema.key
+                }),
+                schema
+            );
+        case SchemaTag.PatternProperties:
+            return normalizeWrappedObjectEntrySchema(
+                schema.inner,
+                (inner): Schema => ({
+                    tag: SchemaTag.PatternProperties,
+                    inner,
+                    entries: schema.entries,
+                    keys: schema.keys,
+                    keyLookup: schema.keyLookup,
+                    additional: schema.additional,
+                    allowAdditional: schema.allowAdditional
+                }),
+                schema
+            );
         case SchemaTag.Refine:
             return normalizeWrappedObjectEntrySchema(
                 schema.inner,
@@ -591,10 +790,26 @@ function normalizeObjectEntrySchema(schema: Schema): NormalizedObjectEntrySchema
                     tag: SchemaTag.Refine,
                     inner,
                     predicate: schema.predicate,
+                    collect: schema.collect,
+                    path: schema.path,
+                    message: schema.message,
+                    abort: schema.abort,
+                    when: schema.when,
                     name: schema.name
                 }),
                 schema
             );
+        case SchemaTag.Lazy:
+            if (schema.objectPresence !== undefined) {
+                return {
+                    schema,
+                    presence: PresenceTag.Deferred
+                };
+            }
+            return {
+                schema,
+                presence: PresenceTag.Required
+            };
         default:
             return {
                 schema,

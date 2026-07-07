@@ -8,6 +8,7 @@
  */
 
 import {
+    BigIntCheckTag,
     NumberCheckTag,
     SchemaTag,
     StringCheckTag
@@ -69,7 +70,7 @@ function emitUnionOptionExpression(
         case SchemaTag.Number:
             return emitNumberExpression(schema, value, context);
         case SchemaTag.BigInt:
-            return `(typeof ${value}==="bigint")`;
+            return emitBigIntExpression(schema, value);
         case SchemaTag.Symbol:
             return `(typeof ${value}==="symbol")`;
         case SchemaTag.Boolean:
@@ -90,7 +91,15 @@ function emitUnionOptionExpression(
                 context
             )})`;
         case SchemaTag.Brand:
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+        case SchemaTag.Readonly:
             return emitUnionOptionExpression(schema.inner, value, context);
+        case SchemaTag.KeyedObject:
+        case SchemaTag.PropertyCount:
+        case SchemaTag.PropertyNames:
+        case SchemaTag.PatternProperties:
+            return `${emitGraphFunction(schema, context)}(${value})`;
         case SchemaTag.Union:
             return emitUnion(schema.options, value, context);
         case SchemaTag.Intersection:
@@ -133,6 +142,8 @@ function emitStringExpression(
             case StringCheckTag.IsoDate:
             case StringCheckTag.IsoDateTime:
             case StringCheckTag.Ulid:
+            case StringCheckTag.Xid:
+            case StringCheckTag.Ksuid:
             case StringCheckTag.Ipv4:
             case StringCheckTag.Ipv6:
                 return `${emitGraphFunction(schema, context)}(${value})`;
@@ -177,4 +188,47 @@ function emitNumberExpression(
         }
     }
     return `(${parts.join("&&")})`;
+}
+
+/**
+ * @brief Emit an inline BigInt predicate expression.
+ */
+function emitBigIntExpression(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.BigInt }>,
+    value: string
+): string {
+    const checks = schema.checks;
+    const parts = [`typeof ${value}==="bigint"`];
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        const literal = bigintSource(check.value);
+        switch (check.tag) {
+            case BigIntCheckTag.Gte:
+                parts.push(`${value}>=${literal}`);
+                break;
+            case BigIntCheckTag.Lte:
+                parts.push(`${value}<=${literal}`);
+                break;
+            case BigIntCheckTag.Gt:
+                parts.push(`${value}>${literal}`);
+                break;
+            case BigIntCheckTag.Lt:
+                parts.push(`${value}<${literal}`);
+                break;
+            case BigIntCheckTag.MultipleOf:
+                parts.push(`${value}%${literal}===0n`);
+                break;
+        }
+    }
+    return `(${parts.join("&&")})`;
+}
+
+/**
+ * @brief Render a BigInt literal for generated JavaScript source.
+ */
+function bigintSource(value: bigint): string {
+    return value < 0n ? `(${String(value)}n)` : `${String(value)}n`;
 }

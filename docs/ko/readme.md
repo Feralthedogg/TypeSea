@@ -3,9 +3,61 @@
 **TypeSea**는 런타임 의존성 없이 TypeScript 값을 검증하고 타입을 좁히는 라이브러리입니다.
 불변 스키마, Sea-of-Nodes에서 영향을 받은 검증 IR, 런타임 컴파일, AOT 소스 생성을 한 흐름으로 묶는 것을 목표로 합니다.
 
+## 기존 코드에서 찍어보기
+
+Zod 4 마이그레이션을 실험할 때는 schema 모양을 유지하고 import만 TypeSea의
+facade subpath로 바꿔볼 수 있습니다. 이 facade는 TypeSea guard engine 위의
+best-effort 호환 계층이지 Zod parser 내부를 복제한 것이 아닙니다. 먼저 object,
+string, number, enum, array, tuple, union, modifier 중심의 일반 schema부터
+적용하는 쪽이 현실적입니다.
+
+```ts
+// 기존 코드
+import { z } from "zod";
+
+// TypeSea 적용
+import { z } from "typesea/v4";
+
+const User = z.object({
+  id: z.string().uuid(),
+  email: z.string().email()
+}).strict();
+
+const user = User.parse(input);
+```
+
+TypeSea guard는 Standard Schema V1도 노출합니다. 따라서 Standard Schema를 받는
+도구에는 guard를 그대로 넘길 수 있습니다. Hono는 `@hono/standard-validator`로
+이 경로를 지원하고, tRPC는 Standard Schema validator 또는 TypeSea의 명시적
+parser adapter를 사용할 수 있습니다.
+
+```ts
+import { sValidator } from "@hono/standard-validator";
+import { compile, t, toTrpcParser } from "typesea";
+
+const User = t.strictObject({
+  id: t.string.uuid(),
+  email: t.string.email()
+});
+
+// Hono: Standard Schema 경로라서 TypeSea 전용 adapter가 필요 없습니다.
+app.post("/users", sValidator("json", User), (c) => {
+  const body = c.req.valid("json");
+  return c.json(body);
+});
+
+// tRPC: 시작 시 한 번 compile한 뒤 hot path에서 generated predicate를 재사용합니다.
+const FastUser = compile(User);
+const userInput = toTrpcParser(FastUser);
+
+publicProcedure.input(userInput).mutation(({ input }) => {
+  return createUser(input);
+});
+```
+
 ## 벤치마크 요약
 
-마지막 로컬 벤치마크는 2026-07-06 KST에 실행했습니다.
+마지막 clean 로컬 벤치마크는 2026-07-06 KST에 실행했습니다.
 명령은 `npm run bench:record`이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다.
 그래프는 [`bench/results/latest.json`](../../bench/results/latest.json)에서 생성합니다.
 아래 수치는 회귀를 잡기 위한 로컬 측정값이지, 릴리스 성능 보증값은 아닙니다.
@@ -111,6 +163,58 @@ compiled/AOT `checkFirst()`는 전체 issue list를 만든 뒤 자르지 않고 
 > `unsafe-eval`을 금지하는 Content-Security-Policy 환경에서는 사용할 수 없습니다.
 > CSP 제한 환경에서는 `emitAotModule()`로 빌드 시점에 validator source를 생성하세요.
 
+### Mini entry point
+
+번들 크기에 민감한 코드는 함수형 subpath를 사용할 수 있습니다.
+
+```ts
+import * as mini from "typesea/mini";
+
+const User = mini.object({
+  id: mini.string().uuid(),
+  name: mini.optional(
+    mini.apply(mini.string(), mini.minLength(1), mini.maxLength(80))
+  )
+});
+
+type User = mini.Infer<typeof User>;
+```
+
+`typesea/mini`는 Zod Mini와 같은 방향의 진입점입니다.
+큰 `t`/`z` namespace를 가져오지 않고, top-level 함수 builder를 직접 import합니다.
+root package와 같은 불변 guard, decoder, message helper, JSON Schema helper,
+Standard Schema helper를 유지하되 root 호환성 barrel은 피합니다.
+method chain을 피하고 싶으면 `mini.apply(schema, ...helpers)`를 쓰거나
+`mini.minLength(1)(mini.string())`처럼 helper를 직접 호출하세요.
+첫 helper 묶음은 길이, size, 숫자 bound, 문자열 pattern, `mini.trim()` 같은
+문자열 decode transform을 다룹니다.
+
+### SeaFlow 기호 실행 퍼저
+
+```ts
+import { fuzzCases } from "typesea/seaflow";
+import { t } from "typesea";
+
+const User = t.strictObject({
+  id: t.string.uuid(),
+  age: t.number.int().gte(0),
+  role: t.enum(["admin", "user"])
+});
+
+for (const item of fuzzCases(User, { intensity: "high", maxYields: 64 })) {
+  console.log(item.kind, item.valid, item.reason, item.value);
+}
+```
+
+SeaFlow는 TypeSea schema를 위한 개발/테스트용 퍼저입니다.
+불변 schema tree를 거꾸로 해석해서 정상 샘플, 실패 경계값, 보안 지향 payload를 생성합니다.
+필수 key 삭제, strict object extra key, `__proto__` key, accessor property,
+sparse array, union hybrid 같은 입력을 자동으로 만듭니다.
+`typesea/seaflow` subpath로 분리되어 있으므로, production validator hot path는
+퍼저를 import하지 않는 한 비용을 내지 않습니다. `maxYields`는 목표 생성 개수가
+아니라 최대 상한입니다. 작은 schema는 solver가 가진 유한한 edge case를 모두
+방출하면 그보다 적은 개수에서 자연스럽게 끝날 수 있습니다.
+
 ### Cold start, fail-fast, 대형 payload
 
 ```ts
@@ -199,14 +303,22 @@ safe mode는 success와 failure 모두 frozen `Result` 계약을 유지합니다
 
 | Wrapper | key 생략 허용 | value `undefined` 허용 | 추론 타입 |
 | --- | --- | --- | --- |
-| `t.optional(inner)` | yes | no | `key?: T` |
-| `t.undefinedable(inner)` | no | yes | `key: T \| undefined` |
-| `t.nullable(inner)` | - | value may be `null` | `key: T \| null` |
+| `t.optional(inner)` / `guard.optional()` | 허용 | 거부 | `key?: T` |
+| `t.exactOptional(inner)` / `z.exactOptional(inner)` | 허용 | 거부, standalone `undefined`도 거부 | `key?: T` |
+| `t.undefinedable(inner)` / `guard.undefinedable()` | 거부 | 허용 | `key: T \| undefined` |
+| `t.nullable(inner)` / `guard.nullable()` | 해당 없음 | `null` 허용 | `key: T \| null` |
+| `t.nullish(inner)` / `guard.nullish()` | 허용 | `null` 허용 | `key?: T \| null` |
+| `guard.nonoptional()` / `t.nonoptional(inner)` | 거부 | 거부 | `key: T` |
 
 > [!NOTE]
 > presence는 wrapper composition을 지나도 유지됩니다.
 > `t.nullable(t.optional(x))`는 여전히 "key가 없어도 된다"는 뜻입니다.
 > `exactOptionalPropertyTypes` 아래에서 타입 추론과 런타임 동작은 같은 의미를 가집니다.
+
+`guard.unwrap()`이나 `t.unwrap(guard)`를 쓰면 optional, nullable,
+undefinedable, array schema의 내부 guard를 꺼낼 수 있습니다. metadata,
+message, brand, readonly, refinement wrapper는 payload schema를 가리지
+않도록 건너뜁니다.
 
 ---
 
@@ -235,7 +347,7 @@ failed check() -> schema-aware diagnostic collector
 
 ## 성능 스냅샷
 
-마지막 로컬 벤치마크는 2026-07-06 KST에 실행했습니다.
+마지막 clean 로컬 벤치마크는 2026-07-06 KST에 실행했습니다.
 `npm run bench:record`로 전체 Vitest 벤치를 3회 실행한 뒤 중앙값을 사용했고, benchmark strict-object 계약을 대상으로 했습니다.
 raw Vitest JSON은 [`bench/results/raw.json`](../../bench/results/raw.json)에, README 그래프용 stable summary는 [`bench/results/latest.json`](../../bench/results/latest.json)에 저장합니다.
 아래 값은 단일 머신의 초당 실행 횟수이며 릴리스 성능 보증값은 아닙니다.
@@ -301,47 +413,365 @@ unsafe와 unchecked compiled mode는 그 방어 계약 일부를 의도적으로
 ## API 레퍼런스 요약
 
 모든 공개 진입점은 package root에서 export됩니다.
-builder는 `t` table 아래에도 묶여 있습니다.
+builder는 `t` table 아래에도 묶여 있습니다. Zod에서 옮겨오는 코드는 호환
+builder namespace를 `z`로 import할 수 있습니다. 이 namespace는 TypeSea
+builder를 유지하면서 `z.null()`, `z.undefined()` 같은 nullary 호출도
+지원합니다. namespace import에서는 Zod 스타일 type alias인 `infer`,
+`input`, `output`을 사용할 수 있습니다.
+
+```ts
+import { z } from "typesea";
+import * as typesea from "typesea";
+
+const User = z.object({ id: z.string.uuid() });
+type User = typesea.infer<typeof User>;
+```
+
+기존 코드가 `import * as z from "zod"` 형태라면 전용 facade subpath를 쓸 수
+있습니다.
+
+```ts
+import * as z from "typesea/zod";
+
+const User = z.strictObject({
+  id: z.string().uuid(),
+  status: z.union([z.literal("active"), z.literal("disabled")])
+});
+
+type User = z.infer<typeof User>;
+```
+
+`typesea/zod`는 compatibility namespace를 top-level export처럼 펼쳐 줍니다.
+`z.string()`, `z.unknown()` 같은 primitive constructor, `z.union([a, b])`,
+`z.nativeEnum`, `z.intersection`, `z.instanceof`, `z.keyof(object)`,
+`z.catch(schema, fallback)`, `z.exactOptional(schema)`를 Zod식 namespace
+import에서 바로 사용할 수 있습니다. `exactOptional`은 object key 생략은
+허용하지만, inner schema가 허용하지 않는 한 명시적인 `undefined` 값은
+거부합니다. `import z from "typesea/zod"` 형태의 default import도 제공합니다.
+내부 구현은 여전히 TypeSea이고, 런타임 Zod 의존성은 없습니다. Zod 패키지는
+개발 테스트에서 대표 마이그레이션 안전 스키마, 원시값만 다루는 안전한 강제
+변환, 디코더 출력 wrapper, 최상위 wrapper, 객체 modifier의 동작을 비교하는
+기준으로만 사용됩니다.
+1.x에서 TypeSea는 이 subpath 이름들을 안정적인 마이그레이션 facade로 유지합니다.
+다만 이것은 TypeSea guard engine 위에 얹은 best-effort 호환 계층이지, Zod 내부
+parser engine이나 앞으로 추가될 모든 upstream 기능을 그대로 복제하겠다는 약속은
+아닙니다. 빠진 Zod API는 TypeSea 핵심 검증 계약이 아니라 compatibility gap으로
+다룹니다.
+또한 자주 쓰는 Zod top-level check와 transform을 TypeSea식 함수형 helper로
+제공합니다. 예를 들어 `z.minLength(2)(z.string())`,
+`z.trim()(z.string())`, `z.positive()(z.number())`,
+`z.mime("text/plain")`, `z.overwrite(mapper)(schema)` 형태로 쓸 수 있습니다.
+같은 helper를 Zod식 check object 코드처럼 `schema.check(...)`에 넘길 수도
+있습니다. 예를 들면 `z.string().check(z.minLength(2))`,
+`z.string().check(z.trim())` 형태입니다.
+plain guard에는 Zod식 instance decode/encode alias도 있습니다:
+`schema.decode(value)`, `schema.safeDecode(value)`, `schema.encode(value)`,
+`schema.safeEncode(value)` 형태입니다.
 
 ### Builders
 
 | 영역 | Entry points |
 | --- | --- |
-| Scalar guard | `t.unknown`, `t.never`, `t.string`, `t.number`, `t.date`, `t.bigint`, `t.symbol`, `t.boolean`, `t.null`, `t.undefined`, `t.void` |
-| String check | `.min`, `.max`, `.length`, `.nonempty`, `.regex`, `.startsWith`, `.endsWith`, `.includes`, `.uuid`, `.email`, `.url`, `.isoDate`, `.isoDateTime`, `.ulid`, `.ipv4`, `.ipv6` |
-| Number check | `.int`, `.finite`, `.safe`, `.gte`, `.lte`, `.min`, `.max`, `.gt`, `.lt`, `.multipleOf`, `.positive`, `.nonnegative`, `.negative`, `.nonpositive` |
+| 스칼라 guard | `t.unknown`, `t.never`, `t.string`, `t.number`, `t.int`, `t.int32`, `t.uint32`, `t.float32`, `t.float64`, `t.int64`, `t.uint64`, `t.nan`, `t.date`, `t.bigint`, `t.symbol`, `t.boolean`, `t.null`, `t.undefined`, `t.void` |
+| 문자열 검사 | `.min`, `.max`, `.length`, `.minLength`, `.maxLength`, `.nonempty`, `.regex`, `.startsWith`, `.endsWith`, `.includes`, `.uppercase`, `.lowercase`, `.uuid`, `.guid`, `.uuidv4`, `.uuidv6`, `.uuidv7`, `.hash`, `.email`, `.url`, `.httpUrl`, `.hostname`, `.e164`, `.emoji`, `.base64`, `.base64url`, `.hex`, `.jwt`, `.nanoid`, `.cuid`, `.cuid2`, `.xid`, `.ksuid`, `.mac`, `.cidrv4`, `.cidrv6`, `.isoDate`, `.isoDateTime`, `.isoTime`, `.isoDuration`, `.date`, `.datetime`, `.time`, `.duration`, `.ulid`, `.ipv4`, `.ipv6` |
+| 최상위 문자열 포맷 | `t.email`, `t.uuid`, `t.guid`, `t.uuidv4`, `t.uuidv6`, `t.uuidv7`, `t.url`, `t.httpUrl`, `t.hostname`, `t.e164`, `t.emoji`, `t.base64`, `t.base64url`, `t.hex`, `t.jwt`, `t.nanoid`, `t.cuid`, `t.cuid2`, `t.xid`, `t.ksuid`, `t.ulid`, `t.ipv4`, `t.ipv6`, `t.mac`, `t.cidrv4`, `t.cidrv6`, `t.isoDate`, `t.isoDateTime`, `t.isoTime`, `t.isoDuration`, `t.iso.date`, `t.iso.datetime`, `t.iso.time`, `t.iso.duration`, `t.hash`, `t.stringFormat` |
+| 정규식 프리셋 | `regexes`, `t.regexes`, 그리고 `email`, `html5Email`, `rfc5322Email`, `unicodeEmail`, `domain`, `uuid`, `guid`, `e164`, `nanoid`, `cuid`, `cuid2`, `xid`, `ksuid`, `ulid`, `ipv4`, `ipv6`, `cidrv4`, `cidrv6`, `mac`, `base64`, `base64url`, `hex`, `jwt` |
+| 숫자 check | `.int`, `.int32`, `.uint32`, `.float32`, `.float64`, `.finite`, `.isFinite`, `.isInt`, `.safe`, `.gte`, `.lte`, `.min`, `.max`, `.minValue`, `.maxValue`, `.gt`, `.lt`, `.multipleOf`, `.step`, `.positive`, `.nonnegative`, `.negative`, `.nonpositive` |
+| BigInt check | `.int64`, `.uint64`, `.gte`, `.lte`, `.min`, `.max`, `.gt`, `.lt`, `.multipleOf`, `.step`, `.positive`, `.nonnegative`, `.negative`, `.nonpositive` |
 | Date check | `.min`, `.max` |
-| Literal과 container | `t.literal`, `t.enum`, `t.array`, `t.tuple`, tuple rest, `t.record`, `t.map`, `t.set`, `t.json` |
+| Literal과 container | `t.literal(value)`, `t.literal([...]).values`, `t.enum`, `enum.options`, `enum.enum`, `enum.extract`, `enum.exclude`, `t.templateLiteral`, `t.array`, `array.element`, `t.tuple`, `tuple.items`, `t.tuple([head], rest)`, `tuple.rest`, `t.record`, `t.partialRecord`, `t.looseRecord`, `t.map`, `t.set`, `t.file`, `t.json` |
 | Array check | `.min`, `.max`, `.length`, `.nonempty` |
-| Object | `t.object`, `t.strictObject`, `extend`, `safeExtend`, `merge`, `pick`, `omit`, `partial`, `deepPartial`, `required`, `strict`, `passthrough`, `strip`, `catchall` |
-| Runtime object contract | `t.instanceOf`, `t.property`, `guard.property` |
-| Composition | `t.union`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect` |
-| Presence wrapper | `t.optional`, `t.undefinedable`, `t.nullable`, `t.nullish` |
-| Dynamic contract | `t.lazy`, `t.refine`, `t.superRefine`, `guard.superRefine` |
+| Map check | `.min`, `.max`, `.size`, `.nonempty` |
+| Set check | `.min`, `.max`, `.size`, `.nonempty` |
+| File check | `.min`, `.max`, `.mime` |
+| 함수형 helper | `typesea/mini`와 `typesea/zod`: `minLength`, `maxLength`, `length`, `regex`, `startsWith`, `endsWith`, `includes`, `uppercase`, `lowercase`, `trim`, `toLowerCase`, `toUpperCase`, `normalize`, `slugify`, `minSize`, `maxSize`, `size`, `mime`, `gt`, `gte`, `lt`, `lte`, `multipleOf`, `positive`, `negative`, `nonpositive`, `nonnegative`, `overwrite`, `clone` |
+| Object | `t.object`, `t.looseObject`, `t.strictObject`, `object.shape`, `extend`, `safeExtend`, `merge`, `pick`, `omit`, `t.keyof`, `keyofObject`, `partial`, `partial({ key: true })`, `deepPartial`, `required`, `required({ key: true })`, `strict`, `loose`, `passthrough`, `nonstrict`, `nonpassthrough`, `strip`, `catchall`, `atLeastOneKey`, `exactlyOneKey`, `oneOfKeys` |
+| Runtime object contract | `t.instanceOf`, `t.property(base, key, value)`, `guard.property(key, value)` |
+| 함수 호출 경계 계약 | `t.function`, `z.function().args(...).returns(...)`, `functionBuilder`, `FunctionContract.parameters`, `FunctionContract.returnType`, `FunctionContract.implement`, `FunctionContract.implementAsync` |
+| Composition | `t.union`, `union.options`, `t.xor`, `xor.options`, `t.discriminatedUnion`, `t.intersect`, `guard.intersect`, `guard.and` |
+| Presence wrapper | `t.optional`, `guard.optional`, `t.exactOptional`, `z.exactOptional`, `guard.exactOptional`, `t.undefinedable`, `guard.undefinedable`, `t.nullable`, `guard.nullable`, `t.nullish`, `guard.nullish`, `guard.nonoptional`, `t.nonoptional` |
+| Wrapper introspection | `guard.unwrap`, `t.unwrap`, `guard.apply` |
+| Output wrapper | `guard.readonly`, `t.readonly` |
+| Dynamic contract | `t.lazy`, `t.custom`, `t.check`, `t.property(key, value)`, `t.refine`, `guard.refine`, `t.superRefine`, `guard.superRefine`, `guard.with` |
+| Schema annotation | `guard.metadata`, `guard.meta`, `guard.title`, `guard.describe`, `guard.example`, `guard.message`, `guard.register`, `t.metadata`, `t.meta`, `t.title`, `t.describe`, `t.example`, `t.message`, `t.registry`, `t.globalRegistry` |
+
+`t.iso.date()`, `t.iso.datetime()`, `t.iso.time()`, `t.iso.duration()`은 기존 top-level ISO format helper와 같은 의미를 가진 Zod 호환 별칭입니다.
+`t.looseObject(shape)`는 TypeSea의 기본 passthrough object mode를 명시적으로 드러내는 별칭입니다.
+`loose()`와 `nonstrict()`는 object guard를 passthrough mode로 바꾸고, `nonpassthrough()`는 `strict()`와 같은 Zod migration 별칭입니다.
+string의 `date()`, `datetime()`, `time()`, `duration()`은 같은 ISO method를 부르는 fluent 별칭입니다.
+`minLength`, `maxLength`, `minValue`, `maxValue`, `isInt`, `isFinite`는 Zod 스타일 읽기 전용 metadata property입니다. string guard와 number guard는 Zod 스타일 `type`, `format` metadata도 노출합니다.
+bigint guard는 `format`, `minValue`, `maxValue`, Date guard는 `minDate`, `maxDate`를 노출하고, record/map 계열 guard는 가능한 경우 `keyType`과 `valueType`을 노출합니다.
+string format helper는 정규식으로 낮출 수 있는 Zod 스타일 옵션도 지원합니다.
+`uuid({ version })`, `email({ pattern })`, `url({ protocol, hostname })`, `url({ normalize: true })`, `iso.datetime({ offset, local, precision })`, `iso.time({ precision })`, `mac({ delimiter })`, `jwt({ alg })`을 사용할 수 있습니다.
+URL normalization은 출력값을 바꾸므로 guard가 아니라 decoder를 반환합니다.
+`guard.refine(predicate, params?)`와 `t.refine(guard, predicate, params?)`는
+Zod 스타일 의미 검증 진단 옵션을 지원합니다. `params`는 생략하거나 기존
+label 문자열 또는 `{ error, path, abort, when }` 객체로 넘길 수 있습니다.
+`error`는 issue message가 되고, `path`는 실패한 상대 field를 가리킵니다.
+`when({ value, issues })`는 inner diagnostic pass에서 다른 issue가 나왔더라도
+predicate를 실행할지 결정합니다. `superRefine()`도 label을 생략할 수 있으며,
+이때 내부 expected label은 `"refinement"`가 됩니다.
+`guard.with(({ value, issues }) => ...)`는 Zod 스타일 callback check를 받습니다.
+`issues.push({ message, path, ...extra })`에서 Zod 전용 extra field는 무시하고
+TypeSea의 `message`와 상대 `path`만 복사합니다.
+`t.check(callback)`은 `guard.with(t.check(...))`에 넘길 수 있는 재사용 가능한
+callback-check source를 만듭니다. TypeSea에서 `guard.check(value)`는 Result를
+반환하는 검증 메서드입니다.
+`t.property(key, guard)`는 `guard.with(...)`에 넘기는 Zod 스타일 property check
+source입니다. public property를 읽으므로
+`t.string.with(t.property("length", t.number.gte(3)))` 같은 길이 검사나 instance
+getter 검사를 semantic check로 표현할 수 있습니다. 적대적 입력 경계에서는 계속
+`t.property(base, key, guard)` 또는 `base.property(key, guard)`를 사용하세요.
+이 형태는 own data property만 허용하고 사용자 getter를 실행하지 않습니다.
+`regexes` namespace는 `t.regexes`로도 노출됩니다. `email({ pattern: regexes.html5Email })`,
+`url({ hostname: t.regexes.domain })`처럼 Zod 스타일 정규식을 재사용할 수 있습니다.
+`t.record(key, value)`는 닫힌 문자열 literal key domain에서 Zod 4처럼 모든
+key를 요구합니다. 숫자 key schema는 객체 key 문자열을 finite number로 해석한
+값을 검증하므로, `t.record(t.number.int(), value)`는 `"0"`이나 `"1.5"` 같은
+key를 숫자로 바꾼 뒤 schema에 통과시키거나 거부합니다. enum/literal key가 선택
+사항이면 `t.partialRecord(key, value)`를 사용하세요.
+`z` 호환 namespace는 `z.nativeEnum`을 `t.enum`의 alias로,
+`z.intersection`을 `t.intersect`의 alias로, `z.instanceof`를
+`t.instanceOf`의 alias로 제공합니다. `z.union([a, b])`와 `z.xor([a, b])`처럼
+Zod 스타일 tuple input도 받을 수 있습니다.
+`z.discriminatedUnion("kind", [A, B])`도 각 branch가 literal `kind`를
+구조적으로 요구할 때 사용할 수 있습니다. string뿐 아니라 number, boolean,
+null, undefined literal discriminator도 지원합니다.
+`z.string()`과 `z.number()` 같은 primitive constructor 호출도 지원합니다.
+`z.any()`는 migration 편의를 위한 `z.unknown()` 별칭일 뿐이며, 모든 입력을
+통과시키지만 추론 타입은 TypeScript `any`가 아니라 `unknown`입니다.
+`z.ostring()`, `z.onumber()`, `z.oboolean()`, `z.obigint()`, `z.osymbol()`,
+`z.odate()` 같은 legacy optional shortcut도 오래된 Zod 스타일 코드 이식을
+위해 지원합니다.
+`ZodString`, `ZodNumber`, `ZodObject`, `ZodArray`, `ZodUnion`, `ZodEnum`,
+`ZodPromise` 같은 migration class 이름은 TypeSea 구현 클래스의 별칭입니다.
+`ZodTypeAny`, `AnyZodObject` 같은 타입 전용 migration helper도 제공합니다.
+`ZodEmail`, `ZodURL`, `ZodUUID`, `ZodNumberFormat`, `ZodBigIntFormat`처럼
+format에 특화된 class 이름은 별도 runtime class가 아니라 같은 TypeSea guard
+family를 가리키는 migration alias입니다.
+`ZodEffects`, `ZodPipeline`, `ZodTransform`, `ZodDefault`, `ZodCatch`,
+`ZodPrefault`, `ZodCodec` 같은 decoder 쪽 이름은 TypeSea의 decoder와 codec
+클래스에 매핑됩니다.
+`ZodOptional`, `ZodNullable`, `ZodTuple`, `ZodRecord`, `ZodMap`,
+`ZodIntersection`, `ZodDiscriminatedUnion`, `ZodReadonly`, `ZodBranded` 같은
+wrapper와 container 이름은 TypeSea의 schema-backed guard 클래스에 매핑됩니다.
+guard는 migration 도구가 읽기 쉬운 Zod 스타일 `def`와 `_def` metadata도
+lazy하게 제공합니다. 의미가 맞는 schema에서는 `typeName`, `type`, `shape`,
+`element`, `options`, `innerType`, `keyType`, `valueType`을 볼 수 있고,
+`ZodFirstPartyTypeKind`도 같은 enum 형태의 constant table로 export합니다.
+guard에는 `schema.type`, `record.keyType`, `record.valueType`,
+`bigint.minValue`, `bigint.maxValue`, `date.minDate`, `date.maxDate` 같은
+Zod 스타일 metadata property도 직접 노출됩니다. 이 facade는 읽기 전용이며
+검증이나 generated predicate 실행에는 사용되지 않습니다.
 
 ### Decoders
 
 | 영역 | Entry points |
 | --- | --- |
-| Sync decoder | `guard.transform`, `guard.pipe`, `guard.default`, `guard.prefault`, `guard.catch`, `t.decoder`, `t.transform`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()` |
-| Async decoder | `t.asyncDecoder`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe` |
+| Sync decoder | `guard.decode`, `guard.safeDecode`, `guard.encode`, `guard.safeEncode`, `guard.transform`, `guard.overwrite`, `guard.pipe`, `guard.default`, `guard.prefault`, `guard.catch`, `t.decoder`, `t.decode`, `t.safeDecode`, `t.encode`, `t.safeEncode`, `t.encodeAsync`, `t.safeEncodeAsync`, `t.transform`, `t.success`, `t.preprocess`, `t.pipe`, `t.default`, `t.defaultValue`, `t.prefault`, `t.catch`, `t.codec`, `t.invertCodec`, `t.codecs`, 내장 codec helper, `t.stringbool`, `t.coerce`, `t.string.trim()`, `t.string.toLowerCase()`, `t.string.toUpperCase()`, `t.string.slugify()`, `t.string.normalize()` |
+| Async decoder | `t.asyncDecoder`, `t.decodeAsync`, `t.safeDecodeAsync`, `t.asyncRefine`, `t.asyncTransform`, `t.asyncPipe`, `t.promise`, `guard.promise()` |
+
+동기 decoder와 codec instance는 Zod에서 넘어오는 코드를 위해 `parse`,
+`safeParse`, `parseAsync`, `safeParseAsync`, `spa`도 제공합니다.
+async decoder instance는 `parseAsync`, `safeParseAsync`, `spa`를 제공합니다.
+top-level `t.decode`, `t.safeDecode`, `t.encode`, `t.safeEncode`, `t.decodeAsync`,
+`t.safeDecodeAsync`, `t.encodeAsync`, `t.safeEncodeAsync` helper는 TypeSea의
+native `Result` 계약을 그대로 유지합니다. `t.promise(source)`는
+async 전용 decoder입니다. native `Promise` input을 await한 뒤 resolved value를 `source`로 검증합니다.
+`guard.promise()`는 `t.promise(guard)`의 fluent 형태입니다.
+`t.success(source)`와 `z.success(source)`는 source 검증이 성공하면 출력값으로 `true`를 반환하는 decoder입니다.
+원래 값을 쓰지 않고 parse 가능한 성공 marker만 필요한 Zod migration 코드에 맞습니다.
+transform mapper는 두 번째 인자로 Zod 스타일 context를 받습니다.
+`context.issues.push({ message, path, ...extra })` 또는
+`context.addIssue({ message, path })`를 호출하면 decoder가 실패합니다.
+`z.NEVER`를 반환하면 추론된 출력 타입을 넓히지 않은 채 mapper를 중단합니다.
+`t.coerce.string()`, `t.coerce.number()`, `t.coerce.bigint()`,
+`t.coerce.date()`는 변환 뒤에도 해당 타입의 fluent check를 이어서 쓸 수
+있습니다. 그래서 Zod migration 코드에서 `t.coerce.number().int().gte(0)`,
+`t.coerce.string().trim().min(1)`처럼 별도 `pipe()` 없이 작성할 수 있습니다.
+`t.coerce.boolean()`은 Zod와 같이 JavaScript truthiness 규칙을 따릅니다.
+Zod와 맞추기 위해 object input도 JavaScript constructor coercion을
+사용하므로 caller-owned `valueOf`, `toString`, `Symbol.toPrimitive` hook이
+실행될 수 있습니다. 이런 hook을 실행하면 안 되는 hostile-input
+boundary에서는 일반 guard나 명시적인 codec을 사용하세요.
+자주 쓰는 양방향 변환은 `t.codecs`에 모아 두었습니다:
+`stringToNumber`, `stringToInt`, `stringToBigInt`, `numberToBigInt`,
+`stringToDate`, `isoDatetimeToDate`, `epochSecondsToDate`,
+`epochMillisToDate`, `utf8ToBytes`, `bytesToUtf8`, `base64ToBytes`,
+`base64urlToBytes`, `hexToBytes`, `jsonCodec`, `stringToURL`,
+`stringToHttpURL`.
+
+decoder와 codec은 object, array, tuple, record, map, set 컨테이너 안에 바로 넣을 수 있습니다.
+컨테이너에 단방향 decoder가 섞이면 builder는 decoder를 반환하고, 변환 child가 모두 양방향 codec이면 `decode()`와 `encode()`가 모두 가능한 codec을 반환합니다.
+
+```ts
+const Event = t.strictObject({
+  name: t.string.min(1),
+  at: t.stringToDate(),
+  active: t.stringbool()
+});
+
+const decoded = Event.decode({
+  name: "launch",
+  at: "2026-07-06T00:00:00.000Z",
+  active: "true"
+});
+
+const encoded = Event.encode({
+  name: "launch",
+  at: new Date("2026-07-06T00:00:00.000Z"),
+  active: false
+});
+
+const Dates = t.array(t.stringToDate());
+const decodedDates = Dates.decode(["2026-07-06T00:00:00.000Z"]);
+
+const DateRecord = t.record(t.stringToDate());
+const decodedRecord = DateRecord.decode({
+  created: "2026-07-06T00:00:00.000Z"
+});
+```
 
 ### Execution & Export
 
 | 영역 | Entry points |
 | --- | --- |
-| Guard method | `guard.is()`, `guard.check()`, `guard.checkFirst()`, `guard.graph()` |
+| Guard method | `guard.is()`, `guard.check()`, `guard.checkFirst()`, `guard.parse()`, `guard.safeParse()`, `guard.parseAsync()`, `guard.safeParseAsync()`, `guard.spa()`, `guard.isOptional()`, `guard.isNullable()`, `guard.description`, `guard.def`, `guard._def`, `guard.clone()`, `guard.with()`, `guard.graph()`, `guard.toJSONSchema()` |
+| Parse helper | root / `t` / `z` / `typesea/mini` / `typesea/zod`: `parse`, `safeParse`, `parseAsync`, `safeParseAsync`, `spa` |
 | Generated validator | `compile`, `emitAotModule` |
-| JSON Schema | `toJsonSchema` |
+| JSON Schema | `toJsonSchema`, `toJSONSchema`, `schemaRegistryToJsonSchema`, `guard.toJSONSchema`, `fromJsonSchema`, `fromJSONSchema`, `target`, `unrepresentable`, `cycles`, `uri`, `reused`, `metadata`, `override` option |
+| Standard Schema | `guard["~standard"]`, `decoder["~standard"]`, `StandardSchemaV1`, `StandardSchemaV1InferInput`, `StandardSchemaV1InferOutput` |
+| Analysis | `analyzeSchema` |
+| Registry | `registry`, `globalRegistry`, `SchemaRegistry`, `SchemaRegistry.entries()`, `SchemaRegistry.clear()`, `isSchemaRegistryValue` |
+
+### Key 규칙과 annotation
+
+```ts
+const Contact = t.object({
+  email: t.optional(t.string.email()),
+  phone: t.optional(t.string.min(1))
+})
+  .oneOfKeys(["email", "phone"])
+  .title("Contact")
+  .describe("정확히 하나의 연락 수단이 있는 값")
+  .message("연락 수단은 정확히 하나여야 합니다");
+
+const report = analyzeSchema(Contact);
+```
+
+`oneOfKeys()`는 `exactlyOneKey()`의 alias입니다.
+key-rule validator는 선택된 own data property만 셉니다. 따라서 safe mode에서는 accessor-backed key가 규칙을 만족시키지 않습니다.
+metadata annotation은 JSON Schema의 `title`, `description`, `examples`로 전달됩니다.
+`message()`는 boolean validation 의미를 바꾸지 않고 해당 schema에서 발생한 issue에 local message를 붙입니다.
+
+`ObjectGuard.keyof()`와 `t.keyof(ObjectGuard)`는 선언된 object key만 허용하는 literal-union guard를 만듭니다.
+빈 object shape에서는 `never` guard를 반환합니다.
+
+registry는 guard를 감싸거나 검증 의미를 바꾸지 않고 schema identity에 도구용 metadata를 붙입니다.
+문자열 `id` metadata는 registry 안에서 고유해야 합니다. 다른 schema에 같은 id를 등록하면 즉시 예외가 발생합니다.
+`SchemaRegistry.clear()`는 살아 있는 entry를 모두 제거합니다.
+
+모든 guard, decoder, codec은 Standard Schema V1 `~standard` property를 노출합니다.
+`vendor: "typesea"`, `version: 1`, `validate(value)`를 제공하므로 Standard
+Schema contract를 받는 framework나 tooling에 TypeSea schema를 바로 넘길 수 있습니다.
+
+함수 계약은 IR schema node가 아니라 호출 경계 wrapper입니다.
+인자를 decode한 뒤 구현 함수를 호출하고, `output` source가 있으면 반환값도 decode합니다.
+
+```ts
+const NameLength = t.function({
+  input: [t.string.trim().pipe(t.string.min(1))],
+  output: t.number.int().nonnegative()
+});
+
+const lengthOfName = NameLength.implement((name) => name.length);
+```
+
+예전 Zod 코드에서 쓰던 체인 문법도 그대로 받을 수 있습니다.
+
+```ts
+const LegacyNameLength = z.function()
+  .args(t.string.trim().pipe(t.string.min(1)))
+  .returns(t.number.int().nonnegative());
+
+const legacyLengthOfName = LegacyNameLength.implement((name) => name.length);
+
+LegacyNameLength.parameters(); // 읽기 전용 인자 source tuple
+LegacyNameLength.returnType(); // 출력 source
+```
+
+입력 실패는 숫자 인자 index 아래에, 출력 실패는 `"return"` 아래에 issue path가 붙습니다.
+
+```ts
+const Docs = t.registry<{ title: string; order: number }>();
+
+User.register(Docs, { title: "사용자", order: 1 });
+t.globalRegistry.add(User, {
+  id: "User",
+  title: "사용자",
+  description: "애플리케이션 사용자 payload"
+});
+
+const DocsJson = toJSONSchema(t.globalRegistry, {
+  uri: (id) => `https://schemas.example/${id}.json`
+});
+```
 
 ### Messages & Adapters
 
 | 영역 | Entry points |
 | --- | --- |
-| Messages / i18n | `formatIssue`, `formatIssues`, `flattenIssues`, `withMessages`, `defineMessages` |
+| Messages / i18n | `formatIssue`, `formatIssues`, `formatError`, `prettifyError`, `treeifyError`, `treeifyIssues`, `flattenError`, `flattenIssues`, `toZodIssue`, `toZodIssues`, `toZodError`, `withMessages`, `defineMessages`, `config`, `locales`, `setErrorMap`, `getErrorMap`, `resetErrorMap` |
 | tRPC | `toTrpcParser`, `toAsyncTrpcParser` |
 | Fastify | `toFastifyRouteSchema`, `toFastifyValidatorCompiler` |
 | React Hook Form | `toReactHookFormResolver` |
+
+`parse`, `safeParse`, `parseAsync`, `safeParseAsync`, `spa`, `check`, `checkFirst`, `assert`는 호출별 diagnostic message를 바꾸기 위한 Zod 스타일 `{ error }` 옵션을 받습니다.
+이 옵션은 검증이 실패한 뒤에만 실행되므로 `is()`와 성공한 hot path에는 message allocation이 들어가지 않습니다.
+`setErrorMap(mapper)`, `getErrorMap()`, `resetErrorMap()`은 Zod 스타일 전역 fallback mapper입니다.
+호출 시점의 `{ error }` 옵션이 항상 전역 mapper보다 우선합니다.
+`config({ customError })`와 `config(locales.ko())`는 같은 mapper slot 위에 Zod 4 스타일 전역 설정 API를 제공합니다.
+`z` namespace에서는 `z.config(...)`, `z.locales.en()/ko()` 형태로도 사용할 수 있습니다.
+Zod 스타일 issue `input` field가 필요한 migration code는 parse 계열 API에 `reportInput: true`를 넘길 수 있습니다.
+TypeSea는 이를 opt-in으로 유지하며, own data-property path만 따라가므로 accessor 기반 hostile input은 diagnostic decoration 중에도 실행되지 않습니다.
+`z` migration namespace에서도 같은 helper를 제공합니다.
+따라서 Zod를 쓰던 코드는 import 형태를 크게 바꾸지 않고 `z.treeifyError`, `z.flattenError`, `z.prettifyError`, `z.formatError`, `z.toZodError`, `z.withMessages`, `z.defineMessages`, `z.config`, `z.locales`, `z.ZodIssueCode`를 그대로 호출할 수 있습니다.
+`spa()`는 `safeParseAsync()`의 별칭입니다. `isOptional()`과 `isNullable()`은
+각각 `undefined` 또는 `null`이 schema를 통과하는지 검사합니다.
+
+기본 check에도 선언 시점 메시지를 붙일 수 있습니다.
+문자열 길이, 문자열 format, regex, 숫자와 bigint format/bound, Date bound, 배열 길이, set 크기, File 크기/MIME check는 문자열 shorthand 또는 `{ error }` / `{ message }`를 받습니다.
+이 메시지는 schema에 저장되고 interpreter, compiled guard, AOT guard에서 같은 방식으로 동작하며, 해당 check가 issue를 만들 때만 복사됩니다.
+
+```ts
+const User = t.object({
+  name: t.string.min(1, "이름은 필수입니다"),
+  age: t.number.int("나이는 정수여야 합니다").gte(0, {
+    error: "나이는 0 이상이어야 합니다"
+  }),
+  email: t.string.email({ error: "올바른 이메일 주소가 아닙니다" }),
+  tags: t.array(t.string).nonempty({ message: "태그를 하나 이상 추가하세요" }),
+  uploaded: t.file().mime("text/plain", "텍스트 파일만 허용됩니다")
+});
+```
+
+항상 같은 계약 문구는 check에 붙이고, schema wrapper 전체의 기본 문구는 `message()`를 쓰면 됩니다.
+locale이나 요청마다 달라지는 문구는 schema-level text가 없는 issue에 대해 호출 시점의 `{ error }` 옵션에서 처리하세요.
+
+`toZodIssues(errorOrIssues, options)`와 `toZodError(errorOrIssues, options)`는
+TypeSea diagnostic을 Zod v4 스타일 issue object로 변환합니다. 변환된 issue는
+원래 TypeSea code를 `typeseaCode`로 보존하고, `TypeSeaZodError`는
+`name: "ZodError"`, 동결된 `issues` 배열, 그리고 Zod 스타일 instance
+formatter인 `flatten()` / `format()`을 노출합니다.
+TypeSea가 hostile input을 다시 읽지 않고 immutable diagnostic에서 안전하게 복원할 수 있는 경우에는
+`minimum`, `maximum`, `inclusive`, `exact`, `origin`, `divisor`, `format` 같은 Zod 스타일 detail field도 함께 제공합니다.
+`config({ customError })` callback에서도 같은 detail field를 읽을 수 있습니다.
+parse option에 `reportInput: true`가 들어온 경우에는 안전하게 도달한 실패 지점의 `input` 값도 Zod issue에 보존합니다.
+`safeParse()`가 반환하는 기본 `TypeSeaAssertionError`도 같은
+`flatten()` / `format()` 메서드를 제공하므로, Zod 호환 formatter가 필요한
+코드에서 별도 변환 없이 바로 사용할 수 있습니다.
+`ZodIssueCode`는 타입과 동결된 값 객체를 모두 export하므로
+`ZodIssueCode.invalid_type` 같은 constant import 코드도 옮길 수 있습니다.
 
 adapter도 compiled guard를 받을 수 있습니다.
 startup에서 한 번 compile한 뒤 parser나 validator-compiler adapter에 넘기면 framework hot path가 generated predicate를 재사용합니다.
@@ -359,6 +789,7 @@ const internalParser = toTrpcParser(UnsafeUser);
 > [!TIP]
 > source kind에 맞는 inference alias를 쓰세요.
 > guard에는 `Infer<>`, decoder에는 `InferDecoder<>`, async decoder에는 `InferAsyncDecoder<>`를 씁니다.
+> `Input<>`과 `Output<>`은 guard, decoder, codec 경계에서 쓸 수 있는 Zod 스타일 입출력 타입 alias입니다.
 > decoder에 `Infer<>`를 적용하면 `never`가 됩니다.
 > downstream type이 갑자기 collapse되면 먼저 이 부분을 확인하세요.
 
@@ -370,16 +801,21 @@ const internalParser = toTrpcParser(UnsafeUser);
 
 | 입력 | 동작 |
 | --- | --- |
-| `NaN`, `Infinity` | `t.number`는 거부합니다. finite number만 허용합니다. `t.literal(NaN)`은 `NaN`을 match합니다. |
+| `NaN`, `Infinity` | `t.number`는 거부합니다. finite number만 허용합니다. `t.nan()`과 `t.literal(NaN)`은 `NaN`을 match합니다. |
+| BigInt bound | `t.bigint`는 JavaScript `bigint` 값만 허용합니다. bound check는 `bigint` 인자를 사용하며 number를 암묵적으로 변환하지 않습니다. |
 | `-0` vs `0` | literal은 `Object.is`로 match합니다. diagnostic은 `-0`을 구분해서 format합니다. |
 | Getter-backed properties | 실행하지 않습니다. missing 또는 invalid data로 취급합니다. |
 | `__proto__`, `constructor` keys | pollution 없이 plain own key로 검증합니다. |
 | Sparse array holes | accessor 실행 없이 `undefined`로 읽습니다. |
 | Strict object extras | `Reflect.ownKeys`로 거부합니다. symbol key와 non-enumerable property도 포함합니다. |
 | `catchall` extras | unknown own key는 descriptor로 읽고 catchall schema로 검증합니다. |
-| `strip()` | 출력 객체를 복사하지 않는 검증 전용 alias입니다. TypeSea에서는 extra key 허용 의미가 `passthrough()`와 같습니다. |
+| `strip()` | `is()`에서는 extra key를 허용하고, parse 계열 성공 출력에서는 원본을 mutate하지 않고 선언된 own data field만 남깁니다. |
+| `readonly()` | `is()`는 부작용 없이 유지됩니다. parse 계열 API는 전체 검증이 성공한 뒤 받아들인 object-like 값을 freeze합니다. |
+| `unwrap()` | optional, undefinedable, nullable, array schema의 payload guard를 꺼냅니다. wrapper가 아닌 schema에서는 `TypeError`를 던집니다. |
+| `nonoptional()` | optional/undefined 허용을 제거하되 nullable 값은 유지합니다. |
 | `t.date` | 유효한 JavaScript `Date` 객체만 허용합니다. `.min`과 `.max`는 사용자가 덮어쓸 수 있는 Date method를 읽지 않고 epoch millisecond로 비교합니다. |
 | `t.map`, `t.set`, `t.instanceOf` | runtime-only contract입니다. JSON Schema와 AOT export에서는 의미를 약화시키지 않고 명시적으로 거부합니다. |
+| `t.file` | JavaScript `File` 객체를 검증합니다. JSON Schema export에서는 OpenAPI 스타일 binary string annotation으로 내보냅니다. |
 | `property` | own data property만 검증합니다. getter-backed property는 거부합니다. |
 | Global-flag regexes | construction 시 clone하고, 매 test 전에 `lastIndex`를 reset합니다. |
 | UUID | RFC 9562 version 1-8과 nil UUID를 허용합니다. |
@@ -391,8 +827,10 @@ const internalParser = toTrpcParser(UnsafeUser);
 ## 사용 팁과 주의점
 
 > [!WARNING]
-> **recursive guard에는 명시적 type annotation이 필요합니다.**
-> TypeScript는 self-referential initializer를 추론하지 못합니다(TS7022).
+> **재귀 가드에는 명시적인 타입 주석이 필요합니다.**
+> TypeScript는 자기 자신을 참조하는 initializer를 추론하지 못합니다(TS7022).
+> 일반적인 재귀에는 `t.lazy`를 쓰고, object field 하나가 다시 같은 object를
+> 가리키는 형태라면 Zod 스타일 getter도 사용할 수 있습니다.
 >
 > ```ts
 > interface ListNode {
@@ -403,13 +841,29 @@ const internalParser = toTrpcParser(UnsafeUser);
 > const Node: Guard<ListNode> = t.lazy((): Guard<ListNode> =>
 >   t.object({ value: t.string, next: t.optional(Node) })
 > );
+>
+> interface Category {
+>   readonly name: string;
+>   readonly subcategories: Category[];
+>   readonly parent?: Category;
+> }
+>
+> const Category: Guard<Category> = t.object({
+>   name: t.string,
+>   get subcategories(): Guard<Category[]> {
+>     return t.array(Category);
+>   },
+>   get parent(): Guard<Category, "optional"> {
+>     return t.optional(Category);
+>   }
+> });
 > ```
 
 - **경계 데이터는 `unknown`으로 들어옵니다.** `as`로 미리 좁히지 마세요. builder API는 validation을 통해 narrowing이 일어나도록 typed되어 있습니다.
-- **recursive contract는 `t.lazy`를 통합니다.** 직접 순환하는 schema object는 construction에서 거부합니다.
+- **재귀 계약은 `t.lazy` 또는 object shape getter로 표현하세요.** shape getter는 schema 정의용 thunk입니다. safe mode에서 runtime input의 getter-backed property를 실행하지 않고 거부하는 정책은 그대로 유지됩니다.
 - **schema lifetime에 맞춰 engine을 고르세요.** 일회성 schema는 runtime plan, 안정적인 hot schema는 `compile()`, CSP 환경이나 build-time generation은 `emitAotModule()`이 맞습니다.
 - **object union은 required key가 드러나게 설계하세요.** `t.union(t.object({ and: ... }), t.object({ or: ... }), t.object({ path: ... }))` 같은 shape는 presence dispatch로 낮아져 불가능한 branch를 건너뜁니다. optional operator bag을 비슷한 union branch 여러 개로 쪼개지 말고, 하나의 object에 담은 뒤 "operator가 하나 이상 있어야 한다" 같은 의미 규칙은 `superRefine`으로 붙이세요.
-- **decoder는 object shape 안에 넣지 않습니다.** decoder를 `t.object` entry와 섞지 말고, validated shape 바깥에서 `t.pipe`로 transformation을 합성하세요.
+- **decoder가 들어간 container는 decode surface입니다.** object, array, tuple, record, map, set 안에 decoder가 하나라도 들어가면 guard가 아니라 decoder 또는 codec을 반환합니다. `pick`, `extend`, `keyof`, `min`, `max` 같은 guard 전용 method는 child decoder를 넣기 전에 적용하세요.
 
 ---
 
@@ -455,6 +909,7 @@ CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께
 
 - [문서 사이트](https://feralthedogg.github.io/TypeSea/)
 - [API 레퍼런스](../api.md)
+- [SeaFlow 퍼저 가이드](../seaflow.md)
 - [엔진 노트](../engine-notes.md)
 - [보안 정책](https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md)
 
@@ -462,11 +917,21 @@ CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께
 
 ## 마이그레이션 노트
 
+### 0.4.0에서 1.0.0
+
+기존 schema는 그대로 동작합니다.
+`1.0.0`은 현재 public surface를 안정 기준선으로 고정하고 `typesea/seaflow`를 추가합니다.
+SeaFlow는 개발/테스트용 symbolic fuzzer입니다.
+schema에서 정상값, 실패 경계값, 적대적 payload를 생성하고 싶을 때만 import하면 되며, production validator bundle에는 끌고 들어오지 않아도 됩니다.
+
+`t.promise(inner)`는 Zod의 promise-like semantics에 더 가깝게 동작합니다.
+`decodeAsync(value)`는 입력을 `await`한 뒤 resolved value를 `inner`로 검증합니다.
+non-Promise 입력을 resolution 전에 거부해야 한다면 별도의 custom async decoder를 쓰세요.
+
 ### 0.3.2에서 0.4.0
 
 기존 schema는 그대로 동작합니다.
-`0.4.0`은 patch가 아니라 minor release입니다.
-`superRefine`, `compileCached`, `createCompileCache`, `warmup`, `compileBoolean`, cooperative async validation, zero-dependency Vite/Rollup/esbuild AOT plugin helper 같은 새 public API가 추가됐습니다.
+`0.4.0`은 `superRefine`, `compileCached`, `createCompileCache`, `warmup`, `compileBoolean`, cooperative async validation, zero-dependency Vite/Rollup/esbuild AOT plugin helper, Zod migration facade 같은 public API를 추가했습니다.
 또 branch마다 required key가 있는 object union의 compiled 성능을 개선합니다.
 `and`, `or`, `not`, `path` 같은 field로 모양이 갈리는 AST나 query object에서 특히 효과가 큽니다.
 

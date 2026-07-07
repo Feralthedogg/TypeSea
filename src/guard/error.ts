@@ -7,6 +7,13 @@
 
 import type { Issue } from "../issue/index.js";
 import { copyIssueArray } from "../issue/index.js";
+import {
+    flattenIssues,
+    formatError,
+    type FlattenedIssueMessages,
+    type FormattedIssueMessages,
+    type IssueMessageOptions
+} from "../message/index.js";
 import { defineReadonlyProperty } from "./props.js";
 
 /**
@@ -19,8 +26,7 @@ export class TypeSeaAssertionError extends Error {
 
     /**
      * @brief Construct an assertion error from validation issues.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
+     * @details The copied issue array is exposed as the stable diagnostic payload.
      * @param issues Issues produced by checkSchema.
      * @post Published issues are copied and exposed through a readonly property.
      */
@@ -28,5 +34,27 @@ export class TypeSeaAssertionError extends Error {
         super("TypeSea assertion failed");
         this.name = "TypeSeaAssertionError";
         defineReadonlyProperty(this, "issues", copyIssueArray(issues), true);
+    }
+
+    /**
+     * @brief Return shallow form and field diagnostic buckets.
+     * @param options Optional message rendering options.
+     * @returns Frozen flattened diagnostic object.
+     */
+    public flatten(
+        options?: Partial<IssueMessageOptions>
+    ): FlattenedIssueMessages {
+        return flattenIssues(this.issues, options);
+    }
+
+    /**
+     * @brief Return legacy nested `_errors` diagnostic formatting.
+     * @param options Optional message rendering options.
+     * @returns Frozen nested diagnostic object.
+     */
+    public format(
+        options?: Partial<IssueMessageOptions>
+    ): FormattedIssueMessages {
+        return formatError(this.issues, options);
     }
 }

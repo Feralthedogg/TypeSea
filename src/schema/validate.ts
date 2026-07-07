@@ -7,7 +7,10 @@
 
 import {
     ArrayCheckTag,
+    BigIntCheckTag,
     DateCheckTag,
+    FileCheckTag,
+    KeyRuleTag,
     NumberCheckTag,
     ObjectModeTag,
     PresenceTag,
@@ -27,8 +30,12 @@ import {
 } from "./common.js";
 import type {
     ArrayCheck,
+    BigIntCheck,
     DateCheck,
+    FileCheck,
+    LiteralValue,
     NumberCheck,
+    PatternPropertyEntry,
     Schema,
     StringCheck
 } from "./types.js";
@@ -111,16 +118,22 @@ function isSchemaRecord(
     switch (tag) {
         case SchemaTag.Unknown:
         case SchemaTag.Never:
-        case SchemaTag.BigInt:
+            return true;
         case SchemaTag.Symbol:
         case SchemaTag.Boolean:
-            return true;
+            return isOptionalString(readOwnDataProperty(value, "message"));
+        case SchemaTag.BigInt:
+            return isOptionalString(readOwnDataProperty(value, "message")) &&
+                isBigIntChecks(readOwnDataProperty(value, "checks"));
         case SchemaTag.Date:
-            return isDateChecks(readOwnDataProperty(value, "checks"));
+            return isOptionalString(readOwnDataProperty(value, "message")) &&
+                isDateChecks(readOwnDataProperty(value, "checks"));
         case SchemaTag.String:
-            return isStringChecks(readOwnDataProperty(value, "checks"));
+            return isOptionalString(readOwnDataProperty(value, "message")) &&
+                isStringChecks(readOwnDataProperty(value, "checks"));
         case SchemaTag.Number:
-            return isNumberChecks(readOwnDataProperty(value, "checks"));
+            return isOptionalString(readOwnDataProperty(value, "message")) &&
+                isNumberChecks(readOwnDataProperty(value, "checks"));
         case SchemaTag.Literal: {
             const literal = readOwnDataProperty(value, "value");
             /*
@@ -136,12 +149,20 @@ function isSchemaRecord(
             return isSchemaArray(readOwnDataProperty(value, "items"), state) &&
                 isOptionalSchemaValue(readOwnDataProperty(value, "rest"), state);
         case SchemaTag.Record:
-            return isSchemaValueInner(readOwnDataProperty(value, "value"), state);
+            return isOptionalSchemaValue(readOwnDataProperty(value, "key"), state) &&
+                isSchemaValueInner(readOwnDataProperty(value, "value"), state) &&
+                isOptionalStringArray(readOwnDataProperty(value, "requiredKeys")) &&
+                typeof readOwnDataProperty(value, "loose") === "boolean";
         case SchemaTag.Map:
             return isSchemaValueInner(readOwnDataProperty(value, "key"), state) &&
-                isSchemaValueInner(readOwnDataProperty(value, "value"), state);
+                isSchemaValueInner(readOwnDataProperty(value, "value"), state) &&
+                isArrayChecks(readOwnDataProperty(value, "checks"));
         case SchemaTag.Set:
-            return isSchemaValueInner(readOwnDataProperty(value, "item"), state);
+            return isSchemaValueInner(readOwnDataProperty(value, "item"), state) &&
+                isArrayChecks(readOwnDataProperty(value, "checks"));
+        case SchemaTag.File:
+            return isOptionalString(readOwnDataProperty(value, "message")) &&
+                isFileChecks(readOwnDataProperty(value, "checks"));
         case SchemaTag.InstanceOf:
             return typeof readOwnDataProperty(value, "constructor") === "function" &&
                 typeof readOwnDataProperty(value, "name") === "string";
@@ -152,6 +173,7 @@ function isSchemaRecord(
         case SchemaTag.Object:
             return isObjectSchemaValue(value, state);
         case SchemaTag.Union:
+        case SchemaTag.Xor:
             return isSchemaArray(readOwnDataProperty(value, "options"), state);
         case SchemaTag.Intersection:
             return isSchemaValueInner(readOwnDataProperty(value, "left"), state) &&
@@ -165,10 +187,34 @@ function isSchemaRecord(
         case SchemaTag.Brand:
             return typeof readOwnDataProperty(value, "brand") === "string" &&
                 isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
+        case SchemaTag.Metadata:
+            return isMetadataValue(readOwnDataProperty(value, "metadata")) &&
+                isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
+        case SchemaTag.Message:
+            return typeof readOwnDataProperty(value, "message") === "string" &&
+                isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
+        case SchemaTag.Readonly:
+            return isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
+        case SchemaTag.KeyedObject:
+            return isStringArray(readOwnDataProperty(value, "keys")) &&
+                isKeyRuleValue(readOwnDataProperty(value, "rule")) &&
+                isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
+        case SchemaTag.PropertyCount:
+            return isPropertyCountSchemaValue(value, state);
+        case SchemaTag.PropertyNames:
+            return isSchemaValueInner(readOwnDataProperty(value, "key"), state) &&
+                isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
+        case SchemaTag.PatternProperties:
+            return isPatternPropertiesSchemaValue(value, state);
         case SchemaTag.Lazy:
-            return typeof readOwnDataProperty(value, "get") === "function";
+            return typeof readOwnDataProperty(value, "get") === "function" &&
+                isOptionalFunction(readOwnDataProperty(value, "objectPresence"));
         case SchemaTag.Refine:
             return isOptionalRefinementCollector(readOwnDataProperty(value, "collect")) &&
+                isOptionalPath(readOwnDataProperty(value, "path")) &&
+                isOptionalString(readOwnDataProperty(value, "message")) &&
+                isOptionalBoolean(readOwnDataProperty(value, "abort")) &&
+                isOptionalFunction(readOwnDataProperty(value, "when")) &&
                 typeof readOwnDataProperty(value, "name") === "string" &&
                 typeof readOwnDataProperty(value, "predicate") === "function" &&
                 isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
@@ -178,12 +224,163 @@ function isSchemaRecord(
 }
 
 /**
+ * @brief Validate documentation metadata stored on a schema wrapper.
+ * @param value Candidate metadata record.
+ * @returns True when every known field has the expected immutable shape.
+ */
+function isMetadataValue(value: unknown): boolean {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const id = readOwnDataProperty(value, "id");
+    const title = readOwnDataProperty(value, "title");
+    const description = readOwnDataProperty(value, "description");
+    const examples = readOwnDataProperty(value, "examples");
+    return isOptionalString(id) &&
+        isOptionalString(title) &&
+        isOptionalString(description) &&
+        (examples === undefined || isUnknownArray(examples));
+}
+
+/**
+ * @brief Validate an optional string field.
+ */
+function isOptionalString(value: unknown): boolean {
+    return isMissingDataProperty(value) ||
+        value === undefined ||
+        typeof value === "string";
+}
+
+/**
+ * @brief Validate an optional string-array field.
+ */
+function isOptionalStringArray(value: unknown): boolean {
+    return isMissingDataProperty(value) ||
+        value === undefined ||
+        isStringArray(value);
+}
+
+/**
+ * @brief Validate an optional boolean field.
+ */
+function isOptionalBoolean(value: unknown): boolean {
+    return isMissingDataProperty(value) ||
+        value === undefined ||
+        typeof value === "boolean";
+}
+
+/**
+ * @brief Validate an optional function field.
+ */
+function isOptionalFunction(value: unknown): boolean {
+    return isMissingDataProperty(value) ||
+        value === undefined ||
+        typeof value === "function";
+}
+
+/**
+ * @brief Validate an optional issue path field.
+ */
+function isOptionalPath(value: unknown): boolean {
+    if (isMissingDataProperty(value) || value === undefined) {
+        return true;
+    }
+    if (!isUnknownArray(value)) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+        const segment = value[index];
+        if (typeof segment === "string") {
+            continue;
+        }
+        if (typeof segment === "number" &&
+            Number.isInteger(segment) &&
+            segment >= 0) {
+            continue;
+        }
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Validate a keyed-object rule tag.
+ */
+function isKeyRuleValue(value: unknown): value is KeyRuleTag {
+    return value === KeyRuleTag.AtLeastOne || value === KeyRuleTag.ExactlyOne;
+}
+
+/**
+ * @brief Validate a property-count wrapper schema.
+ */
+function isPropertyCountSchemaValue(
+    value: Readonly<Record<string, unknown>>,
+    state: SchemaValidationState
+): boolean {
+    const min = readOwnDataProperty(value, "min");
+    const max = readOwnDataProperty(value, "max");
+    return isOptionalNonNegativeInteger(min) &&
+        isOptionalNonNegativeInteger(max) &&
+        (min === undefined || max === undefined || min <= max) &&
+        isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
+}
+
+/**
+ * @brief Validate a pattern-properties wrapper schema.
+ */
+function isPatternPropertiesSchemaValue(
+    value: Readonly<Record<string, unknown>>,
+    state: SchemaValidationState
+): boolean {
+    const additional = readOwnDataProperty(value, "additional");
+    const keys = readOwnDataProperty(value, "keys");
+    return isPatternPropertyEntries(readOwnDataProperty(value, "entries"), state) &&
+        isStringArray(keys) &&
+        isObjectKeyLookup(readOwnDataProperty(value, "keyLookup"), keys) &&
+        typeof readOwnDataProperty(value, "allowAdditional") === "boolean" &&
+        (additional === undefined || isSchemaValueInner(additional, state)) &&
+        isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
+}
+
+/**
+ * @brief Validate JSON Schema pattern-property entries.
+ */
+function isPatternPropertyEntries(
+    value: unknown,
+    state: SchemaValidationState
+): value is readonly PatternPropertyEntry[] {
+    if (!isUnknownArray(value)) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+        const entry = value[index];
+        if (!isRecord(entry) ||
+            typeof readOwnDataProperty(entry, "source") !== "string" ||
+            !isPlainRegExp(readOwnDataProperty(entry, "regex")) ||
+            !isSchemaValueInner(readOwnDataProperty(entry, "schema"), state)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Validate an optional object property-count bound.
+ */
+function isOptionalNonNegativeInteger(value: unknown): value is number | undefined {
+    return value === undefined ||
+        (typeof value === "number" && Number.isInteger(value) && value >= 0);
+}
+
+/**
  * @brief Validate an optional refinement diagnostic collector.
  * @param value Candidate collector slot.
  * @returns True when the slot is absent or callable.
  */
 function isOptionalRefinementCollector(value: unknown): boolean {
-    return isMissingDataProperty(value) || typeof value === "function";
+    return isMissingDataProperty(value) ||
+        value === undefined ||
+        typeof value === "function";
 }
 
 /**
@@ -215,6 +412,9 @@ function isStringChecks(value: unknown): value is readonly StringCheck[] {
         if (!isRecord(check)) {
             return false;
         }
+        if (!isOptionalString(readOwnDataProperty(check, "message"))) {
+            return false;
+        }
         switch (readOwnDataProperty(check, "tag")) {
             case StringCheckTag.Min:
             case StringCheckTag.Max: {
@@ -240,6 +440,8 @@ function isStringChecks(value: unknown): value is readonly StringCheck[] {
             case StringCheckTag.IsoDate:
             case StringCheckTag.IsoDateTime:
             case StringCheckTag.Ulid:
+            case StringCheckTag.Xid:
+            case StringCheckTag.Ksuid:
             case StringCheckTag.Ipv4:
             case StringCheckTag.Ipv6:
                 break;
@@ -264,6 +466,9 @@ function isNumberChecks(value: unknown): value is readonly NumberCheck[] {
     for (let index = 0; index < value.length; index += 1) {
         const check = value[index];
         if (!isRecord(check)) {
+            return false;
+        }
+        if (!isOptionalString(readOwnDataProperty(check, "message"))) {
             return false;
         }
         switch (readOwnDataProperty(check, "tag")) {
@@ -296,6 +501,43 @@ function isNumberChecks(value: unknown): value is readonly NumberCheck[] {
 }
 
 /**
+ * @brief Validate the check vector attached to a bigint schema.
+ */
+function isBigIntChecks(value: unknown): value is readonly BigIntCheck[] {
+    if (!isUnknownArray(value)) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+        const check = value[index];
+        if (!isRecord(check)) {
+            return false;
+        }
+        if (!isOptionalString(readOwnDataProperty(check, "message"))) {
+            return false;
+        }
+        switch (readOwnDataProperty(check, "tag")) {
+            case BigIntCheckTag.Gte:
+            case BigIntCheckTag.Lte:
+            case BigIntCheckTag.Gt:
+            case BigIntCheckTag.Lt:
+                if (typeof readOwnDataProperty(check, "value") !== "bigint") {
+                    return false;
+                }
+                break;
+            case BigIntCheckTag.MultipleOf:
+                if (typeof readOwnDataProperty(check, "value") !== "bigint" ||
+                    readOwnDataProperty(check, "value") === 0n) {
+                    return false;
+                }
+                break;
+            default:
+                return false;
+        }
+    }
+    return true;
+}
+
+/**
  * @brief Validate the check vector attached to a Date schema.
  * @param value Candidate check vector.
  * @returns True when every Date bound is finite epoch milliseconds.
@@ -307,6 +549,9 @@ function isDateChecks(value: unknown): value is readonly DateCheck[] {
     for (let index = 0; index < value.length; index += 1) {
         const check = value[index];
         if (!isRecord(check)) {
+            return false;
+        }
+        if (!isOptionalString(readOwnDataProperty(check, "message"))) {
             return false;
         }
         switch (readOwnDataProperty(check, "tag")) {
@@ -341,6 +586,9 @@ function isArrayChecks(value: unknown): value is readonly ArrayCheck[] {
         if (!isRecord(check)) {
             return false;
         }
+        if (!isOptionalString(readOwnDataProperty(check, "message"))) {
+            return false;
+        }
         switch (readOwnDataProperty(check, "tag")) {
             case ArrayCheckTag.Min:
             case ArrayCheckTag.Max: {
@@ -355,6 +603,74 @@ function isArrayChecks(value: unknown): value is readonly ArrayCheck[] {
         }
     }
     return true;
+}
+
+/**
+ * @brief Validate the check vector attached to a File schema.
+ * @param value Candidate check vector.
+ * @returns True when every file-size and MIME check is structurally valid.
+ */
+function isFileChecks(value: unknown): value is readonly FileCheck[] {
+    if (!isUnknownArray(value)) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+        const check = value[index];
+        if (!isRecord(check)) {
+            return false;
+        }
+        if (!isOptionalString(readOwnDataProperty(check, "message"))) {
+            return false;
+        }
+        switch (readOwnDataProperty(check, "tag")) {
+            case FileCheckTag.Min:
+            case FileCheckTag.Max: {
+                const bound = readOwnDataProperty(check, "value");
+                if (typeof bound !== "number" || !Number.isInteger(bound) || bound < 0) {
+                    return false;
+                }
+                break;
+            }
+            case FileCheckTag.Mime:
+                if (!isMimeArray(readOwnDataProperty(check, "values"))) {
+                    return false;
+                }
+                break;
+            default:
+                return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Validate normalized MIME pattern arrays.
+ * @param value Candidate value list.
+ * @returns True when every entry is a unique non-empty string.
+ */
+function isMimeArray(value: unknown): value is readonly string[] {
+    if (!isStringArray(value) || value.length === 0) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+        const item = value[index];
+        if (item === undefined || item.length === 0 || hasLaterMime(value, item, index + 1)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Check whether a MIME pattern appears again after one index.
+ */
+function hasLaterMime(values: readonly string[], value: string, start: number): boolean {
+    for (let index = start; index < values.length; index += 1) {
+        if (Object.is(values[index], value)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -392,7 +708,8 @@ function isObjectSchemaValue(
 ): boolean {
     const mode = readOwnDataProperty(value, "mode");
     if (mode !== ObjectModeTag.Passthrough &&
-        mode !== ObjectModeTag.Strict) {
+        mode !== ObjectModeTag.Strict &&
+        mode !== ObjectModeTag.Strip) {
         return false;
     }
     const entries = readOwnDataProperty(value, "entries");
@@ -424,7 +741,8 @@ function isObjectSchemaValue(
             key !== keys[index] ||
             includesString(seen, key) ||
             (presence !== PresenceTag.Required &&
-                presence !== PresenceTag.Optional) ||
+                presence !== PresenceTag.Optional &&
+                presence !== PresenceTag.Deferred) ||
             !isSchemaValueInner(schema, state)) {
             return false;
         }
@@ -451,7 +769,7 @@ function isDiscriminatedUnionSchemaValue(
     if (typeof key !== "string" || !isUnknownArray(cases) || cases.length === 0) {
         return false;
     }
-    const literals: string[] = [];
+    const literals: LiteralValue[] = [];
     for (let index = 0; index < cases.length; index += 1) {
         const unionCase = cases[index];
         if (!isRecord(unionCase)) {
@@ -459,8 +777,8 @@ function isDiscriminatedUnionSchemaValue(
         }
         const literal = readOwnDataProperty(unionCase, "literal");
         const schema = readOwnDataProperty(unionCase, "schema");
-        if (typeof literal !== "string" ||
-            includesString(literals, literal) ||
+        if (!isLiteralValue(literal) ||
+            includesLiteralValue(literals, literal) ||
             !isSchemaValueInner(schema, state) ||
             !caseRequiresDiscriminant(schema, key, literal)) {
             return false;
@@ -482,7 +800,7 @@ function isDiscriminatedUnionSchemaValue(
 function caseRequiresDiscriminant(
     schema: Schema,
     key: string,
-    literal: string
+    literal: LiteralValue
 ): boolean {
     const objectSchema = unwrapCaseObjectSchema(schema);
     if (objectSchema === undefined) {
@@ -517,6 +835,12 @@ function unwrapCaseObjectSchema(
         case SchemaTag.Intersection:
             return unwrapCaseObjectSchema(schema.left) ?? unwrapCaseObjectSchema(schema.right);
         case SchemaTag.Brand:
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+        case SchemaTag.KeyedObject:
+        case SchemaTag.PropertyCount:
+        case SchemaTag.PropertyNames:
+        case SchemaTag.PatternProperties:
         case SchemaTag.Refine:
             return unwrapCaseObjectSchema(schema.inner);
         default:
@@ -525,14 +849,14 @@ function unwrapCaseObjectSchema(
 }
 
 /**
- * @brief Check whether a schema forces one exact string literal.
+ * @brief Check whether a schema forces one exact literal.
  * @details Schema helpers enforce construction-time invariants before values reach
  * validation, compilation, or export.
  * @param schema Property schema.
  * @param literal Required literal value.
  * @returns True when the schema cannot accept a different discriminant value.
  */
-function schemaRequiresLiteral(schema: Schema, literal: string): boolean {
+function schemaRequiresLiteral(schema: Schema, literal: LiteralValue): boolean {
     switch (schema.tag) {
         case SchemaTag.Literal:
             return Object.is(schema.value, literal);
@@ -540,9 +864,27 @@ function schemaRequiresLiteral(schema: Schema, literal: string): boolean {
             return schemaRequiresLiteral(schema.left, literal) ||
                 schemaRequiresLiteral(schema.right, literal);
         case SchemaTag.Brand:
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+        case SchemaTag.KeyedObject:
+        case SchemaTag.PropertyCount:
+        case SchemaTag.PropertyNames:
+        case SchemaTag.PatternProperties:
         case SchemaTag.Refine:
             return schemaRequiresLiteral(schema.inner, literal);
         default:
             return false;
     }
+}
+
+/**
+ * @brief Test whether a literal vector already contains a SameValue literal.
+ */
+function includesLiteralValue(values: readonly LiteralValue[], value: LiteralValue): boolean {
+    for (let index = 0; index < values.length; index += 1) {
+        if (Object.is(values[index], value)) {
+            return true;
+        }
+    }
+    return false;
 }

@@ -2,6 +2,32 @@
 
 All notable changes to TypeSea are recorded here.
 
+## 1.0.0 - 2026-07-07
+
+### Added
+
+- Added SeaFlow, a zero-dependency symbolic fuzzer exposed through
+  `typesea/seaflow` and root exports `SeaFlow`, `fuzz`, and `fuzzCases`.
+  SeaFlow walks TypeSea schema records backward to emit bounded valid,
+  invalid, and security-oriented payloads, including numeric boundaries,
+  string injections, required-key deletion, strict-object excess keys,
+  prototype-pollution keys, accessor properties, union hybrids, sparse arrays,
+  and lazy-recursion depth stops.
+
+### Changed
+
+- Promoted the current public API surface to the `1.0.0` baseline, including
+  the package manifest and lockfile version.
+- Documented Zod compatibility subpaths as stable 1.x migration facades over
+  TypeSea's guard engine, not as a clone of Zod's internal parser engine.
+- Removed generated docs from the npm package payload; the documentation site is
+  published through GitHub Pages instead.
+- Clarified that SeaFlow `maxYields` is an upper bound and small schemas can
+  stop earlier after their finite edge set is exhausted.
+- Aligned `t.promise(inner)` with Zod-style promise-like async decoding:
+  `decodeAsync(value)` now awaits the input and validates the resolved value
+  with `inner` instead of rejecting non-Promise inputs before resolution.
+
 ## 0.4.0 - 2026-07-06
 
 ### Added

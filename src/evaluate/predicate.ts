@@ -67,3 +67,29 @@ export function isUnionSchema(
     }
     return false;
 }
+
+/**
+ * @brief Execute exclusive union probing with shared recursion state.
+ * @param options XOR option schemas.
+ * @param value Candidate runtime value.
+ * @param state Validation state shared across option probes.
+ * @returns True when exactly one option accepts.
+ */
+export function isXorSchema(
+    options: readonly Schema[],
+    value: unknown,
+    state: ValidationState
+): boolean {
+    let matches = 0;
+    for (let index = 0; index < options.length; index += 1) {
+        const option = options[index];
+        if (option !== undefined &&
+            executeSchemaPredicateWithState(option, value, state)) {
+            matches += 1;
+            if (matches > 1) {
+                return false;
+            }
+        }
+    }
+    return matches === 1;
+}

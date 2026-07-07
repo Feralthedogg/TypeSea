@@ -6,12 +6,28 @@
  */
 
 import type { PathSegment } from "../issue/index.js";
+import type { GlobalRegistryMetadata, SchemaRegistry } from "../registry/index.js";
 import type { Schema } from "../schema/index.js";
 import type {
     JsonSchema,
-    JsonSchemaDialect,
-    JsonSchemaExportIssue
+    JsonSchemaCyclesMode,
+    JsonSchemaOverride,
+    JsonSchemaOutputTarget,
+    JsonSchemaExportIssue,
+    JsonSchemaUnrepresentableMode,
+    JsonSchemaUriMapper
 } from "./types.js";
+
+export interface JsonSchemaEmitContext {
+    readonly refs: ReadonlyMap<Schema, string>;
+    readonly active: Schema | undefined;
+    readonly cycles: JsonSchemaCyclesMode;
+    readonly location: string;
+    readonly cycleRefs: Map<Schema, string>;
+    readonly lazyResolving: WeakSet<object>;
+    readonly override: JsonSchemaOverride | undefined;
+    readonly metadata: SchemaRegistry<GlobalRegistryMetadata> | undefined;
+}
 
 /**
  * @brief Recursive emitter callback shared by JSON Schema emitter modules.
@@ -28,5 +44,8 @@ export type JsonSchemaEmitter = (
     schema: Schema,
     path: PathSegment[],
     issues: JsonSchemaExportIssue[],
-    dialect: JsonSchemaDialect
+    target: JsonSchemaOutputTarget,
+    unrepresentable: JsonSchemaUnrepresentableMode,
+    uri: JsonSchemaUriMapper,
+    context: JsonSchemaEmitContext
 ) => JsonSchema | undefined;

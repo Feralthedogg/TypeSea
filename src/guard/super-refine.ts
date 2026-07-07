@@ -68,7 +68,7 @@ export function collectSuperRefineIssues<TValue>(
  * @returns Copied relative issue payload.
  * @throws TypeError when message or path fields have invalid runtime types.
  */
-function readSuperRefineIssue(
+export function readSuperRefineIssue(
     issue: SuperRefineIssueInput | undefined
 ): RefinementIssue {
     if (issue === undefined) {

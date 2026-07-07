@@ -1,8 +1,13 @@
 import { describe, expect, test } from "vitest";
 import {
     BaseAsyncDecoder,
+    decodeAsync,
+    encodeAsync,
+    safeDecodeAsync,
+    safeEncodeAsync,
     t,
     toJsonSchema,
+    TypeSeaAssertionError,
     type AsyncDecoder
 } from "../src/index.js";
 
@@ -34,6 +39,34 @@ describe("async decoder semantics", () => {
         }
     });
 
+    test("runs top-level async decode and encode helpers", async () => {
+        const Count = t.asyncPipe(
+            t.coerce.number(),
+            t.asyncRefine(
+                t.number.int(),
+                async (value) => await Promise.resolve(value >= 1),
+                "positive_count"
+            )
+        );
+        const NumberText = t.stringToInt();
+
+        await expect(decodeAsync(Count, "42")).resolves.toEqual({
+            ok: true,
+            value: 42
+        });
+        await expect(safeDecodeAsync(Count, "0")).resolves.toMatchObject({
+            ok: false
+        });
+        await expect(encodeAsync(NumberText, 42)).resolves.toEqual({
+            ok: true,
+            value: "42"
+        });
+        await expect(safeEncodeAsync(NumberText, 42)).resolves.toEqual({
+            ok: true,
+            value: "42"
+        });
+    });
+
     test("pipes sync and async decoders without losing diagnostics", async () => {
         const Count = t.asyncPipe(
             t.coerce.number(),
@@ -63,6 +96,72 @@ describe("async decoder semantics", () => {
         expect(fractional.ok).toBe(false);
         if (!fractional.ok) {
             expect(fractional.error[0]?.code).toBe("expected_integer");
+        }
+    });
+
+    test("exposes Zod-style async parse surfaces", async () => {
+        const Count = t.asyncPipe(
+            t.coerce.number(),
+            t.asyncRefine(
+                t.number.int().gte(0),
+                async (value) => await Promise.resolve(value % 2 === 0),
+                "even"
+            )
+        );
+        const valid = await Count.parseAsync("42");
+        const safeValid = await Count.safeParseAsync("42");
+        const safeInvalid = await Count.safeParseAsync("3", {
+            error: "even count expected"
+        });
+        const spaValid = await Count.spa("42");
+
+        expect(valid).toBe(42);
+        expect(safeValid).toEqual({
+            success: true,
+            data: 42
+        });
+        expect(spaValid).toEqual({
+            success: true,
+            data: 42
+        });
+        expect(safeInvalid.success).toBe(false);
+        if (!safeInvalid.success) {
+            expect(safeInvalid.error).toBeInstanceOf(TypeSeaAssertionError);
+            expect(safeInvalid.error.issues[0]?.message).toBe("even count expected");
+        }
+        await expect(Count.parseAsync("3")).rejects
+            .toBeInstanceOf(TypeSeaAssertionError);
+    });
+
+    test("decodes native promises before validating the resolved value", async () => {
+        const PromisedUserId = t.promise(t.string.uuid());
+        const FluentPromisedUserId = t.string.uuid().promise();
+        const valid = await PromisedUserId.decodeAsync(Promise.resolve(
+            "01890f5c-7f6b-7cc2-98c4-dc0c0c07398f"
+        ));
+        const fluentValid = await FluentPromisedUserId.decodeAsync(Promise.resolve(
+            "01890f5c-7f6b-7cc2-98c4-dc0c0c07398f"
+        ));
+        const plain = await PromisedUserId.decodeAsync(
+            "01890f5c-7f6b-7cc2-98c4-dc0c0c07398f"
+        );
+        const invalidResolved = await PromisedUserId.decodeAsync(Promise.resolve("bad"));
+
+        expect(valid).toEqual({
+            ok: true,
+            value: "01890f5c-7f6b-7cc2-98c4-dc0c0c07398f"
+        });
+        expect(fluentValid).toEqual({
+            ok: true,
+            value: "01890f5c-7f6b-7cc2-98c4-dc0c0c07398f"
+        });
+        expect(plain).toEqual({
+            ok: true,
+            value: "01890f5c-7f6b-7cc2-98c4-dc0c0c07398f"
+        });
+        expect(invalidResolved.ok).toBe(false);
+        if (!invalidResolved.ok) {
+            expect(invalidResolved.error[0]?.code).toBe("expected_pattern");
         }
     });
 

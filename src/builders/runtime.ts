@@ -6,9 +6,17 @@
  */
 
 import { SchemaTag } from "../kind/index.js";
-import { BaseGuard, type Guard, type Infer, type Presence } from "../guard/index.js";
+import {
+    BaseGuard,
+    type Guard,
+    type Infer,
+    type Presence,
+    type WithCheckSource
+} from "../guard/index.js";
+import { isSchema } from "../evaluate/index.js";
 import type { Schema } from "../schema/index.js";
 import { readGuardSchema } from "../internal/index.js";
+import { createWithCheckSource } from "../guard/with-check.js";
 
 export type InstanceConstructor<TValue> =
     abstract new (...args: never[]) => TValue;
@@ -60,6 +68,11 @@ export function instanceOf<TValue>(
  * @param value Guard applied to the property value.
  * @returns Fresh guard preserving the base domain and recording the property type.
  */
+export function property(
+    key: string | number,
+    value: Guard<unknown, Presence>
+): WithCheckSource;
+
 export function property<
     TBase extends Guard<unknown, Presence>,
     const TKey extends string,
@@ -68,15 +81,62 @@ export function property<
     base: TBase,
     key: TKey,
     value: TValue
-): BaseGuard<Infer<TBase> & Readonly<Record<TKey, Infer<TValue>>>> {
+): BaseGuard<Infer<TBase> & Readonly<Record<TKey, Infer<TValue>>>>;
+
+export function property(
+    first: Guard<unknown, Presence> | string | number,
+    second: Guard<unknown, Presence> | string,
+    third?: Guard<unknown, Presence>
+): BaseGuard<unknown> | WithCheckSource {
+    if (third === undefined) {
+        return propertyCheckSource(first, second);
+    }
+    const key = second;
     if (typeof key !== "string") {
         throw new TypeError("property key must be a string");
     }
-    return new BaseGuard<Infer<TBase> & Readonly<Record<TKey, Infer<TValue>>>>({
+    const baseSchema = readGuardSchema(first, "property base");
+    const valueSchema = readGuardSchema(third, "property value");
+    return new BaseGuard<unknown>({
         tag: SchemaTag.Property,
-        base: readGuardSchema(base, "property base"),
+        base: baseSchema,
         key,
-        value: readGuardSchema(value, "property value")
+        value: valueSchema
+    });
+}
+
+/**
+ * @brief Build a Zod-style public-property semantic source.
+ * @param key Public property name to read after the base guard accepts.
+ * @param value Guard applied to the property value.
+ * @returns Reusable source accepted by `guard.with()`.
+ */
+function propertyCheckSource(
+    key: Guard<unknown, Presence> | string | number,
+    value: Guard<unknown, Presence> | string
+): WithCheckSource {
+    if (typeof key !== "string" && typeof key !== "number") {
+        throw new TypeError("property key must be a string or number");
+    }
+    const schema = readGuardSchema(value, "property value");
+    const propertyName = String(key);
+    const path = Object.freeze([key]);
+    return createWithCheckSource((payload) => {
+        const input = payload.value;
+        if (input === null || input === undefined) {
+            payload.issues.push({
+                path,
+                message: `expected property ${propertyName}`
+            });
+            return;
+        }
+        const propertyValue = Reflect.get(Object(input), propertyName) as unknown;
+        if (!isSchema(schema, propertyValue)) {
+            payload.issues.push({
+                path,
+                message: `expected property ${propertyName}`
+            });
+        }
     });
 }
 
@@ -131,7 +191,9 @@ function makeJsonSchema(root: Schema): Schema {
                 tag: SchemaTag.Refine,
                 inner: {
                     tag: SchemaTag.Record,
-                    value: root
+                    key: undefined,
+                    value: root,
+                    loose: false
                 },
                 predicate: isJsonObject,
                 name: "json_object"

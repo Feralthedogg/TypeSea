@@ -12,6 +12,7 @@ import {
     SchemaTag
 } from "../kind/index.js";
 import {
+    resolveObjectEntryPresence,
     schemaCanAcceptUndefined,
     type DiscriminatedUnionCase,
     type Schema
@@ -108,7 +109,7 @@ export function emitArrayCheck(
                 "array",
                 `a(${value})`
             )}return;}`,
-            emitArrayLengthIssues(schema, value, path, issues),
+            emitArrayLengthIssues(schema, value, path, issues, context),
             `const xs=Object.getOwnPropertyNames(${value});`,
             "for(let xi=0;xi<xs.length;xi+=1){",
             "const key=xs[xi];",
@@ -134,7 +135,7 @@ export function emitArrayCheck(
             "array",
             `a(${value})`
         )}return;}`,
-        emitArrayLengthIssues(schema, value, path, issues),
+        emitArrayLengthIssues(schema, value, path, issues, context),
         `for(let i=0;i<${value}.length;i+=1){`,
         `const d=gp(${value},i);`,
         `if(d===undefined){${missingCheck}}else if(!h.call(d,"value")){${emitIssueAtSegment(
@@ -269,7 +270,7 @@ function emitUnsafeArrayCheck(
             `a(${value})`
             )}return;}`
     ];
-    parts.push(emitArrayLengthIssues(schema, value, path, issues));
+    parts.push(emitArrayLengthIssues(schema, value, path, issues, context));
     if (itemCheck !== "") {
         parts.push(
             `for(let i=0;i<${value}.length;i+=1){`,
@@ -293,7 +294,8 @@ function emitArrayLengthIssues(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
     value: string,
     path: string,
-    issues: string
+    issues: string,
+    context: EmitContext
 ): string {
     const chunks: string[] = [];
     const checks = schema.checks;
@@ -309,7 +311,8 @@ function emitArrayLengthIssues(
                     path,
                     "expected_min_length",
                     `length >= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case ArrayCheckTag.Max:
@@ -318,7 +321,8 @@ function emitArrayLengthIssues(
                     path,
                     "expected_max_length",
                     `length <= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
         }
@@ -340,7 +344,8 @@ function emitArrayLengthIssuesAtSegment(
     value: string,
     path: string,
     segmentExpression: string,
-    issues: string
+    issues: string,
+    context: EmitContext
 ): string {
     const chunks: string[] = [];
     const checks = schema.checks;
@@ -357,7 +362,8 @@ function emitArrayLengthIssuesAtSegment(
                     segmentExpression,
                     "expected_min_length",
                     `length >= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
             case ArrayCheckTag.Max:
@@ -367,7 +373,8 @@ function emitArrayLengthIssuesAtSegment(
                     segmentExpression,
                     "expected_max_length",
                     `length <= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}}`);
                 break;
         }
@@ -504,7 +511,7 @@ function emitArrayCheckAtSegment(
                 "array",
                 `a(${value})`
             )}}else{`,
-            emitArrayLengthIssuesAtSegment(schema, value, path, segmentExpression, issues),
+            emitArrayLengthIssuesAtSegment(schema, value, path, segmentExpression, issues, context),
             `const xs=Object.getOwnPropertyNames(${value});`,
             "for(let xi=0;xi<xs.length;xi+=1){",
             "const key=xs[xi];",
@@ -533,7 +540,7 @@ function emitArrayCheckAtSegment(
             "array",
             `a(${value})`
         )}}else{`,
-        emitArrayLengthIssuesAtSegment(schema, value, path, segmentExpression, issues),
+        emitArrayLengthIssuesAtSegment(schema, value, path, segmentExpression, issues, context),
         `for(let i=0;i<${value}.length;i+=1){`,
         `const vd=gp(${value},i);`,
         `if(vd===undefined){${missingLeaf}}else if(!h.call(vd,"value")){${emitIssueAtTwoSegments(
@@ -675,7 +682,7 @@ function emitUnsafeArrayCheckAtSegment(
     ];
     parts.push(
         "else{",
-        emitArrayLengthIssuesAtSegment(schema, value, path, segmentExpression, issues)
+        emitArrayLengthIssuesAtSegment(schema, value, path, segmentExpression, issues, context)
     );
     if (itemLeaf !== "") {
         parts.push(
@@ -1033,7 +1040,8 @@ export function emitObjectCheck(
         const presentCheck = childCheck === ""
             ? ""
             : `const ${itemValue}=d.value;${childCheck}`;
-        if (entry.presence === PresenceTag.Required) {
+        const presence = resolveObjectEntryPresence(entry);
+        if (presence === PresenceTag.Required) {
             parts.push(`{const d=gp(${value},${key});if(d===undefined||!h.call(d,"value")){${emitIssueAtSegment(
                 issues,
                 path,
@@ -1182,7 +1190,8 @@ function emitUnsafeObjectCheck(
             emitChild
         );
         parts.push(`{const ${itemValue}=${unsafePropertyReadExpression(value, entry.key)};`);
-        if (entry.presence === PresenceTag.Optional) {
+        const presence = resolveObjectEntryPresence(entry);
+        if (presence === PresenceTag.Optional) {
             parts.push(
                 `if(${itemValue}!==undefined){${childCheck}}else if(h.call(${value},${key})){${childCheck}}`
             );
@@ -1339,6 +1348,9 @@ function emitCompositeCheckAtSegment(
                 context
             );
         case SchemaTag.Record:
+            if (schema.key !== undefined) {
+                return undefined;
+            }
             return emitRecordCheckAtSegment(
                 schema.value,
                 value,
@@ -1395,15 +1407,7 @@ export function emitDiscriminatedUnionCheck(
             "data property",
             stringLiteral("missing or accessor")
         )}return;}`,
-        "const dv=dd.value;",
-        `if(typeof dv!=="string"){${emitIssueAtSegment(
-            issues,
-            path,
-            keyRef,
-            "expected_discriminant",
-            "string discriminant",
-            "a(dv)"
-        )}return;}`
+        "const dv=dd.value;"
     ];
     for (let index = 0; index < cases.length; index += 1) {
         const unionCase = cases[index];
@@ -1449,15 +1453,7 @@ function emitUnsafeDiscriminatedUnionCheck(
             "object",
             `a(${value})`
         )}return;}`,
-        `const dv=${unsafePropertyReadExpression(value, key)};`,
-        `if(typeof dv!=="string"){${emitIssueAtSegment(
-            issues,
-            path,
-            keyRef,
-            "expected_discriminant",
-            "string discriminant",
-            "a(dv)"
-        )}return;}`
+        `const dv=${unsafePropertyReadExpression(value, key)};`
     ];
     for (let index = 0; index < cases.length; index += 1) {
         const unionCase = cases[index];
@@ -1466,8 +1462,9 @@ function emitUnsafeDiscriminatedUnionCheck(
         }
         const literal = unionCase.literal;
         const schema = unionCase.schema;
+        const literalIndex = pushLiteral(context, literal);
         const check = emitChild(schema, context);
-        parts.push(`if(dv===${unsafeStringLiteralExpression(literal)}){${check}(${value},${path},${issues});return;}`);
+        parts.push(`if(Object.is(dv,l[${String(literalIndex)}])){${check}(${value},${path},${issues});return;}`);
     }
     parts.push(emitIssueExprAtSegment(
         issues,
@@ -1576,4 +1573,14 @@ function unsafeStringLiteralExpression(value: string): string {
     return JSON.stringify(value)
         .replace(/\u2028/gu, "\\u2028")
         .replace(/\u2029/gu, "\\u2029");
+}
+
+/**
+ * @brief Emit the message operand for a schema check.
+ */
+function checkMessageExpression(
+    message: string | undefined,
+    context: EmitContext
+): string | undefined {
+    return message === undefined ? undefined : stringRef(context, message);
 }

@@ -29,7 +29,16 @@ export const SchemaTag = {
     Map: 23,
     Set: 24,
     InstanceOf: 25,
-    Property: 26
+    Property: 26,
+    Metadata: 27,
+    Message: 28,
+    KeyedObject: 29,
+    Xor: 30,
+    File: 31,
+    Readonly: 32,
+    PropertyCount: 33,
+    PropertyNames: 34,
+    PatternProperties: 35
 } as const;
 
 export type SchemaTag = (typeof SchemaTag)[keyof typeof SchemaTag];
@@ -41,7 +50,8 @@ export type SchemaTag = (typeof SchemaTag)[keyof typeof SchemaTag];
  */
 export const ObjectModeTag = {
     Passthrough: 1,
-    Strict: 2
+    Strict: 2,
+    Strip: 3
 } as const;
 
 export type ObjectModeTag = (typeof ObjectModeTag)[keyof typeof ObjectModeTag];
@@ -53,10 +63,18 @@ export type ObjectModeTag = (typeof ObjectModeTag)[keyof typeof ObjectModeTag];
  */
 export const PresenceTag = {
     Required: 1,
-    Optional: 2
+    Optional: 2,
+    Deferred: 3
 } as const;
 
 export type PresenceTag = (typeof PresenceTag)[keyof typeof PresenceTag];
+
+export const KeyRuleTag = {
+    AtLeastOne: 1,
+    ExactlyOne: 2
+} as const;
+
+export type KeyRuleTag = (typeof KeyRuleTag)[keyof typeof KeyRuleTag];
 
 export const StringCheckTag = {
     Min: 1,
@@ -68,8 +86,10 @@ export const StringCheckTag = {
     IsoDate: 7,
     IsoDateTime: 8,
     Ulid: 9,
-    Ipv4: 10,
-    Ipv6: 11
+    Xid: 10,
+    Ksuid: 11,
+    Ipv4: 12,
+    Ipv6: 13
 } as const;
 
 export type StringCheckTag =
@@ -87,6 +107,17 @@ export const NumberCheckTag = {
 export type NumberCheckTag =
     (typeof NumberCheckTag)[keyof typeof NumberCheckTag];
 
+export const BigIntCheckTag = {
+    Gte: 1,
+    Lte: 2,
+    Gt: 3,
+    Lt: 4,
+    MultipleOf: 5
+} as const;
+
+export type BigIntCheckTag =
+    (typeof BigIntCheckTag)[keyof typeof BigIntCheckTag];
+
 export const DateCheckTag = {
     Min: 1,
     Max: 2
@@ -102,6 +133,15 @@ export const ArrayCheckTag = {
 
 export type ArrayCheckTag =
     (typeof ArrayCheckTag)[keyof typeof ArrayCheckTag];
+
+export const FileCheckTag = {
+    Min: 1,
+    Max: 2,
+    Mime: 3
+} as const;
+
+export type FileCheckTag =
+    (typeof FileCheckTag)[keyof typeof FileCheckTag];
 
 /**
  * @brief IR node tags with reserved numeric ranges by node family.

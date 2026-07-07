@@ -5,7 +5,7 @@
  * with stable metadata.
  */
 
-import { SchemaTag } from "../kind/index.js";
+import { PresenceTag, SchemaTag } from "../kind/index.js";
 import {
     BaseGuard,
     type Guard,
@@ -13,14 +13,36 @@ import {
     type GuardValue,
     type Infer,
     type Presence,
-    type SuperRefineContext
+    type ReadonlyValue,
+    type RefineParams,
+    type SuperRefineContext,
+    type UnwrappedGuardValue,
+    type WithCheckCallback,
+    type WithCheckSource
 } from "../guard/index.js";
 import type { Schema } from "../schema/index.js";
+import {
+    descriptionMetadata,
+    exampleMetadata,
+    mergeSchemaMetadata,
+    readSchemaMetadata,
+    titleMetadata,
+    type SchemaMetadata,
+    type SchemaMetadataInput,
+    nonoptionalSchema,
+    unwrapSchema
+} from "../schema/index.js";
 import { isStrictTrue, readGuardSchema } from "../internal/index.js";
 import {
     collectSuperRefineIssues,
     runSuperRefine
 } from "../guard/super-refine.js";
+import { createWithCheckSource } from "../guard/with-check.js";
+import { readRefineOptions } from "../guard/refine-options.js";
+
+type CustomPredicate<TValue> =
+    | ((value: unknown) => value is TValue)
+    | ((value: unknown) => boolean);
 
 /**
  * @brief Mark a guard optional for object shape construction.
@@ -35,6 +57,23 @@ export function optional<TGuard extends Guard<unknown, Presence>>(
     return new BaseGuard<GuardValue<TGuard>, "optional">({
         tag: SchemaTag.Optional,
         inner: readGuardSchema(guard, "optional inner")
+    });
+}
+
+/**
+ * @brief Allow object-key omission without accepting standalone undefined.
+ * @param guard Guard used when the key is present.
+ * @returns Fresh guard whose object presence is optional but whose value
+ * validation remains the original guard.
+ */
+export function exactOptional<TGuard extends Guard<unknown, Presence>>(
+    guard: TGuard
+): BaseGuard<GuardValue<TGuard>, "exactOptional"> {
+    const inner = readGuardSchema(guard, "exactOptional inner");
+    return new BaseGuard<GuardValue<TGuard>, "exactOptional">({
+        tag: SchemaTag.Lazy,
+        get: (): Schema => inner,
+        objectPresence: (): PresenceTag => PresenceTag.Optional
     });
 }
 
@@ -88,6 +127,79 @@ export function nullish<TGuard extends Guard<unknown, Presence>>(
 }
 
 /**
+ * @brief Freeze accepted values returned by parse-like APIs.
+ * @param guard Guard to wrap without changing boolean validation.
+ * @returns Fresh readonly guard preserving presence.
+ */
+export function readonly<TGuard extends Guard<unknown, Presence>>(
+    guard: TGuard
+): BaseGuard<ReadonlyValue<GuardValue<TGuard>>, GuardPresence<TGuard>> {
+    return new BaseGuard<ReadonlyValue<GuardValue<TGuard>>, GuardPresence<TGuard>>({
+        tag: SchemaTag.Readonly,
+        inner: readGuardSchema(guard, "readonly inner")
+    });
+}
+
+/**
+ * @brief Expose the payload schema of optional, nullable, or array guards.
+ * @param guard Guard whose schema should be unwrapped.
+ * @returns Fresh guard for the inner schema.
+ */
+export function unwrap<TGuard extends Guard<unknown, Presence>>(
+    guard: TGuard
+): BaseGuard<UnwrappedGuardValue<TGuard>> {
+    return new BaseGuard<UnwrappedGuardValue<TGuard>>(
+        unwrapSchema(readGuardSchema(guard, "unwrap inner"))
+    );
+}
+
+/**
+ * @brief Remove optional presence and explicit undefined acceptance.
+ * @param guard Guard whose undefined acceptance should be removed.
+ * @returns Fresh required guard preserving nullability.
+ */
+export function nonoptional<TGuard extends Guard<unknown, Presence>>(
+    guard: TGuard
+): BaseGuard<Exclude<GuardValue<TGuard>, undefined>> {
+    return new BaseGuard<Exclude<GuardValue<TGuard>, undefined>>(
+        nonoptionalSchema(readGuardSchema(guard, "nonoptional inner"))
+    );
+}
+
+/**
+ * @brief Build a user-defined guard from an unknown input predicate.
+ * @details Custom guards keep the unknown input boundary explicit. The
+ * predicate is optional for Zod migration ergonomics. When present, it must
+ * return the literal boolean true; truthy non-booleans fail exactly like
+ * refine().
+ * @param predicate Runtime predicate for the target domain.
+ * @param params Legacy label string or Zod-style refinement options.
+ * @returns Fresh guard whose inferred value is supplied by the caller.
+ */
+export function custom<TValue = unknown>(
+    predicate?: CustomPredicate<TValue>,
+    params?: RefineParams<TValue>
+): BaseGuard<TValue> {
+    if (predicate !== undefined && typeof predicate !== "function") {
+        throw new TypeError("custom predicate must be a function");
+    }
+    const options = readRefineOptions(params);
+    return new BaseGuard<TValue>({
+        tag: SchemaTag.Refine,
+        inner: {
+            tag: SchemaTag.Unknown
+        },
+        predicate: (value: unknown): boolean =>
+            predicate === undefined || isStrictTrue(predicate(value)),
+        path: options.path,
+        message: options.message,
+        abort: options.abort,
+        when: options.when,
+        name: params === undefined ? "custom" : options.name
+    });
+}
+
+/**
  * @brief Resolve recursive schemas once and reuse the frozen schema handle.
  * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
  * with stable metadata.
@@ -127,14 +239,12 @@ export function lazy<TGuard extends Guard<unknown, Presence>>(
 export function refine<TGuard extends Guard<unknown, Presence>>(
     guard: TGuard,
     predicate: (value: Infer<TGuard>) => boolean,
-    name: string
+    params?: RefineParams<Infer<TGuard>>
 ): BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>> {
     if (typeof predicate !== "function") {
         throw new TypeError("refinement predicate must be a function");
     }
-    if (typeof name !== "string") {
-        throw new TypeError("refinement name must be a string");
-    }
+    const options = readRefineOptions(params);
     return new BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>>({
         tag: SchemaTag.Refine,
         inner: readGuardSchema(guard, "refine inner"),
@@ -144,7 +254,11 @@ export function refine<TGuard extends Guard<unknown, Presence>>(
          */
         predicate: (value: unknown): boolean =>
             isStrictTrue(predicate(value as Infer<TGuard>)),
-        name
+        path: options.path,
+        message: options.message,
+        abort: options.abort,
+        when: options.when,
+        name: options.name
     });
 }
 
@@ -158,14 +272,15 @@ export function refine<TGuard extends Guard<unknown, Presence>>(
 export function superRefine<TGuard extends Guard<unknown, Presence>>(
     guard: TGuard,
     callback: (value: Infer<TGuard>, context: SuperRefineContext) => void,
-    name: string
+    name?: string
 ): BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>> {
     if (typeof callback !== "function") {
         throw new TypeError("super refinement callback must be a function");
     }
-    if (typeof name !== "string") {
+    if (name !== undefined && typeof name !== "string") {
         throw new TypeError("refinement name must be a string");
     }
+    const label = name ?? "refinement";
     return new BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>>({
         tag: SchemaTag.Refine,
         inner: readGuardSchema(guard, "superRefine inner"),
@@ -179,6 +294,119 @@ export function superRefine<TGuard extends Guard<unknown, Presence>>(
                 callback,
                 value as Infer<TGuard>
             ),
-        name
+        name: label
     });
+}
+
+/**
+ * @brief Create a reusable Zod-style callback check source.
+ * @param callback Callback receiving `{ value, issues }`.
+ * @returns Frozen source accepted by `guard.with()`.
+ */
+export function check<TValue = unknown>(
+    callback: WithCheckCallback<TValue>
+): WithCheckSource<TValue> {
+    return createWithCheckSource(callback);
+}
+
+/**
+ * @brief Attach JSON Schema/documentation metadata.
+ * @param guard Guard to annotate.
+ * @param value Metadata object accepted by TypeSea.
+ * @returns Fresh guard with unchanged validation semantics.
+ */
+export function metadata<TGuard extends Guard<unknown, Presence>>(
+    guard: TGuard,
+    value: SchemaMetadataInput
+): BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>> {
+    return new BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>>(
+        metadataSchema(
+            readGuardSchema(guard, "metadata inner"),
+            readSchemaMetadata(value)
+        )
+    );
+}
+
+/**
+ * @brief Attach JSON Schema/documentation metadata with Zod-compatible naming.
+ */
+export function meta<TGuard extends Guard<unknown, Presence>>(
+    guard: TGuard,
+    value: SchemaMetadataInput
+): BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>> {
+    return metadata(guard, value);
+}
+
+/**
+ * @brief Attach a title annotation.
+ */
+export function title<TGuard extends Guard<unknown, Presence>>(
+    guard: TGuard,
+    value: string
+): BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>> {
+    return new BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>>(
+        metadataSchema(readGuardSchema(guard, "title inner"), titleMetadata(value))
+    );
+}
+
+/**
+ * @brief Attach a description annotation.
+ */
+export function describe<TGuard extends Guard<unknown, Presence>>(
+    guard: TGuard,
+    value: string
+): BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>> {
+    return new BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>>(
+        metadataSchema(
+            readGuardSchema(guard, "describe inner"),
+            descriptionMetadata(value)
+        )
+    );
+}
+
+/**
+ * @brief Append one example annotation.
+ */
+export function example<TGuard extends Guard<unknown, Presence>>(
+    guard: TGuard,
+    value: unknown
+): BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>> {
+    return new BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>>(
+        metadataSchema(readGuardSchema(guard, "example inner"), exampleMetadata(value))
+    );
+}
+
+/**
+ * @brief Attach a local diagnostic message to a schema.
+ */
+export function message<TGuard extends Guard<unknown, Presence>>(
+    guard: TGuard,
+    value: string
+): BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>> {
+    if (typeof value !== "string") {
+        throw new TypeError("message must be a string");
+    }
+    return new BaseGuard<GuardValue<TGuard>, GuardPresence<TGuard>>({
+        tag: SchemaTag.Message,
+        inner: readGuardSchema(guard, "message inner"),
+        message: value
+    });
+}
+
+/**
+ * @brief Build or merge a metadata wrapper.
+ */
+function metadataSchema(inner: Schema, metadataValue: SchemaMetadata): Schema {
+    if (inner.tag === SchemaTag.Metadata) {
+        return {
+            tag: SchemaTag.Metadata,
+            inner: inner.inner,
+            metadata: mergeSchemaMetadata(inner.metadata, metadataValue)
+        };
+    }
+    return {
+        tag: SchemaTag.Metadata,
+        inner,
+        metadata: metadataValue
+    };
 }

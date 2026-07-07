@@ -5,7 +5,7 @@
  * aligned with compiled behavior.
  */
 
-import { SchemaTag } from "../kind/index.js";
+import { KeyRuleTag, SchemaTag } from "../kind/index.js";
 import type { CheckResult, Issue, PathSegment } from "../issue/index.js";
 import { freezeIssueArray } from "../issue/index.js";
 import { err, ok } from "../result/index.js";
@@ -26,15 +26,21 @@ import {
     collectTupleIssues
 } from "./check-composite.js";
 import {
+    collectBigIntIssues,
     collectDateIssues,
+    collectFileIssues,
     collectNumberIssues,
     collectStringIssues
 } from "./check-scalar.js";
 import { pushIssue } from "./issue.js";
-import { isSchemaWithState, isUnionSchema } from "./predicate.js";
+import { finalizeAcceptedValue } from "./finalize.js";
+import { isSchemaWithState, isUnionSchema, isXorSchema } from "./predicate.js";
 import {
     actualType,
-    literalToExpected
+    hasObjectKey,
+    isPlainRecord,
+    literalToExpected,
+    readOwnDataProperty
 } from "./shared.js";
 import {
     enterValidation,
@@ -56,7 +62,7 @@ export function checkSchema<TValue>(
     value: unknown
 ): CheckResult<TValue> {
     if (isSchemaWithState(schema, value, makeValidationState())) {
-        return ok(value as TValue);
+        return ok(finalizeAcceptedValue(schema, value) as TValue);
     }
     /*
      * The boolean predicate runs first to keep the valid path allocation-light.
@@ -149,18 +155,30 @@ function collectIssuesInner(
             collectDateIssues(schema, value, path, issues);
             return;
         case SchemaTag.BigInt:
-            if (typeof value !== "bigint") {
-                pushIssue(path, issues, "expected_bigint", "bigint", actualType(value));
-            }
+            collectBigIntIssues(schema, value, path, issues);
             return;
         case SchemaTag.Symbol:
             if (typeof value !== "symbol") {
-                pushIssue(path, issues, "expected_symbol", "symbol", actualType(value));
+                pushIssue(
+                    path,
+                    issues,
+                    "expected_symbol",
+                    "symbol",
+                    actualType(value),
+                    schema.message
+                );
             }
             return;
         case SchemaTag.Boolean:
             if (typeof value !== "boolean") {
-                pushIssue(path, issues, "expected_boolean", "boolean", actualType(value));
+                pushIssue(
+                    path,
+                    issues,
+                    "expected_boolean",
+                    "boolean",
+                    actualType(value),
+                    schema.message
+                );
             }
             return;
         case SchemaTag.Literal:
@@ -181,13 +199,16 @@ function collectIssuesInner(
             collectTupleIssues(schema, value, path, issues, state, collectIssues);
             return;
         case SchemaTag.Record:
-            collectRecordIssues(schema.value, value, path, issues, state, collectIssues);
+            collectRecordIssues(schema, value, path, issues, state, collectIssues);
             return;
         case SchemaTag.Map:
             collectMapIssues(schema, value, path, issues, state, collectIssues);
             return;
         case SchemaTag.Set:
             collectSetIssues(schema, value, path, issues, state, collectIssues);
+            return;
+        case SchemaTag.File:
+            collectFileIssues(schema, value, path, issues);
             return;
         case SchemaTag.InstanceOf:
             collectInstanceOfIssues(schema, value, path, issues);
@@ -201,6 +222,17 @@ function collectIssuesInner(
         case SchemaTag.Union:
             if (!isUnionSchema(schema.options, value, state)) {
                 pushIssue(path, issues, "expected_union", "union", actualType(value));
+            }
+            return;
+        case SchemaTag.Xor:
+            if (!isXorSchema(schema.options, value, state)) {
+                pushIssue(
+                    path,
+                    issues,
+                    "expected_union",
+                    "exclusive union",
+                    actualType(value)
+                );
             }
             return;
         case SchemaTag.Intersection:
@@ -236,6 +268,46 @@ function collectIssuesInner(
         case SchemaTag.Brand:
             collectIssues(schema.inner, value, path, issues, state);
             return;
+        case SchemaTag.Metadata:
+            collectIssues(schema.inner, value, path, issues, state);
+            return;
+        case SchemaTag.Message: {
+            const start = issues.length;
+            collectIssues(schema.inner, value, path, issues, state);
+            applyIssueMessage(issues, start, schema.message);
+            return;
+        }
+        case SchemaTag.KeyedObject:
+            if (isSchemaWithState(schema.inner, value, state)) {
+                collectKeyedObjectIssue(schema.keys, schema.rule, value, path, issues);
+            } else {
+                collectIssues(schema.inner, value, path, issues, state);
+            }
+            return;
+        case SchemaTag.PropertyCount:
+            if (isSchemaWithState(schema.inner, value, state)) {
+                collectPropertyCountIssue(schema.min, schema.max, value, path, issues);
+            } else {
+                collectIssues(schema.inner, value, path, issues, state);
+            }
+            return;
+        case SchemaTag.PropertyNames:
+            if (isSchemaWithState(schema.inner, value, state)) {
+                collectPropertyNamesIssues(schema.key, value, path, issues, state);
+            } else {
+                collectIssues(schema.inner, value, path, issues, state);
+            }
+            return;
+        case SchemaTag.PatternProperties:
+            if (isSchemaWithState(schema.inner, value, state)) {
+                collectPatternPropertiesIssues(schema, value, path, issues, state);
+            } else {
+                collectIssues(schema.inner, value, path, issues, state);
+            }
+            return;
+        case SchemaTag.Readonly:
+            collectIssues(schema.inner, value, path, issues, state);
+            return;
         case SchemaTag.Lazy:
             /*
              * Lazy schemas resolve through the shared state so recursive lazy
@@ -248,6 +320,10 @@ function collectIssuesInner(
                 schema.inner,
                 schema.predicate,
                 schema.collect,
+                schema.path,
+                schema.message,
+                schema.abort,
+                schema.when,
                 schema.name,
                 value,
                 path,
@@ -257,4 +333,252 @@ function collectIssuesInner(
             );
             return;
     }
+}
+
+/**
+ * @brief Attach a schema-local message to newly collected issues.
+ * @param issues Mutable issue buffer owned by the current diagnostic pass.
+ * @param start First issue index produced by the wrapped schema.
+ * @param message Message override stored on the wrapper.
+ * @details Existing issue-local messages win. That lets deeper wrappers and
+ * callback refinements report more specific text than an outer wrapper.
+ */
+function applyIssueMessage(
+    issues: Issue[],
+    start: number,
+    message: string
+): void {
+    for (let index = start; index < issues.length; index += 1) {
+        const issue = issues[index];
+        if (issue !== undefined && issue.message === undefined) {
+            issues[index] = {
+                path: issue.path,
+                code: issue.code,
+                expected: issue.expected,
+                actual: issue.actual,
+                message
+            };
+        }
+    }
+}
+
+/**
+ * @brief Emit the semantic issue for one keyed-object wrapper.
+ * @param keys Keys participating in the key-count rule.
+ * @param rule Rule applied to the selected keys.
+ * @param value Candidate runtime value.
+ * @param path Current issue path.
+ * @param issues Mutable issue buffer.
+ */
+function collectKeyedObjectIssue(
+    keys: readonly string[],
+    rule: KeyRuleTag,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[]
+): void {
+    if (!isPlainRecord(value)) {
+        pushIssue(path, issues, "expected_object", "object", actualType(value));
+        return;
+    }
+    const count = countOwnDataKeys(value, keys);
+    if (rule === KeyRuleTag.AtLeastOne) {
+        if (count === 0) {
+            pushIssue(
+                path,
+                issues,
+                "expected_key_count",
+                `at least one of ${formatKeyList(keys)}`,
+                "0 matching keys"
+            );
+        }
+        return;
+    }
+    if (count !== 1) {
+        pushIssue(
+            path,
+            issues,
+            "expected_key_count",
+            `exactly one of ${formatKeyList(keys)}`,
+            `${String(count)} matching keys`
+        );
+    }
+}
+
+/**
+ * @brief Emit diagnostics for one object property-count rule.
+ */
+function collectPropertyCountIssue(
+    min: number | undefined,
+    max: number | undefined,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[]
+): void {
+    if (!isPlainRecord(value)) {
+        pushIssue(path, issues, "expected_object", "object", actualType(value));
+        return;
+    }
+    const count = Object.keys(value).length;
+    if (min !== undefined && count < min) {
+        pushIssue(
+            path,
+            issues,
+            "expected_key_count",
+            `at least ${String(min)} properties`,
+            `${String(count)} properties`
+        );
+    }
+    if (max !== undefined && count > max) {
+        pushIssue(
+            path,
+            issues,
+            "expected_key_count",
+            `at most ${String(max)} properties`,
+            `${String(count)} properties`
+        );
+    }
+}
+
+/**
+ * @brief Emit diagnostics for one object property-name rule.
+ */
+function collectPropertyNamesIssues(
+    keySchema: Schema,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[],
+    state: ValidationState
+): void {
+    if (!isPlainRecord(value)) {
+        pushIssue(path, issues, "expected_object", "object", actualType(value));
+        return;
+    }
+    const keys = Object.keys(value);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined || isSchemaWithState(keySchema, key, state)) {
+            continue;
+        }
+        path.push(key);
+        collectIssues(keySchema, key, path, issues, state);
+        path.pop();
+    }
+}
+
+/**
+ * @brief Emit diagnostics for JSON Schema pattern-property rules.
+ */
+function collectPatternPropertiesIssues(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.PatternProperties }>,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[],
+    state: ValidationState
+): void {
+    if (!isPlainRecord(value)) {
+        pushIssue(path, issues, "expected_object", "object", actualType(value));
+        return;
+    }
+    const keys = Object.keys(value);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key !== undefined) {
+            collectPatternPropertyKeyIssues(schema, value, key, path, issues, state);
+        }
+    }
+}
+
+/**
+ * @brief Emit diagnostics for one pattern-property key.
+ */
+function collectPatternPropertyKeyIssues(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.PatternProperties }>,
+    value: Readonly<Record<string, unknown>>,
+    key: string,
+    path: PathSegment[],
+    issues: Issue[],
+    state: ValidationState
+): void {
+    let matched = false;
+    for (let index = 0; index < schema.entries.length; index += 1) {
+        const entry = schema.entries[index];
+        if (entry === undefined || !testRegex(entry.regex, key)) {
+            continue;
+        }
+        matched = true;
+        collectPatternPropertyValueIssues(entry.schema, value, key, path, issues, state);
+    }
+    if (matched || hasObjectKey(schema.keyLookup, key)) {
+        return;
+    }
+    if (schema.additional !== undefined) {
+        collectPatternPropertyValueIssues(schema.additional, value, key, path, issues, state);
+        return;
+    }
+    if (!schema.allowAdditional) {
+        path.push(key);
+        pushIssue(path, issues, "unrecognized_key", "known or pattern-matched key", "extra key");
+        path.pop();
+    }
+}
+
+/**
+ * @brief Emit value diagnostics for one pattern-property schema.
+ */
+function collectPatternPropertyValueIssues(
+    schema: Schema,
+    value: Readonly<Record<string, unknown>>,
+    key: string,
+    path: PathSegment[],
+    issues: Issue[],
+    state: ValidationState
+): void {
+    const property = readOwnDataProperty(value, key);
+    path.push(key);
+    if (property === undefined) {
+        pushIssue(path, issues, "expected_object", "data property", "accessor");
+    } else {
+        collectIssues(schema, property.value, path, issues, state);
+    }
+    path.pop();
+}
+
+/**
+ * @brief Test a regular expression without leaking lastIndex state.
+ */
+function testRegex(regex: RegExp, value: string): boolean {
+    regex.lastIndex = 0;
+    const accepted = regex.test(value);
+    regex.lastIndex = 0;
+    return accepted;
+}
+
+/**
+ * @brief Count selected own data properties without invoking accessors.
+ * @param value Plain record already accepted by object validation.
+ * @param keys Selected string keys.
+ * @returns Number of selected keys present as data properties.
+ */
+function countOwnDataKeys(
+    value: Readonly<Record<string, unknown>>,
+    keys: readonly string[]
+): number {
+    let count = 0;
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key !== undefined && readOwnDataProperty(value, key) !== undefined) {
+            count += 1;
+        }
+    }
+    return count;
+}
+
+/**
+ * @brief Format a key selection for diagnostics.
+ * @param keys Selected string keys.
+ * @returns Stable comma-separated key list.
+ */
+function formatKeyList(keys: readonly string[]): string {
+    return keys.join(", ");
 }

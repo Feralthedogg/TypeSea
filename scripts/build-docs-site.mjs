@@ -16,6 +16,13 @@ const sourceFiles = [
         koPath: "docs/ko/api.md"
     },
     {
+        title: "SeaFlow Fuzzer",
+        titleKo: "SeaFlow 퍼저",
+        id: "seaflow",
+        path: "docs/seaflow.md",
+        koPath: "docs/ko/seaflow.md"
+    },
+    {
         title: "Engine Notes",
         titleKo: "엔진 설계 노트",
         id: "engine-notes",

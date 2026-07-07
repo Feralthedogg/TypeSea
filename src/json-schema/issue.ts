@@ -7,9 +7,12 @@
 
 import type { PathSegment } from "../issue/index.js";
 import type {
+    JsonSchema,
     JsonSchemaExportCode,
-    JsonSchemaExportIssue
+    JsonSchemaExportIssue,
+    JsonSchemaUnrepresentableMode
 } from "./types.js";
+import { JSON_SCHEMA_UNREPRESENTABLE_OPEN } from "./read.js";
 
 /**
  * @brief Execute push json schema issue.
@@ -26,4 +29,21 @@ export function pushJsonSchemaIssue(
         code,
         message
     });
+}
+
+/**
+ * @brief Return an open schema when the caller selected permissive export.
+ */
+export function emitUnrepresentableJsonSchema(
+    path: readonly PathSegment[],
+    issues: JsonSchemaExportIssue[],
+    mode: JsonSchemaUnrepresentableMode,
+    code: JsonSchemaExportCode,
+    message: string
+): JsonSchema | undefined {
+    if (mode === JSON_SCHEMA_UNREPRESENTABLE_OPEN) {
+        return {};
+    }
+    pushJsonSchemaIssue(path, issues, code, message);
+    return undefined;
 }

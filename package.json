@@ -1,6 +1,6 @@
 {
     "name": "typesea",
-    "version": "0.4.0",
+    "version": "1.0.0",
     "description": "V8-friendly runtime narrowing for TypeScript with Sea-of-Nodes graph introspection.",
     "type": "module",
     "author": "feral",
@@ -8,6 +8,10 @@
         "type": "git",
         "url": "git+https://github.com/Feralthedogg/TypeSea.git"
     },
+    "bugs": {
+        "url": "https://github.com/Feralthedogg/TypeSea/issues"
+    },
+    "homepage": "https://feralthedogg.github.io/TypeSea/",
     "sideEffects": false,
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -16,7 +20,63 @@
             "types": "./dist/index.d.ts",
             "import": "./dist/index.js",
             "default": "./dist/index.js"
-        }
+        },
+        "./mini": {
+            "types": "./dist/mini.d.ts",
+            "import": "./dist/mini.js",
+            "default": "./dist/mini.js"
+        },
+        "./locales": {
+            "types": "./dist/locales.d.ts",
+            "import": "./dist/locales.js",
+            "default": "./dist/locales.js"
+        },
+        "./seaflow": {
+            "types": "./dist/seaflow/index.d.ts",
+            "import": "./dist/seaflow/index.js",
+            "default": "./dist/seaflow/index.js"
+        },
+        "./zod": {
+            "types": "./dist/zod.d.ts",
+            "import": "./dist/zod.js",
+            "default": "./dist/zod.js"
+        },
+        "./v3": {
+            "types": "./dist/v3.d.ts",
+            "import": "./dist/v3.js",
+            "default": "./dist/v3.js"
+        },
+        "./v4": {
+            "types": "./dist/v4.d.ts",
+            "import": "./dist/v4.js",
+            "default": "./dist/v4.js"
+        },
+        "./v4-mini": {
+            "types": "./dist/v4-mini.d.ts",
+            "import": "./dist/v4-mini.js",
+            "default": "./dist/v4-mini.js"
+        },
+        "./v4/mini": {
+            "types": "./dist/v4/mini.d.ts",
+            "import": "./dist/v4/mini.js",
+            "default": "./dist/v4/mini.js"
+        },
+        "./v4/core": {
+            "types": "./dist/v4/core.d.ts",
+            "import": "./dist/v4/core.js",
+            "default": "./dist/v4/core.js"
+        },
+        "./v4/locales": {
+            "types": "./dist/v4/locales.d.ts",
+            "import": "./dist/v4/locales.js",
+            "default": "./dist/v4/locales.js"
+        },
+        "./v4/locales/*": {
+            "types": "./dist/v4/locales.d.ts",
+            "import": "./dist/v4/locales.js",
+            "default": "./dist/v4/locales.js"
+        },
+        "./package.json": "./package.json"
     },
     "keywords": [
         "typescript",
@@ -29,12 +89,9 @@
     ],
     "files": [
         "dist",
-        "bench/results/latest.json",
-        "bench/results/raw.json",
         "README.md",
         "SECURITY.md",
-        "CHANGELOG.md",
-        "docs"
+        "CHANGELOG.md"
     ],
     "scripts": {
         "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json",
@@ -42,13 +99,14 @@
         "bench:compare": "node scripts/benchmark-report.mjs --compare",
         "bench:record": "node scripts/benchmark-report.mjs --record",
         "bench:render": "node scripts/benchmark-report.mjs --render",
-        "check": "npm run policy && npm run check:benchmarks && npm run check:docs && npm run typecheck && npm run lint && npm run test && npm run build && npm run check:dist && npm run check:api && npm run check:pack",
+        "check": "npm run policy && npm run check:benchmarks && npm run check:docs && npm run typecheck && npm run lint && npm run test && npm run build && npm run check:dist && npm run check:api && npm run check:zod-compat && npm run check:pack",
         "check:api": "node scripts/public-api-surface.mjs",
         "check:benchmarks": "node scripts/benchmark-report.mjs --check",
         "check:consumer": "node scripts/consumer-smoke.mjs",
         "check:docs": "node scripts/build-docs-site.mjs --check && node scripts/docs-site-check.mjs",
         "check:dist": "node scripts/dist-policy.mjs",
         "check:pack": "node scripts/package-contents.mjs",
+        "check:zod-compat": "node scripts/zod-compat-surface.mjs",
         "docs:build": "node scripts/build-docs-site.mjs",
         "lint": "eslint .",
         "pack:dry": "npm pack --dry-run --ignore-scripts",

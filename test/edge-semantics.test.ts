@@ -214,8 +214,8 @@ describe("edge-case runtime semantics", () => {
         if (!wrongKindType.ok) {
             expect(wrongKindType.error[0]?.path).toEqual(["kind"]);
             expect(wrongKindType.error[0]?.code).toBe("expected_discriminant");
-            expect(wrongKindType.error[0]?.expected).toBe("string discriminant");
-            expect(wrongKindType.error[0]?.actual).toBe("number");
+            expect(wrongKindType.error[0]?.expected).toBe("known discriminant");
+            expect(wrongKindType.error[0]?.actual).toBe("1");
         }
     });
 
@@ -467,6 +467,13 @@ describe("edge-case runtime semantics", () => {
         expect(() => looseString.regex(poisonedPattern, "word")).toThrow(TypeError);
         expect(() => looseString.refine("not_fn", "named")).toThrow(TypeError);
         expect(() => looseString.refine(() => true, 1)).toThrow(TypeError);
+        expect(() => looseString.refine(() => true, { error: 1 })).toThrow(TypeError);
+        expect(() => looseString.refine(() => true, { path: ["name", -1] }))
+            .toThrow(TypeError);
+        expect(() => looseString.refine(() => true, { abort: "yes" }))
+            .toThrow(TypeError);
+        expect(() => looseString.refine(() => true, { when: "yes" }))
+            .toThrow(TypeError);
         expect(() => looseString.superRefine("not_fn", "named")).toThrow(TypeError);
         expect(() => looseString.superRefine(() => undefined, 1)).toThrow(TypeError);
         expect(() => looseString.or({} as unknown as Guard<unknown>)).toThrow(TypeError);
@@ -474,6 +481,10 @@ describe("edge-case runtime semantics", () => {
         expect(() => looseTuple({ length: 1 })).toThrow(TypeError);
         expect(() => looseRefine(t.string, "not_fn", "named")).toThrow(TypeError);
         expect(() => looseRefine(t.string, () => true, 1)).toThrow(TypeError);
+        expect(() => looseRefine(t.string, () => true, { error: 1 }))
+            .toThrow(TypeError);
+        expect(() => looseRefine(t.string, () => true, { when: "yes" }))
+            .toThrow(TypeError);
         expect(() => looseSuperRefine(t.string, "not_fn", "named")).toThrow(TypeError);
         expect(() => looseSuperRefine(t.string, () => undefined, 1)).toThrow(TypeError);
         expect(() => looseLazy(undefined)).toThrow(TypeError);
@@ -526,7 +537,7 @@ describe("edge-case runtime semantics", () => {
                 }
             ]
         } as unknown as Schema;
-        const invalidNumericDiscriminatedUnionSchema = {
+        const numericDiscriminatedUnionSchema = {
             tag: discriminatedTag,
             key: "kind",
             cases: [
@@ -559,8 +570,7 @@ describe("edge-case runtime semantics", () => {
 
         expect(() => new BaseGuard(invalidSchema)).toThrow(TypeError);
         expect(() => new BaseGuard(invalidDiscriminatedUnionSchema)).toThrow(TypeError);
-        expect(() => new BaseGuard(invalidNumericDiscriminatedUnionSchema))
-            .toThrow(TypeError);
+        expect(() => new BaseGuard(numericDiscriminatedUnionSchema)).not.toThrow();
         expect(() => new BaseGuard(invalidIntersectionSchema)).toThrow(TypeError);
         expect(() => new looseStringGuard(invalidSchema)).toThrow(TypeError);
         expect(() => new looseNumberGuard(invalidSchema)).toThrow(TypeError);
@@ -579,11 +589,11 @@ describe("edge-case runtime semantics", () => {
             "source"
         )).toThrow(TypeError);
         expect(() => new CompiledBaseGuard(
-            invalidNumericDiscriminatedUnionSchema,
+            numericDiscriminatedUnionSchema,
             () => true,
             () => [],
             "source"
-        )).toThrow(TypeError);
+        )).not.toThrow();
         expect(() => new CompiledBaseGuard(
             invalidIntersectionSchema,
             () => true,
@@ -916,6 +926,10 @@ describe("edge-case runtime semantics", () => {
             this: unknown,
             other: Guard<unknown>
         ) => Guard<unknown>;
+        const baseApply = readDetached(BaseGuard.prototype, "apply") as (
+            this: unknown,
+            callback: (guard: Guard<unknown>) => Guard<unknown>
+        ) => Guard<unknown>;
         const stringMin = readDetached(t.string, "min") as (
             this: unknown,
             value: number
@@ -982,6 +996,10 @@ describe("edge-case runtime semantics", () => {
         expect(() => Reflect.apply(baseRefine, null, [(): boolean => true, "ok"]))
             .toThrow(TypeError);
         expect(() => Reflect.apply(baseOr, null, [t.string])).toThrow(TypeError);
+        expect(() => Reflect.apply(baseApply, null, [
+            (guard: Guard<unknown>): Guard<unknown> => guard
+        ]))
+            .toThrow(TypeError);
         expect(() => Reflect.apply(baseIs, forgedPrototypeReceiver, ["x"]))
             .toThrow(TypeError);
         expect(() => Reflect.apply(stringMin, null, [1])).toThrow(TypeError);

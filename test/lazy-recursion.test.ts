@@ -13,6 +13,18 @@ interface MutableNode {
     parent?: MutableNode;
 }
 
+interface Category {
+    readonly name: string;
+    readonly subcategories: Category[];
+    readonly parent?: Category;
+}
+
+interface MutableCategory {
+    name: string;
+    subcategories: MutableCategory[];
+    parent?: MutableCategory;
+}
+
 describe("lazy recursive schemas", () => {
     test("memoizes lazy resolution and terminates on cyclic object graphs", () => {
         let resolves = 0;
@@ -45,6 +57,60 @@ describe("lazy recursive schemas", () => {
             Forest.check({ root, alias: root })
         );
         expect(resolves).toBe(1);
+    });
+
+    test("supports Zod-style recursive object getters", () => {
+        let resolves = 0;
+        const slot: {
+            guard: Guard<Category> | undefined;
+        } = {
+            guard: undefined
+        };
+        const CategoryObject = t.object({
+            name: t.string.min(1),
+            get subcategories(): Guard<Category[]> {
+                resolves += 1;
+                return t.array(readCategoryGuard(slot.guard));
+            },
+            get parent(): Guard<Category, "optional"> {
+                resolves += 1;
+                return t.optional(readCategoryGuard(slot.guard));
+            }
+        });
+        slot.guard = CategoryObject;
+        const CategoryGuard: Guard<Category> = CategoryObject;
+        const root = makeCategory("root");
+        root.subcategories.push(makeCategory("child"));
+        const invalid = makeCategory("root");
+        invalid.subcategories.push(makeCategory(""));
+
+        expect(resolves).toBe(0);
+        expect(CategoryGuard.is(root)).toBe(true);
+        expect(CategoryGuard.check(root).ok).toBe(true);
+        expect(resolves).toBe(2);
+
+        const FastCategory = compile(CategoryGuard, { name: "getterRecursiveCategory" });
+        expect(FastCategory.is(root)).toBe(true);
+        expect(FastCategory.is(invalid)).toBe(false);
+        expect(FastCategory.check(invalid)).toEqual(CategoryGuard.check(invalid));
+        expect(CategoryObject.shape.subcategories.is([root])).toBe(true);
+
+        const missingRequired = {
+            name: "missing required"
+        };
+        const accessorBackedOptional = makeCategory("accessor");
+        Object.defineProperty(accessorBackedOptional, "parent", {
+            configurable: true,
+            enumerable: true,
+            get: (): MutableCategory => {
+                throw new Error("input parent getter must not execute");
+            }
+        });
+
+        expect(CategoryGuard.is(missingRequired)).toBe(false);
+        expect(FastCategory.is(missingRequired)).toBe(false);
+        expect(CategoryGuard.is(accessorBackedOptional)).toBe(false);
+        expect(FastCategory.is(accessorBackedOptional)).toBe(false);
     });
 
     test("revalidates shared references after leaving the active recursion path", () => {
@@ -145,6 +211,28 @@ function makeNode(value: string): MutableNode {
         value,
         children: []
     };
+}
+
+/**
+ * @brief Build category.
+ * @details Test helpers pin observable behavior so engine rewrites keep the same external result.
+ */
+function makeCategory(name: string): MutableCategory {
+    return {
+        name,
+        subcategories: []
+    };
+}
+
+/**
+ * @brief Read the recursive category guard after construction.
+ * @details The getter should never run until the holder has been initialized.
+ */
+function readCategoryGuard(guard: Guard<Category> | undefined): Guard<Category> {
+    if (guard === undefined) {
+        throw new TypeError("recursive category guard is not initialized");
+    }
+    return guard;
 }
 
 /**

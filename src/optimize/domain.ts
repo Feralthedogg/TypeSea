@@ -49,6 +49,7 @@ interface ValueNode {
  */
 interface NumericNode {
     readonly left: NodeId;
+    readonly right: NodeId;
 }
 
 /**
@@ -655,10 +656,34 @@ function specializeNumericDomain(
     aliases: NodeId[],
     mask: number
 ): FoldResult {
-    if (isParamNode(nodes, node.left) && (mask & DomainMask.Number) === 0) {
+    const required = readOrderedCompareDomain(nodes, node.right);
+    if (required !== undefined &&
+        isParamNode(nodes, node.left) &&
+        (mask & required) === 0) {
         return replace(node, ensureConst(nodes, aliases, false));
     }
     return keep(node);
+}
+
+/**
+ * @brief Read the primitive domain required by an ordered comparison bound.
+ */
+function readOrderedCompareDomain(
+    nodes: readonly GraphNode[],
+    id: NodeId
+): number | undefined {
+    const node = nodes[id];
+    if (node?.tag !== NodeTag.Const) {
+        return undefined;
+    }
+    switch (typeof node.value) {
+        case "number":
+            return DomainMask.Number;
+        case "bigint":
+            return DomainMask.BigInt;
+        default:
+            return undefined;
+    }
 }
 
 /**

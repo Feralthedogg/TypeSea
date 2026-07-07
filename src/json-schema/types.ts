@@ -6,6 +6,8 @@
  */
 
 import type { PathSegment } from "../issue/index.js";
+import type { GlobalRegistryMetadata, SchemaRegistry } from "../registry/index.js";
+import type { Schema } from "../schema/index.js";
 
 /**
  * @brief Public JSON Schema fragment produced by the exporter.
@@ -43,8 +45,57 @@ export type JsonSchemaTypeName =
  * @invariant Each dialect maps to one stable tuple representation.
  */
 export type JsonSchemaDialect =
+    | "draft-04"
     | "draft-07"
     | "2020-12";
+
+export type JsonSchemaOutputTarget =
+    | JsonSchemaDialect
+    | "openapi-3.0";
+
+type JsonSchemaUnrepresentableOpen = Lowercase<"ANY">;
+
+export type JsonSchemaUnrepresentableMode =
+    | "throw"
+    | JsonSchemaUnrepresentableOpen;
+
+export type JsonSchemaUriMapper = (id: string) => string;
+
+export type JsonSchemaReusedMode =
+    | "inline"
+    | "ref";
+
+export type JsonSchemaCyclesMode =
+    | "ref"
+    | "throw";
+
+export type JsonSchemaOverrideObject =
+    MutableJsonSchemaObject & Record<string, unknown>;
+
+export interface JsonSchemaOverrideContext {
+    readonly schema: Schema;
+    readonly jsonSchema: JsonSchemaOverrideObject;
+    readonly path: readonly PathSegment[];
+    readonly target: JsonSchemaOutputTarget;
+}
+
+export type JsonSchemaOverride =
+    (context: JsonSchemaOverrideContext) => void;
+
+/**
+ * @brief User-facing JSON Schema target aliases.
+ * @details Zod migration code often names the option `target` and spells the
+ * latest dialect as `draft-2020-12`. TypeSea normalizes those aliases before
+ * emission so the exporter still has one internal dialect switch.
+ */
+export type JsonSchemaTarget =
+    | "draft-4"
+    | "draft-04"
+    | "draft-7"
+    | "draft-07"
+    | "2020-12"
+    | "draft-2020-12"
+    | "openapi-3.0";
 
 /**
  * @brief Readonly JSON Schema object shape returned from public APIs.
@@ -52,17 +103,27 @@ export type JsonSchemaDialect =
  * shape narrow catches accidental exporter drift in TypeScript before release.
  */
 export interface JsonSchemaObject {
+    readonly [key: string]: unknown;
+
     readonly $schema?: string;
+    readonly $id?: string;
+    readonly $ref?: string;
+    readonly title?: string;
+    readonly description?: string;
+    readonly examples?: readonly unknown[];
     readonly type?: JsonSchemaTypeName | readonly JsonSchemaTypeName[];
     readonly const?: JsonSchemaPrimitive;
+    readonly enum?: readonly JsonSchemaPrimitive[];
     readonly format?: string;
+    readonly contentEncoding?: string;
+    readonly contentMediaType?: string;
     readonly pattern?: string;
     readonly minLength?: number;
     readonly maxLength?: number;
     readonly minimum?: number;
     readonly maximum?: number;
-    readonly exclusiveMinimum?: number;
-    readonly exclusiveMaximum?: number;
+    readonly exclusiveMinimum?: number | boolean;
+    readonly exclusiveMaximum?: number | boolean;
     readonly multipleOf?: number;
     readonly items?: JsonSchema | readonly JsonSchema[];
 
@@ -77,10 +138,23 @@ export interface JsonSchemaObject {
     readonly minItems?: number;
     readonly maxItems?: number;
     readonly properties?: Readonly<Record<string, JsonSchema>>;
+    readonly patternProperties?: Readonly<Record<string, JsonSchema>>;
+    readonly propertyNames?: JsonSchema;
+    readonly minProperties?: number;
+    readonly maxProperties?: number;
     readonly required?: readonly string[];
     readonly additionalProperties?: JsonSchema;
+    readonly nullable?: boolean;
     readonly anyOf?: readonly JsonSchema[];
+    readonly oneOf?: readonly JsonSchema[];
     readonly allOf?: readonly JsonSchema[];
+    readonly not?: JsonSchema;
+    readonly $defs?: Readonly<Record<string, JsonSchema>>;
+    readonly definitions?: Readonly<Record<string, JsonSchema>>;
+}
+
+export interface JsonSchemaRegistryDocument {
+    readonly schemas: Readonly<Record<string, JsonSchema>>;
 }
 
 /**
@@ -97,10 +171,14 @@ export type JsonSchemaExportCode =
     | "unsupported_number_literal"
     | "unsupported_number_bound"
     | "unsupported_regex_flags"
+    | "unsupported_target"
     | "unsupported_lazy"
     | "unsupported_refine"
+    | "unsupported_readonly"
+    | "unsupported_record"
     | "unsupported_decoder"
     | "unsupported_async_decoder"
+    | "duplicate_registry_id"
     | "unsupported_child";
 
 /**
@@ -114,6 +192,19 @@ export interface JsonSchemaExportIssue {
     readonly message: string;
 }
 
+export type JsonSchemaImportCode =
+    | "invalid_schema"
+    | "unsupported_keyword"
+    | "unsupported_type"
+    | "unsupported_pattern"
+    | "unsupported_empty_union";
+
+export interface JsonSchemaImportIssue {
+    readonly path: readonly PathSegment[];
+    readonly code: JsonSchemaImportCode;
+    readonly message: string;
+}
+
 /**
  * @brief Configuration accepted by JSON Schema export APIs.
  * @details Options are normalized before emission so the lower-level emitters
@@ -123,11 +214,31 @@ export interface JsonSchemaOptions {
 
     /**
      * @brief Keyword family selected for the emitted document.
-     * @details Tuple schemas use `items` arrays for draft-07 and `prefixItems`
-     * for 2020-12.
-     * @invariant Tuple schemas use `items` arrays for draft-07 and `prefixItems` for 2020-12.
+     * @details Tuple schemas use `items` arrays for draft-04/draft-07 and
+     * `prefixItems` for 2020-12.
+     * @invariant Tuple schemas use `items` arrays for draft-04/draft-07 and `prefixItems` for 2020-12.
      */
     readonly dialect: JsonSchemaDialect;
+
+    /**
+     * @brief Zod-style alias for selecting the emitted JSON Schema dialect.
+     * @details `target` and `dialect` may be supplied together only when they
+     * normalize to the same dialect.
+     */
+    readonly target?: JsonSchemaTarget | undefined;
+
+    readonly unrepresentable?: JsonSchemaUnrepresentableMode | undefined;
+
+    readonly uri?: JsonSchemaUriMapper | undefined;
+
+    readonly reused?: JsonSchemaReusedMode | undefined;
+
+    readonly cycles?: JsonSchemaCyclesMode | undefined;
+
+    readonly override?: JsonSchemaOverride | undefined;
+
+    readonly metadata?: SchemaRegistry<GlobalRegistryMetadata> | undefined;
+
     readonly schemaId: string | undefined;
 }
 
@@ -137,17 +248,27 @@ export interface JsonSchemaOptions {
  * hardens it before the value crosses the public API boundary.
  */
 export interface MutableJsonSchemaObject {
+    [key: string]: unknown;
+
     $schema?: string;
+    $id?: string;
+    $ref?: string;
+    title?: string;
+    description?: string;
+    examples?: readonly unknown[];
     type?: JsonSchemaTypeName | readonly JsonSchemaTypeName[];
     const?: JsonSchemaPrimitive;
+    enum?: readonly JsonSchemaPrimitive[];
     format?: string;
+    contentEncoding?: string;
+    contentMediaType?: string;
     pattern?: string;
     minLength?: number;
     maxLength?: number;
     minimum?: number;
     maximum?: number;
-    exclusiveMinimum?: number;
-    exclusiveMaximum?: number;
+    exclusiveMinimum?: number | boolean;
+    exclusiveMaximum?: number | boolean;
     multipleOf?: number;
     items?: JsonSchema | readonly JsonSchema[];
 
@@ -162,8 +283,17 @@ export interface MutableJsonSchemaObject {
     minItems?: number;
     maxItems?: number;
     properties?: Readonly<Record<string, JsonSchema>>;
+    patternProperties?: Readonly<Record<string, JsonSchema>>;
+    propertyNames?: JsonSchema;
+    minProperties?: number;
+    maxProperties?: number;
     required?: readonly string[];
     additionalProperties?: JsonSchema;
+    nullable?: boolean;
     anyOf?: readonly JsonSchema[];
+    oneOf?: readonly JsonSchema[];
     allOf?: readonly JsonSchema[];
+    not?: JsonSchema;
+    $defs?: Readonly<Record<string, JsonSchema>>;
+    definitions?: Readonly<Record<string, JsonSchema>>;
 }

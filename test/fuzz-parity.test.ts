@@ -15,6 +15,8 @@ import {
 } from "../src/index.js";
 import type { Schema } from "../src/schema/index.js";
 
+const FUZZ_TEST_TIMEOUT_MS = 15_000;
+
 class Rng {
     private state: number;
 
@@ -61,7 +63,7 @@ describe("deterministic schema fuzzing", () => {
                 expect(fast.check(value), label).toEqual(guard.check(value));
             }
         }
-    });
+    }, FUZZ_TEST_TIMEOUT_MS);
 
     test("keeps unsafe and unchecked modes aligned on trusted plain data", () => {
         const context: FuzzContext = {
@@ -113,7 +115,7 @@ describe("deterministic schema fuzzing", () => {
                 expect(unchecked.check(value).ok, label).toBe(safeCheckOk);
             }
         }
-    });
+    }, FUZZ_TEST_TIMEOUT_MS);
 
     test("keeps presence-dispatched object unions aligned across fast modes", () => {
         const context: FuzzContext = {

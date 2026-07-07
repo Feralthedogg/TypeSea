@@ -208,6 +208,61 @@ describe("AOT module emission", () => {
         }).toThrow(Error);
     });
 
+    test("emits metadata, message, and keyed-object wrappers without dynamic fallback", async () => {
+        const Contact = t.object({
+            email: t.optional(t.string.email().message("email must be valid")),
+            phone: t.optional(t.string.min(1))
+        })
+            .oneOfKeys(["email", "phone"])
+            .describe("Reachable contact endpoint");
+        const emitted = emitAotModule(Contact, { name: "aotContact" });
+        expect(emitted.ok).toBe(true);
+        if (!emitted.ok) {
+            return;
+        }
+
+        const runtime = await importAotModule(emitted.value);
+        const values: readonly unknown[] = [
+            { email: "ada@example.com" },
+            { phone: "555-0100" },
+            {},
+            { email: "ada@example.com", phone: "555-0100" },
+            { email: "not-email" }
+        ];
+
+        expect(emitted.value.source).not.toContain("m(");
+        for (let index = 0; index < values.length; index += 1) {
+            const value = values[index];
+            expect(runtime.is(value), String(index)).toBe(Contact.is(value));
+            expect(runtime.check(value), String(index)).toEqual(Contact.check(value));
+            expect(runtime.checkFirst(value), String(index)).toEqual(Contact.checkFirst(value));
+        }
+        const invalid = runtime.check({ email: "not-email" });
+        expect(invalid.ok).toBe(false);
+        if (!invalid.ok) {
+            expect(invalid.error[0]?.message).toBe("email must be valid");
+        }
+    });
+
+    test("emits BigInt bound checks when no modulo fallback is needed", async () => {
+        const Count = t.bigint.gte(1n).lt(10n);
+        const emitted = emitAotModule(Count, { name: "aotBigIntCount" });
+
+        expect(emitted.ok).toBe(true);
+        if (!emitted.ok) {
+            return;
+        }
+
+        const runtime = await importAotModule(emitted.value);
+
+        expect(runtime.is(1n)).toBe(true);
+        expect(runtime.is(9n)).toBe(true);
+        expect(runtime.is(0n)).toBe(false);
+        expect(runtime.is(10n)).toBe(false);
+        expect(runtime.check(0n)).toEqual(Count.check(0n));
+        expect(runtime.checkFirst(10n)).toEqual(Count.checkFirst(10n));
+    });
+
     test("rejects non-serializable AOT schemas", () => {
         const Refined = emitAotModule(t.string.refine(
             (value) => value.length > 0,
@@ -220,6 +275,8 @@ describe("AOT module emission", () => {
         }, "non_empty"));
         const Lazy = emitAotModule(t.lazy(() => t.string));
         const DateGuard = emitAotModule(t.date);
+        const BigIntRange = emitAotModule(t.bigint.multipleOf(2n));
+        const ReadonlyGuard = emitAotModule(t.object({ name: t.string }).readonly());
         const SymbolLiteral = emitAotModule(t.literal(Symbol("marker")));
 
         expect(Refined.ok).toBe(false);
@@ -238,6 +295,14 @@ describe("AOT module emission", () => {
         expect(DateGuard.ok).toBe(false);
         if (!DateGuard.ok) {
             expect(DateGuard.error[0]?.code).toBe("unsupported_aot_date");
+        }
+        expect(BigIntRange.ok).toBe(false);
+        if (!BigIntRange.ok) {
+            expect(BigIntRange.error[0]?.code).toBe("unsupported_aot_bigint_checks");
+        }
+        expect(ReadonlyGuard.ok).toBe(false);
+        if (!ReadonlyGuard.ok) {
+            expect(ReadonlyGuard.error[0]?.code).toBe("unsupported_aot_readonly");
         }
         expect(SymbolLiteral.ok).toBe(false);
         if (!SymbolLiteral.ok) {

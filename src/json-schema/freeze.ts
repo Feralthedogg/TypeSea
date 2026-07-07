@@ -8,7 +8,8 @@
 import type {
     JsonSchema,
     JsonSchemaExportIssue,
-    JsonSchemaObject
+    JsonSchemaObject,
+    JsonSchemaRegistryDocument
 } from "./types.js";
 
 /**
@@ -24,6 +25,24 @@ export function freezeJsonSchema(schema: JsonSchema): JsonSchema {
         return schema;
     }
     return freezeJsonSchemaInner(schema, new WeakSet<object>());
+}
+
+/**
+ * @brief Deep-freeze a registry JSON Schema bundle.
+ */
+export function freezeJsonSchemaRegistryDocument(
+    document: JsonSchemaRegistryDocument
+): JsonSchemaRegistryDocument {
+    const schemas = document.schemas;
+    const keys = Object.keys(schemas);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key !== undefined) {
+            freezeJsonSchema(schemas[key] ?? true);
+        }
+    }
+    Object.freeze(schemas);
+    return Object.freeze(document);
 }
 
 /**
@@ -47,6 +66,9 @@ function freezeJsonSchemaInner(
     if (Array.isArray(type)) {
         Object.freeze(type);
     }
+    if (schema.enum !== undefined) {
+        Object.freeze(schema.enum);
+    }
     if (schema.items !== undefined) {
         freezeJsonSchemaItems(schema.items, frozen);
     }
@@ -56,8 +78,15 @@ function freezeJsonSchemaInner(
     if (schema.properties !== undefined) {
         freezeJsonSchemaProperties(schema.properties, frozen);
     }
+    if (schema.propertyNames !== undefined &&
+        typeof schema.propertyNames !== "boolean") {
+        freezeJsonSchemaInner(schema.propertyNames, frozen);
+    }
     if (schema.required !== undefined) {
         Object.freeze(schema.required);
+    }
+    if (schema.examples !== undefined) {
+        Object.freeze(schema.examples);
     }
     if (schema.additionalProperties !== undefined &&
         typeof schema.additionalProperties !== "boolean") {
@@ -70,8 +99,21 @@ function freezeJsonSchemaInner(
     if (schema.anyOf !== undefined) {
         freezeJsonSchemaArray(schema.anyOf, frozen);
     }
+    if (schema.oneOf !== undefined) {
+        freezeJsonSchemaArray(schema.oneOf, frozen);
+    }
     if (schema.allOf !== undefined) {
         freezeJsonSchemaArray(schema.allOf, frozen);
+    }
+    if (schema.not !== undefined &&
+        typeof schema.not !== "boolean") {
+        freezeJsonSchemaInner(schema.not, frozen);
+    }
+    if (schema.$defs !== undefined) {
+        freezeJsonSchemaProperties(schema.$defs, frozen);
+    }
+    if (schema.definitions !== undefined) {
+        freezeJsonSchemaProperties(schema.definitions, frozen);
     }
     return Object.freeze(schema);
 }

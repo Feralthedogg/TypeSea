@@ -7,7 +7,9 @@
 
 import {
     ArrayCheckTag,
+    BigIntCheckTag,
     DateCheckTag,
+    KeyRuleTag,
     NumberCheckTag,
     ObjectModeTag,
     PresenceTag,
@@ -20,9 +22,12 @@ import {
     IPV6_PATTERN,
     ISO_DATETIME_PATTERN,
     ISO_DATE_PATTERN,
+    KSUID_PATTERN,
     ULID_PATTERN,
     URL_PATTERN,
     UUID_PATTERN,
+    XID_PATTERN,
+    resolveObjectEntryPresence,
     schemaCanAcceptUndefined,
     type DiscriminatedUnionCase,
     type LiteralValue,
@@ -104,15 +109,27 @@ function emitFirstBody(
         case SchemaTag.String:
             return emitStringFirst(schema, value, path, context);
         case SchemaTag.Number:
-            return emitNumberFirst(schema, value, path);
+            return emitNumberFirst(schema, value, path, context);
         case SchemaTag.Date:
-            return emitDateFirst(schema, value, path);
+            return emitDateFirst(schema, value, path, context);
         case SchemaTag.BigInt:
-            return `if(typeof ${value}!=="bigint")${emitFirstIssue(path, "expected_bigint", "bigint", `a(${value})`)}`;
+            return emitBigIntFirst(schema, value, path, context);
         case SchemaTag.Symbol:
-            return `if(typeof ${value}!=="symbol")${emitFirstIssue(path, "expected_symbol", "symbol", `a(${value})`)}`;
+            return `if(typeof ${value}!=="symbol")${emitFirstIssue(
+                path,
+                "expected_symbol",
+                "symbol",
+                `a(${value})`,
+                checkMessageExpression(schema.message, context)
+            )}`;
         case SchemaTag.Boolean:
-            return `if(typeof ${value}!=="boolean")${emitFirstIssue(path, "expected_boolean", "boolean", `a(${value})`)}`;
+            return `if(typeof ${value}!=="boolean")${emitFirstIssue(
+                path,
+                "expected_boolean",
+                "boolean",
+                `a(${value})`,
+                checkMessageExpression(schema.message, context)
+            )}`;
         case SchemaTag.Literal:
             return emitLiteralFirst(schema.value, value, path, context);
         case SchemaTag.Array:
@@ -123,9 +140,13 @@ function emitFirstBody(
             }
             return emitTupleFirst(schema.items, value, path, context);
         case SchemaTag.Record:
+            if (schema.key !== undefined) {
+                return emitDynamicFirst(schema, value, path, context);
+            }
             return emitRecordFirst(schema.value, value, path, context);
         case SchemaTag.Map:
         case SchemaTag.Set:
+        case SchemaTag.File:
         case SchemaTag.InstanceOf:
         case SchemaTag.Property:
             return emitDynamicFirst(schema, value, path, context);
@@ -133,6 +154,8 @@ function emitFirstBody(
             return emitObjectFirst(schema, value, path, context);
         case SchemaTag.Union:
             return `if(!${emitUnion(schema.options, value, context)})${emitFirstIssue(path, "expected_union", "union", `a(${value})`)}`;
+        case SchemaTag.Xor:
+            return emitDynamicFirst(schema, value, path, context);
         case SchemaTag.Intersection:
             return [
                 emitChildFirst(schema.left, value, path, context),
@@ -153,10 +176,173 @@ function emitFirstBody(
             );
         case SchemaTag.Brand:
             return emitChildFirst(schema.inner, value, path, context);
+        case SchemaTag.Metadata:
+            return emitChildFirst(schema.inner, value, path, context);
+        case SchemaTag.Message:
+            return emitMessageFirst(schema.inner, schema.message, value, path, context);
+        case SchemaTag.KeyedObject:
+            return emitKeyedObjectFirst(
+                schema.inner,
+                schema.keys,
+                schema.rule,
+                value,
+                path,
+                context
+            );
+        case SchemaTag.PropertyCount:
+            return emitPropertyCountFirst(
+                schema.inner,
+                schema.min,
+                schema.max,
+                value,
+                path,
+                context
+            );
+        case SchemaTag.PropertyNames:
+            return emitDynamicFirst(schema, value, path, context);
+        case SchemaTag.PatternProperties:
+            return emitDynamicFirst(schema, value, path, context);
+        case SchemaTag.Readonly:
+            return emitChildFirst(schema.inner, value, path, context);
         case SchemaTag.Lazy:
         case SchemaTag.Refine:
             return emitDynamicFirst(schema, value, path, context);
     }
+}
+
+/**
+ * @brief Emit a first-fault wrapper that attaches a schema-local message.
+ */
+function emitMessageFirst(
+    inner: Schema,
+    message: string,
+    value: string,
+    path: string,
+    context: EmitContext
+): string {
+    const child = emitFirstFunction(inner, context);
+    const messageExpression = stringRef(context, message);
+    return `{const e=${child}(${value},${path});if(e!==undefined)return e.message===undefined?Object.freeze({path:e.path,code:e.code,expected:e.expected,actual:e.actual,message:${messageExpression}}):e;}`;
+}
+
+/**
+ * @brief Emit first-fault diagnostics for a keyed-object wrapper.
+ */
+function emitKeyedObjectFirst(
+    inner: Schema,
+    keys: readonly string[],
+    rule: KeyRuleTag,
+    value: string,
+    path: string,
+    context: EmitContext
+): string {
+    const child = emitFirstFunction(inner, context);
+    return `{const e=${child}(${value},${path});if(e!==undefined)return e;${emitKeyedObjectFirstIssue(
+        keys,
+        rule,
+        value,
+        path,
+        context
+    )}}`;
+}
+
+/**
+ * @brief Emit the first keyed-object issue after inner validation passes.
+ */
+function emitKeyedObjectFirstIssue(
+    keys: readonly string[],
+    rule: KeyRuleTag,
+    value: string,
+    path: string,
+    context: EmitContext
+): string {
+    const expected = rule === KeyRuleTag.AtLeastOne
+        ? `at least one of ${keys.join(", ")}`
+        : `exactly one of ${keys.join(", ")}`;
+    const count = emitKeyCount(keys, value, context);
+    if (rule === KeyRuleTag.AtLeastOne) {
+        return `{let c=0;${count}if(c===0)${emitFirstIssueExpr(
+            path,
+            "expected_key_count",
+            stringRef(context, expected),
+            "\"0 matching keys\""
+        )}}`;
+    }
+    return `{let c=0;${count}if(c!==1)${emitFirstIssueExpr(
+        path,
+        "expected_key_count",
+        stringRef(context, expected),
+        "String(c)+\" matching keys\""
+    )}}`;
+}
+
+/**
+ * @brief Emit selected own-data key counting snippets.
+ */
+function emitKeyCount(
+    keys: readonly string[],
+    value: string,
+    context: EmitContext
+): string {
+    const parts = new Array<string>(keys.length);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key !== undefined) {
+            parts[index] = `if(hd(${value},${stringRef(context, key)}))c+=1;`;
+        }
+    }
+    return parts.join("");
+}
+
+/**
+ * @brief Emit first-fault diagnostics for an object property-count rule.
+ */
+function emitPropertyCountFirst(
+    inner: Schema,
+    min: number | undefined,
+    max: number | undefined,
+    value: string,
+    path: string,
+    context: EmitContext
+): string {
+    const child = emitFirstFunction(inner, context);
+    return `{const e=${child}(${value},${path});if(e!==undefined)return e;${emitPropertyCountFirstIssue(
+        min,
+        max,
+        value,
+        path,
+        context
+    )}}`;
+}
+
+/**
+ * @brief Emit the first property-count issue after object validation passes.
+ */
+function emitPropertyCountFirstIssue(
+    min: number | undefined,
+    max: number | undefined,
+    value: string,
+    path: string,
+    context: EmitContext
+): string {
+    const parts: string[] = [`const c=Object.keys(${value}).length;`];
+    if (min !== undefined) {
+        parts.push(`if(c<${String(min)})${emitFirstIssueExpr(
+            path,
+            "expected_key_count",
+            stringRef(context, `at least ${String(min)} properties`),
+            "String(c)+\" properties\""
+        )}`);
+    }
+    if (max !== undefined) {
+        parts.push(`if(c>${String(max)})${emitFirstIssueExpr(
+            path,
+            "expected_key_count",
+            stringRef(context, `at most ${String(max)} properties`),
+            "String(c)+\" properties\""
+        )}`);
+    }
+    return `{${parts.join("")}}`;
 }
 
 /**
@@ -169,10 +355,17 @@ function emitFirstBody(
 function emitDateFirst(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Date }>,
     value: string,
-    path: string
+    path: string,
+    context: EmitContext
 ): string {
     const parts = [
-        `if(!dg(${value}))${emitFirstIssue(path, "expected_date", "valid Date", `a(${value})`)}`
+        `if(!dg(${value}))${emitFirstIssue(
+            path,
+            "expected_date",
+            "valid Date",
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
+        )}`
     ];
     const checks = schema.checks;
     for (let index = 0; index < checks.length; index += 1) {
@@ -183,10 +376,22 @@ function emitDateFirst(
         const actual = `new Date(dt(${value})).toISOString()`;
         switch (check.tag) {
             case DateCheckTag.Min:
-                parts.push(`if(dt(${value})<${String(check.value)})${emitFirstIssue(path, "expected_gte", `>= ${new Date(check.value).toISOString()}`, actual)}`);
+                parts.push(`if(dt(${value})<${String(check.value)})${emitFirstIssue(
+                    path,
+                    "expected_gte",
+                    `>= ${new Date(check.value).toISOString()}`,
+                    actual,
+                    checkMessageExpression(check.message, context)
+                )}`);
                 break;
             case DateCheckTag.Max:
-                parts.push(`if(dt(${value})>${String(check.value)})${emitFirstIssue(path, "expected_lte", `<= ${new Date(check.value).toISOString()}`, actual)}`);
+                parts.push(`if(dt(${value})>${String(check.value)})${emitFirstIssue(
+                    path,
+                    "expected_lte",
+                    `<= ${new Date(check.value).toISOString()}`,
+                    actual,
+                    checkMessageExpression(check.message, context)
+                )}`);
                 break;
         }
     }
@@ -227,7 +432,13 @@ function emitStringFirst(
     context: EmitContext
 ): string {
     const parts: string[] = [
-        `if(typeof ${value}!=="string")${emitFirstIssue(path, "expected_string", "string", `a(${value})`)}`
+        `if(typeof ${value}!=="string")${emitFirstIssue(
+            path,
+            "expected_string",
+            "string",
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
+        )}`
     ];
     const checks = schema.checks;
     for (let index = 0; index < checks.length; index += 1) {
@@ -241,7 +452,8 @@ function emitStringFirst(
                     path,
                     "expected_min_length",
                     `length >= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}`);
                 break;
             case StringCheckTag.Max:
@@ -249,35 +461,119 @@ function emitStringFirst(
                     path,
                     "expected_max_length",
                     `length <= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}`);
                 break;
             case StringCheckTag.Regex:
-                parts.push(emitPatternFirst(value, path, check.regex, check.name, context));
+                parts.push(emitPatternFirst(
+                    value,
+                    path,
+                    check.regex,
+                    check.name,
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.Uuid:
-                parts.push(emitPatternFirst(value, path, UUID_PATTERN, "uuid", context));
+                parts.push(emitPatternFirst(
+                    value,
+                    path,
+                    UUID_PATTERN,
+                    "uuid",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.Email:
-                parts.push(emitPatternFirst(value, path, EMAIL_PATTERN, "email", context));
+                parts.push(emitPatternFirst(
+                    value,
+                    path,
+                    EMAIL_PATTERN,
+                    "email",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.Url:
-                parts.push(emitPatternFirst(value, path, URL_PATTERN, "url", context));
+                parts.push(emitPatternFirst(
+                    value,
+                    path,
+                    URL_PATTERN,
+                    "url",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.IsoDate:
-                parts.push(emitPatternFirst(value, path, ISO_DATE_PATTERN, "iso_date", context));
+                parts.push(emitPatternFirst(
+                    value,
+                    path,
+                    ISO_DATE_PATTERN,
+                    "iso_date",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.IsoDateTime:
-                parts.push(emitPatternFirst(value, path, ISO_DATETIME_PATTERN, "iso_datetime", context));
+                parts.push(emitPatternFirst(
+                    value,
+                    path,
+                    ISO_DATETIME_PATTERN,
+                    "iso_datetime",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.Ulid:
-                parts.push(emitPatternFirst(value, path, ULID_PATTERN, "ulid", context));
+                parts.push(emitPatternFirst(
+                    value,
+                    path,
+                    ULID_PATTERN,
+                    "ulid",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
+                break;
+            case StringCheckTag.Xid:
+                parts.push(emitPatternFirst(
+                    value,
+                    path,
+                    XID_PATTERN,
+                    "xid",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
+                break;
+            case StringCheckTag.Ksuid:
+                parts.push(emitPatternFirst(
+                    value,
+                    path,
+                    KSUID_PATTERN,
+                    "ksuid",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.Ipv4:
-                parts.push(emitPatternFirst(value, path, IPV4_PATTERN, "ipv4", context));
+                parts.push(emitPatternFirst(
+                    value,
+                    path,
+                    IPV4_PATTERN,
+                    "ipv4",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
             case StringCheckTag.Ipv6:
-                parts.push(emitPatternFirst(value, path, IPV6_PATTERN, "ipv6", context));
+                parts.push(emitPatternFirst(
+                    value,
+                    path,
+                    IPV6_PATTERN,
+                    "ipv6",
+                    context,
+                    checkMessageExpression(check.message, context)
+                ));
                 break;
         }
     }
@@ -295,10 +591,17 @@ function emitStringFirst(
 function emitNumberFirst(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Number }>,
     value: string,
-    path: string
+    path: string,
+    context: EmitContext
 ): string {
     const parts: string[] = [
-        `if(typeof ${value}!=="number"||!Number.isFinite(${value}))${emitFirstIssue(path, "expected_number", "number", `a(${value})`)}`
+        `if(typeof ${value}!=="number"||!Number.isFinite(${value}))${emitFirstIssue(
+            path,
+            "expected_number",
+            "number",
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
+        )}`
     ];
     const checks = schema.checks;
     for (let index = 0; index < checks.length; index += 1) {
@@ -312,7 +615,8 @@ function emitNumberFirst(
                     path,
                     "expected_integer",
                     stringLiteral("integer"),
-                    stringLiteral("number")
+                    stringLiteral("number"),
+                    checkMessageExpression(check.message, context)
                 )}`);
                 break;
             case NumberCheckTag.Gte:
@@ -320,7 +624,8 @@ function emitNumberFirst(
                     path,
                     "expected_gte",
                     `>= ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}`);
                 break;
             case NumberCheckTag.Lte:
@@ -328,7 +633,8 @@ function emitNumberFirst(
                     path,
                     "expected_lte",
                     `<= ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}`);
                 break;
             case NumberCheckTag.Gt:
@@ -336,7 +642,8 @@ function emitNumberFirst(
                     path,
                     "expected_gt",
                     `> ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}`);
                 break;
             case NumberCheckTag.Lt:
@@ -344,7 +651,8 @@ function emitNumberFirst(
                     path,
                     "expected_lt",
                     `< ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}`);
                 break;
             case NumberCheckTag.MultipleOf:
@@ -352,12 +660,111 @@ function emitNumberFirst(
                     path,
                     "expected_multiple_of",
                     `multiple of ${String(check.value)}`,
-                    `String(${value})`
+                    `String(${value})`,
+                    checkMessageExpression(check.message, context)
                 )}`);
                 break;
         }
     }
     return parts.join("");
+}
+
+/**
+ * @brief Emit first-fault BigInt diagnostics.
+ * @details BigInt bounds mirror the full diagnostic collector but return after
+ * the first failed scalar constraint.
+ * @param schema BigInt schema with scalar checks.
+ * @param value Generated expression for the candidate value.
+ * @param path Generated expression for the current path.
+ * @returns JavaScript source for BigInt first-fault diagnostics.
+ */
+function emitBigIntFirst(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.BigInt }>,
+    value: string,
+    path: string,
+    context: EmitContext
+): string {
+    const parts: string[] = [
+        `if(typeof ${value}!=="bigint")${emitFirstIssue(
+            path,
+            "expected_bigint",
+            "bigint",
+            `a(${value})`,
+            checkMessageExpression(schema.message, context)
+        )}`
+    ];
+    const checks = schema.checks;
+    for (let index = 0; index < checks.length; index += 1) {
+        const check = checks[index];
+        if (check === undefined) {
+            continue;
+        }
+        const literal = bigintSource(check.value);
+        const expected = bigintDisplay(check.value);
+        const actual = `String(${value})+"n"`;
+        switch (check.tag) {
+            case BigIntCheckTag.Gte:
+                parts.push(`if(${value}<${literal})${emitFirstIssue(
+                    path,
+                    "expected_gte",
+                    `>= ${expected}`,
+                    actual,
+                    checkMessageExpression(check.message, context)
+                )}`);
+                break;
+            case BigIntCheckTag.Lte:
+                parts.push(`if(${value}>${literal})${emitFirstIssue(
+                    path,
+                    "expected_lte",
+                    `<= ${expected}`,
+                    actual,
+                    checkMessageExpression(check.message, context)
+                )}`);
+                break;
+            case BigIntCheckTag.Gt:
+                parts.push(`if(${value}<=${literal})${emitFirstIssue(
+                    path,
+                    "expected_gt",
+                    `> ${expected}`,
+                    actual,
+                    checkMessageExpression(check.message, context)
+                )}`);
+                break;
+            case BigIntCheckTag.Lt:
+                parts.push(`if(${value}>=${literal})${emitFirstIssue(
+                    path,
+                    "expected_lt",
+                    `< ${expected}`,
+                    actual,
+                    checkMessageExpression(check.message, context)
+                )}`);
+                break;
+            case BigIntCheckTag.MultipleOf:
+                parts.push(`if(${value}%${literal}!==0n)${emitFirstIssue(
+                    path,
+                    "expected_multiple_of",
+                    `multiple of ${expected}`,
+                    actual,
+                    checkMessageExpression(check.message, context)
+                )}`);
+                break;
+        }
+    }
+    return parts.join("");
+}
+
+/**
+ * @brief Render a BigInt literal for generated JavaScript source.
+ */
+function bigintSource(value: bigint): string {
+    return value < 0n ? `(${String(value)}n)` : `${String(value)}n`;
+}
+
+/**
+ * @brief Render a BigInt for diagnostic text.
+ */
+function bigintDisplay(value: bigint): string {
+    return `${String(value)}n`;
 }
 
 /**
@@ -407,7 +814,7 @@ function emitArrayFirst(
     const item = schema.item;
     const parts: string[] = [
         `if(!Array.isArray(${value}))${emitFirstIssue(path, "expected_array", "array", `a(${value})`)}`,
-        emitArrayLengthFirst(schema, value, path)
+        emitArrayLengthFirst(schema, value, path, context)
     ];
     if (schemaCanAcceptUndefined(item)) {
         parts.push(
@@ -464,7 +871,7 @@ function emitUnsafeArrayFirst(
     const item = schema.item;
     return [
         `if(!Array.isArray(${value}))${emitFirstIssue(path, "expected_array", "array", `a(${value})`)}`,
-        emitArrayLengthFirst(schema, value, path),
+        emitArrayLengthFirst(schema, value, path, context),
         `for(let i=0;i<${value}.length;i+=1){`,
         `const av=${value}[i];`,
         emitChildFirstAtSegment(item, "av", path, "i", context),
@@ -482,7 +889,8 @@ function emitUnsafeArrayFirst(
 function emitArrayLengthFirst(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
     value: string,
-    path: string
+    path: string,
+    context: EmitContext
 ): string {
     const parts: string[] = [];
     const checks = schema.checks;
@@ -497,7 +905,8 @@ function emitArrayLengthFirst(
                     path,
                     "expected_min_length",
                     `length >= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}`);
                 break;
             case ArrayCheckTag.Max:
@@ -505,7 +914,8 @@ function emitArrayLengthFirst(
                     path,
                     "expected_max_length",
                     `length <= ${String(check.value)}`,
-                    `"length "+String(${value}.length)`
+                    `"length "+String(${value}.length)`,
+                    checkMessageExpression(check.message, context)
                 )}`);
                 break;
         }
@@ -698,7 +1108,8 @@ function emitObjectFirst(
         const key = stringRef(context, entry.key);
         keyExpressions.push(key);
         parts.push("{");
-        if (entry.presence === PresenceTag.Required) {
+        const presence = resolveObjectEntryPresence(entry);
+        if (presence === PresenceTag.Required) {
             parts.push(
                 `const d=gp(${value},${key});`,
                 `if(d===undefined||!h.call(d,"value"))${emitFirstIssueAtSegment(
@@ -832,7 +1243,8 @@ function emitUnsafeObjectFirst(
             "{",
             `const ${itemValue}=${unsafePropertyReadExpression(value, entry.key)};`
         );
-        if (entry.presence === PresenceTag.Optional) {
+        const presence = resolveObjectEntryPresence(entry);
+        if (presence === PresenceTag.Optional) {
             parts.push(
                 `if(${itemValue}!==undefined){${emitChildFirstAtSegment(entry.schema, itemValue, path, key, context)}}`,
                 `else if(h.call(${value},${key})){${emitChildFirstAtSegment(entry.schema, itemValue, path, key, context)}}`
@@ -928,14 +1340,7 @@ function emitDiscriminatedUnionFirst(
             "data property",
             stringLiteral("missing or accessor")
         )}`,
-        "const dv=dd.value;",
-        `if(typeof dv!=="string")${emitFirstIssueAtSegment(
-            path,
-            keyRef,
-            "expected_discriminant",
-            "string discriminant",
-            "a(dv)"
-        )}`
+        "const dv=dd.value;"
     ];
     for (let index = 0; index < cases.length; index += 1) {
         const unionCase = cases[index];
@@ -976,19 +1381,13 @@ function emitUnsafeDiscriminatedUnionFirst(
     const keyRef = unsafeStringLiteralExpression(key);
     const parts: string[] = [
         `if(${objectRejectExpression(value)})${emitFirstIssue(path, "expected_object", "object", `a(${value})`)}`,
-        `const dv=${unsafePropertyReadExpression(value, key)};`,
-        `if(typeof dv!=="string")${emitFirstIssueAtSegment(
-            path,
-            keyRef,
-            "expected_discriminant",
-            "string discriminant",
-            "a(dv)"
-        )}`
+        `const dv=${unsafePropertyReadExpression(value, key)};`
     ];
     for (let index = 0; index < cases.length; index += 1) {
         const unionCase = cases[index];
         if (unionCase !== undefined) {
-            parts.push(`if(dv===${unsafeStringLiteralExpression(unionCase.literal)}){${emitChildFirst(unionCase.schema, value, path, context)}return;}`);
+            const literalIndex = pushLiteral(context, unionCase.literal);
+            parts.push(`if(Object.is(dv,l[${String(literalIndex)}])){${emitChildFirst(unionCase.schema, value, path, context)}return;}`);
         }
     }
     parts.push(emitFirstIssueExprAtSegment(
@@ -1059,7 +1458,8 @@ function emitPatternFirst(
     path: string,
     regex: RegExp,
     name: string,
-    context: EmitContext
+    context: EmitContext,
+    messageExpression?: string
 ): string {
     const source = regex === UUID_PATTERN ? UUID_PATTERN : regex;
     const index = pushRegex(context, source);
@@ -1071,7 +1471,8 @@ function emitPatternFirst(
         path,
         "expected_pattern",
         stringRef(context, name),
-        stringLiteral("string")
+        stringLiteral("string"),
+        messageExpression
     )}`;
 }
 
@@ -1087,13 +1488,15 @@ function emitFirstIssue(
     path: string,
     code: string,
     expected: string,
-    actualExpression: string
+    actualExpression: string,
+    messageExpression?: string
 ): string {
     return emitFirstIssueExpr(
         path,
         code,
         stringLiteral(expected),
-        actualExpression
+        actualExpression,
+        messageExpression
     );
 }
 
@@ -1109,9 +1512,17 @@ function emitFirstIssueExpr(
     path: string,
     code: string,
     expectedExpression: string,
-    actualExpression: string
+    actualExpression: string,
+    messageExpression?: string
 ): string {
-    return `return fq(${path},${stringLiteral(code)},${expectedExpression},${actualExpression});`;
+    const args = issueArguments(
+        path,
+        stringLiteral(code),
+        expectedExpression,
+        actualExpression,
+        messageExpression
+    );
+    return `return fq(${args});`;
 }
 
 /**
@@ -1128,14 +1539,16 @@ function emitFirstIssueAtSegment(
     segment: string,
     code: string,
     expected: string,
-    actualExpression: string
+    actualExpression: string,
+    messageExpression?: string
 ): string {
     return emitFirstIssueExprAtSegment(
         path,
         segment,
         code,
         stringLiteral(expected),
-        actualExpression
+        actualExpression,
+        messageExpression
     );
 }
 
@@ -1153,13 +1566,46 @@ function emitFirstIssueExprAtSegment(
     segment: string,
     code: string,
     expectedExpression: string,
-    actualExpression: string
+    actualExpression: string,
+    messageExpression?: string
 ): string {
+    const codeExpression = stringLiteral(code);
     const stringIndex = readStringRefIndex(segment);
     if (stringIndex !== undefined) {
-        return `return fq1s(${path},${stringIndex},${stringLiteral(code)},${expectedExpression},${actualExpression});`;
+        const args = issueArguments(
+            path,
+            stringIndex,
+            codeExpression,
+            expectedExpression,
+            actualExpression,
+            messageExpression
+        );
+        return `return fq1s(${args});`;
     }
-    return `return fq1(${path},${segment},${stringLiteral(code)},${expectedExpression},${actualExpression});`;
+    const args = issueArguments(
+        path,
+        segment,
+        codeExpression,
+        expectedExpression,
+        actualExpression,
+        messageExpression
+    );
+    return `return fq1(${args});`;
+}
+
+function issueArguments(
+    ...parts: readonly (string | undefined)[]
+): string {
+    const last = parts[parts.length - 1];
+    const limit = last === undefined ? parts.length - 1 : parts.length;
+    let result = "";
+    for (let index = 0; index < limit; index += 1) {
+        if (index !== 0) {
+            result += ",";
+        }
+        result += parts[index] ?? "";
+    }
+    return result;
 }
 
 /**
@@ -1252,6 +1698,16 @@ function unsafeStringLiteralExpression(value: string): string {
     return JSON.stringify(value)
         .replace(/\u2028/gu, "\\u2028")
         .replace(/\u2029/gu, "\\u2029");
+}
+
+/**
+ * @brief Emit the message operand for a schema check.
+ */
+function checkMessageExpression(
+    message: string | undefined,
+    context: EmitContext
+): string | undefined {
+    return message === undefined ? undefined : stringRef(context, message);
 }
 
 /**

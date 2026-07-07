@@ -22,16 +22,16 @@ describe("compiled source audit", () => {
         });
 
         expect(readSourceFingerprint(SafeUser.source)).toEqual({
-            length: 9644,
-            sha256: "2aa67201f52038c88275a31e984dbab4622361169be0aec45b418bfb4adf113a"
+            length: 9577,
+            sha256: "bef8f4fdd922bb9232b5958d98a1cd16ca2080aedf315d44afd49810e1d53bb9"
         });
         expect(readSourceFingerprint(UnsafeUser.source)).toEqual({
-            length: 6514,
-            sha256: "635205ba12b14059fed65c3ae289b255687cf8cd785cc55efaa95b2378eabd4e"
+            length: 6467,
+            sha256: "2c8aa109240546f9cef3718d465c078a66ceb81aed577553a86dcf471f7a9350"
         });
         expect(readSourceFingerprint(UncheckedUser.source)).toEqual({
-            length: 5754,
-            sha256: "e6f50a917d5bcac6e21d4dc138431a81a5265eed53bffa236f15571244c2a4cc"
+            length: 5713,
+            sha256: "6b4a3c1ba60116598162cd09a213fbddbd5154ae5eaae2b76e2e05582252cbf2"
         });
     });
 
@@ -84,8 +84,8 @@ describe("compiled source audit", () => {
 
         expect(FastString.source).toContain("const z=Object.freeze([]);");
         expect(FastString.source).not.toContain("const e=Object.freeze([]);");
-        expect(FastString.source).toContain("const q=function(s,p,c,e,x)");
-        expect(FastString.source).toContain("const fq=function(p,c,e,x)");
+        expect(FastString.source).toContain("const q=function(s,p,c,e,x,m)");
+        expect(FastString.source).toContain("const fq=function(p,c,e,x,m)");
         expect(FastString.source).toContain("path:z,code:c");
         expect(FastString.source).toContain("check:function checkAllocationAudit_check(x){if(checkAllocationAudit(x))return;const s=[];");
         expect(FastString.source).toContain("c0(x,z,s)");
@@ -106,7 +106,7 @@ describe("compiled source audit", () => {
         const result = FastUser.check({ age: 1.5 });
 
         expect(FastUser.source).toContain("const w=function()");
-        expect(FastUser.source).toContain("const q1s=function(s,p,i,c,e,x)");
+        expect(FastUser.source).toContain("const q1s=function(s,p,i,c,e,x,m)");
         expect(FastUser.source).toContain("path:w[i],code:c");
         expect(FastUser.source).toContain("q1s(s,p,0,\"expected_integer\"");
         expect(FastUser.source).toContain("q1s(s,p,0,\"expected_gte\"");
@@ -755,7 +755,7 @@ describe("compiled source audit", () => {
         expect(checkSource).not.toContain("p.push(i);");
         expect(checkSource).not.toContain("c1(");
         expect(checkSource).not.toContain("d===undefined?undefined");
-        expect(FastValues.source).toContain("const q1=function(s,p,k,c,e,x)");
+        expect(FastValues.source).toContain("const q1=function(s,p,k,c,e,x,m)");
         expect(FastValues.check(sparse)).toEqual(Values.check(sparse));
     });
 
@@ -1220,10 +1220,8 @@ describe("compiled source audit", () => {
 
         expect(predicateSource).toContain("const v0=v.kind;");
         expect(checkSource).toContain("const dv=v.kind;");
-        expect(checkSource).toContain("if(dv===\"user\")");
-        expect(checkSource).toContain("if(dv===\"order\")");
+        expect(checkSource).toContain("if(Object.is(dv,l[");
         expect(checkSource).not.toContain("gp(v,\"kind\")");
-        expect(checkSource).not.toContain("Object.is(dv");
         expect(FastEvent.check({ kind: "user", id: "" }).ok).toBe(false);
         expect(FastEvent.check({ kind: "missing" }).ok).toBe(false);
     });

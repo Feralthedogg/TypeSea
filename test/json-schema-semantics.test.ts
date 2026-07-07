@@ -386,13 +386,39 @@ function matchesNumberKeywords(schema: JsonSchemaObject, value: JsonValue): bool
     if (schema.maximum !== undefined && value > schema.maximum) {
         return false;
     }
-    if (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum) {
+    if (schema.exclusiveMinimum !== undefined &&
+        schema.exclusiveMinimum !== false &&
+        value <= readExclusiveMinimum(schema)) {
         return false;
     }
-    if (schema.exclusiveMaximum !== undefined && value >= schema.exclusiveMaximum) {
+    if (schema.exclusiveMaximum !== undefined &&
+        schema.exclusiveMaximum !== false &&
+        value >= readExclusiveMaximum(schema)) {
         return false;
     }
     return true;
+}
+
+/**
+ * @brief Read modern or draft-04 exclusive minimum test value.
+ */
+function readExclusiveMinimum(schema: JsonSchemaObject): number {
+    const value = schema.exclusiveMinimum;
+    if (value === true) {
+        return schema.minimum ?? Number.NEGATIVE_INFINITY;
+    }
+    return typeof value === "number" ? value : Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * @brief Read modern or draft-04 exclusive maximum test value.
+ */
+function readExclusiveMaximum(schema: JsonSchemaObject): number {
+    const value = schema.exclusiveMaximum;
+    if (value === true) {
+        return schema.maximum ?? Number.POSITIVE_INFINITY;
+    }
+    return typeof value === "number" ? value : Number.POSITIVE_INFINITY;
 }
 
 /**
@@ -452,6 +478,26 @@ function matchesObjectKeywords(schema: JsonSchemaObject, value: JsonValue): bool
     if (!isJsonObject(value)) {
         return true;
     }
+    const count = Object.keys(value).length;
+    if (schema.minProperties !== undefined && count < schema.minProperties) {
+        return false;
+    }
+    if (schema.maxProperties !== undefined && count > schema.maxProperties) {
+        return false;
+    }
+    if (schema.propertyNames !== undefined) {
+        const keys = Object.keys(value);
+        for (let index = 0; index < keys.length; index += 1) {
+            const key = keys[index];
+            if (key !== undefined && !matchesJsonSchema(schema.propertyNames, key)) {
+                return false;
+            }
+        }
+    }
+    if (schema.patternProperties !== undefined &&
+        !matchesPatternProperties(schema.patternProperties, value)) {
+        return false;
+    }
     const required = schema.required;
     if (required !== undefined) {
         for (let index = 0; index < required.length; index += 1) {
@@ -498,6 +544,7 @@ function matchesAdditionalProperties(
     }
 
     const properties = schema.properties;
+    const patterns = schema.patternProperties;
     const keys = Object.keys(value);
     for (let index = 0; index < keys.length; index += 1) {
         const key = keys[index];
@@ -509,6 +556,9 @@ function matchesAdditionalProperties(
         if (isKnown) {
             continue;
         }
+        if (patterns !== undefined && keyMatchesPatternProperty(patterns, key)) {
+            continue;
+        }
         if (additional === false) {
             return false;
         }
@@ -518,6 +568,56 @@ function matchesAdditionalProperties(
         }
     }
     return true;
+}
+
+/**
+ * @brief Evaluate patternProperties matching.
+ */
+function matchesPatternProperties(
+    patterns: Readonly<Record<string, JsonSchema>>,
+    value: JsonObject
+): boolean {
+    const patternKeys = Object.keys(patterns);
+    const valueKeys = Object.keys(value);
+    for (let keyIndex = 0; keyIndex < valueKeys.length; keyIndex += 1) {
+        const key = valueKeys[keyIndex];
+        if (key === undefined) {
+            continue;
+        }
+        for (let patternIndex = 0; patternIndex < patternKeys.length; patternIndex += 1) {
+            const source = patternKeys[patternIndex];
+            if (source === undefined || !new RegExp(source).test(key)) {
+                continue;
+            }
+            const patternSchema = patterns[source];
+            const propertyValue = value[key];
+            if (
+                patternSchema !== undefined &&
+                propertyValue !== undefined &&
+                !matchesJsonSchema(patternSchema, propertyValue)
+            ) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Test whether a key is covered by a patternProperties table.
+ */
+function keyMatchesPatternProperty(
+    patterns: Readonly<Record<string, JsonSchema>>,
+    key: string
+): boolean {
+    const patternKeys = Object.keys(patterns);
+    for (let index = 0; index < patternKeys.length; index += 1) {
+        const source = patternKeys[index];
+        if (source !== undefined && new RegExp(source).test(key)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**

@@ -7,8 +7,6 @@
 
 import type { BaseGuard } from "./base.js";
 import type { Presence } from "./types.js";
-import { isRecord } from "./props.js";
-
 /**
  * @brief Receiver identity table for guards constructed by TypeSea.
  * @details Weak membership proves that a receiver passed a TypeSea constructor
@@ -37,5 +35,7 @@ export function registerConstructedGuard(value: object): void {
 export function isConstructedGuard(
     value: unknown
 ): value is BaseGuard<unknown, Presence> {
-    return isRecord(value) && constructedGuards.has(value);
+    return value !== null &&
+        (typeof value === "object" || typeof value === "function") &&
+        constructedGuards.has(value);
 }

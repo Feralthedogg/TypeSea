@@ -24,6 +24,7 @@ import {
     schemaCanAcceptUndefined,
     type Schema
 } from "../schema/index.js";
+import type { Issue } from "../issue/index.js";
 import { isArrayIndexKey } from "../evaluate/shared.js";
 import {
     type GraphEvaluationFrame,
@@ -33,6 +34,8 @@ import {
     type ValidationState
 } from "../evaluate/state.js";
 import { makeValidationPlan, schemaRequiresTracking } from "./cache.js";
+
+const EMPTY_ISSUES: readonly Issue[] = Object.freeze([]);
 import { executeSchemaKernel } from "./schema-predicate.js";
 
 /**
@@ -115,8 +118,13 @@ function executeSchemaPredicateInner(
                 state
             );
         case SchemaTag.Refine:
-            return executeSchemaPredicateWithState(schema.inner, value, state) &&
-                isStrictTrue(schema.predicate(value));
+            if (!executeSchemaPredicateWithState(schema.inner, value, state)) {
+                return false;
+            }
+            if (!shouldRunRefinement(schema, value)) {
+                return true;
+            }
+            return isStrictTrue(schema.predicate(value));
         default: {
             makeValidationPlan(schema);
             return executeSchemaKernel(
@@ -818,10 +826,13 @@ function testStrictKeys(value: unknown, keys: readonly string[]): boolean {
  * preserving interpreter parity.
  */
 function compareNumber(left: unknown, right: unknown, gte: boolean): boolean {
-    if (typeof left !== "number" || typeof right !== "number") {
-        return false;
+    if (typeof left === "number" && typeof right === "number") {
+        return gte ? left >= right : left <= right;
     }
-    return gte ? left >= right : left <= right;
+    if (typeof left === "bigint" && typeof right === "bigint") {
+        return gte ? left >= right : left <= right;
+    }
+    return false;
 }
 
 /**
@@ -923,6 +934,23 @@ function acquireGraphFrame(
  */
 function releaseGraphFrame(state: ValidationState): void {
     state.graphDepth -= 1;
+}
+
+/**
+ * @brief Decide whether a boolean refinement should execute.
+ * @param schema Refine schema whose inner predicate already accepted.
+ * @param value Candidate runtime value.
+ * @returns True when no gate exists or the gate returns literal true.
+ */
+function shouldRunRefinement(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Refine }>,
+    value: unknown
+): boolean {
+    return schema.when === undefined ||
+        isStrictTrue(schema.when(Object.freeze({
+            value,
+            issues: EMPTY_ISSUES
+        })));
 }
 
 /**

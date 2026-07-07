@@ -10,10 +10,43 @@ import {
     isSchemaValue,
     type Schema
 } from "../schema/index.js";
+import {
+    isSchemaRegistryValue,
+    type GlobalRegistryMetadata,
+    type SchemaRegistry
+} from "../registry/index.js";
 import type {
+    JsonSchemaCyclesMode,
     JsonSchemaDialect,
-    JsonSchemaOptions
+    JsonSchemaOverride,
+    JsonSchemaOutputTarget,
+    JsonSchemaReusedMode,
+    JsonSchemaTarget,
+    JsonSchemaUnrepresentableMode,
+    JsonSchemaUriMapper
 } from "./types.js";
+
+interface ResolvedJsonSchemaOptions {
+    readonly dialect: JsonSchemaDialect;
+    readonly target: JsonSchemaOutputTarget;
+    readonly unrepresentable: JsonSchemaUnrepresentableMode;
+    readonly uri: JsonSchemaUriMapper;
+    readonly reused: JsonSchemaReusedMode;
+    readonly cycles: JsonSchemaCyclesMode;
+    readonly override: JsonSchemaOverride | undefined;
+    readonly metadata: SchemaRegistry<GlobalRegistryMetadata> | undefined;
+    readonly schemaId: string | undefined;
+}
+
+export const JSON_SCHEMA_UNREPRESENTABLE_OPEN = "ANY".toLowerCase() as JsonSchemaUnrepresentableMode;
+export const JSON_SCHEMA_UNREPRESENTABLE_THROW = "throw";
+export const JSON_SCHEMA_IDENTITY_URI: JsonSchemaUriMapper = (id: string): string => id;
+
+/**
+ * @brief draft 04 schema id.
+ * @invariant The value selects the legacy draft-04 keyword set.
+ */
+export const JSON_SCHEMA_DRAFT_04_ID = "http://json-schema.org/draft-04/schema#";
 
 /**
  * @brief draft 07 schema id.
@@ -40,7 +73,7 @@ export const JSON_SCHEMA_2020_12_ID = "https://json-schema.org/draft/2020-12/sch
  * prototype schema fields are rejected before conversion begins.
  */
 export function readJsonSchemaGuardSchema(guard: unknown): Schema {
-    if (!isRecord(guard)) {
+    if (!isObjectLike(guard)) {
         throw new TypeError("JSON Schema guard must be a TypeSea guard");
     }
     return readJsonSchemaSchema(readOwnDataProperty(guard, "schema"));
@@ -69,10 +102,17 @@ export function readJsonSchemaSchema(schema: unknown): Schema {
  * @details Options are read through own data slots so a caller cannot influence
  * export dialect through inherited getters or prototype state.
  */
-export function readJsonSchemaOptions(options: unknown): JsonSchemaOptions {
+export function readJsonSchemaOptions(options: unknown): ResolvedJsonSchemaOptions {
     if (options === undefined) {
         return {
             dialect: "draft-07",
+            target: "draft-07",
+            unrepresentable: JSON_SCHEMA_UNREPRESENTABLE_THROW,
+            uri: JSON_SCHEMA_IDENTITY_URI,
+            reused: "inline",
+            cycles: "ref",
+            override: undefined,
+            metadata: undefined,
             schemaId: undefined
         };
     }
@@ -80,12 +120,36 @@ export function readJsonSchemaOptions(options: unknown): JsonSchemaOptions {
         throw new TypeError("JSON Schema options must be an object");
     }
     const schemaId = readOwnDataProperty(options, "schemaId");
-    const dialect = readJsonSchemaDialect(readOwnDataProperty(options, "dialect"), schemaId);
+    const target = readJsonSchemaTarget(readOwnDataProperty(options, "target"));
+    const dialect = readJsonSchemaDialect(
+        readOwnDataProperty(options, "dialect"),
+        target,
+        schemaId
+    );
     if (schemaId !== undefined && typeof schemaId !== "string") {
         throw new TypeError("JSON Schema schemaId must be a string");
     }
+    const unrepresentable = readJsonSchemaUnrepresentable(
+        readOwnDataProperty(options, "unrepresentable")
+    );
+    const uri = readJsonSchemaUri(readOwnDataProperty(options, "uri"));
+    const reused = readJsonSchemaReused(readOwnDataProperty(options, "reused"));
+    const cycles = readJsonSchemaCycles(readOwnDataProperty(options, "cycles"));
+    const override = readJsonSchemaOverride(readOwnDataProperty(options, "override"));
+    const metadata = readJsonSchemaMetadata(readOwnDataProperty(options, "metadata"));
+    const outputTarget = target ?? dialect;
+    if (outputTarget === "openapi-3.0" && schemaId !== undefined) {
+        throw new TypeError("JSON Schema schemaId is not supported for OpenAPI 3.0 target");
+    }
     return {
         dialect,
+        target: outputTarget,
+        unrepresentable,
+        uri,
+        reused,
+        cycles,
+        override,
+        metadata,
         schemaId
     };
 }
@@ -95,18 +159,173 @@ export function readJsonSchemaOptions(options: unknown): JsonSchemaOptions {
  * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
  * report a structured export issue.
  * @param value Candidate dialect option.
+ * @param target Candidate target alias option.
  * @param schemaId Schema id used as a compatibility hint.
  * @returns Normalized JSON Schema dialect.
  * @throws TypeError when the dialect string is outside the supported set.
  */
-function readJsonSchemaDialect(value: unknown, schemaId: unknown): JsonSchemaDialect {
+function readJsonSchemaDialect(
+    value: unknown,
+    target: JsonSchemaOutputTarget | undefined,
+    schemaId: unknown
+): JsonSchemaDialect {
     if (value === undefined) {
+        if (target !== undefined && target !== "openapi-3.0") {
+            return target;
+        }
         return inferJsonSchemaDialect(schemaId);
     }
-    if (value === "draft-07" || value === "2020-12") {
+    if (value === "draft-04" || value === "draft-07" || value === "2020-12") {
+        if (target !== undefined && target !== value) {
+            throw new TypeError("JSON Schema dialect and target must agree");
+        }
         return value;
     }
-    throw new TypeError("JSON Schema dialect must be draft-07 or 2020-12");
+    throw new TypeError("JSON Schema dialect must be draft-04, draft-07, or 2020-12");
+}
+
+/**
+ * @brief Normalize the Zod-style JSON Schema target option.
+ * @param value Candidate target value.
+ * @returns Internal dialect, or undefined when no target was supplied.
+ */
+function readJsonSchemaTarget(value: unknown): JsonSchemaOutputTarget | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (value === "draft-4" || value === "draft-04") {
+        return "draft-04";
+    }
+    if (value === "draft-7" || value === "draft-07") {
+        return "draft-07";
+    }
+    if (value === "2020-12" || value === "draft-2020-12") {
+        return "2020-12";
+    }
+    if (value === "openapi-3.0") {
+        return "openapi-3.0";
+    }
+    assertNeverJsonSchemaTarget(value);
+}
+
+/**
+ * @brief Reject unsupported target aliases with a focused message.
+ * @param value Candidate target value.
+ * @throws TypeError always.
+ */
+function assertNeverJsonSchemaTarget(value: unknown): never {
+    const supported: readonly JsonSchemaTarget[] = [
+        "draft-4",
+        "draft-04",
+        "draft-7",
+        "draft-07",
+        "2020-12",
+        "draft-2020-12",
+        "openapi-3.0"
+    ];
+    if (typeof value === "string") {
+        throw new TypeError(`JSON Schema target must be ${supported.join(", ")}`);
+    }
+    throw new TypeError("JSON Schema target must be a string");
+}
+
+/**
+ * @brief Normalize unrepresentable-type handling.
+ */
+function readJsonSchemaUnrepresentable(value: unknown): JsonSchemaUnrepresentableMode {
+    if (value === undefined) {
+        return JSON_SCHEMA_UNREPRESENTABLE_THROW;
+    }
+    if (value === JSON_SCHEMA_UNREPRESENTABLE_THROW) {
+        return JSON_SCHEMA_UNREPRESENTABLE_THROW;
+    }
+    if (value === JSON_SCHEMA_UNREPRESENTABLE_OPEN) {
+        return JSON_SCHEMA_UNREPRESENTABLE_OPEN;
+    }
+    if (typeof value === "string") {
+        throw new TypeError("JSON Schema unrepresentable must be throw or a permissive fallback");
+    }
+    throw new TypeError("JSON Schema unrepresentable must be a string");
+}
+
+/**
+ * @brief Normalize metadata-id URI mapping.
+ */
+function readJsonSchemaUri(value: unknown): JsonSchemaUriMapper {
+    if (value === undefined) {
+        return JSON_SCHEMA_IDENTITY_URI;
+    }
+    if (typeof value !== "function") {
+        throw new TypeError("JSON Schema uri must be a function");
+    }
+    const mapper = value as (id: string) => unknown;
+    return (id: string): string => {
+        const mapped = mapper(id);
+        if (typeof mapped !== "string") {
+            throw new TypeError("JSON Schema uri must return a string");
+        }
+        return mapped;
+    };
+}
+
+/**
+ * @brief Normalize repeated schema identity handling.
+ */
+function readJsonSchemaReused(value: unknown): JsonSchemaReusedMode {
+    if (value === undefined) {
+        return "inline";
+    }
+    if (value === "inline" || value === "ref") {
+        return value;
+    }
+    if (typeof value === "string") {
+        throw new TypeError("JSON Schema reused must be inline or ref");
+    }
+    throw new TypeError("JSON Schema reused must be a string");
+}
+
+/**
+ * @brief Normalize recursive schema handling.
+ */
+function readJsonSchemaCycles(value: unknown): JsonSchemaCyclesMode {
+    if (value === undefined) {
+        return "ref";
+    }
+    if (value === "ref" || value === "throw") {
+        return value;
+    }
+    if (typeof value === "string") {
+        throw new TypeError("JSON Schema cycles must be ref or throw");
+    }
+    throw new TypeError("JSON Schema cycles must be a string");
+}
+
+/**
+ * @brief Normalize custom JSON Schema fragment override hook.
+ */
+function readJsonSchemaOverride(value: unknown): JsonSchemaOverride | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value !== "function") {
+        throw new TypeError("JSON Schema override must be a function");
+    }
+    return value as JsonSchemaOverride;
+}
+
+/**
+ * @brief Normalize an optional external metadata registry.
+ */
+function readJsonSchemaMetadata(
+    value: unknown
+): SchemaRegistry<GlobalRegistryMetadata> | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isSchemaRegistryValue(value)) {
+        throw new TypeError("JSON Schema metadata must be a TypeSea registry");
+    }
+    return value as SchemaRegistry<GlobalRegistryMetadata>;
 }
 
 /**
@@ -114,10 +333,16 @@ function readJsonSchemaDialect(value: unknown, schemaId: unknown): JsonSchemaDia
  * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
  * report a structured export issue.
  * @param schemaId Candidate schema id.
- * @returns Draft 2020-12 when the id names that draft, otherwise draft-07.
+ * @returns A known draft when the id names one, otherwise draft-07.
  */
 function inferJsonSchemaDialect(schemaId: unknown): JsonSchemaDialect {
-    if (typeof schemaId === "string" && schemaId.includes("2020-12")) {
+    if (typeof schemaId !== "string") {
+        return "draft-07";
+    }
+    if (schemaId.includes("draft-04")) {
+        return "draft-04";
+    }
+    if (schemaId.includes("2020-12")) {
         return "2020-12";
     }
     return "draft-07";
@@ -132,6 +357,13 @@ function inferJsonSchemaDialect(schemaId: unknown): JsonSchemaDialect {
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * @brief Accept objects and function objects that can carry own schema slots.
+ */
+function isObjectLike(value: unknown): value is object {
+    return value !== null && (typeof value === "object" || typeof value === "function");
 }
 
 /**
