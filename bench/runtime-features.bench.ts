@@ -144,7 +144,7 @@ const asyncWarmupTasks: readonly AsyncWarmupTask[] = [
 beforeAll(async (): Promise<void> => {
     warmupSync(warmupTasks);
     await warmupAsync(asyncWarmupTasks);
-});
+}, 60_000);
 
 describe("runtime feature extensions", () => {
     bench("compiled is valid", () => {
