@@ -1,8 +1,13 @@
 import { Ajv, type ValidateFunction } from "ajv";
 import * as v from "valibot";
-import { afterAll, bench, describe } from "vitest";
+import { afterAll, beforeAll, bench, describe } from "vitest";
 import { z } from "zod";
 import { compile, t, toJsonSchema } from "../src/index.js";
+import {
+    readWarmupSink,
+    warmupSync,
+    type WarmupTask
+} from "./warmup.js";
 
 const TypeSeaUser = t.strictObject({
     id: t.string.min(1).max(48),
@@ -94,6 +99,36 @@ const invalid = {
     },
     extra: true
 };
+
+const warmupTasks: readonly WarmupTask[] = [
+    (): unknown => TypeSeaUser.is(valid),
+    (): unknown => TypeSeaCompiledUser.is(valid),
+    (): unknown => TypeSeaUnsafeCompiledUser.is(valid),
+    (): unknown => TypeSeaUncheckedCompiledUser.is(valid),
+    (): unknown => ZodUser.safeParse(valid).success,
+    (): unknown => v.safeParse(ValibotUser, valid).success,
+    (): unknown => AjvUser(valid),
+    (): unknown => TypeSeaUser.check(valid).ok,
+    (): unknown => TypeSeaCompiledUser.check(valid).ok,
+    (): unknown => TypeSeaUnsafeCompiledUser.check(valid).ok,
+    (): unknown => TypeSeaUncheckedCompiledUser.check(valid).ok,
+    (): unknown => TypeSeaUser.is(invalid),
+    (): unknown => TypeSeaCompiledUser.is(invalid),
+    (): unknown => TypeSeaUnsafeCompiledUser.is(invalid),
+    (): unknown => TypeSeaUncheckedCompiledUser.is(invalid),
+    (): unknown => ZodUser.safeParse(invalid).success,
+    (): unknown => v.safeParse(ValibotUser, invalid).success,
+    (): unknown => AjvUser(invalid),
+    (): unknown => TypeSeaUser.check(invalid).ok,
+    (): unknown => TypeSeaCompiledUser.check(invalid).ok,
+    (): unknown => TypeSeaUnsafeCompiledUser.check(invalid).ok,
+    (): unknown => TypeSeaUncheckedCompiledUser.check(invalid).ok
+];
+
+beforeAll((): void => {
+    warmupSync(warmupTasks);
+    booleanSink = readWarmupSink() === true;
+});
 
 describe("ecosystem comparison valid", () => {
     bench("typesea interpreted", () => {

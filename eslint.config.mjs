@@ -9,7 +9,15 @@ const resultControlFlowMessage =
 
 export default tseslint.config(
     {
-        ignores: ["dist/**", "coverage/**", "node_modules/**"]
+        ignores: [
+            "dist/**",
+            "coverage/**",
+            "node_modules/**",
+            "*.js",
+            "*.cjs",
+            "examples/**",
+            "scratch/**"
+        ]
     },
     {
         files: ["src/**/*.ts", "test/**/*.ts", "bench/**/*.ts"],

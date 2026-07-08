@@ -215,6 +215,35 @@ sparse array, union hybrid 같은 입력을 자동으로 만듭니다.
 아니라 최대 상한입니다. 작은 schema는 solver가 가진 유한한 edge case를 모두
 방출하면 그보다 적은 개수에서 자연스럽게 끝날 수 있습니다.
 
+### SeaBreeze Arena 추론
+
+```ts
+import { createSeaBreeze } from "typesea/seabreeze";
+
+const s = createSeaBreeze({ maxNodes: 64, maxFields: 16 });
+
+const User = s.object({
+  id: s.string(),
+  age: s.optional(s.number()),
+  tags: s.array(s.string())
+});
+
+const FastUser = s.compile(User, {
+  objectMode: "strict",
+  mode: "safe",
+  name: "isInferredUser"
+});
+
+FastUser.is({ id: "u1", tags: ["jit"] }); // true
+```
+
+SeaBreeze는 TypeSea의 arena-backed inference surface입니다. 편의 API인
+`createSeaBreeze()`는 검증 hot path 기준 zero-cost abstraction입니다. arena
+shape를 만드는 동안에만 할당하고, 결과는 여전히 numeric node id이며,
+`compile()`은 저수준 reader API와 같은 직접 predicate source를 방출합니다.
+`typesea/seabreeze`로 공개되며 `typesea` root에서는 다시 export하지 않으므로,
+일반 validator는 이 비용을 내지 않습니다.
+
 ### Cold start, fail-fast, 대형 payload
 
 ```ts
@@ -908,14 +937,25 @@ CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께
 ## 문서
 
 - [문서 사이트](https://feralthedogg.github.io/TypeSea/)
-- [API 레퍼런스](../api.md)
-- [SeaFlow 퍼저 가이드](../seaflow.md)
-- [엔진 노트](../engine-notes.md)
+- [API 레퍼런스](https://feralthedogg.github.io/TypeSea/#api-reference)
+- [SeaFlow 퍼저 가이드](https://feralthedogg.github.io/TypeSea/#seaflow)
+- [SeaBreeze arena 추론](https://feralthedogg.github.io/TypeSea/#seabreeze)
+- [엔진 노트](https://feralthedogg.github.io/TypeSea/#engine-notes)
 - [보안 정책](https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md)
 
 ---
 
 ## 마이그레이션 노트
+
+### 1.0.0에서 1.1.0
+
+기존 schema는 그대로 동작합니다.
+`1.1.0`은 전용 subpath인 `typesea/seabreeze`로 SeaBreeze를 추가합니다.
+SeaBreeze는 일반 validator API가 아니라 compiler-style tooling을 위한 고급 arena-backed inference surface입니다.
+숫자 arena node에서 validator shape를 추론하고, TypeSea schema나 graph IR로 낮추거나, typed-array reader에서 predicate-only source를 직접 방출하고 싶을 때 사용하면 됩니다.
+
+SeaBreeze는 `typesea` root에서 다시 export하지 않습니다.
+따라서 root validator import는 SeaBreeze의 import 비용이나 bundle 비용을 치르지 않습니다.
 
 ### 0.4.0에서 1.0.0
 

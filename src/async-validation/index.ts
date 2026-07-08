@@ -50,17 +50,22 @@ import {
 } from "../schema/index.js";
 import {
     findDiscriminatedUnionCase,
+    hasOwnRuntimeProperty,
     hasObjectKey,
     isArrayIndexKey,
+    isArrayValue,
     isDataPropertyDescriptor,
     isPlainRecord,
     isValidDateObject,
     ordinaryHasInstance,
     readDateTime,
+    readEnumerableStringKeys,
     readFileInfo,
     readMapEntries,
-    readMapSize,
     readOwnDataProperty,
+    readOwnKeys,
+    readOwnPropertyNameCount,
+    readOwnPropertySymbolCount,
     readSetSize,
     readSetValues,
     type DataPropertyDescriptor,
@@ -175,7 +180,7 @@ export async function isAsync<TValue, TPresence extends Presence>(
     value: unknown,
     options?: Partial<AsyncValidationOptions>
 ): Promise<boolean> {
-    return isSchemaAsync(readAsyncSchema(guard), value, makeAsyncState(options));
+    return await isSchemaAsync(readAsyncSchema(guard), value, makeAsyncState(options));
 }
 
 /**
@@ -371,7 +376,11 @@ function isPropertyCountSchema(
     if (!isPlainRecord(value)) {
         return false;
     }
-    const count = Object.keys(value).length;
+    const keys = readEnumerableStringKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
+    const count = keys.length;
     return (min === undefined || count >= min) &&
         (max === undefined || count <= max);
 }
@@ -387,7 +396,10 @@ async function isPropertyNamesSchema(
     if (!isPlainRecord(value)) {
         return false;
     }
-    const keys = Object.keys(value);
+    const keys = readEnumerableStringKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
     for (let index = 0; index < keys.length; index += 1) {
         const key = keys[index];
         if (key !== undefined && !await isSchemaAsync(keySchema, key, state)) {
@@ -408,7 +420,10 @@ async function isPatternPropertiesSchema(
     if (!isPlainRecord(value)) {
         return false;
     }
-    const keys = Object.keys(value);
+    const keys = readEnumerableStringKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
     for (let index = 0; index < keys.length; index += 1) {
         await maybeYield(state);
         const key = keys[index];
@@ -757,7 +772,7 @@ async function isArraySchema(
     value: unknown,
     state: AsyncValidationState
 ): Promise<boolean> {
-    if (!Array.isArray(value) || !arrayLengthChecksPass(schema, value.length)) {
+    if (!isArrayValue(value) || !arrayLengthChecksPass(schema, value.length)) {
         return false;
     }
     const item = schema.item;
@@ -787,11 +802,14 @@ async function isPresentArraySchema(
     value: readonly unknown[],
     state: AsyncValidationState
 ): Promise<boolean> {
-    const keys = Object.getOwnPropertyNames(value);
+    const keys = readOwnKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
     for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
         await maybeYield(state);
         const key = keys[keyIndex];
-        if (key === undefined || !isArrayIndexKey(key, value.length)) {
+        if (typeof key !== "string" || !isArrayIndexKey(key, value.length)) {
             continue;
         }
         const property = readArrayKeyDataProperty(value, key);
@@ -812,7 +830,7 @@ async function isTupleSchema(
     value: unknown,
     state: AsyncValidationState
 ): Promise<boolean> {
-    if (!Array.isArray(value)) {
+    if (!isArrayValue(value)) {
         return false;
     }
     const items = schema.items;
@@ -868,7 +886,10 @@ async function isRecordSchema(
     if (!hasRequiredRecordKeys(schema.requiredKeys, value)) {
         return false;
     }
-    const keys = Object.keys(value);
+    const keys = readEnumerableStringKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
     for (let index = 0; index < keys.length; index += 1) {
         await maybeYield(state);
         const key = keys[index];
@@ -909,7 +930,13 @@ function hasRequiredRecordKeys(
         if (key === undefined) {
             return false;
         }
-        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        let descriptor: PropertyDescriptor | undefined;
+        // eslint-disable-next-line no-restricted-syntax
+        try {
+            descriptor = Object.getOwnPropertyDescriptor(value, key);
+        } catch {
+            return false;
+        }
         if (descriptor?.enumerable !== true ||
             !isDataPropertyDescriptor(descriptor)) {
             return false;
@@ -926,11 +953,11 @@ async function isMapSchema(
     value: unknown,
     state: AsyncValidationState
 ): Promise<boolean> {
-    const iterator = readMapEntries(value);
-    if (iterator === undefined) {
+    if (!await mapSizeChecksPass(schema, value, state)) {
         return false;
     }
-    if (!sizeChecksPass(schema.checks, readMapSize(value))) {
+    const iterator = readMapEntries(value);
+    if (iterator === undefined) {
         return false;
     }
     for (;;) {
@@ -944,6 +971,32 @@ async function isMapSchema(
             !await isSchemaAsync(schema.value, pair[1], state)) {
             return false;
         }
+    }
+}
+
+/**
+ * @brief Check Map size constraints with cooperative yielding.
+ */
+async function mapSizeChecksPass(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Map }>,
+    value: unknown,
+    state: AsyncValidationState
+): Promise<boolean> {
+    if (!hasCollectionSizeChecks(schema.checks)) {
+        return readMapEntries(value) !== undefined;
+    }
+    const iterator = readMapEntries(value);
+    if (iterator === undefined) {
+        return false;
+    }
+    let size = 0;
+    for (;;) {
+        await maybeYield(state);
+        const step = iterator.next();
+        if (step.done === true) {
+            return sizeChecksPass(schema.checks, size);
+        }
+        size += 1;
     }
 }
 
@@ -989,6 +1042,20 @@ function sizeChecksPass(
 }
 
 /**
+ * @brief Test whether collection size checks need a size read.
+ */
+function hasCollectionSizeChecks(
+    checks: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>["checks"]
+): boolean {
+    for (let index = 0; index < checks.length; index += 1) {
+        if (checks[index] !== undefined) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * @brief Execute Set validation cooperatively.
  */
 async function isSetSchema(
@@ -1029,9 +1096,8 @@ async function isPropertySchema(
     if (((typeof value !== "object" && typeof value !== "function") || value === null)) {
         return false;
     }
-    const descriptor = Object.getOwnPropertyDescriptor(value, schema.key);
+    const descriptor = readOwnDataProperty(value, schema.key);
     return descriptor !== undefined &&
-        isDataPropertyDescriptor(descriptor) &&
         await isSchemaAsync(schema.value, descriptor.value, state);
 }
 
@@ -1059,7 +1125,7 @@ async function isObjectSchema(
         }
         const property = readOwnDataProperty(value, entry.key);
         if (property === undefined) {
-            if (!Object.prototype.hasOwnProperty.call(value, entry.key) &&
+            if (hasOwnRuntimeProperty(value, entry.key) === false &&
                 objectEntryCanBeOmitted(entry)) {
                 continue;
             }
@@ -1074,10 +1140,13 @@ async function isObjectSchema(
             return validateObjectCatchall(schema, value, state);
         }
         if (allRequired) {
-            return Object.getOwnPropertyNames(value).length === entries.length &&
-                Object.getOwnPropertySymbols(value).length === 0;
+            return readOwnPropertyNameCount(value) === entries.length &&
+                readOwnPropertySymbolCount(value) === 0;
         }
-        const keys = Reflect.ownKeys(value);
+        const keys = readOwnKeys(value);
+        if (keys === undefined) {
+            return false;
+        }
         for (let index = 0; index < keys.length; index += 1) {
             await maybeYield(state);
             const key = keys[index];
@@ -1104,7 +1173,10 @@ async function validateObjectCatchall(
     if (catchall === undefined) {
         return true;
     }
-    const keys = Reflect.ownKeys(record);
+    const keys = readOwnKeys(record);
+    if (keys === undefined) {
+        return false;
+    }
     for (let index = 0; index < keys.length; index += 1) {
         await maybeYield(state);
         const key = keys[index];
@@ -1112,8 +1184,8 @@ async function validateObjectCatchall(
             (typeof key === "string" && hasObjectKey(schema.keyLookup, key))) {
             continue;
         }
-        const descriptor = Object.getOwnPropertyDescriptor(record, key);
-        if (descriptor === undefined || !isDataPropertyDescriptor(descriptor)) {
+        const descriptor = readOwnDataProperty(record, key);
+        if (descriptor === undefined) {
             return false;
         }
         if (!await isSchemaAsync(catchall, descriptor.value, state)) {
@@ -1229,7 +1301,13 @@ function readArrayKeyDataProperty(
     value: readonly unknown[],
     key: string
 ): DataPropertyDescriptor | null | undefined {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    let descriptor: PropertyDescriptor | undefined;
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        descriptor = Object.getOwnPropertyDescriptor(value, key);
+    } catch {
+        return null;
+    }
     if (descriptor === undefined) {
         return undefined;
     }

@@ -1,5 +1,6 @@
-import { bench, describe } from "vitest";
+import { beforeAll, bench, describe } from "vitest";
 import { compile, t } from "../src/index.js";
+import { warmupSync, type WarmupTask } from "./warmup.js";
 
 const User = t.strictObject({
     id: t.string.uuid(),
@@ -41,6 +42,29 @@ const invalid = {
     },
     extra: true
 };
+
+const warmupTasks: readonly WarmupTask[] = [
+    (): unknown => User.is(valid),
+    (): unknown => FastUser.is(valid),
+    (): unknown => UnsafeFastUser.is(valid),
+    (): unknown => UncheckedFastUser.is(valid),
+    (): unknown => User.is(invalid),
+    (): unknown => FastUser.is(invalid),
+    (): unknown => UnsafeFastUser.is(invalid),
+    (): unknown => UncheckedFastUser.is(invalid),
+    (): unknown => User.check(valid),
+    (): unknown => FastUser.check(valid),
+    (): unknown => UnsafeFastUser.check(valid),
+    (): unknown => UncheckedFastUser.check(valid),
+    (): unknown => User.check(invalid),
+    (): unknown => FastUser.check(invalid),
+    (): unknown => UnsafeFastUser.check(invalid),
+    (): unknown => UncheckedFastUser.check(invalid)
+];
+
+beforeAll((): void => {
+    warmupSync(warmupTasks);
+});
 
 describe("is() runtime", () => {
     bench("interpreted valid", () => {

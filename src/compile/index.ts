@@ -20,6 +20,7 @@ export {
 
 export {
     emitCompiledBooleanSourceBundle,
+    emitCompiledGraphBooleanSourceBundle,
     emitCompiledSourceBundle
 } from "./source.js";
 

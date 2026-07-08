@@ -1,6 +1,22 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import * as TypeSea from "../src/index.js";
 import {
+    createSeaBreeze,
+    SeaBreezeArena,
+    SeaBreezePresence,
+    type SeaBreezeBuilder,
+    type SeaBreezeBuilderCompileOptions,
+    type SeaBreezeBuilderEmitOptions,
+    type SeaBreezeBuilderGraphOptions,
+    type SeaBreezeBuilderOptions,
+    type SeaBreezeBuilderSchemaOptions,
+    type SeaBreezeBuilderSnapshot,
+    type SeaBreezeCompiledPredicate,
+    type SeaBreezeNodeId,
+    type SeaBreezeOptionalField,
+    type SeaBreezeShape
+} from "../src/seabreeze/index.js";
+import {
     analyzeSchema,
     ArrayGuard,
     atLeastOneKey,
@@ -2355,6 +2371,56 @@ describe("public type contracts", () => {
 
         expect(plain).toBe("user_1");
         expect(rejected).toBe("user_1");
+    });
+
+    test("preserves SeaBreeze builder subpath types", () => {
+        const options: SeaBreezeBuilderOptions = {
+            maxNodes: 64,
+            maxFields: 16
+        };
+        const sea = createSeaBreeze(options);
+        const id = sea.string();
+        const age = sea.optional(sea.number());
+        const shape: SeaBreezeShape = {
+            id,
+            age,
+            tags: sea.array(sea.string())
+        };
+        const user = sea.object(shape);
+        const compiled = sea.compile(user, {
+            objectMode: "strict",
+            mode: "safe",
+            name: "isPublicTypeSeaBreezeUser"
+        });
+        const bundle = sea.emit(user, {
+            mode: "safe"
+        });
+        const snapshot = sea.snapshot();
+        const arena = new SeaBreezeArena(options);
+        const object = arena.allocObject();
+        arena.appendField(object, 1, arena.string, SeaBreezePresence.Required);
+
+        expectTypeOf<typeof sea>().toEqualTypeOf<SeaBreezeBuilder>();
+        expectTypeOf<typeof id>().toEqualTypeOf<SeaBreezeNodeId>();
+        expectTypeOf<typeof age>().toEqualTypeOf<SeaBreezeOptionalField>();
+        expectTypeOf<typeof user>().toEqualTypeOf<SeaBreezeNodeId>();
+        expectTypeOf<typeof compiled>().toEqualTypeOf<SeaBreezeCompiledPredicate>();
+        expectTypeOf<typeof bundle.source>().toEqualTypeOf<string>();
+        expectTypeOf<typeof snapshot>().toEqualTypeOf<SeaBreezeBuilderSnapshot>();
+        expectTypeOf<SeaBreezeBuilderCompileOptions["mode"]>()
+            .toEqualTypeOf<CompileMode | undefined>();
+        expectTypeOf<SeaBreezeBuilderEmitOptions["objectMode"]>()
+            .toEqualTypeOf<"strict" | "passthrough" | "strip" | undefined>();
+        expectTypeOf<SeaBreezeBuilderSchemaOptions["cycle"]>()
+            .toEqualTypeOf<"unknown" | "error" | undefined>();
+        expectTypeOf<SeaBreezeBuilderGraphOptions["optimize"]>()
+            .toEqualTypeOf<boolean | undefined>();
+        expect(compiled.is({
+            id: "u1",
+            tags: []
+        })).toBe(true);
+        expect(bundle.source).toContain("seaBreezePredicate");
+        expect(snapshot.keyTable).toEqual(["", "id", "age", "tags"]);
     });
 
     test("rejects invalid builder inputs at compile time", () => {

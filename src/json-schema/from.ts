@@ -68,6 +68,13 @@ const PATTERN_SCAN_INVALID = -2;
 const PATTERN_SCAN_NONE = -1;
 const GROUP_NORMAL = 0;
 const GROUP_LOOKBEHIND = 1;
+const MAX_IMPORT_DEPTH = 256;
+const MAX_PATTERN_SOURCE_LENGTH = 4096;
+const ATOM_NONE = 0;
+const ATOM_SIMPLE = 1;
+const ATOM_REPEATED = 2;
+const ATOM_LAZY_REPEATED = 3;
+const ATOM_GROUP_WITH_REPETITION = 4;
 
 interface ImportContext {
     readonly root: unknown;
@@ -86,6 +93,11 @@ interface ImportedPatternProperty {
     readonly guard: ImportedGuard;
 }
 
+interface PatternGroupFrame {
+    readonly kind: typeof GROUP_NORMAL | typeof GROUP_LOOKBEHIND;
+    repeated: boolean;
+}
+
 /**
  * @brief Import a JSON Schema fragment as a TypeSea guard.
  * @param schema JSON Schema fragment supplied by the caller.
@@ -95,12 +107,29 @@ export function fromJsonSchema(
     schema: unknown
 ): Result<ImportedGuard, readonly JsonSchemaImportIssue[]> {
     const issues: JsonSchemaImportIssue[] = [];
+    const normalized = normalizeJsonSchemaValue(
+        schema,
+        EMPTY_PATH,
+        issues,
+        new WeakSet<object>(),
+        0
+    );
+    if (normalized === undefined) {
+        return err(freezeJsonSchemaImportIssues(issues));
+    }
     const context: ImportContext = {
-        root: schema,
+        root: normalized,
         cache: new Map<string, ImportedGuard>(),
         resolving: new Set<string>(["#"])
     };
-    const guard = readSchema(schema, EMPTY_PATH, issues, context);
+    let guard: ImportedGuard | undefined;
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        guard = readSchema(normalized, EMPTY_PATH, issues, context);
+    } catch {
+        pushImportIssue(EMPTY_PATH, issues, "invalid_schema", "JSON Schema import failed safely");
+        guard = undefined;
+    }
     if (guard !== undefined) {
         context.cache.set("#", guard);
     }
@@ -587,18 +616,44 @@ function readStringSchema(
     path: readonly PathSegment[],
     issues: JsonSchemaImportIssue[]
 ): ImportedGuard | undefined {
-    let guard = stringFormatGuard(schema.format) ?? stringGuard;
+    const format = readOptionalStringKeyword(schema.format, path.concat("format"), issues, "format");
+    if (schema.format !== undefined && format === undefined) {
+        return undefined;
+    }
+    let guard = stringFormatGuard(format) ?? stringGuard;
     const pattern = schema.pattern === undefined
         ? undefined
         : readJsonSchemaPattern(schema.pattern, path.concat("pattern"), issues);
     if (schema.pattern !== undefined && pattern === undefined) {
         return undefined;
     }
-    if (schema.minLength !== undefined) {
-        guard = guard.min(schema.minLength);
+    const minLength = readNonNegativeIntegerKeyword(
+        schema.minLength,
+        path.concat("minLength"),
+        issues,
+        "minLength"
+    );
+    if (schema.minLength !== undefined && minLength === undefined) {
+        return undefined;
     }
-    if (schema.maxLength !== undefined) {
-        guard = guard.max(schema.maxLength);
+    const maxLength = readNonNegativeIntegerKeyword(
+        schema.maxLength,
+        path.concat("maxLength"),
+        issues,
+        "maxLength"
+    );
+    if (schema.maxLength !== undefined && maxLength === undefined) {
+        return undefined;
+    }
+    if (minLength !== undefined && maxLength !== undefined && minLength > maxLength) {
+        pushImportIssue(path.concat("minLength"), issues, "invalid_schema", "minLength must be less than or equal to maxLength");
+        return undefined;
+    }
+    if (minLength !== undefined) {
+        guard = guard.min(minLength);
+    }
+    if (maxLength !== undefined) {
+        guard = guard.max(maxLength);
     }
     if (pattern !== undefined) {
         guard = guard.regex(pattern, "json_schema_pattern");
@@ -618,6 +673,10 @@ function readJsonSchemaPattern(
         pushImportIssue(path, issues, "invalid_schema", "pattern must be a string");
         return undefined;
     }
+    if (value.length > MAX_PATTERN_SOURCE_LENGTH) {
+        pushImportIssue(path, issues, "unsupported_pattern", "pattern is too long to import safely");
+        return undefined;
+    }
     if (!isJsonSchemaPatternSource(value)) {
         pushImportIssue(path, issues, "invalid_schema", "pattern must be a valid RegExp source");
         return undefined;
@@ -634,9 +693,9 @@ function readJsonSchemaPattern(
  * repetition operators, and reversed literal character ranges.
  */
 function isJsonSchemaPatternSource(source: string): boolean {
-    const lookbehindStack: number[] = [];
+    const groupStack: PatternGroupFrame[] = [];
     let index = 0;
-    let atom = 0;
+    let atom = ATOM_NONE;
     while (index < source.length) {
         const code = source.charCodeAt(index);
         if (code === 92) {
@@ -644,7 +703,7 @@ function isJsonSchemaPatternSource(source: string): boolean {
             if (next < 0) {
                 return false;
             }
-            atom = patternEscapeIsAssertion(source, index) ? 0 : 1;
+            atom = patternEscapeIsAssertion(source, index) ? ATOM_NONE : ATOM_SIMPLE;
             index = next;
             continue;
         }
@@ -653,56 +712,62 @@ function isJsonSchemaPatternSource(source: string): boolean {
             if (next < 0) {
                 return false;
             }
-            atom = 1;
+            atom = ATOM_SIMPLE;
             index = next;
             continue;
         }
         if (code === 40) {
-            const next = readPatternGroupPrefix(source, index, lookbehindStack);
+            const next = readPatternGroupPrefix(source, index, groupStack);
             if (next < 0) {
                 return false;
             }
-            atom = 0;
+            atom = ATOM_NONE;
             index = next;
             continue;
         }
         if (code === 41) {
-            const lookbehind = lookbehindStack.pop();
-            if (lookbehind === undefined) {
+            const frame = groupStack.pop();
+            if (frame === undefined) {
                 return false;
             }
-            atom = lookbehind === GROUP_LOOKBEHIND ? 0 : 1;
+            atom = frame.kind === GROUP_LOOKBEHIND
+                ? ATOM_NONE
+                : frame.repeated
+                    ? ATOM_GROUP_WITH_REPETITION
+                    : ATOM_SIMPLE;
             index += 1;
             continue;
         }
         if (code === 94 || code === 36) {
-            atom = 0;
+            atom = ATOM_NONE;
             index += 1;
             continue;
         }
         if (code === 124) {
-            atom = 0;
+            atom = ATOM_NONE;
             index += 1;
             continue;
         }
         if (code === 42 || code === 43) {
-            if (atom !== 1) {
+            if (atom !== ATOM_SIMPLE) {
                 return false;
             }
-            atom = 2;
+            markPatternGroupRepeated(groupStack);
+            atom = ATOM_REPEATED;
             index += 1;
             continue;
         }
         if (code === 63) {
-            if (atom === 2) {
-                atom = 3;
+            if (atom === ATOM_REPEATED) {
+                atom = ATOM_LAZY_REPEATED;
                 index += 1;
                 continue;
             }
-            if (atom !== 1) {
+            if (atom !== ATOM_SIMPLE) {
                 return false;
             }
-            atom = 2;
+            markPatternGroupRepeated(groupStack);
+            atom = ATOM_REPEATED;
             index += 1;
             continue;
         }
@@ -712,18 +777,19 @@ function isJsonSchemaPatternSource(source: string): boolean {
                 return false;
             }
             if (next !== PATTERN_SCAN_NONE) {
-                if (atom !== 1) {
+                if (atom !== ATOM_SIMPLE) {
                     return false;
                 }
-                atom = 2;
+                markPatternGroupRepeated(groupStack);
+                atom = ATOM_REPEATED;
                 index = next;
                 continue;
             }
         }
-        atom = 1;
+        atom = ATOM_SIMPLE;
         index += 1;
     }
-    return lookbehindStack.length === 0;
+    return groupStack.length === 0;
 }
 
 /**
@@ -896,10 +962,13 @@ function isPatternClassEscape(code: number): boolean {
 function readPatternGroupPrefix(
     source: string,
     start: number,
-    lookbehindStack: number[]
+    groupStack: PatternGroupFrame[]
 ): number {
     if (start + 1 >= source.length || source.charCodeAt(start + 1) !== 63) {
-        lookbehindStack.push(GROUP_NORMAL);
+        groupStack.push({
+            kind: GROUP_NORMAL,
+            repeated: false
+        });
         return start + 1;
     }
     if (start + 2 >= source.length) {
@@ -907,11 +976,14 @@ function readPatternGroupPrefix(
     }
     const marker = source.charCodeAt(start + 2);
     if (marker === 58 || marker === 61 || marker === 33) {
-        lookbehindStack.push(GROUP_NORMAL);
+        groupStack.push({
+            kind: GROUP_NORMAL,
+            repeated: false
+        });
         return start + 3;
     }
     if (marker === 60) {
-        return readPatternAngleGroupPrefix(source, start, lookbehindStack);
+        return readPatternAngleGroupPrefix(source, start, groupStack);
     }
     return PATTERN_SCAN_INVALID;
 }
@@ -922,14 +994,17 @@ function readPatternGroupPrefix(
 function readPatternAngleGroupPrefix(
     source: string,
     start: number,
-    lookbehindStack: number[]
+    groupStack: PatternGroupFrame[]
 ): number {
     if (start + 3 >= source.length) {
         return PATTERN_SCAN_INVALID;
     }
     const marker = source.charCodeAt(start + 3);
     if (marker === 61 || marker === 33) {
-        lookbehindStack.push(GROUP_LOOKBEHIND);
+        groupStack.push({
+            kind: GROUP_LOOKBEHIND,
+            repeated: false
+        });
         return start + 4;
     }
     let index = start + 3;
@@ -946,8 +1021,21 @@ function readPatternAngleGroupPrefix(
     if (index >= source.length) {
         return PATTERN_SCAN_INVALID;
     }
-    lookbehindStack.push(GROUP_NORMAL);
+    groupStack.push({
+        kind: GROUP_NORMAL,
+        repeated: false
+    });
     return index + 1;
+}
+
+/**
+ * @brief Mark the innermost regex group as containing a repeated atom.
+ */
+function markPatternGroupRepeated(groupStack: PatternGroupFrame[]): void {
+    const top = groupStack[groupStack.length - 1];
+    if (top !== undefined) {
+        top.repeated = true;
+    }
 }
 
 /**
@@ -1086,8 +1174,17 @@ function readNumberSchema(
     if (guard === undefined) {
         return undefined;
     }
-    if (schema.multipleOf !== undefined) {
-        guard = guard.multipleOf(schema.multipleOf);
+    const multipleOf = readPositiveFiniteNumberKeyword(
+        schema.multipleOf,
+        path.concat("multipleOf"),
+        issues,
+        "multipleOf"
+    );
+    if (schema.multipleOf !== undefined && multipleOf === undefined) {
+        return undefined;
+    }
+    if (multipleOf !== undefined) {
+        guard = guard.multipleOf(multipleOf);
     }
     return guard;
 }
@@ -1103,18 +1200,42 @@ function applyMinimumSchema(
 ): typeof numberGuard | undefined {
     const exclusiveMinimum = schema.exclusiveMinimum;
     if (typeof exclusiveMinimum === "boolean") {
-        if (schema.minimum === undefined) {
+        const minimum = readFiniteNumberKeyword(
+            schema.minimum,
+            path.concat("minimum"),
+            issues,
+            "minimum"
+        );
+        if (minimum === undefined) {
             pushImportIssue(path.concat("exclusiveMinimum"), issues, "invalid_schema", "boolean exclusiveMinimum requires minimum");
             return undefined;
         }
-        return exclusiveMinimum ? guard.gt(schema.minimum) : guard.gte(schema.minimum);
+        return exclusiveMinimum ? guard.gt(minimum) : guard.gte(minimum);
     }
     let output = guard;
-    if (schema.minimum !== undefined) {
-        output = output.gte(schema.minimum);
+    const minimum = readFiniteNumberKeyword(
+        schema.minimum,
+        path.concat("minimum"),
+        issues,
+        "minimum"
+    );
+    if (schema.minimum !== undefined && minimum === undefined) {
+        return undefined;
     }
-    if (exclusiveMinimum !== undefined) {
-        output = output.gt(exclusiveMinimum);
+    if (minimum !== undefined) {
+        output = output.gte(minimum);
+    }
+    const exclusive = readFiniteNumberKeyword(
+        exclusiveMinimum,
+        path.concat("exclusiveMinimum"),
+        issues,
+        "exclusiveMinimum"
+    );
+    if (exclusiveMinimum !== undefined && exclusive === undefined) {
+        return undefined;
+    }
+    if (exclusive !== undefined) {
+        output = output.gt(exclusive);
     }
     return output;
 }
@@ -1130,18 +1251,42 @@ function applyMaximumSchema(
 ): typeof numberGuard | undefined {
     const exclusiveMaximum = schema.exclusiveMaximum;
     if (typeof exclusiveMaximum === "boolean") {
-        if (schema.maximum === undefined) {
+        const maximum = readFiniteNumberKeyword(
+            schema.maximum,
+            path.concat("maximum"),
+            issues,
+            "maximum"
+        );
+        if (maximum === undefined) {
             pushImportIssue(path.concat("exclusiveMaximum"), issues, "invalid_schema", "boolean exclusiveMaximum requires maximum");
             return undefined;
         }
-        return exclusiveMaximum ? guard.lt(schema.maximum) : guard.lte(schema.maximum);
+        return exclusiveMaximum ? guard.lt(maximum) : guard.lte(maximum);
     }
     let output = guard;
-    if (schema.maximum !== undefined) {
-        output = output.lte(schema.maximum);
+    const maximum = readFiniteNumberKeyword(
+        schema.maximum,
+        path.concat("maximum"),
+        issues,
+        "maximum"
+    );
+    if (schema.maximum !== undefined && maximum === undefined) {
+        return undefined;
     }
-    if (exclusiveMaximum !== undefined) {
-        output = output.lt(exclusiveMaximum);
+    if (maximum !== undefined) {
+        output = output.lte(maximum);
+    }
+    const exclusive = readFiniteNumberKeyword(
+        exclusiveMaximum,
+        path.concat("exclusiveMaximum"),
+        issues,
+        "exclusiveMaximum"
+    );
+    if (exclusiveMaximum !== undefined && exclusive === undefined) {
+        return undefined;
+    }
+    if (exclusive !== undefined) {
+        output = output.lt(exclusive);
     }
     return output;
 }
@@ -1155,9 +1300,15 @@ function readArraySchema(
     issues: JsonSchemaImportIssue[],
     context: ImportContext
 ): ImportedGuard | undefined {
-    const tupleSchemas = readTupleSchemas(schema);
-    if (tupleSchemas !== undefined) {
-        return readTupleSchema(tupleSchemas, schema, path, issues, context);
+    if (schema.prefixItems !== undefined) {
+        if (!Array.isArray(schema.prefixItems)) {
+            pushImportIssue(path.concat("prefixItems"), issues, "invalid_schema", "prefixItems must be an array");
+            return undefined;
+        }
+        return readTupleSchema(schema.prefixItems, schema, path, issues, context);
+    }
+    if (Array.isArray(schema.items)) {
+        return readTupleSchema(schema.items, schema, path, issues, context);
     }
     const itemSchema = schema.items;
     const item = itemSchema === undefined
@@ -1166,17 +1317,17 @@ function readArraySchema(
     if (item === undefined) {
         return undefined;
     }
-    return applyArrayBounds(array(item), schema);
+    return applyArrayBounds(array(item), schema, path, issues);
 }
 
 /**
- * @brief Read fixed tuple child schemas from draft-07 or 2020-12 keywords.
+ * @brief Return the JSON Schema tuple keyword path selected by the input.
  */
-function readTupleSchemas(schema: JsonSchemaObject): readonly JsonSchema[] | undefined {
+function tupleSchemaPath(schema: JsonSchemaObject, path: readonly PathSegment[]): readonly PathSegment[] {
     if (schema.prefixItems !== undefined) {
-        return schema.prefixItems;
+        return path.concat("prefixItems");
     }
-    return Array.isArray(schema.items) ? schema.items : undefined;
+    return path.concat("items");
 }
 
 /**
@@ -1191,7 +1342,7 @@ function readTupleSchema(
 ): ImportedGuard | undefined {
     const tupleItems = readSchemaArray(
         schemas,
-        schema.prefixItems !== undefined ? path.concat("prefixItems") : path.concat("items"),
+        tupleSchemaPath(schema, path),
         issues,
         context
     );
@@ -1210,14 +1361,38 @@ function readTupleSchema(
  */
 function applyArrayBounds(
     guard: ArrayBoundGuard,
-    schema: JsonSchemaObject
-): ImportedGuard {
-    let result = guard;
-    if (schema.minItems !== undefined) {
-        result = result.min(schema.minItems);
+    schema: JsonSchemaObject,
+    path: readonly PathSegment[],
+    issues: JsonSchemaImportIssue[]
+): ImportedGuard | undefined {
+    const minItems = readNonNegativeIntegerKeyword(
+        schema.minItems,
+        path.concat("minItems"),
+        issues,
+        "minItems"
+    );
+    if (schema.minItems !== undefined && minItems === undefined) {
+        return undefined;
     }
-    if (schema.maxItems !== undefined) {
-        result = result.max(schema.maxItems);
+    const maxItems = readNonNegativeIntegerKeyword(
+        schema.maxItems,
+        path.concat("maxItems"),
+        issues,
+        "maxItems"
+    );
+    if (schema.maxItems !== undefined && maxItems === undefined) {
+        return undefined;
+    }
+    if (minItems !== undefined && maxItems !== undefined && minItems > maxItems) {
+        pushImportIssue(path.concat("minItems"), issues, "invalid_schema", "minItems must be less than or equal to maxItems");
+        return undefined;
+    }
+    let result = guard;
+    if (minItems !== undefined) {
+        result = result.min(minItems);
+    }
+    if (maxItems !== undefined) {
+        result = result.max(maxItems);
     }
     return result;
 }
@@ -1243,8 +1418,12 @@ function readObjectSchema(
     if (schema.patternProperties !== undefined && patternProperties === undefined) {
         return undefined;
     }
+    if (schema.properties !== undefined && !isRecord(schema.properties)) {
+        pushImportIssue(path.concat("properties"), issues, "invalid_schema", "properties must be an object");
+        return undefined;
+    }
     const properties: Readonly<Record<string, JsonSchema>> =
-        schema.properties ?? EMPTY_PROPERTIES;
+        isRecord(schema.properties) ? schema.properties : EMPTY_PROPERTIES;
     const required = readRequiredKeys(schema.required, path.concat("required"), issues);
     if (required === undefined) {
         return undefined;
@@ -1459,6 +1638,83 @@ function readPropertyCountBound(
 }
 
 /**
+ * @brief Read a JSON Schema non-negative integer keyword.
+ */
+function readNonNegativeIntegerKeyword(
+    value: unknown,
+    path: readonly PathSegment[],
+    issues: JsonSchemaImportIssue[],
+    label: string
+): number | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+        pushImportIssue(path, issues, "invalid_schema", `${label} must be a non-negative integer`);
+        return undefined;
+    }
+    return value;
+}
+
+/**
+ * @brief Read a JSON Schema finite numeric keyword.
+ */
+function readFiniteNumberKeyword(
+    value: unknown,
+    path: readonly PathSegment[],
+    issues: JsonSchemaImportIssue[],
+    label: string
+): number | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+        pushImportIssue(path, issues, "invalid_schema", `${label} must be a finite number`);
+        return undefined;
+    }
+    return value;
+}
+
+/**
+ * @brief Read a positive finite JSON Schema numeric keyword.
+ */
+function readPositiveFiniteNumberKeyword(
+    value: unknown,
+    path: readonly PathSegment[],
+    issues: JsonSchemaImportIssue[],
+    label: string
+): number | undefined {
+    const number = readFiniteNumberKeyword(value, path, issues, label);
+    if (number === undefined) {
+        return undefined;
+    }
+    if (number <= 0) {
+        pushImportIssue(path, issues, "invalid_schema", `${label} must be greater than zero`);
+        return undefined;
+    }
+    return number;
+}
+
+/**
+ * @brief Read an optional string keyword.
+ */
+function readOptionalStringKeyword(
+    value: unknown,
+    path: readonly PathSegment[],
+    issues: JsonSchemaImportIssue[],
+    label: string
+): string | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value !== "string") {
+        pushImportIssue(path, issues, "invalid_schema", `${label} must be a string`);
+        return undefined;
+    }
+    return value;
+}
+
+/**
  * @brief Normalize required object keys.
  */
 function readRequiredKeys(
@@ -1555,6 +1811,158 @@ function freezeJsonSchemaImportIssues(
         }
     }
     return Object.freeze(issues);
+}
+
+/**
+ * @brief Copy untrusted schema input into an own-data-only JSON-like tree.
+ * @details The importer below uses ordinary property reads for speed and clarity.
+ * This pre-pass is the security boundary: accessors, prototype keywords, cycles,
+ * revoked proxies, and excessive depth are rejected before semantic importing.
+ */
+function normalizeJsonSchemaValue(
+    value: unknown,
+    path: readonly PathSegment[],
+    issues: JsonSchemaImportIssue[],
+    stack: WeakSet<object>,
+    depth: number
+): unknown {
+    if (depth > MAX_IMPORT_DEPTH) {
+        pushImportIssue(path, issues, "invalid_schema", "JSON Schema is too deeply nested");
+        return undefined;
+    }
+    if (value === true || value === false || value === null || typeof value === "string") {
+        return value;
+    }
+    if (typeof value === "number") {
+        if (!Number.isFinite(value)) {
+            pushImportIssue(path, issues, "invalid_schema", "JSON Schema numbers must be finite");
+            return undefined;
+        }
+        return value;
+    }
+    if (value === undefined ||
+        typeof value === "bigint" ||
+        typeof value === "symbol" ||
+        typeof value === "function") {
+        pushImportIssue(path, issues, "invalid_schema", "JSON Schema values must be JSON-compatible");
+        return undefined;
+    }
+    if (typeof value !== "object") {
+        pushImportIssue(path, issues, "invalid_schema", "JSON Schema values must be JSON-compatible");
+        return undefined;
+    }
+    if (stack.has(value)) {
+        pushImportIssue(path, issues, "invalid_schema", "JSON Schema must not contain cycles");
+        return undefined;
+    }
+    stack.add(value);
+    const normalized = Array.isArray(value)
+        ? normalizeJsonSchemaArray(value, path, issues, stack, depth)
+        : normalizeJsonSchemaObject(value, path, issues, stack, depth);
+    stack.delete(value);
+    return normalized;
+}
+
+/**
+ * @brief Copy an untrusted schema array without invoking element getters.
+ */
+function normalizeJsonSchemaArray(
+    value: readonly unknown[],
+    path: readonly PathSegment[],
+    issues: JsonSchemaImportIssue[],
+    stack: WeakSet<object>,
+    depth: number
+): readonly unknown[] | undefined {
+    const output = new Array<unknown>(value.length);
+    for (let index = 0; index < value.length; index += 1) {
+        let descriptor: PropertyDescriptor | undefined;
+        // eslint-disable-next-line no-restricted-syntax
+        try {
+            descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        } catch {
+            pushImportIssue(path.concat(index), issues, "invalid_schema", "JSON Schema array element could not be inspected");
+            return undefined;
+        }
+        if (descriptor === undefined) {
+            output[index] = undefined;
+            continue;
+        }
+        if (!Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+            pushImportIssue(path.concat(index), issues, "invalid_schema", "JSON Schema array elements must be data properties");
+            return undefined;
+        }
+        const child = normalizeJsonSchemaValue(
+            descriptor.value,
+            path.concat(index),
+            issues,
+            stack,
+            depth + 1
+        );
+        if (child === undefined) {
+            return undefined;
+        }
+        output[index] = child;
+    }
+    return Object.freeze(output);
+}
+
+/**
+ * @brief Copy an untrusted schema object without reading prototypes or accessors.
+ */
+function normalizeJsonSchemaObject(
+    value: object,
+    path: readonly PathSegment[],
+    issues: JsonSchemaImportIssue[],
+    stack: WeakSet<object>,
+    depth: number
+): JsonSchemaObject | undefined {
+    let keys: string[];
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        keys = Object.getOwnPropertyNames(value);
+    } catch {
+        pushImportIssue(path, issues, "invalid_schema", "JSON Schema object keys could not be inspected");
+        return undefined;
+    }
+    const output = Object.create(null) as Record<string, unknown>;
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined) {
+            continue;
+        }
+        let descriptor: PropertyDescriptor | undefined;
+        // eslint-disable-next-line no-restricted-syntax
+        try {
+            descriptor = Object.getOwnPropertyDescriptor(value, key);
+        } catch {
+            pushImportIssue(path.concat(key), issues, "invalid_schema", "JSON Schema property could not be inspected");
+            return undefined;
+        }
+        if (descriptor === undefined) {
+            continue;
+        }
+        if (!Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+            pushImportIssue(path.concat(key), issues, "invalid_schema", "JSON Schema properties must be data properties");
+            return undefined;
+        }
+        const child = normalizeJsonSchemaValue(
+            descriptor.value,
+            path.concat(key),
+            issues,
+            stack,
+            depth + 1
+        );
+        if (child === undefined) {
+            return undefined;
+        }
+        Object.defineProperty(output, key, {
+            value: child,
+            writable: true,
+            enumerable: true,
+            configurable: true
+        });
+    }
+    return Object.freeze(output);
 }
 
 /**

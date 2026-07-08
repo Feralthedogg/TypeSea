@@ -25,7 +25,17 @@ import {
     type Schema
 } from "../schema/index.js";
 import type { Issue } from "../issue/index.js";
-import { isArrayIndexKey } from "../evaluate/shared.js";
+import {
+    hasOwnRuntimeProperty,
+    isArrayIndexKey,
+    isArrayValue,
+    isPlainRecord,
+    readEnumerableStringKeys,
+    readOwnDataProperty,
+    readOwnKeys,
+    readOwnPropertyNameCount,
+    readOwnPropertySymbolCount
+} from "../evaluate/shared.js";
 import {
     type GraphEvaluationFrame,
     enterValidation,
@@ -202,7 +212,7 @@ function evaluateGraphNode(
         case NodeTag.IsObject:
             return isPlainRecord(evaluateNode(graph, node.value, input, values, seen, epoch, state));
         case NodeTag.IsArray:
-            return Array.isArray(evaluateNode(graph, node.value, input, values, seen, epoch, state));
+            return isArrayValue(evaluateNode(graph, node.value, input, values, seen, epoch, state));
         case NodeTag.IsUndefined:
             return evaluateNode(graph, node.value, input, values, seen, epoch, state) === undefined;
         case NodeTag.IsNull:
@@ -398,7 +408,7 @@ function testArrayEvery(
     itemGraph: Graph,
     state: ValidationState
 ): boolean {
-    if (!Array.isArray(value)) {
+    if (!isArrayValue(value)) {
         return false;
     }
     if (!testArrayLengthChecks(value.length, checks)) {
@@ -467,10 +477,13 @@ function testPresentArrayIndexes(
     itemGraph: Graph,
     state: ValidationState
 ): boolean {
-    const keys = Object.getOwnPropertyNames(value);
+    const keys = readOwnKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
     for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
         const key = keys[keyIndex];
-        if (key === undefined || !isArrayIndexKey(key, value.length)) {
+        if (typeof key !== "string" || !isArrayIndexKey(key, value.length)) {
             continue;
         }
         /*
@@ -496,7 +509,7 @@ function testTupleItems(
     itemGraphs: readonly Graph[],
     state: ValidationState
 ): boolean {
-    if (!Array.isArray(value) || value.length !== itemGraphs.length) {
+    if (!isArrayValue(value) || value.length !== itemGraphs.length) {
         return false;
     }
     for (let index = 0; index < itemGraphs.length; index += 1) {
@@ -526,15 +539,17 @@ function testRecordEvery(
     if (!isPlainRecord(value)) {
         return false;
     }
-    const keys = Object.keys(value);
+    const keys = readEnumerableStringKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
     for (let index = 0; index < keys.length; index += 1) {
         const key = keys[index];
         if (key === undefined) {
             return false;
         }
-        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        const descriptor = readOwnDataProperty(value, key);
         if (descriptor === undefined ||
-            !Object.prototype.hasOwnProperty.call(descriptor, "value") ||
             !executeGraphPredicate(itemGraph, descriptor.value, state)) {
             return false;
         }
@@ -557,10 +572,8 @@ function testDiscriminantDispatch(
     if (!isPlainRecord(value)) {
         return false;
     }
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (descriptor === undefined ||
-        !Object.prototype.hasOwnProperty.call(descriptor, "value") ||
-        typeof descriptor.value !== "string") {
+    const descriptor = readOwnDataProperty(value, key);
+    if (descriptor === undefined || typeof descriptor.value !== "string") {
         return false;
     }
     const index = Object.prototype.hasOwnProperty.call(lookup, descriptor.value)
@@ -594,16 +607,15 @@ function testObjectShape(
         if (entry === undefined) {
             return false;
         }
-        const descriptor = Object.getOwnPropertyDescriptor(value, entry.key);
+        const descriptor = readOwnDataProperty(value, entry.key);
         if (descriptor === undefined) {
             if (entry.presence === PresenceTag.Optional &&
-                !Object.prototype.hasOwnProperty.call(value, entry.key)) {
+                hasOwnRuntimeProperty(value, entry.key) === false) {
                 continue;
             }
             return false;
         }
-        if (!Object.prototype.hasOwnProperty.call(descriptor, "value") ||
-            !executeGraphPredicate(entry.graph, descriptor.value, state)) {
+        if (!executeGraphPredicate(entry.graph, descriptor.value, state)) {
             return false;
         }
     }
@@ -611,10 +623,13 @@ function testObjectShape(
         return true;
     }
     if (allRequired) {
-        return Object.getOwnPropertyNames(value).length === entries.length &&
-            Object.getOwnPropertySymbols(value).length === 0;
+        return readOwnPropertyNameCount(value) === entries.length &&
+            readOwnPropertySymbolCount(value) === 0;
     }
-    const present = Reflect.ownKeys(value);
+    const present = readOwnKeys(value);
+    if (present === undefined) {
+        return false;
+    }
     for (let index = 0; index < present.length; index += 1) {
         const key = present[index];
         if (typeof key !== "string" || !keys.includes(key)) {
@@ -677,7 +692,7 @@ function valueUnionMask(value: unknown): number {
     if (value === null) {
         return UnionMask.Null;
     }
-    if (Array.isArray(value)) {
+    if (isArrayValue(value)) {
         return UnionMask.Array;
     }
     switch (typeof value) {
@@ -729,7 +744,17 @@ function readArrayKeyValue(
     value: readonly unknown[],
     key: string
 ): { readonly accessor: boolean; readonly present: boolean; readonly value: unknown } {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    let descriptor: PropertyDescriptor | undefined;
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        descriptor = Object.getOwnPropertyDescriptor(value, key);
+    } catch {
+        return {
+            accessor: true,
+            present: true,
+            value: undefined
+        };
+    }
     if (descriptor === undefined) {
         return {
             accessor: false,
@@ -763,9 +788,8 @@ function readOwnDataValue(value: unknown, key: string): unknown {
     if (!isPropertyHost(value)) {
         return undefined;
     }
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (descriptor === undefined ||
-        !Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+    const descriptor = readOwnDataProperty(value, key);
+    if (descriptor === undefined) {
         return undefined;
     }
     return descriptor.value;
@@ -781,7 +805,7 @@ function readOwnDataValue(value: unknown, key: string): unknown {
  */
 function hasOwnProperty(value: unknown, key: string): boolean {
     return isPropertyHost(value) &&
-        Object.prototype.hasOwnProperty.call(value, key);
+        hasOwnRuntimeProperty(value, key) === true;
 }
 
 /**
@@ -796,9 +820,7 @@ function hasOwnDataProperty(value: unknown, key: string): boolean {
     if (!isPropertyHost(value)) {
         return false;
     }
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    return descriptor !== undefined &&
-        Object.prototype.hasOwnProperty.call(descriptor, "value");
+    return readOwnDataProperty(value, key) !== undefined;
 }
 
 /**
@@ -810,7 +832,10 @@ function testStrictKeys(value: unknown, keys: readonly string[]): boolean {
     if (!isPlainRecord(value)) {
         return false;
     }
-    const present = Reflect.ownKeys(value);
+    const present = readOwnKeys(value);
+    if (present === undefined) {
+        return false;
+    }
     for (let index = 0; index < present.length; index += 1) {
         const key = present[index];
         if (typeof key !== "string" || !keys.includes(key)) {
@@ -871,17 +896,6 @@ function testRegex(value: unknown, regex: RegExp): boolean {
  */
 function isFiniteNumber(value: unknown): boolean {
     return typeof value === "number" && Number.isFinite(value);
-}
-
-/**
- * @brief Test whether a value can satisfy object-like schema nodes.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- * @param value Candidate runtime value.
- * @returns True for non-null, non-array objects.
- */
-function isPlainRecord(value: unknown): value is object {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

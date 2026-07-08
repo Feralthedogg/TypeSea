@@ -1380,10 +1380,12 @@ function readJsonObjectStringProperty(source: string, property: string): string 
         return undefined;
     }
     index += 1;
+    let found: string | undefined;
     for (;;) {
         index = skipJsonWhitespace(source, index);
         if (source.charCodeAt(index) === 125) {
-            return undefined;
+            index = skipJsonWhitespace(source, index + 1);
+            return index === source.length ? found : undefined;
         }
         const key = readJsonString(source, index);
         if (key === undefined) {
@@ -1400,21 +1402,21 @@ function readJsonObjectStringProperty(source: string, property: string): string 
                 return undefined;
             }
             index = skipJsonWhitespace(source, value.next);
-            return source.charCodeAt(index) === 44 || source.charCodeAt(index) === 125
-                ? value.value
-                : undefined;
+            found = value.value;
+        } else {
+            const next = skipJsonValue(source, index);
+            if (next < 0) {
+                return undefined;
+            }
+            index = skipJsonWhitespace(source, next);
         }
-        const next = skipJsonValue(source, index);
-        if (next < 0) {
-            return undefined;
-        }
-        index = skipJsonWhitespace(source, next);
         if (source.charCodeAt(index) === 44) {
             index += 1;
             continue;
         }
         if (source.charCodeAt(index) === 125) {
-            return undefined;
+            index = skipJsonWhitespace(source, index + 1);
+            return index === source.length ? found : undefined;
         }
         return undefined;
     }

@@ -181,6 +181,35 @@ export function emitGraphFunction(
 }
 
 /**
+ * @brief Emit one predicate function from an already lowered graph.
+ * @param graph Optimized or validated graph to emit.
+ * @param context Emitter side-table context.
+ * @param preferredName Optional stable public function name.
+ * @returns Generated function name.
+ * @details This is the bridge for inference engines that produce graph IR
+ * directly instead of starting from a schema plan.
+ */
+export function emitGraphRootFunction(
+    graph: Graph,
+    context: EmitContext,
+    preferredName?: string
+): string {
+    const name = preferredName ?? nextGraphFunctionName(context);
+    const source: FunctionSource = {
+        name,
+        body: ""
+    };
+    context.functions.push(source);
+    source.body = emitGraphBody(
+        graph,
+        graph.result,
+        "v",
+        context
+    );
+    return name;
+}
+
+/**
  * @brief emit graph functions.
  * @details Serializes every graph predicate function accumulated in the context.
  * @returns JavaScript source for the predicate function table.

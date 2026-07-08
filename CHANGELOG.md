@@ -2,6 +2,25 @@
 
 All notable changes to TypeSea are recorded here.
 
+## 1.1.0 - 2026-07-08
+
+### Added
+
+- Added the public `typesea/seabreeze` subpath for SeaBreeze arena-backed
+  inference. SeaBreeze exposes the high-level `createSeaBreeze()` builder, the
+  low-level `SeaBreezeArena`, schema and graph lowering, snapshot helpers, and
+  direct predicate source emission.
+- Added dedicated SeaBreeze documentation covering principal join,
+  arena/typed-array allocation discipline, the schema bridge, the graph bridge,
+  and the direct reader emitter.
+
+### Changed
+
+- Documented SeaBreeze as an advanced compiler/inference surface rather than a
+  root validator API. It is intentionally not re-exported from `typesea`, so
+  ordinary validators keep zero SeaBreeze import and bundle cost.
+- Regenerated the documentation site for the 1.1.0 release shell.
+
 ## 1.0.0 - 2026-07-07
 
 ### Added

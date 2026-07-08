@@ -4,11 +4,15 @@ import {
     BaseGuard,
     NumberGuard,
     compile,
+    compileAsync,
     formatIssues,
+    fromJsonSchema,
     optimizeGraph,
+    registry,
     t,
     toJsonSchema,
     type Guard,
+    type GlobalRegistryMetadata,
     type JsonSchemaObject
 } from "../src/index.js";
 import {
@@ -265,6 +269,178 @@ describe("security regression coverage", () => {
         ) as Guard<number>;
         expect(finiteResult).not.toBe(forgedNumberReceiver);
         expect(finiteResult.is(1)).toBe(true);
+    });
+
+    test("JSON Schema import rejects hostile and malformed schemas through Result", () => {
+        let getterReads = 0;
+        const accessorSchema = {};
+        Object.defineProperty(accessorSchema, "type", {
+            enumerable: true,
+            get(): string {
+                getterReads += 1;
+                throw new Error("schema getter executed");
+            }
+        });
+        const inheritedType = Object.create(Object.defineProperty({}, "type", {
+            enumerable: true,
+            get(): string {
+                getterReads += 1;
+                return "string";
+            }
+        })) as Record<string, unknown>;
+        let deep: unknown = { type: "string" };
+        for (let index = 0; index < 300; index += 1) {
+            deep = {
+                type: "array",
+                items: deep
+            };
+        }
+        const cyclic: Record<string, unknown> = {
+            type: "array"
+        };
+        cyclic["items"] = cyclic;
+        const malformed = [
+            accessorSchema,
+            { type: "number", minimum: "0" },
+            { type: "number", multipleOf: 0 },
+            { type: "string", minLength: -1 },
+            { type: "array", prefixItems: {} },
+            { type: "array", minItems: -1 },
+            { type: "string", pattern: "(a+)+$" },
+            deep,
+            cyclic
+        ];
+
+        for (let index = 0; index < malformed.length; index += 1) {
+            expect(() => fromJsonSchema(malformed[index])).not.toThrow();
+            expect(fromJsonSchema(malformed[index]).ok).toBe(false);
+        }
+        expect(fromJsonSchema(inheritedType).ok).toBe(true);
+        expect(getterReads).toBe(0);
+    });
+
+    test("registry metadata export avoids getters and prototype mutation", () => {
+        let getterReads = 0;
+        const docs = registry<GlobalRegistryMetadata>();
+        const User = t.object({
+            name: t.string
+        });
+        const metadata = Object.create(null) as GlobalRegistryMetadata;
+        Object.defineProperty(metadata, "id", {
+            enumerable: true,
+            value: "User"
+        });
+        Object.defineProperty(metadata, "title", {
+            enumerable: true,
+            get(): string {
+                getterReads += 1;
+                throw new Error("metadata getter executed");
+            }
+        });
+        Object.defineProperty(metadata, "__proto__", {
+            enumerable: true,
+            value: {
+                polluted: true
+            }
+        });
+        docs.add(User, metadata);
+
+        const result = toJsonSchema(User, {
+            metadata: docs
+        });
+
+        expect(result.ok).toBe(true);
+        expect(getterReads).toBe(0);
+        expect(({} as { readonly polluted?: boolean }).polluted).toBeUndefined();
+        if (result.ok) {
+            const schema = result.value as Record<string, unknown>;
+            expect(schema["$id"]).toBe("User");
+            expect(Object.prototype.hasOwnProperty.call(schema, "__proto__")).toBe(true);
+            expect(Object.getPrototypeOf(schema)).not.toEqual({ polluted: true });
+        }
+    });
+
+    test("JWT alg check rejects trailing header JSON bytes", () => {
+        const trailingHeader = Buffer
+            .from("{\"alg\":\"HS256\"}{\"alg\":\"none\"}")
+            .toString("base64url");
+        const token = `${trailingHeader}.e30.sig`;
+
+        expect(t.jwt({ alg: "HS256" }).is(token)).toBe(false);
+    });
+
+    test("readonly Map finalization does not execute public iterators", () => {
+        const Guard = t.map(
+            t.string,
+            t.object({
+                name: t.string
+            }).readonly()
+        );
+        const value = new Map<string, { name: string }>([[
+            "user",
+            { name: "Ada" }
+        ]]);
+        Object.defineProperty(value, Symbol.iterator, {
+            value(): never {
+                throw new Error("custom iterator executed");
+            }
+        });
+
+        expect(() => Guard.check(value)).not.toThrow();
+        const result = Guard.check(value);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+            expect(Object.isFrozen(result.value.get("user"))).toBe(true);
+        }
+    });
+
+    test("async Map size checks yield while counting large maps", async () => {
+        const Guard = compileAsync(t.map(t.string, t.number).min(1), {
+            yieldEvery: 1,
+            yieldTimeout: 0
+        });
+        const value = new Map<string, number>();
+        for (let index = 0; index < 512; index += 1) {
+            value.set(String(index), index);
+        }
+
+        await expect(Guard.is(value)).resolves.toBe(true);
+    });
+
+    test("safe validators fail closed on hostile Proxy reflection traps", async () => {
+        const Guard = t.object({
+            id: t.string
+        });
+        const Compiled = compile(Guard, {
+            name: "proxy_reflection_safe"
+        });
+        const Async = compileAsync(Guard, {
+            name: "proxy_reflection_async",
+            yieldEvery: 1,
+            yieldTimeout: 0
+        });
+        const hostile = new Proxy({ id: "ok" }, {
+            getOwnPropertyDescriptor(): never {
+                throw new Error("descriptor trap");
+            },
+            ownKeys(): never {
+                throw new Error("ownKeys trap");
+            }
+        });
+        const revoked = Proxy.revocable({ id: "ok" }, {});
+        revoked.revoke();
+
+        for (const value of [hostile, revoked.proxy]) {
+            expect(() => Guard.is(value)).not.toThrow();
+            expect(Guard.is(value)).toBe(false);
+            expect(() => Guard.check(value)).not.toThrow();
+            expect(Guard.check(value).ok).toBe(false);
+            expect(() => Compiled.is(value)).not.toThrow();
+            expect(Compiled.is(value)).toBe(false);
+            expect(() => Compiled.check(value)).not.toThrow();
+            expect(Compiled.check(value).ok).toBe(false);
+            await expect(Async.is(value)).resolves.toBe(false);
+        }
     });
 });
 

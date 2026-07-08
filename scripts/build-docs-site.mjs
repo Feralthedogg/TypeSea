@@ -23,6 +23,13 @@ const sourceFiles = [
         koPath: "docs/ko/seaflow.md"
     },
     {
+        title: "SeaBreeze",
+        titleKo: "SeaBreeze",
+        id: "seabreeze",
+        path: "docs/sea-breeze.md",
+        koPath: "docs/ko/sea-breeze.md"
+    },
+    {
         title: "Engine Notes",
         titleKo: "엔진 설계 노트",
         id: "engine-notes",
@@ -97,7 +104,7 @@ function renderSite(sources, packageVersion) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
       name="description"
-      content="TypeSea documentation: complete README, API reference, and engine notes for zero-dependency TypeScript runtime validation."
+      content="TypeSea documentation: README, API reference, SeaFlow, SeaBreeze, and engine notes for zero-dependency TypeScript runtime validation."
     >
     <title>TypeSea Docs</title>
     <style>
@@ -699,8 +706,8 @@ function renderSite(sources, packageVersion) {
           <span class="version">v${escapeHtml(packageVersion)}</span>
         </div>
         <p class="brand-tagline">
-          <span class="i18n-en">Complete docs from README.md, docs/api.md, and docs/engine-notes.md.</span>
-          <span class="i18n-ko" lang="ko">README, API 레퍼런스, 엔진 노트를 한 곳에 모은 문서입니다.</span>
+          <span class="i18n-en">Complete docs from README.md, API reference, SeaFlow, SeaBreeze, and engine notes.</span>
+          <span class="i18n-ko" lang="ko">README, API 레퍼런스, SeaFlow, SeaBreeze, 엔진 노트를 한 곳에 모은 문서입니다.</span>
         </p>
         <nav class="nav">
           <p class="nav-group">
@@ -875,8 +882,8 @@ function renderStartGuide() {
                     <span class="i18n-ko" lang="ko"><strong>신뢰된 데이터에서는 빠르게</strong> &mdash; unsafe/unchecked 모드는 일부 방어를 direct read 성능과 맞바꿉니다.</span>
                   </li>
                   <li>
-                    <span class="i18n-en"><strong>Complete references</strong> &mdash; README, API reference, and engine notes are rendered below.</span>
-                    <span class="i18n-ko" lang="ko"><strong>문서 전체 포함</strong> &mdash; README, API 레퍼런스, 엔진 노트 전문을 아래에서 볼 수 있습니다.</span>
+                    <span class="i18n-en"><strong>Complete references</strong> &mdash; README, API reference, SeaFlow, SeaBreeze, and engine notes are rendered below.</span>
+                    <span class="i18n-ko" lang="ko"><strong>문서 전체 포함</strong> &mdash; README, API 레퍼런스, SeaFlow, SeaBreeze, 엔진 노트 전문을 아래에서 볼 수 있습니다.</span>
                   </li>
                 </ul>
               </div>

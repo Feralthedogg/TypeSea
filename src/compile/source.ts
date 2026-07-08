@@ -6,11 +6,16 @@
  */
 
 import type { Schema } from "../schema/index.js";
+import type { Graph } from "../ir/index.js";
 import { emitCheckFunction, emitCheckFunctions } from "./check.js";
 import { createEmitContext } from "./context.js";
 import { formatDebugSource } from "./debug-source.js";
 import { emitFirstFunction, emitFirstFunctions } from "./first.js";
-import { emitGraphFunction, emitGraphFunctions } from "./graph-predicate.js";
+import {
+    emitGraphFunction,
+    emitGraphFunctions,
+    emitGraphRootFunction
+} from "./graph-predicate.js";
 import { safeFunctionName } from "./names.js";
 import type { CompileMode, CompiledSourceBundle } from "./types.js";
 
@@ -166,6 +171,66 @@ export function emitCompiledBooleanSourceBundle(
 }
 
 /**
+ * @brief Emit a predicate-only source bundle from an already lowered graph.
+ * @param graph Graph root to emit.
+ * @param name Requested public predicate name.
+ * @param mode Compile mode controlling safety and allocation tradeoffs.
+ * @param debugSource Whether to emit readable source formatting.
+ * @returns Generated factory source that returns only the boolean predicate.
+ * @details This internal bridge lets arena-backed inference lower directly to
+ * graph IR and still reuse TypeSea's V8-friendly predicate emitter.
+ */
+export function emitCompiledGraphBooleanSourceBundle(
+    graph: Graph,
+    name: string,
+    mode: CompileMode = "safe",
+    debugSource = false
+): CompiledSourceBundle {
+    const context = createEmitContext(mode);
+    const functionName = safeFunctionName(name);
+    const root = emitGraphRootFunction(
+        graph,
+        context,
+        canUseDirectRootFunctionName(functionName) ? functionName : undefined
+    );
+    const graphFunctions = emitGraphFunctions(context);
+    const runtimeBundle = `return ${root};`;
+    const body = [
+        graphFunctions,
+        runtimeBundle
+    ].join("");
+    const helperPrelude = emitHelperPrelude(body, true);
+    const compactSource = [
+        "\"use strict\";",
+        helperPrelude,
+        body
+    ].join("");
+    const source = debugSource
+        ? formatDebugSource(
+            [
+                "\"use strict\";",
+                "/* TypeSea helper prelude: shared runtime helpers and side-table readers. */",
+                helperPrelude,
+                "/* TypeSea boolean predicate emitted from supplied graph IR. */",
+                graphFunctions,
+                "/* TypeSea predicate-only runtime bundle. */",
+                runtimeBundle
+            ].join(""),
+            functionName,
+            mode
+        )
+        : compactSource;
+    return {
+        source,
+        literals: context.literals,
+        regexps: context.regexps,
+        keysets: context.keysets,
+        strings: context.strings,
+        dynamicSchemas: context.schemas
+    };
+}
+
+/**
  * @brief Emit the success Result expression for compiled result().
  * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
  * stable across runtime and AOT emission.
@@ -260,7 +325,7 @@ function isGeneratedFunctionName(name: string): boolean {
  * @param rootPathIsFrozen True when path helpers may use the frozen empty path.
  * @returns JavaScript source for only the helpers referenced by `body`.
  */
-function emitHelperPrelude(body: string, rootPathIsFrozen: boolean): string {
+export function emitHelperPrelude(body: string, rootPathIsFrozen: boolean): string {
     const needed = readNeededHelpers(body);
     const chunks: string[] = [];
     pushHelper(chunks, needed, "z", "const z=Object.freeze([]);");

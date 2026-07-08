@@ -34,17 +34,21 @@ export function applyGlobalRegistryMetadata(
     }
     const target: MutableJsonSchemaObject = emitted === true ? {} : { ...emitted };
     copyRegistryMetadataExtensions(target, metadata);
-    if (metadata.id !== undefined && outputTarget !== "openapi-3.0") {
-        target.$id = uri(metadata.id);
+    const id = readOwnDataProperty(metadata, "id");
+    const title = readOwnDataProperty(metadata, "title");
+    const description = readOwnDataProperty(metadata, "description");
+    const examples = readOwnDataProperty(metadata, "examples");
+    if (typeof id === "string" && outputTarget !== "openapi-3.0") {
+        defineJsonSchemaDataProperty(target, "$id", uri(id));
     }
-    if (metadata.title !== undefined) {
-        target.title = metadata.title;
+    if (typeof title === "string") {
+        defineJsonSchemaDataProperty(target, "title", title);
     }
-    if (metadata.description !== undefined) {
-        target.description = metadata.description;
+    if (typeof description === "string") {
+        defineJsonSchemaDataProperty(target, "description", description);
     }
-    if (metadata.examples !== undefined) {
-        target.examples = metadata.examples.slice();
+    if (Array.isArray(examples)) {
+        defineJsonSchemaDataProperty(target, "examples", copyDataArray(examples));
     }
     return target;
 }
@@ -64,9 +68,37 @@ function copyRegistryMetadataExtensions(
         }
         const value = readOwnDataProperty(metadata, key);
         if (value !== undefined) {
-            target[key] = value;
+            defineJsonSchemaDataProperty(target, key, value);
         }
     }
+}
+
+/**
+ * @brief Define a JSON Schema annotation without invoking object prototype setters.
+ */
+function defineJsonSchemaDataProperty(
+    target: MutableJsonSchemaObject,
+    key: PropertyKey,
+    value: unknown
+): void {
+    Object.defineProperty(target, key, {
+        value,
+        writable: true,
+        enumerable: true,
+        configurable: true
+    });
+}
+
+/**
+ * @brief Copy array data slots without calling user-controlled `slice`.
+ */
+function copyDataArray(value: readonly unknown[]): readonly unknown[] {
+    const output = new Array<unknown>(value.length);
+    for (let index = 0; index < value.length; index += 1) {
+        const item = readOwnDataProperty(value, String(index));
+        output[index] = item;
+    }
+    return output;
 }
 
 /**

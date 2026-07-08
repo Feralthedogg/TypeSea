@@ -15,6 +15,10 @@ import {
     type Schema
 } from "../schema/index.js";
 import { isSchema } from "./predicate.js";
+import {
+    readMapEntries,
+    readSetValues
+} from "./shared.js";
 
 const finalizationCache = new WeakMap<object, boolean>();
 
@@ -413,11 +417,17 @@ function finalizeMap(
     value: unknown,
     state: FinalizeState
 ): unknown {
-    if (!(value instanceof Map)) {
+    const iterator = readMapEntries(value);
+    if (iterator === undefined) {
         return value;
     }
     let output: Map<unknown, unknown> | undefined;
-    for (const [entryKey, entryValue] of value) {
+    for (;;) {
+        const step = iterator.next();
+        if (step.done === true) {
+            return output ?? value;
+        }
+        const [entryKey, entryValue] = step.value;
         const finalizedKey = finalizeValue(key, entryKey, state);
         const finalizedValue = finalizeValue(item, entryValue, state);
         if (output !== undefined) {
@@ -426,7 +436,16 @@ function finalizeMap(
         }
         if (finalizedKey !== entryKey || finalizedValue !== entryValue) {
             output = new Map<unknown, unknown>();
-            for (const [copyKey, copyValue] of value) {
+            const copyIterator = readMapEntries(value);
+            if (copyIterator === undefined) {
+                return value;
+            }
+            for (;;) {
+                const copyStep = copyIterator.next();
+                if (copyStep.done === true) {
+                    break;
+                }
+                const [copyKey, copyValue] = copyStep.value;
                 if (Object.is(copyKey, entryKey) && Object.is(copyValue, entryValue)) {
                     break;
                 }
@@ -435,18 +454,23 @@ function finalizeMap(
             output.set(finalizedKey, finalizedValue);
         }
     }
-    return output ?? value;
 }
 
 /**
  * @brief Finalize Set values.
  */
 function finalizeSet(item: Schema, value: unknown, state: FinalizeState): unknown {
-    if (!(value instanceof Set)) {
+    const iterator = readSetValues(value);
+    if (iterator === undefined) {
         return value;
     }
     let output: Set<unknown> | undefined;
-    for (const entryValue of value) {
+    for (;;) {
+        const step = iterator.next();
+        if (step.done === true) {
+            return output ?? value;
+        }
+        const entryValue = step.value;
         const finalized = finalizeValue(item, entryValue, state);
         if (output !== undefined) {
             output.add(finalized);
@@ -454,7 +478,16 @@ function finalizeSet(item: Schema, value: unknown, state: FinalizeState): unknow
         }
         if (finalized !== entryValue) {
             output = new Set<unknown>();
-            for (const copyValue of value) {
+            const copyIterator = readSetValues(value);
+            if (copyIterator === undefined) {
+                return value;
+            }
+            for (;;) {
+                const copyStep = copyIterator.next();
+                if (copyStep.done === true) {
+                    break;
+                }
+                const copyValue = copyStep.value;
                 if (Object.is(copyValue, entryValue)) {
                     break;
                 }
@@ -463,7 +496,6 @@ function finalizeSet(item: Schema, value: unknown, state: FinalizeState): unknow
             output.add(finalized);
         }
     }
-    return output ?? value;
 }
 
 /**

@@ -1,5 +1,6 @@
-import { bench, describe } from "vitest";
+import { beforeAll, bench, describe } from "vitest";
 import { compile, t } from "../src/index.js";
+import { warmupSync, type WarmupTask } from "./warmup.js";
 
 const Operators = t.object({
     eq: t.optional(t.string),
@@ -48,6 +49,22 @@ const fieldQuery = {
 const invalidQuery = {
     and: []
 };
+
+const warmupTasks: readonly WarmupTask[] = [
+    (): unknown => Query.is(logicalQuery),
+    (): unknown => FastQuery.is(logicalQuery),
+    (): unknown => UnsafeQuery.is(logicalQuery),
+    (): unknown => Query.is(fieldQuery),
+    (): unknown => FastQuery.is(fieldQuery),
+    (): unknown => UnsafeQuery.is(fieldQuery),
+    (): unknown => Query.is(invalidQuery),
+    (): unknown => FastQuery.is(invalidQuery),
+    (): unknown => UnsafeQuery.is(invalidQuery)
+];
+
+beforeAll((): void => {
+    warmupSync(warmupTasks);
+});
 
 describe("presence-dispatched object unions", () => {
     bench("interpreted logical branch", () => {

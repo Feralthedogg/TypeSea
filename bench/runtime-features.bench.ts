@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { beforeAll, bench, describe } from "vitest";
 import {
     compile,
     compileAsync,
@@ -16,6 +16,12 @@ import {
     type TypeSeaEsbuildResolveArgs,
     type TypeSeaEsbuildResolveResult
 } from "../src/index.js";
+import {
+    warmupAsync,
+    warmupSync,
+    type AsyncWarmupTask,
+    type WarmupTask
+} from "./warmup.js";
 
 interface EsbuildLoadRegistration {
     readonly options: TypeSeaEsbuildLoadFilter;
@@ -110,6 +116,35 @@ const esbuildBuild: TypeSeaEsbuildBuild = {
 };
 esbuildPlugin.setup(esbuildBuild);
 const esbuildSourceLoad = readEsbuildLoad(esbuildLoads, "file");
+
+const warmupTasks: readonly WarmupTask[] = [
+    (): unknown => FastUser.is(valid),
+    (): unknown => BooleanUser.is(valid),
+    (): unknown => FastUser.is(invalid),
+    (): unknown => BooleanUser.is(invalid),
+    (): unknown => compileCached("bench:global-user", (): typeof User => User, {
+        name: "benchRuntimeFeatureGlobalCachedUser"
+    }).is(valid),
+    (): unknown => cache.compile("bench:user", (): typeof User => User, {
+        name: "benchRuntimeFeatureCachedUser"
+    }).is(valid),
+    (): unknown => CachedUser.is(valid),
+    (): unknown => GlobalCachedUser.is(valid),
+    (): unknown => rollupPlugin.transform(pluginSource, "/project/src/user.ts"),
+    (): unknown => rollupPlugin.load("\0typesea:aot/user")
+];
+
+const asyncWarmupTasks: readonly AsyncWarmupTask[] = [
+    async (): Promise<unknown> => await AsyncUsers.is(validUsers),
+    async (): Promise<unknown> => await AsyncUsers.check(invalidUsers),
+    async (): Promise<unknown> =>
+        await esbuildSourceLoad.callback({ path: "/project/src/user.ts" })
+];
+
+beforeAll(async (): Promise<void> => {
+    warmupSync(warmupTasks);
+    await warmupAsync(asyncWarmupTasks);
+});
 
 describe("runtime feature extensions", () => {
     bench("compiled is valid", () => {

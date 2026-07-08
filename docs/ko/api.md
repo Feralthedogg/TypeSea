@@ -20,7 +20,7 @@ import {
 } from "typesea";
 ```
 
-패키지는 root entry point와 `typesea/mini`, `typesea/seaflow`,
+패키지는 root entry point와 `typesea/mini`, `typesea/seaflow`, `typesea/seabreeze`,
 `typesea/zod`, `typesea/v3`, `typesea/v4`, `typesea/v4-mini`,
 `typesea/v4/mini`, `typesea/locales`,
 `typesea/v4/locales`, `typesea/v4/locales/*`, `typesea/v4/core`를 공개 API로 노출합니다.
@@ -976,6 +976,81 @@ SeaFlow는 number/bigint 경계값, string 길이와 format 실패, SQLi/XSS str
 필수 key 삭제, strict object excess key, prototype-pollution key, accessor property,
 sparse array, tuple length fault, record/map/set child 오염, object-union hybrid probe를 생성합니다.
 `typesea/seaflow`로 분리되어 있으므로 root validator API를 import해도 hot validation code에 퍼저가 딸려오지 않습니다.
+
+## SeaBreeze Arena 추론
+
+```ts
+import {
+  createSeaBreeze,
+  SeaBreezeArena,
+  SeaBreezePresence,
+  emitSeaBreezeBooleanSourceBundle,
+  seaBreezeReader
+} from "typesea/seabreeze";
+```
+
+SeaBreeze는 TypeSea의 저수준 arena-backed inference surface입니다. 추론된 검증
+타입을 typed array 안의 dense id로 저장하고, HM 스타일 변수와 best-common-type
+복구를 결합한 principal join을 계산합니다. 결과는 schema record, graph IR, 또는
+predicate-only source bundle로 낮출 수 있습니다.
+
+`typesea/seabreeze`는 전용 public subpath입니다. `typesea` root에서 다시 export하지
+않으므로 root validator import는 arena inference code 비용을 치르지 않습니다.
+schema generator, cache/AOT tooling, compiler-style pipeline처럼 런타임 validator를
+추론한 뒤 TypeSea JIT에 넘겨야 하는 경우에 사용하세요.
+
+일반적인 사용은 builder API에서 시작하면 됩니다. object key interning, field
+ordering, source emission, predicate instantiation을 작은 API 뒤에 숨기지만,
+결과는 여전히 numeric arena node id입니다.
+
+```ts
+const s = createSeaBreeze({ maxNodes: 64, maxFields: 16 });
+
+const User = s.object({
+  id: s.string(),
+  age: s.optional(s.number()),
+  tags: s.array(s.string())
+});
+
+const FastUser = s.compile(User, {
+  objectMode: "strict",
+  mode: "safe",
+  name: "isInferredUser"
+});
+
+FastUser.is({ id: "u1", tags: ["jit"] });
+
+const schema = s.schema(User);
+const graph = s.graph(User);
+const sourceBundle = s.emit(User);
+```
+
+builder는 검증 루프 기준으로 zero-cost입니다. `object()`, `optional()`, key
+interning은 arena shape를 만들 때만 실행됩니다. `compile()`은
+`SeaBreezeReader`에서 직접 predicate를 방출하며, 반환된 `is()`는 builder로 다시
+돌아오지 않습니다.
+
+```ts
+const arena = new SeaBreezeArena({ maxNodes: 64, maxFields: 16 });
+const user = arena.allocObject();
+arena.appendField(user, 1, arena.string, SeaBreezePresence.Required);
+arena.appendField(user, 2, arena.number, SeaBreezePresence.Optional);
+
+const bundle = emitSeaBreezeBooleanSourceBundle(
+  seaBreezeReader(arena),
+  user,
+  {
+    keyTable: ["", "id", "age"],
+    objectMode: "strict",
+    mode: "safe",
+    name: "isInferredUser"
+  }
+);
+```
+
+직접 emitter도 TypeSea의 safety tier를 유지합니다. `safe`는 own data descriptor만
+읽고 accessor/prototype read를 거부합니다. `unsafe`는 V8 hot path를 위해 direct
+property read를 사용하고, `unchecked`는 strict excess-key check도 건너뜁니다.
 
 ## 런타임 컴파일
 

@@ -38,6 +38,7 @@ import { isSchemaWithState, isUnionSchema, isXorSchema } from "./predicate.js";
 import {
     actualType,
     hasObjectKey,
+    isInspectableValue,
     isPlainRecord,
     literalToExpected,
     readOwnDataProperty
@@ -61,8 +62,18 @@ export function checkSchema<TValue>(
     schema: Schema,
     value: unknown
 ): CheckResult<TValue> {
-    if (isSchemaWithState(schema, value, makeValidationState())) {
-        return ok(finalizeAcceptedValue(schema, value) as TValue);
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        if (isSchemaWithState(schema, value, makeValidationState())) {
+            return ok(finalizeAcceptedValue(schema, value) as TValue);
+        }
+    } catch {
+        if (isInspectableValue(value)) {
+            throw new TypeError("schema predicate failed");
+        }
+        const issues: Issue[] = [];
+        pushIssue([], issues, "expected_object", "inspectable value", "hostile object");
+        return err(freezeIssueArray(issues));
     }
     /*
      * The boolean predicate runs first to keep the valid path allocation-light.
@@ -70,7 +81,15 @@ export function checkSchema<TValue>(
      */
     const issues: Issue[] = [];
     const path: PathSegment[] = [];
-    collectIssues(schema, value, path, issues, makeValidationState());
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        collectIssues(schema, value, path, issues, makeValidationState());
+    } catch {
+        if (isInspectableValue(value)) {
+            throw new TypeError("schema diagnostics failed");
+        }
+        pushIssue(path, issues, "expected_object", "inspectable value", "hostile object");
+    }
     if (issues.length === 0) {
         /*
          * Refine predicates can fail without emitting a structural issue. Add a

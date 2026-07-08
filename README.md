@@ -248,6 +248,35 @@ fuzzer unless you import it. `maxYields` is a hard upper bound, not a target:
 small schemas may naturally emit fewer cases when the solver has exhausted its
 finite edge set.
 
+### SeaBreeze Arena Inference
+
+```ts
+import { createSeaBreeze } from "typesea/seabreeze";
+
+const s = createSeaBreeze({ maxNodes: 64, maxFields: 16 });
+
+const User = s.object({
+  id: s.string(),
+  age: s.optional(s.number()),
+  tags: s.array(s.string())
+});
+
+const FastUser = s.compile(User, {
+  objectMode: "strict",
+  mode: "safe",
+  name: "isInferredUser"
+});
+
+FastUser.is({ id: "u1", tags: ["jit"] }); // true
+```
+
+SeaBreeze is TypeSea's arena-backed inference surface. The ergonomic
+`createSeaBreeze()` builder is a zero-cost abstraction for the validation hot
+path: it allocates only while building the arena shape, returns numeric node ids,
+and `compile()` emits the same direct predicate source as the low-level reader
+API. It is published as `typesea/seabreeze`, not re-exported from `typesea`, so
+normal validators do not pay for it.
+
 ### Cold Starts, Fail-Fast, And Large Payloads
 
 ```ts
@@ -1065,14 +1094,26 @@ provenance.
 ## Documentation
 
 - [Documentation site](https://feralthedogg.github.io/TypeSea/)
-- [API reference](docs/api.md)
-- [SeaFlow fuzzer guide](docs/seaflow.md)
-- [Engine notes](docs/engine-notes.md)
+- [API reference](https://feralthedogg.github.io/TypeSea/#api-reference)
+- [SeaFlow fuzzer guide](https://feralthedogg.github.io/TypeSea/#seaflow)
+- [SeaBreeze arena inference](https://feralthedogg.github.io/TypeSea/#seabreeze)
+- [Engine notes](https://feralthedogg.github.io/TypeSea/#engine-notes)
 - [Security policy](https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md)
 
 ---
 
 ## Migration Notes
+
+### 1.0.0 to 1.1.0
+
+Existing schemas keep working. `1.1.0` adds SeaBreeze through the dedicated
+`typesea/seabreeze` subpath. SeaBreeze is an advanced arena-backed inference
+surface for compiler-style tooling: use it when you want to infer a validator
+shape from numeric arena nodes, lower it to TypeSea schema or graph IR, or emit
+predicate-only source directly from a typed-array reader.
+
+SeaBreeze is not re-exported from `typesea`, so root validator imports keep zero
+SeaBreeze import and bundle cost.
 
 ### 0.4.0 to 1.0.0
 

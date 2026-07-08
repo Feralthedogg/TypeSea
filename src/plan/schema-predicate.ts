@@ -38,17 +38,23 @@ import {
 import type { Issue } from "../issue/index.js";
 import {
     findDiscriminatedUnionCase,
+    hasOwnRuntimeProperty,
     hasObjectKey,
     isArrayIndexKey,
+    isArrayValue,
     isDataPropertyDescriptor,
     isValidDateObject,
     isPlainRecord,
     ordinaryHasInstance,
     readDateTime,
+    readEnumerableStringKeys,
     readFileInfo,
     readMapEntries,
     readMapSize,
     readOwnDataProperty,
+    readOwnKeys,
+    readOwnPropertyNameCount,
+    readOwnPropertySymbolCount,
     readSetSize,
     readSetValues,
     type DataPropertyDescriptor
@@ -201,7 +207,11 @@ function isPropertyCountSchema(
     if (!isPlainRecord(value)) {
         return false;
     }
-    const count = Object.keys(value).length;
+    const keys = readEnumerableStringKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
+    const count = keys.length;
     return (min === undefined || count >= min) &&
         (max === undefined || count <= max);
 }
@@ -218,7 +228,10 @@ function isPropertyNamesSchema(
     if (!isPlainRecord(value)) {
         return false;
     }
-    const keys = Object.keys(value);
+    const keys = readEnumerableStringKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
     for (let index = 0; index < keys.length; index += 1) {
         const key = keys[index];
         if (key !== undefined && !runChild(keySchema, key, state)) {
@@ -240,7 +253,10 @@ function isPatternPropertiesSchema(
     if (!isPlainRecord(value)) {
         return false;
     }
-    const keys = Object.keys(value);
+    const keys = readEnumerableStringKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
     for (let index = 0; index < keys.length; index += 1) {
         const key = keys[index];
         if (key === undefined ||
@@ -642,7 +658,7 @@ function isArraySchema(
     state: ValidationState,
     runChild: ChildPredicateRunner
 ): boolean {
-    if (!Array.isArray(value)) {
+    if (!isArrayValue(value)) {
         return false;
     }
     if (!arrayLengthChecksPass(schema, value.length)) {
@@ -713,10 +729,13 @@ function isPresentArraySchema(
     state: ValidationState,
     runChild: ChildPredicateRunner
 ): boolean {
-    const keys = Object.getOwnPropertyNames(value);
+    const keys = readOwnKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
     for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
         const key = keys[keyIndex];
-        if (key === undefined || !isArrayIndexKey(key, value.length)) {
+        if (typeof key !== "string" || !isArrayIndexKey(key, value.length)) {
             continue;
         }
         /*
@@ -748,7 +767,7 @@ function isTupleSchema(
     state: ValidationState,
     runChild: ChildPredicateRunner
 ): boolean {
-    if (!Array.isArray(value)) {
+    if (!isArrayValue(value)) {
         return false;
     }
     const items = schema.items;
@@ -807,7 +826,13 @@ function readArrayKeyDataProperty(
     value: readonly unknown[],
     key: string
 ): DataPropertyDescriptor | null | undefined {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    let descriptor: PropertyDescriptor | undefined;
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        descriptor = Object.getOwnPropertyDescriptor(value, key);
+    } catch {
+        return null;
+    }
     if (descriptor === undefined) {
         return undefined;
     }
@@ -833,7 +858,10 @@ function isRecordSchema(
     if (!hasRequiredRecordKeys(schema.requiredKeys, value)) {
         return false;
     }
-    const keys = Object.keys(value);
+    const keys = readEnumerableStringKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
     for (let index = 0; index < keys.length; index += 1) {
         const key = keys[index];
         if (key === undefined) {
@@ -872,7 +900,13 @@ function hasRequiredRecordKeys(
         if (key === undefined) {
             return false;
         }
-        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        let descriptor: PropertyDescriptor | undefined;
+        // eslint-disable-next-line no-restricted-syntax
+        try {
+            descriptor = Object.getOwnPropertyDescriptor(value, key);
+        } catch {
+            return false;
+        }
         if (descriptor?.enumerable !== true ||
             !isDataPropertyDescriptor(descriptor)) {
             return false;
@@ -1008,9 +1042,8 @@ function isPropertySchema(
     if (((typeof value !== "object" && typeof value !== "function") || value === null)) {
         return false;
     }
-    const descriptor = Object.getOwnPropertyDescriptor(value, schema.key);
+    const descriptor = readOwnDataProperty(value, schema.key);
     return descriptor !== undefined &&
-        isDataPropertyDescriptor(descriptor) &&
         runChild(schema.value, descriptor.value, state);
 }
 
@@ -1047,7 +1080,7 @@ function isObjectSchema(
         }
         const property = readOwnDataProperty(record, entry.key);
         if (property === undefined) {
-            if (!Object.prototype.hasOwnProperty.call(record, entry.key) &&
+            if (hasOwnRuntimeProperty(record, entry.key) === false &&
                 objectEntryCanBeOmitted(entry)) {
                 continue;
             }
@@ -1062,10 +1095,13 @@ function isObjectSchema(
             return validateObjectCatchall(schema, record, state, runChild);
         }
         if (allRequired) {
-            return Object.getOwnPropertyNames(record).length === entries.length &&
-                Object.getOwnPropertySymbols(record).length === 0;
+            return readOwnPropertyNameCount(record) === entries.length &&
+                readOwnPropertySymbolCount(record) === 0;
         }
-        const keys = Reflect.ownKeys(record);
+        const keys = readOwnKeys(record);
+        if (keys === undefined) {
+            return false;
+        }
         for (let index = 0; index < keys.length; index += 1) {
             const key = keys[index];
             if (typeof key !== "string" || !hasObjectKey(schema.keyLookup, key)) {
@@ -1097,15 +1133,18 @@ function validateObjectCatchall(
     if (catchall === undefined) {
         return true;
     }
-    const keys = Reflect.ownKeys(record);
+    const keys = readOwnKeys(record);
+    if (keys === undefined) {
+        return false;
+    }
     for (let index = 0; index < keys.length; index += 1) {
         const key = keys[index];
         if (key === undefined ||
             (typeof key === "string" && hasObjectKey(schema.keyLookup, key))) {
             continue;
         }
-        const descriptor = Object.getOwnPropertyDescriptor(record, key);
-        if (descriptor === undefined || !isDataPropertyDescriptor(descriptor)) {
+        const descriptor = readOwnDataProperty(record, key);
+        if (descriptor === undefined) {
             return false;
         }
         if (!runChild(catchall, descriptor.value, state)) {

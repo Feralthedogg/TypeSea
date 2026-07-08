@@ -1,6 +1,6 @@
 {
     "name": "typesea",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "V8-friendly runtime narrowing for TypeScript with Sea-of-Nodes graph introspection.",
     "type": "module",
     "author": "feral",
@@ -35,6 +35,11 @@
             "types": "./dist/seaflow/index.d.ts",
             "import": "./dist/seaflow/index.js",
             "default": "./dist/seaflow/index.js"
+        },
+        "./seabreeze": {
+            "types": "./dist/seabreeze/index.d.ts",
+            "import": "./dist/seabreeze/index.js",
+            "default": "./dist/seabreeze/index.js"
         },
         "./zod": {
             "types": "./dist/zod.d.ts",
@@ -124,9 +129,12 @@
     "license": "MIT",
     "devDependencies": {
         "@eslint/js": "^10.0.1",
+        "@trpc/client": "^11.13.0",
+        "@trpc/server": "^11.13.0",
         "@types/node": "^26.1.0",
         "ajv": "^8.20.0",
         "eslint": "^10.6.0",
+        "mitata": "^1.0.34",
         "typescript": "^6.0.3",
         "typescript-eslint": "^8.62.1",
         "valibot": "^1.4.2",

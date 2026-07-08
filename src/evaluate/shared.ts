@@ -65,14 +65,86 @@ export function hasObjectKey(keyLookup: ObjectKeyLookup, key: string): boolean {
  * @returns Own data descriptor, or undefined for missing/accessor properties.
  */
 export function readOwnDataProperty(
-    record: UnknownRecord,
-    key: string
+    record: object,
+    key: PropertyKey
 ): DataPropertyDescriptor | undefined {
-    const descriptor = Object.getOwnPropertyDescriptor(record, key);
+    let descriptor: PropertyDescriptor | undefined;
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        descriptor = Object.getOwnPropertyDescriptor(record, key);
+    } catch {
+        return undefined;
+    }
     if (descriptor === undefined || !isDataPropertyDescriptor(descriptor)) {
         return undefined;
     }
     return descriptor;
+}
+
+/**
+ * @brief Test for an own runtime property without leaking Proxy trap errors.
+ * @param record Runtime object being validated.
+ * @param key Own key to inspect.
+ * @returns True/false when reflection succeeds, undefined when reflection traps.
+ */
+export function hasOwnRuntimeProperty(
+    record: object,
+    key: PropertyKey
+): boolean | undefined {
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        return Object.prototype.hasOwnProperty.call(record, key);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * @brief Read enumerable own string keys without leaking Proxy trap errors.
+ */
+export function readEnumerableStringKeys(value: object): readonly string[] | undefined {
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        return Object.keys(value);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * @brief Read all own property keys without leaking Proxy trap errors.
+ */
+export function readOwnKeys(value: object): readonly PropertyKey[] | undefined {
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        return Reflect.ownKeys(value);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * @brief Count own string-named properties without leaking Proxy trap errors.
+ */
+export function readOwnPropertyNameCount(value: object): number | undefined {
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        return Object.getOwnPropertyNames(value).length;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * @brief Count own symbol-named properties without leaking Proxy trap errors.
+ */
+export function readOwnPropertySymbolCount(value: object): number | undefined {
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        return Object.getOwnPropertySymbols(value).length;
+    } catch {
+        return undefined;
+    }
 }
 
 /**
@@ -116,7 +188,27 @@ export function isStrictTrue(value: unknown): boolean {
  * @returns True for non-array object values.
  */
 export function isPlainRecord(value: unknown): value is UnknownRecord {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
+    if (typeof value !== "object" || value === null) {
+        return false;
+    }
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        return !Array.isArray(value);
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * @brief Test Array branding without leaking revoked-Proxy errors.
+ */
+export function isArrayValue(value: unknown): value is readonly unknown[] {
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        return Array.isArray(value);
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -168,8 +260,13 @@ export function actualType(value: unknown): string {
     if (value === null) {
         return "null";
     }
-    if (Array.isArray(value)) {
-        return "array";
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        if (Array.isArray(value)) {
+            return "array";
+        }
+    } catch {
+        return "object";
     }
     if (isValidDateObject(value)) {
         return "date";
@@ -193,6 +290,36 @@ export function actualType(value: unknown): string {
         return "nan";
     }
     return typeof value;
+}
+
+/**
+ * @brief Probe whether host reflection can inspect a candidate input.
+ * @param value Candidate runtime value.
+ * @returns True when ordinary reflection succeeds without executing getters.
+ * @details Compiled validators use this only after generated code throws. A
+ * false result means the input itself is hostile, such as a revoked Proxy or a
+ * Proxy whose reflection traps throw. A true result lets schema and API misuse
+ * errors keep surfacing as programmer-facing exceptions.
+ */
+export function isInspectableValue(value: unknown): boolean {
+    if (typeof value !== "object" || value === null) {
+        return true;
+    }
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        Array.isArray(value);
+        Object.getPrototypeOf(value);
+        const keys = Reflect.ownKeys(value);
+        if (keys.length !== 0) {
+            const key = keys[0];
+            if (key !== undefined) {
+                Object.getOwnPropertyDescriptor(value, key);
+            }
+        }
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 /**

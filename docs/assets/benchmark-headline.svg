@@ -22,132 +22,132 @@
     </defs>
     <rect width="1120" height="930" rx="24" fill="url(#bg)"/>
     <text x="44" y="58" class="title">TypeSea benchmark comparison</text>
-    <text x="46" y="88" class="subtitle">Generated from bench/results/latest.json. Local run 2026-07-06 KST, ops/sec, higher is better.</text>
+    <text x="46" y="88" class="subtitle">Generated from bench/results/latest.json. Local run 2026-07-08 KST, ops/sec, higher is better.</text>
     <g>
         <rect x="44" y="118" width="324" height="100" rx="12" fill="#111827" stroke="#243044"/>
         <text x="66" y="149" class="card-title">Unchecked valid hot path</text>
-        <text x="66" y="186" class="card-value">29.65M</text>
-        <text x="66" y="208" class="card-note">33x Zod, 11x Ajv</text>
+        <text x="66" y="186" class="card-value">42.21M</text>
+        <text x="66" y="208" class="card-note">32x Zod, 9.96x Ajv</text>
     </g>
     <g>
         <rect x="398" y="118" width="324" height="100" rx="12" fill="#111827" stroke="#243044"/>
         <text x="420" y="149" class="card-title">Safe invalid fast-fail</text>
-        <text x="420" y="186" class="card-value">30.51M</text>
-        <text x="420" y="208" class="card-note">1.92x Ajv, 508x Zod</text>
+        <text x="420" y="186" class="card-value">42.51M</text>
+        <text x="420" y="208" class="card-note">1.48x Ajv, 506x Zod</text>
     </g>
     <g>
         <rect x="752" y="118" width="324" height="100" rx="12" fill="#111827" stroke="#243044"/>
         <text x="774" y="149" class="card-title">Safe valid path</text>
-        <text x="774" y="186" class="card-value">3.84M</text>
-        <text x="774" y="208" class="card-note">1.43x Ajv while staying hostile-input safe</text>
+        <text x="774" y="186" class="card-value">5.18M</text>
+        <text x="774" y="208" class="card-note">1.22x Ajv while staying hostile-input safe</text>
     </g>
     <g>
     <rect x="44" y="248" width="1032" height="148" rx="12" fill="#101820" stroke="#243044"/>
     <text x="66" y="278" class="panel-title">Valid object path</text>
-    <text x="290" y="278" class="panel-note">linear scale to 29.65M</text>
+    <text x="290" y="278" class="panel-note">linear scale to 42.21M</text>
     <line x1="336" y1="296" x2="966" y2="296" class="axis"/>
     <text x="66" y="316" class="bar-label">TypeSea interpreted</text>
     <rect x="336" y="309" width="7" height="8" rx="4" fill="#9ca3af"/>
-    <text x="980" y="316" class="bar-value">341,332 hz</text>
+    <text x="980" y="316" class="bar-value">440,261 hz</text>
     <text x="66" y="329" class="bar-label">TypeSea safe compiled</text>
-    <rect x="336" y="322" width="82" height="8" rx="4" fill="#14b8a6"/>
-    <text x="980" y="329" class="bar-value">3,840,854 hz</text>
+    <rect x="336" y="322" width="77" height="8" rx="4" fill="#14b8a6"/>
+    <text x="980" y="329" class="bar-value">5,179,232 hz</text>
     <text x="66" y="342" class="bar-label">TypeSea unsafe compiled</text>
-    <rect x="336" y="335" width="584" height="8" rx="4" fill="#f97316"/>
-    <text x="980" y="342" class="bar-value">27,464,645 hz</text>
+    <rect x="336" y="335" width="524" height="8" rx="4" fill="#f97316"/>
+    <text x="980" y="342" class="bar-value">35,101,593 hz</text>
     <text x="66" y="355" class="bar-label">TypeSea unchecked compiled</text>
     <rect x="336" y="348" width="630" height="8" rx="4" fill="#22c55e"/>
-    <text x="980" y="355" class="bar-value">29,647,233 hz</text>
+    <text x="980" y="355" class="bar-value">42,212,426 hz</text>
     <text x="66" y="368" class="bar-label">Zod safeParse</text>
     <rect x="336" y="361" width="19" height="8" rx="4" fill="#8b5cf6"/>
-    <text x="980" y="368" class="bar-value">911,576 hz</text>
+    <text x="980" y="368" class="bar-value">1,303,751 hz</text>
     <text x="66" y="381" class="bar-label">Valibot safeParse</text>
-    <rect x="336" y="374" width="20" height="8" rx="4" fill="#ec4899"/>
-    <text x="980" y="381" class="bar-value">946,246 hz</text>
+    <rect x="336" y="374" width="18" height="8" rx="4" fill="#ec4899"/>
+    <text x="980" y="381" class="bar-value">1,237,075 hz</text>
     <text x="66" y="394" class="bar-label">Ajv compiled</text>
-    <rect x="336" y="387" width="57" height="8" rx="4" fill="#3b82f6"/>
-    <text x="980" y="394" class="bar-value">2,682,380 hz</text>
+    <rect x="336" y="387" width="63" height="8" rx="4" fill="#3b82f6"/>
+    <text x="980" y="394" class="bar-value">4,236,966 hz</text>
     </g>
     <g>
     <rect x="44" y="414" width="1032" height="148" rx="12" fill="#101820" stroke="#243044"/>
     <text x="66" y="444" class="panel-title">Valid diagnostic path</text>
-    <text x="290" y="444" class="panel-note">linear scale to 31.71M</text>
+    <text x="290" y="444" class="panel-note">linear scale to 35.45M</text>
     <line x1="336" y1="462" x2="966" y2="462" class="axis"/>
     <text x="66" y="482" class="bar-label">TypeSea interpreted</text>
-    <rect x="336" y="475" width="6" height="8" rx="4" fill="#9ca3af"/>
-    <text x="980" y="482" class="bar-value">294,582 hz</text>
+    <rect x="336" y="475" width="7" height="8" rx="4" fill="#9ca3af"/>
+    <text x="980" y="482" class="bar-value">419,585 hz</text>
     <text x="66" y="495" class="bar-label">TypeSea safe compiled</text>
-    <rect x="336" y="488" width="58" height="8" rx="4" fill="#14b8a6"/>
-    <text x="980" y="495" class="bar-value">2,914,942 hz</text>
+    <rect x="336" y="488" width="82" height="8" rx="4" fill="#14b8a6"/>
+    <text x="980" y="495" class="bar-value">4,625,826 hz</text>
     <text x="66" y="508" class="bar-label">TypeSea unsafe compiled</text>
-    <rect x="336" y="501" width="428" height="8" rx="4" fill="#f97316"/>
-    <text x="980" y="508" class="bar-value">21,517,947 hz</text>
+    <rect x="336" y="501" width="528" height="8" rx="4" fill="#f97316"/>
+    <text x="980" y="508" class="bar-value">29,715,703 hz</text>
     <text x="66" y="521" class="bar-label">TypeSea unchecked compiled</text>
     <rect x="336" y="514" width="630" height="8" rx="4" fill="#22c55e"/>
-    <text x="980" y="521" class="bar-value">31,707,555 hz</text>
+    <text x="980" y="521" class="bar-value">35,451,825 hz</text>
     <text x="66" y="534" class="bar-label">Zod safeParse</text>
-    <rect x="336" y="527" width="18" height="8" rx="4" fill="#8b5cf6"/>
-    <text x="980" y="534" class="bar-value">883,138 hz</text>
+    <rect x="336" y="527" width="24" height="8" rx="4" fill="#8b5cf6"/>
+    <text x="980" y="534" class="bar-value">1,327,889 hz</text>
     <text x="66" y="547" class="bar-label">Valibot safeParse</text>
-    <rect x="336" y="540" width="18" height="8" rx="4" fill="#ec4899"/>
-    <text x="980" y="547" class="bar-value">893,898 hz</text>
+    <rect x="336" y="540" width="22" height="8" rx="4" fill="#ec4899"/>
+    <text x="980" y="547" class="bar-value">1,248,320 hz</text>
     <text x="66" y="560" class="bar-label">Ajv compiled</text>
-    <rect x="336" y="553" width="57" height="8" rx="4" fill="#3b82f6"/>
-    <text x="980" y="560" class="bar-value">2,876,907 hz</text>
+    <rect x="336" y="553" width="76" height="8" rx="4" fill="#3b82f6"/>
+    <text x="980" y="560" class="bar-value">4,289,907 hz</text>
     </g>
     <g>
     <rect x="44" y="580" width="1032" height="148" rx="12" fill="#101820" stroke="#243044"/>
     <text x="66" y="610" class="panel-title">Invalid object fast-fail</text>
-    <text x="290" y="610" class="panel-note">linear scale to 36.66M</text>
+    <text x="290" y="610" class="panel-note">linear scale to 50.42M</text>
     <line x1="336" y1="628" x2="966" y2="628" class="axis"/>
     <text x="66" y="648" class="bar-label">TypeSea interpreted</text>
-    <rect x="336" y="641" width="38" height="8" rx="4" fill="#9ca3af"/>
-    <text x="980" y="648" class="bar-value">2,223,276 hz</text>
+    <rect x="336" y="641" width="40" height="8" rx="4" fill="#9ca3af"/>
+    <text x="980" y="648" class="bar-value">3,205,632 hz</text>
     <text x="66" y="661" class="bar-label">TypeSea safe compiled</text>
-    <rect x="336" y="654" width="524" height="8" rx="4" fill="#14b8a6"/>
-    <text x="980" y="661" class="bar-value">30,513,434 hz</text>
+    <rect x="336" y="654" width="531" height="8" rx="4" fill="#14b8a6"/>
+    <text x="980" y="661" class="bar-value">42,509,952 hz</text>
     <text x="66" y="674" class="bar-label">TypeSea unsafe compiled</text>
-    <rect x="336" y="667" width="484" height="8" rx="4" fill="#f97316"/>
-    <text x="980" y="674" class="bar-value">28,172,129 hz</text>
+    <rect x="336" y="667" width="628" height="8" rx="4" fill="#f97316"/>
+    <text x="980" y="674" class="bar-value">50,229,547 hz</text>
     <text x="66" y="687" class="bar-label">TypeSea unchecked compiled</text>
     <rect x="336" y="680" width="630" height="8" rx="4" fill="#22c55e"/>
-    <text x="980" y="687" class="bar-value">36,659,550 hz</text>
+    <text x="980" y="687" class="bar-value">50,419,896 hz</text>
     <text x="66" y="700" class="bar-label">Zod safeParse</text>
     <rect x="336" y="693" width="2" height="8" rx="4" fill="#8b5cf6"/>
-    <text x="980" y="700" class="bar-value">60,043 hz</text>
+    <text x="980" y="700" class="bar-value">84,022 hz</text>
     <text x="66" y="713" class="bar-label">Valibot safeParse</text>
-    <rect x="336" y="706" width="9" height="8" rx="4" fill="#ec4899"/>
-    <text x="980" y="713" class="bar-value">533,818 hz</text>
+    <rect x="336" y="706" width="12" height="8" rx="4" fill="#ec4899"/>
+    <text x="980" y="713" class="bar-value">934,621 hz</text>
     <text x="66" y="726" class="bar-label">Ajv compiled</text>
-    <rect x="336" y="719" width="273" height="8" rx="4" fill="#3b82f6"/>
-    <text x="980" y="726" class="bar-value">15,870,460 hz</text>
+    <rect x="336" y="719" width="358" height="8" rx="4" fill="#3b82f6"/>
+    <text x="980" y="726" class="bar-value">28,645,864 hz</text>
     </g>
     <g>
     <rect x="44" y="746" width="1032" height="148" rx="12" fill="#101820" stroke="#243044"/>
     <text x="66" y="776" class="panel-title">Invalid diagnostic path</text>
-    <text x="290" y="776" class="panel-note">linear scale to 19.85M</text>
+    <text x="290" y="776" class="panel-note">linear scale to 29.20M</text>
     <line x1="336" y1="794" x2="966" y2="794" class="axis"/>
     <text x="66" y="814" class="bar-label">TypeSea interpreted</text>
-    <rect x="336" y="807" width="9" height="8" rx="4" fill="#9ca3af"/>
-    <text x="980" y="814" class="bar-value">280,569 hz</text>
+    <rect x="336" y="807" width="8" height="8" rx="4" fill="#9ca3af"/>
+    <text x="980" y="814" class="bar-value">371,821 hz</text>
     <text x="66" y="827" class="bar-label">TypeSea safe compiled</text>
-    <rect x="336" y="820" width="46" height="8" rx="4" fill="#14b8a6"/>
-    <text x="980" y="827" class="bar-value">1,460,301 hz</text>
+    <rect x="336" y="820" width="43" height="8" rx="4" fill="#14b8a6"/>
+    <text x="980" y="827" class="bar-value">1,988,170 hz</text>
     <text x="66" y="840" class="bar-label">TypeSea unsafe compiled</text>
-    <rect x="336" y="833" width="68" height="8" rx="4" fill="#f97316"/>
-    <text x="980" y="840" class="bar-value">2,144,535 hz</text>
+    <rect x="336" y="833" width="61" height="8" rx="4" fill="#f97316"/>
+    <text x="980" y="840" class="bar-value">2,849,188 hz</text>
     <text x="66" y="853" class="bar-label">TypeSea unchecked compiled</text>
-    <rect x="336" y="846" width="84" height="8" rx="4" fill="#22c55e"/>
-    <text x="980" y="853" class="bar-value">2,658,950 hz</text>
+    <rect x="336" y="846" width="72" height="8" rx="4" fill="#22c55e"/>
+    <text x="980" y="853" class="bar-value">3,337,828 hz</text>
     <text x="66" y="866" class="bar-label">Zod safeParse</text>
     <rect x="336" y="859" width="2" height="8" rx="4" fill="#8b5cf6"/>
-    <text x="980" y="866" class="bar-value">59,685 hz</text>
+    <text x="980" y="866" class="bar-value">82,282 hz</text>
     <text x="66" y="879" class="bar-label">Valibot safeParse</text>
-    <rect x="336" y="872" width="19" height="8" rx="4" fill="#ec4899"/>
-    <text x="980" y="879" class="bar-value">592,515 hz</text>
+    <rect x="336" y="872" width="17" height="8" rx="4" fill="#ec4899"/>
+    <text x="980" y="879" class="bar-value">804,785 hz</text>
     <text x="66" y="892" class="bar-label">Ajv compiled</text>
     <rect x="336" y="885" width="630" height="8" rx="4" fill="#3b82f6"/>
-    <text x="980" y="892" class="bar-value">19,847,089 hz</text>
+    <text x="980" y="892" class="bar-value">29,199,848 hz</text>
     </g>
     <text x="44" y="900" class="panel-note">CPU: Apple M4 / Node v24.13.0 / V8 13.6.233.17-node.37</text>
 </svg>

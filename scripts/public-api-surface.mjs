@@ -559,6 +559,44 @@ const expectedTypeExports = [
     "TupleShape"
 ];
 
+const expectedSeaBreezeValueExports = [
+    "SeaBreezeArena",
+    "SeaBreezeKind",
+    "SeaBreezePresence",
+    "createSeaBreeze",
+    "emitSeaBreezeBooleanSourceBundle",
+    "loadSeaBreezeSnapshot",
+    "lowerSeaBreezeToGraph",
+    "lowerSeaBreezeToSchema",
+    "seaBreezeReader",
+    "serializeSeaBreezeArena"
+];
+
+const expectedSeaBreezeTypeExports = [
+    "SeaBreezeBuilder",
+    "SeaBreezeBuilderCompileOptions",
+    "SeaBreezeBuilderEmitOptions",
+    "SeaBreezeBuilderGraphOptions",
+    "SeaBreezeBuilderOptions",
+    "SeaBreezeBuilderSchemaOptions",
+    "SeaBreezeBuilderSnapshot",
+    "SeaBreezeCompiledPredicate",
+    "SeaBreezeCyclePolicy",
+    "SeaBreezeEmitOptions",
+    "SeaBreezeGraphLoweringOptions",
+    "SeaBreezeNodeId",
+    "SeaBreezeOptions",
+    "SeaBreezeOptionalField",
+    "SeaBreezeReader",
+    "SeaBreezeSchemaLoweringOptions",
+    "SeaBreezeSchemaObjectMode",
+    "SeaBreezeShape",
+    "SeaBreezeShapeValue",
+    "SeaBreezeSnapshot",
+    "SeaBreezeUnboundVarPolicy",
+    "SeaBreezeUnionMode"
+];
+
 const result = await main();
 if (!result.ok) {
     console.error(result.error);
@@ -572,6 +610,8 @@ if (!result.ok) {
 async function main() {
     const declarations = await readFile("dist/index.d.ts", "utf8");
     const runtime = await readFile("dist/index.js", "utf8");
+    const seaBreezeDeclarations = await readFile("dist/seabreeze/index.d.ts", "utf8");
+    const seaBreezeRuntime = await readFile("dist/seabreeze/index.js", "utf8");
     const packageJson = JSON.parse(await readFile("package.json", "utf8"));
     const parsed = parseExports(declarations);
     if (!parsed.ok) {
@@ -600,6 +640,46 @@ async function main() {
     const runtimeTypeCheck = compareSet("runtime type exports", [], runtimeParsed.types);
     if (!runtimeTypeCheck.ok) {
         return runtimeTypeCheck;
+    }
+    const seaBreezeParsed = parseExports(seaBreezeDeclarations);
+    if (!seaBreezeParsed.ok) {
+        return seaBreezeParsed;
+    }
+    const seaBreezeRuntimeParsed = parseExports(seaBreezeRuntime);
+    if (!seaBreezeRuntimeParsed.ok) {
+        return seaBreezeRuntimeParsed;
+    }
+    const seaBreezeValueCheck = compareSet(
+        "seabreeze value exports",
+        expectedSeaBreezeValueExports,
+        seaBreezeParsed.values
+    );
+    if (!seaBreezeValueCheck.ok) {
+        return seaBreezeValueCheck;
+    }
+    const seaBreezeTypeCheck = compareSet(
+        "seabreeze type exports",
+        expectedSeaBreezeTypeExports,
+        seaBreezeParsed.types
+    );
+    if (!seaBreezeTypeCheck.ok) {
+        return seaBreezeTypeCheck;
+    }
+    const seaBreezeRuntimeValueCheck = compareSet(
+        "seabreeze runtime value exports",
+        expectedSeaBreezeValueExports,
+        seaBreezeRuntimeParsed.values
+    );
+    if (!seaBreezeRuntimeValueCheck.ok) {
+        return seaBreezeRuntimeValueCheck;
+    }
+    const seaBreezeRuntimeTypeCheck = compareSet(
+        "seabreeze runtime type exports",
+        [],
+        seaBreezeRuntimeParsed.types
+    );
+    if (!seaBreezeRuntimeTypeCheck.ok) {
+        return seaBreezeRuntimeTypeCheck;
     }
     const packageCheck = checkPackageExports(packageJson);
     if (!packageCheck.ok) {
@@ -759,6 +839,7 @@ function checkPackageExports(packageJson) {
         "./mini": ["./dist/mini.d.ts", "./dist/mini.js"],
         "./locales": ["./dist/locales.d.ts", "./dist/locales.js"],
         "./seaflow": ["./dist/seaflow/index.d.ts", "./dist/seaflow/index.js"],
+        "./seabreeze": ["./dist/seabreeze/index.d.ts", "./dist/seabreeze/index.js"],
         "./zod": ["./dist/zod.d.ts", "./dist/zod.js"],
         "./v3": ["./dist/v3.d.ts", "./dist/v3.js"],
         "./v4": ["./dist/v4.d.ts", "./dist/v4.js"],

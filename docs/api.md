@@ -22,7 +22,7 @@ import {
 ```
 
 The package exposes the root entry point plus `typesea/mini`,
-`typesea/seaflow`, `typesea/zod`, `typesea/v3`, `typesea/v4`,
+`typesea/seaflow`, `typesea/seabreeze`, `typesea/zod`, `typesea/v3`, `typesea/v4`,
 `typesea/v4-mini`, `typesea/v4/mini`, `typesea/locales`,
 `typesea/v4/locales`, `typesea/v4/locales/*`, and `typesea/v4/core`. Deep `dist/*` imports are
 intentionally not part of the public API. TypeSea is ESM-only and does not
@@ -1055,6 +1055,82 @@ prototype-pollution keys, accessor properties, sparse arrays, tuple length
 faults, invalid record/map/set children, and object-union hybrid probes. It is
 published through `typesea/seaflow`; importing the root validator APIs does not
 pull the fuzzer into hot validation code.
+
+## SeaBreeze Arena Inference
+
+```ts
+import {
+  createSeaBreeze,
+  SeaBreezeArena,
+  SeaBreezePresence,
+  emitSeaBreezeBooleanSourceBundle,
+  seaBreezeReader
+} from "typesea/seabreeze";
+```
+
+SeaBreeze is TypeSea's low-level arena-backed inference surface. It stores
+inferred validation types as dense ids in typed arrays, computes principal joins
+with HM-style variables plus best-common-type recovery, and can lower the result
+to schema records, graph IR, or a predicate-only source bundle.
+
+`typesea/seabreeze` is a dedicated public subpath. It is not re-exported from
+`typesea`, so root validator imports do not pay for arena inference code. Use it
+when you are building schema generators, cache/AOT tooling, or compiler-style
+pipelines that need to infer a runtime validator before handing the result to
+TypeSea's JIT.
+
+For ordinary use, start with the builder API. It keeps object key interning,
+field ordering, source emission, and predicate instantiation behind one small
+surface while still returning numeric arena node ids:
+
+```ts
+const s = createSeaBreeze({ maxNodes: 64, maxFields: 16 });
+
+const User = s.object({
+  id: s.string(),
+  age: s.optional(s.number()),
+  tags: s.array(s.string())
+});
+
+const FastUser = s.compile(User, {
+  objectMode: "strict",
+  mode: "safe",
+  name: "isInferredUser"
+});
+
+FastUser.is({ id: "u1", tags: ["jit"] });
+
+const schema = s.schema(User);
+const graph = s.graph(User);
+const sourceBundle = s.emit(User);
+```
+
+The builder is zero-cost for the validation loop. `object()`, `optional()`, and
+key interning run while building the arena. `compile()` emits a direct predicate
+from `SeaBreezeReader`; the returned `is()` function does not call back into the
+builder.
+
+```ts
+const arena = new SeaBreezeArena({ maxNodes: 64, maxFields: 16 });
+const user = arena.allocObject();
+arena.appendField(user, 1, arena.string, SeaBreezePresence.Required);
+arena.appendField(user, 2, arena.number, SeaBreezePresence.Optional);
+
+const bundle = emitSeaBreezeBooleanSourceBundle(
+  seaBreezeReader(arena),
+  user,
+  {
+    keyTable: ["", "id", "age"],
+    objectMode: "strict",
+    mode: "safe",
+    name: "isInferredUser"
+  }
+);
+```
+
+The direct emitter preserves TypeSea's safety tiers: `safe` uses own data
+descriptors and rejects accessors/prototype reads, `unsafe` uses direct property
+reads for V8 hot paths, and `unchecked` also skips strict excess-key checks.
 
 ## Runtime Compile
 

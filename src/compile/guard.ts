@@ -21,12 +21,17 @@ import {
 } from "../guard/parse-options.js";
 import { isWithCheckSource } from "../guard/with-check.js";
 import type { CheckResult } from "../issue/index.js";
-import { finalizeIssueArray } from "../issue/index.js";
+import {
+    finalizeIssueArray,
+    freezeIssueArray,
+    makeIssue
+} from "../issue/index.js";
 import { err, ok } from "../result/index.js";
 import {
     finalizeAcceptedValue,
     schemaNeedsFinalization
 } from "../evaluate/finalize.js";
+import { isInspectableValue } from "../evaluate/shared.js";
 import {
     freezeSchema,
     isSchemaValue,
@@ -148,7 +153,7 @@ export class CompiledBaseGuard<
         this: CompiledBaseGuard<TValue, TPresence>,
         value: unknown
     ): value is RuntimeValue<TValue, TPresence> {
-        return isStrictTrue(this.#test(value));
+        return runCompiledPredicate(this.#test, value);
     }
 
     public override check<TNext>(
@@ -175,7 +180,10 @@ export class CompiledBaseGuard<
         const result = finalizeCompiledResult(
             this.schema,
             this.#checkResult !== undefined
-                ? this.#checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>
+                ? runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                    this.#checkResult,
+                    value
+                )
                 : runCompiledCheck<RuntimeValue<TValue, TPresence>>(
                     this.#collect,
                     this.#trustedCollector,
@@ -197,7 +205,10 @@ export class CompiledBaseGuard<
         const result = finalizeCompiledResult(
             this.schema,
             this.#checkFirstResult !== undefined
-                ? this.#checkFirstResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>
+                ? runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                    this.#checkFirstResult,
+                    value
+                )
                 : runCompiledCheckFirst<RuntimeValue<TValue, TPresence>>(
                     this.#collect,
                     this.#trustedCollector,
@@ -222,11 +233,14 @@ export class CompiledBaseGuard<
                 this.#trustedCollector,
                 value
             )
-            : this.#checkResult(value);
+            : runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                this.#checkResult,
+                value
+            );
         if (!result.ok) {
             throw new TypeSeaAssertionError(applyParseOptions(result.error, value, options));
         }
-        const accepted = result.value as RuntimeValue<TValue, TPresence>;
+        const accepted = result.value;
         return this.#needsFinalization
             ? finalizeAcceptedValue(this.schema, accepted)
             : accepted;
@@ -243,9 +257,12 @@ export class CompiledBaseGuard<
                 this.#trustedCollector,
                 value
             )
-            : this.#checkResult(value);
+            : runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                this.#checkResult,
+                value
+            );
         if (result.ok) {
-            const accepted = result.value as RuntimeValue<TValue, TPresence>;
+            const accepted = result.value;
             const data = this.#needsFinalization
                 ? finalizeAcceptedValue(this.schema, accepted)
                 : accepted;
@@ -271,13 +288,16 @@ export class CompiledBaseGuard<
                 this.#trustedCollector,
                 value
             )
-            : this.#checkResult(value);
+            : runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                this.#checkResult,
+                value
+            );
         if (!result.ok) {
             return Promise.reject(new TypeSeaAssertionError(
                 applyParseOptions(result.error, value, options)
             ));
         }
-        const accepted = result.value as RuntimeValue<TValue, TPresence>;
+        const accepted = result.value;
         return Promise.resolve(this.#needsFinalization
             ? finalizeAcceptedValue(this.schema, accepted)
             : accepted);
@@ -310,7 +330,10 @@ export class CompiledBaseGuard<
                 this.#trustedCollector,
                 value
             )
-            : this.#checkResult(value);
+            : runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                this.#checkResult,
+                value
+            );
         if (!result.ok) {
             throw new TypeSeaAssertionError(applyParseOptions(result.error, value, options));
         }
@@ -359,7 +382,7 @@ export class CompiledBooleanBaseGuard<
     public is(
         value: unknown
     ): value is RuntimeValue<TValue, TPresence> {
-        return isStrictTrue(this.#test(value));
+        return runCompiledPredicate(this.#test, value);
     }
 }
 
@@ -521,7 +544,7 @@ function defineTrustedHotMethods<
             if (this !== self) {
                 throw new TypeError("compiled guard method receiver is invalid");
             }
-            return test(value);
+            return runTrustedPredicate(test, value);
         },
         false
     );
@@ -541,7 +564,10 @@ function defineTrustedHotMethods<
                 if (this !== self) {
                     throw new TypeError("compiled guard method receiver is invalid");
                 }
-                const result = checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
+                const result = runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                    checkResult,
+                    value
+                );
                 if (result.ok) {
                     return ok(finalizeAcceptedValue(self.schema, result.value));
                 }
@@ -567,13 +593,22 @@ function defineTrustedHotMethods<
                 // eslint-disable-next-line prefer-rest-params -- Rest arrays allocate on this hot path.
                 const args = arguments;
                 if (args.length < 2 && !hasGlobalErrorMap) {
-                    return checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
+                    return runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                        checkResult,
+                        value
+                    );
                 }
                 const options = args[1] as Partial<ParseOptions> | undefined;
                 if (options === undefined && !hasGlobalErrorMap) {
-                    return checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
+                    return runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                        checkResult,
+                        value
+                    );
                 }
-                const result = checkResult(value) as CheckResult<RuntimeValue<TValue, TPresence>>;
+                const result = runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                    checkResult,
+                    value
+                );
                 if (result.ok) {
                     return result;
                 }
@@ -598,7 +633,10 @@ function defineTrustedHotMethods<
                 if (this !== self) {
                     throw new TypeError("compiled guard method receiver is invalid");
                 }
-                const result = checkResult(value);
+                const result = runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                    checkResult,
+                    value
+                );
                 if (!result.ok) {
                     throw new TypeSeaAssertionError(
                         applyParseOptions(result.error, value, options)
@@ -623,9 +661,10 @@ function defineTrustedHotMethods<
                 if (this !== self) {
                     throw new TypeError("compiled guard method receiver is invalid");
                 }
-                const result = checkFirstResult(value) as CheckResult<
-                    RuntimeValue<TValue, TPresence>
-                >;
+                const result = runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                    checkFirstResult,
+                    value
+                );
                 if (result.ok) {
                     return ok(finalizeAcceptedValue(self.schema, result.value));
                 }
@@ -648,7 +687,10 @@ function defineTrustedHotMethods<
                 if (this !== self) {
                     throw new TypeError("compiled guard method receiver is invalid");
                 }
-                const result = checkResult(value);
+                const result = runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                    checkResult,
+                    value
+                );
                 if (!result.ok) {
                     // eslint-disable-next-line prefer-rest-params -- Rest arrays allocate on this hot path.
                     const args = arguments;
@@ -679,19 +721,22 @@ function defineTrustedHotMethods<
                 // eslint-disable-next-line prefer-rest-params -- Rest arrays allocate on this hot path.
                 const args = arguments;
                 if (args.length < 2 && !hasGlobalErrorMap) {
-                    return checkFirstResult(value) as CheckResult<
-                        RuntimeValue<TValue, TPresence>
-                    >;
+                    return runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                        checkFirstResult,
+                        value
+                    );
                 }
                 const options = args[1] as Partial<ParseOptions> | undefined;
                 if (options === undefined && !hasGlobalErrorMap) {
-                    return checkFirstResult(value) as CheckResult<
-                        RuntimeValue<TValue, TPresence>
-                    >;
+                    return runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                        checkFirstResult,
+                        value
+                    );
                 }
-                const result = checkFirstResult(value) as CheckResult<
-                    RuntimeValue<TValue, TPresence>
-                >;
+                const result = runCompiledCheckResult<RuntimeValue<TValue, TPresence>>(
+                    checkFirstResult,
+                    value
+                );
                 if (result.ok) {
                     return result;
                 }
@@ -748,6 +793,42 @@ function isStrictTrue(value: unknown): boolean {
 }
 
 /**
+ * @brief Execute a generated predicate with hostile-input failure closure.
+ */
+function runCompiledPredicate<TValue, TPresence extends Presence>(
+    test: BooleanPredicate,
+    value: unknown
+): value is RuntimeValue<TValue, TPresence> {
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        return isStrictTrue(test(value));
+    } catch {
+        if (isInspectableValue(value)) {
+            throw new TypeError("compiled guard predicate failed");
+        }
+        return false;
+    }
+}
+
+/**
+ * @brief Execute a trusted generated predicate with hostile-input failure closure.
+ */
+function runTrustedPredicate<TValue, TPresence extends Presence>(
+    test: BooleanPredicate,
+    value: unknown
+): value is RuntimeValue<TValue, TPresence> {
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        return test(value);
+    } catch {
+        if (isInspectableValue(value)) {
+            throw new TypeError("compiled guard predicate failed");
+        }
+        return false;
+    }
+}
+
+/**
  * @brief Read one own data slot from a compile input object.
  * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
  * stable across runtime and AOT emission.
@@ -782,7 +863,16 @@ function runCompiledCheck<TValue>(
     trustedCollector: boolean,
     value: unknown
 ): CheckResult<TValue> {
-    const rawIssues = collect(value);
+    let rawIssues: ReturnType<IssueCollectorRoot>;
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        rawIssues = collect(value);
+    } catch {
+        if (isInspectableValue(value)) {
+            throw new TypeError("compiled guard collector failed");
+        }
+        return hostileInputResult<TValue>(value);
+    }
     if (trustedCollector) {
         if (rawIssues === undefined || rawIssues.length === 0) {
             return ok(value as TValue);
@@ -794,6 +884,40 @@ function runCompiledCheck<TValue>(
         return ok(value as TValue);
     }
     return err(issues);
+}
+
+/**
+ * @brief Execute a generated Result-returning checker with fail-closed traps.
+ */
+function runCompiledCheckResult<TValue>(
+    check: CheckResultRoot,
+    value: unknown
+): CheckResult<TValue> {
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        return check(value) as CheckResult<TValue>;
+    } catch {
+        if (isInspectableValue(value)) {
+            throw new TypeError("compiled guard checker failed");
+        }
+        return hostileInputResult<TValue>(value);
+    }
+}
+
+/**
+ * @brief Build a stable diagnostic for hostile reflection failures.
+ */
+function hostileInputResult<TValue>(value: unknown): CheckResult<TValue> {
+    return err(freezeIssueArray([
+        makeIssue(
+            Object.freeze([]),
+            "expected_object",
+            "inspectable value",
+            "hostile object",
+            undefined,
+            value
+        )
+    ]));
 }
 
 /**
