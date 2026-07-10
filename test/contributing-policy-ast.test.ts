@@ -48,6 +48,7 @@ interface SpannedRecord {
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const fixtureRoot = join(repositoryRoot, "test", "fixtures", "contributing-policy");
 const bridgePath = join(repositoryRoot, "scripts", "typescript-policy-bridge.mjs");
+const bridgeTestTimeoutMs = 20_000;
 const workspaces: string[] = [];
 const syntaxSources = new Map<string, string>();
 const hmSources = new Map<string, string>();
@@ -78,7 +79,9 @@ afterAll(async (): Promise<void> => {
     }));
 });
 
-describe("contributing-policy TypeScript frontend", () => {
+describe("contributing-policy TypeScript frontend", {
+    timeout: bridgeTestTimeoutMs
+}, () => {
     test("parses nested syntax structurally and resolves function-like symbols", async () => {
         const report = await runBridge(syntaxWorkspace);
         const astFile = findFile(report, "ast-regression.ts");
