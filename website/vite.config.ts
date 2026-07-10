@@ -5,6 +5,7 @@ import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import rehypeSlug from 'rehype-slug';
+import { highlightPrism } from './src/lib/server/prism-highlight';
 
 const configuredBasePath = process.env.BASE_PATH ?? '';
 if (configuredBasePath !== '' && !configuredBasePath.startsWith('/')) {
@@ -31,7 +32,9 @@ export default defineConfig({
             preprocess: [
                 mdsvex({
                     extensions: ['.svx', '.md'],
-                    highlight: false,
+                    highlight: {
+                        highlighter: (code, language) => highlightPrism(code, language)
+                    },
                     rehypePlugins: [rehypeSlug]
                 })
             ],

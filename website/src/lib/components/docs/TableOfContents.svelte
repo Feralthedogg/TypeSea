@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
+    import { Toc, type TocItem } from '$lib/components/ui/toc';
     import type { HeadingEntry } from '$lib/content/catalog';
     import * as m from '$lib/paraglide/messages';
 
@@ -9,51 +9,33 @@
     }
 
     let { headings, githubUrl }: Props = $props();
-    let activeId = $state('');
-    const visibleHeadings = $derived(
-        headings.filter((heading) => heading.level === 2 || heading.level === 3)
-    );
+    const items = $derived(buildItems(headings));
 
-    onMount(() => {
-        const targets = visibleHeadings
-            .map((heading) => document.getElementById(heading.id))
-            .filter((element): element is HTMLElement => element !== null);
-        if (targets.length === 0) {
-            return;
+    function buildItems(entries: readonly HeadingEntry[]): TocItem[] {
+        const result: TocItem[] = [];
+        let parent: TocItem | undefined;
+        for (const heading of entries) {
+            if (heading.level === 2) {
+                parent = { title: heading.text, url: `#${heading.id}`, items: [] };
+                result.push(parent);
+                continue;
+            }
+            if (heading.level !== 3) {
+                continue;
+            }
+            const item = { title: heading.text, url: `#${heading.id}` };
+            if (parent?.items !== undefined) {
+                parent.items.push(item);
+            } else {
+                result.push(item);
+            }
         }
-        activeId = targets[0]?.id ?? '';
-        const observer = new IntersectionObserver(
-            (entries) => {
-                const visible = entries
-                    .filter((entry) => entry.isIntersecting)
-                    .sort(
-                        (left, right) => left.boundingClientRect.top - right.boundingClientRect.top
-                    );
-                const first = visible[0]?.target;
-                if (first instanceof HTMLElement) {
-                    activeId = first.id;
-                }
-            },
-            { rootMargin: '-80px 0px -72% 0px' }
-        );
-        for (const target of targets) {
-            observer.observe(target);
-        }
-        return () => observer.disconnect();
-    });
+        return result;
+    }
 </script>
 
 <aside class="table-of-contents" aria-label={m.on_this_page()}>
-    <h2>{m.on_this_page()}</h2>
-    <nav>
-        {#each visibleHeadings as heading (heading.id)}
-            <a
-                href={`#${heading.id}`}
-                class:active={activeId === heading.id}
-                class:toc-child={heading.level === 3}>{heading.text}</a
-            >
-        {/each}
-    </nav>
+    <Toc toc={items} title={m.on_this_page()} class="docs-toc" />
     <a class="toc-edit-link" href={githubUrl} target="_blank" rel="noreferrer">
         {m.edit_on_github()}
     </a>

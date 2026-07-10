@@ -3,6 +3,7 @@
     import FileText from '@lucide/svelte/icons/file-text';
     import * as Command from '$lib/components/ui/command';
     import * as Dialog from '$lib/components/ui/dialog';
+    import { Label } from '$lib/components/ui/label';
     import { currentLocale, localizedPath } from '$lib/navigation';
     import { getSearchEntries } from '$lib/content/catalog';
     import * as m from '$lib/paraglide/messages';
@@ -55,7 +56,13 @@
         <Dialog.Title class="sr-only">{m.search()}</Dialog.Title>
         <Dialog.Description class="sr-only">{m.search_hint()}</Dialog.Description>
         <Command.Root shouldFilter={false}>
-            <Command.Input bind:value={query} placeholder={m.search_placeholder()} autofocus />
+            <Label for="docs-search" class="sr-only">{m.search()}</Label>
+            <Command.Input
+                id="docs-search"
+                bind:value={query}
+                placeholder={m.search_placeholder()}
+                autofocus
+            />
             <Command.List class="search-results">
                 {#if results.length === 0}
                     <Command.Empty>{m.search_no_results()}</Command.Empty>

@@ -1,73 +1,104 @@
 <script lang="ts">
+    import X from '@lucide/svelte/icons/x';
     import { page } from '$app/state';
-    import { canonicalPath, localizedPath } from '$lib/navigation';
+    import * as Sidebar from '$lib/components/ui/sidebar';
     import { site } from '$lib/content/catalog';
+    import { canonicalPath, localizedPath } from '$lib/navigation';
     import * as m from '$lib/paraglide/messages';
 
-    interface Props {
-        readonly onNavigate?: () => void;
+    interface NavigationItem {
+        readonly href: string;
+        readonly label: string;
+        readonly match: string;
     }
 
-    let { onNavigate }: Props = $props();
-    const path = $derived(canonicalPath(page.url.pathname));
+    interface NavigationGroup {
+        readonly items: readonly NavigationItem[];
+        readonly label: string;
+    }
 
-    function isActive(target: string) {
+    const sidebar = Sidebar.useSidebar();
+    const path = $derived(canonicalPath(page.url.pathname));
+    const groups = $derived<readonly NavigationGroup[]>([
+        {
+            label: m.start(),
+            items: [
+                { label: m.overview(), href: '/', match: '/' },
+                { label: m.quick_start(), href: '/#quick-start', match: '' },
+                { label: m.benchmarks(), href: '/#benchmarks', match: '' }
+            ]
+        },
+        {
+            label: m.reference(),
+            items: [
+                { label: m.readme(), href: '/readme/', match: '/readme/' },
+                { label: m.api_reference(), href: '/api/', match: '/api/' }
+            ]
+        },
+        {
+            label: m.tools(),
+            items: [
+                { label: 'SeaFlow', href: '/seaflow/', match: '/seaflow/' },
+                { label: 'SeaBreeze', href: '/seabreeze/', match: '/seabreeze/' }
+            ]
+        },
+        {
+            label: m.internals(),
+            items: [{ label: m.engine_notes(), href: '/engine/', match: '/engine/' }]
+        }
+    ]);
+
+    function isActive(target: string): boolean {
+        if (target === '') {
+            return false;
+        }
         if (target === '/') {
             return path === '/';
         }
         return path.startsWith(target);
     }
+
+    function handleNavigate(): void {
+        if (sidebar.isMobile) {
+            sidebar.setOpenMobile(false);
+        }
+    }
 </script>
 
-<aside class="sidebar" aria-label={m.navigation()}>
-    <nav class="sidebar-nav">
-        <section>
-            <h2>{m.start()}</h2>
-            <a class:active={isActive('/')} href={localizedPath('/')} onclick={onNavigate}>
-                {m.overview()}
-            </a>
-            <a href={localizedPath('/#quick-start')} onclick={onNavigate}>{m.quick_start()}</a>
-            <a href={localizedPath('/#benchmarks')} onclick={onNavigate}>{m.benchmarks()}</a>
-        </section>
+<Sidebar.Header class="docs-sidebar-mobile-header">
+    <strong>TypeSea</strong>
+    <Sidebar.Trigger aria-label={m.close()} title={m.close()}>
+        <X class="size-4" aria-hidden="true" />
+    </Sidebar.Trigger>
+</Sidebar.Header>
 
-        <section>
-            <h2>{m.reference()}</h2>
-            <a
-                class:active={isActive('/readme/')}
-                href={localizedPath('/readme/')}
-                onclick={onNavigate}>{m.readme()}</a
-            >
-            <a class:active={isActive('/api/')} href={localizedPath('/api/')} onclick={onNavigate}
-                >{m.api_reference()}</a
-            >
-        </section>
+<Sidebar.Content class="docs-sidebar-content" aria-label={m.navigation()}>
+    {#each groups as group (group.label)}
+        <Sidebar.Group>
+            <Sidebar.GroupLabel>{group.label}</Sidebar.GroupLabel>
+            <Sidebar.GroupContent>
+                <Sidebar.Menu>
+                    {#each group.items as item (item.href)}
+                        <Sidebar.MenuItem>
+                            <Sidebar.MenuButton isActive={isActive(item.match)}>
+                                {#snippet child({ props })}
+                                    <a
+                                        {...props}
+                                        href={localizedPath(item.href)}
+                                        onclick={handleNavigate}>{item.label}</a
+                                    >
+                                {/snippet}
+                            </Sidebar.MenuButton>
+                        </Sidebar.MenuItem>
+                    {/each}
+                </Sidebar.Menu>
+            </Sidebar.GroupContent>
+        </Sidebar.Group>
+    {/each}
+</Sidebar.Content>
 
-        <section>
-            <h2>{m.tools()}</h2>
-            <a
-                class:active={isActive('/seaflow/')}
-                href={localizedPath('/seaflow/')}
-                onclick={onNavigate}>SeaFlow</a
-            >
-            <a
-                class:active={isActive('/seabreeze/')}
-                href={localizedPath('/seabreeze/')}
-                onclick={onNavigate}>SeaBreeze</a
-            >
-        </section>
-
-        <section>
-            <h2>{m.internals()}</h2>
-            <a
-                class:active={isActive('/engine/')}
-                href={localizedPath('/engine/')}
-                onclick={onNavigate}>{m.engine_notes()}</a
-            >
-        </section>
-    </nav>
-
-    <footer class="sidebar-footer">
-        <span>{m.version()} {site.version}</span>
-        <span>MIT · ESM</span>
-    </footer>
-</aside>
+<Sidebar.Separator />
+<Sidebar.Footer class="docs-sidebar-footer">
+    <span>{m.version()} {site.version}</span>
+    <span>MIT · ESM</span>
+</Sidebar.Footer>

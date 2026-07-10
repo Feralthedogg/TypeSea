@@ -7,29 +7,24 @@
     import ScanSearch from '@lucide/svelte/icons/scan-search';
     import ShieldCheck from '@lucide/svelte/icons/shield-check';
     import { base } from '$app/paths';
+    import SyntaxCode from '$lib/components/docs/SyntaxCode.svelte';
     import { Button } from '$lib/components/ui/button';
+    import * as Card from '$lib/components/ui/card';
     import { localizedPath } from '$lib/navigation';
     import { currentLocale } from '$lib/navigation';
     import { getLocalizedHeadingId, site } from '$lib/content/catalog';
     import * as m from '$lib/paraglide/messages';
 
+    interface Props {
+        readonly codeExamples: {
+            readonly quickStart: string;
+            readonly migration: Readonly<Record<'en' | 'ko', string>>;
+        };
+    }
+
+    let { codeExamples }: Props = $props();
     const packageName = 'typesea';
-    const compatibilityPath = `${packageName}/v4`;
     const installCommand = `pnpm add ${packageName}`;
-    const quickStart = `import { compile, t, type Infer } from "${packageName}";
-
-const User = t.strictObject({
-    id: t.string.uuid(),
-    age: t.number.int().gte(0),
-    role: t.enum(["admin", "user"])
-});
-
-type User = Infer<typeof User>;
-const isUser = compile(User);
-
-if (isUser(input)) {
-    input.id;
-}`;
     const locale = $derived(currentLocale());
     const readmeQuickStart = $derived(getLocalizedHeadingId('readme', locale, 'quick-start'));
     const readmePerformance = $derived(
@@ -38,29 +33,7 @@ if (isUser(input)) {
     const zodCompatibility = $derived(
         getLocalizedHeadingId('api', locale, 'zod-compatibility-matrix')
     );
-    const migration = $derived(
-        locale === 'ko'
-            ? `// 기존 import
-import { z } from "zod";
-
-// TypeSea 호환 계층 적용
-import { z } from "${compatibilityPath}";
-
-const User = z.object({
-    id: z.string().uuid(),
-    email: z.string().email()
-}).strict();`
-            : `// Existing import
-import { z } from "zod";
-
-// Compatibility experiment
-import { z } from "${compatibilityPath}";
-
-const User = z.object({
-    id: z.string().uuid(),
-    email: z.string().email()
-}).strict();`
-    );
+    const migration = $derived(codeExamples.migration[locale]);
 
     let installCopied = $state(false);
 
@@ -140,7 +113,7 @@ const User = z.object({
             <p class="eyebrow">{m.quick_start()}</p>
             <h2>{m.quick_start_title()}</h2>
         </div>
-        <pre class="showcase-code"><code>{quickStart}</code></pre>
+        <SyntaxCode html={codeExamples.quickStart} />
     </section>
 
     <section class="content-section architecture-section" id="architecture">
@@ -174,21 +147,27 @@ const User = z.object({
         </div>
 
         <div class="feature-grid">
-            <article>
-                <ShieldCheck aria-hidden="true" />
-                <h3>{m.safe_by_default()}</h3>
-                <p>{m.safe_by_default_detail()}</p>
-            </article>
-            <article>
-                <Gauge aria-hidden="true" />
-                <h3>{m.hot_path_control()}</h3>
-                <p>{m.hot_path_control_detail()}</p>
-            </article>
-            <article>
-                <ScanSearch aria-hidden="true" />
-                <h3>{m.analysis_tools()}</h3>
-                <p>{m.analysis_tools_detail()}</p>
-            </article>
+            <Card.Root class="feature-card">
+                <Card.Header>
+                    <ShieldCheck aria-hidden="true" />
+                    <Card.Title>{m.safe_by_default()}</Card.Title>
+                </Card.Header>
+                <Card.Description>{m.safe_by_default_detail()}</Card.Description>
+            </Card.Root>
+            <Card.Root class="feature-card">
+                <Card.Header>
+                    <Gauge aria-hidden="true" />
+                    <Card.Title>{m.hot_path_control()}</Card.Title>
+                </Card.Header>
+                <Card.Description>{m.hot_path_control_detail()}</Card.Description>
+            </Card.Root>
+            <Card.Root class="feature-card">
+                <Card.Header>
+                    <ScanSearch aria-hidden="true" />
+                    <Card.Title>{m.analysis_tools()}</Card.Title>
+                </Card.Header>
+                <Card.Description>{m.analysis_tools_detail()}</Card.Description>
+            </Card.Root>
         </div>
     </section>
 
@@ -219,7 +198,7 @@ const User = z.object({
                 <ArrowRight class="size-4" aria-hidden="true" />
             </Button>
         </div>
-        <pre class="showcase-code"><code>{migration}</code></pre>
+        <SyntaxCode html={migration} />
     </section>
 
     <section class="content-section docs-section" id="docs">
@@ -230,23 +209,27 @@ const User = z.object({
         </div>
         <div class="document-grid">
             {#each site.documents as document (document.slug)}
-                <article class="document-card">
-                    <div class="document-icon" aria-hidden="true">
-                        {#if document.group === 'internals'}
-                            <GitBranch />
-                        {:else if document.group === 'tools'}
-                            <ScanSearch />
-                        {:else}
-                            <ShieldCheck />
-                        {/if}
-                    </div>
-                    <h3>{document.title[locale]}</h3>
-                    <p>{document.description[locale]}</p>
-                    <a href={localizedPath(`/${document.slug}/`)}>
-                        {m.open_document()}
-                        <ArrowRight class="size-4" aria-hidden="true" />
-                    </a>
-                </article>
+                <Card.Root class="document-card">
+                    <Card.Header>
+                        <div class="document-icon" aria-hidden="true">
+                            {#if document.group === 'internals'}
+                                <GitBranch />
+                            {:else if document.group === 'tools'}
+                                <ScanSearch />
+                            {:else}
+                                <ShieldCheck />
+                            {/if}
+                        </div>
+                        <Card.Title>{document.title[locale]}</Card.Title>
+                    </Card.Header>
+                    <Card.Description>{document.description[locale]}</Card.Description>
+                    <Card.Footer>
+                        <a href={localizedPath(`/${document.slug}/`)}>
+                            {m.open_document()}
+                            <ArrowRight class="size-4" aria-hidden="true" />
+                        </a>
+                    </Card.Footer>
+                </Card.Root>
             {/each}
         </div>
     </section>

@@ -3,6 +3,7 @@
     import Menu from '@lucide/svelte/icons/menu';
     import Search from '@lucide/svelte/icons/search';
     import { Button } from '$lib/components/ui/button';
+    import * as Sidebar from '$lib/components/ui/sidebar';
     import { localizedPath } from '$lib/navigation';
     import { site } from '$lib/content/catalog';
     import * as m from '$lib/paraglide/messages';
@@ -10,26 +11,22 @@
     import ThemeToggle from './ThemeToggle.svelte';
 
     interface Props {
-        readonly onOpenMenu: () => void;
         readonly onOpenSearch: () => void;
     }
 
-    let { onOpenMenu, onOpenSearch }: Props = $props();
+    let { onOpenSearch }: Props = $props();
 </script>
 
 <header class="site-header">
     <div class="header-inner">
         <div class="header-leading">
-            <Button
+            <Sidebar.Trigger
                 class="mobile-menu-button header-icon"
-                variant="ghost"
-                size="icon"
-                onclick={onOpenMenu}
                 aria-label={m.open_menu()}
                 title={m.open_menu()}
             >
                 <Menu class="size-4" aria-hidden="true" />
-            </Button>
+            </Sidebar.Trigger>
             <a class="brand-link" href={localizedPath('/')} aria-label={m.home()}>
                 <span class="brand-mark" aria-hidden="true">T</span>
                 <span>TypeSea</span>
