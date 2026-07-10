@@ -5,4 +5,4 @@
     let { data }: PageProps = $props();
 </script>
 
-<LandingPage codeExamples={data.codeExamples} />
+<LandingPage benchmark={data.benchmark} codeExamples={data.codeExamples} />

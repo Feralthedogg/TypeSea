@@ -139,6 +139,10 @@ async function main() {
         'utf8'
     );
     await copyFile(
+        join(repositoryRoot, 'bench/results/latest.json'),
+        join(generatedRoot, 'benchmark.json')
+    );
+    await copyFile(
         join(repositoryRoot, 'docs/assets/benchmark-headline.svg'),
         join(siteRoot, 'static/benchmark-headline.svg')
     );

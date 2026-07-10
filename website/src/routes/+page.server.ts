@@ -1,4 +1,6 @@
 import type { PageServerLoad } from './$types';
+import benchmarkReport from '$lib/generated/benchmark.json';
+import { createBenchmarkSnapshot } from '$lib/benchmark/model';
 import { highlightCode } from '$lib/server/syntax-highlight';
 
 const quickStart = `import { compile, t, type Infer } from "typesea";
@@ -46,6 +48,7 @@ export const load: PageServerLoad = async () => {
     ]);
 
     return {
+        benchmark: createBenchmarkSnapshot(benchmarkReport),
         codeExamples: {
             quickStart: { html: quickStartHtml, source: quickStart },
             migration: {

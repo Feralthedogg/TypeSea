@@ -6,7 +6,8 @@
     import GitBranch from '@lucide/svelte/icons/git-branch';
     import ScanSearch from '@lucide/svelte/icons/scan-search';
     import ShieldCheck from '@lucide/svelte/icons/shield-check';
-    import { base } from '$app/paths';
+    import type { BenchmarkSnapshot } from '$lib/benchmark/model';
+    import BenchmarkCharts from '$lib/components/docs/benchmark/BenchmarkCharts.svelte';
     import CodeBlock from '$lib/components/docs/code/CodeBlock.svelte';
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
@@ -16,6 +17,7 @@
     import * as m from '$lib/paraglide/messages';
 
     interface Props {
+        readonly benchmark: BenchmarkSnapshot;
         readonly codeExamples: {
             readonly quickStart: HighlightedSource;
             readonly migration: Readonly<Record<'en' | 'ko', HighlightedSource>>;
@@ -27,7 +29,7 @@
         readonly source: string;
     }
 
-    let { codeExamples }: Props = $props();
+    let { benchmark, codeExamples }: Props = $props();
     const packageName = 'typesea';
     const installCommand = `pnpm add ${packageName}`;
     const locale = $derived(currentLocale());
@@ -182,15 +184,11 @@
             <h2>{m.benchmark_title()}</h2>
             <p>{m.benchmark_detail()}</p>
         </div>
-        <figure class="benchmark-figure">
-            <img src={`${base}/benchmark-headline.svg`} alt={m.benchmark_alt()} />
-            <figcaption>
-                <a href={localizedPath(`/readme/#${readmePerformance}`)}>
-                    {m.benchmark_method()}
-                    <ArrowRight class="size-4" aria-hidden="true" />
-                </a>
-            </figcaption>
-        </figure>
+        <BenchmarkCharts snapshot={benchmark} />
+        <a class="benchmark-data-link" href={localizedPath(`/readme/#${readmePerformance}`)}>
+            {m.benchmark_method()}
+            <ArrowRight class="size-4" aria-hidden="true" />
+        </a>
     </section>
 
     <section class="content-section migration-section">
