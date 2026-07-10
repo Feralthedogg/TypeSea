@@ -283,7 +283,7 @@ if (!result.ok) {
 }
 
 /**
- * @brief Execute the benchmark report helper.
+ * @brief Dispatch benchmark report recording, rendering, or validation.
  * @details Record mode runs Vitest bench and regenerates committed benchmark
  * artifacts. Render and check modes operate only on the committed summary.
  */
@@ -304,11 +304,6 @@ async function main() {
     }
 }
 
-/**
- * @brief Parse the helper mode from command-line arguments.
- * @param args Command-line arguments after the script path.
- * @returns Result containing the selected mode.
- */
 function readMode(args) {
     if (args.length === 0 || args.includes("--record")) {
         return ok("record");
@@ -419,6 +414,10 @@ async function checkBenchmarks() {
     if (!summary.ok) {
         return summary;
     }
+    const metadata = await checkCommittedBenchmarkMetadata(summary.value);
+    if (!metadata.ok) {
+        return metadata;
+    }
     const expected = renderSvg(summary.value);
     const current = await readFile(svgPath, "utf8");
     if (current !== expected) {
@@ -436,7 +435,33 @@ async function compareBenchmarks() {
     if (!summary.ok) {
         return summary;
     }
+    const metadata = await checkCommittedBenchmarkMetadata(summary.value);
+    if (!metadata.ok) {
+        return metadata;
+    }
     return compareBenchmarkFloors(summary.value, true);
+}
+
+/**
+ * @brief Verify committed benchmark metadata against package metadata.
+ * @param summary Benchmark summary JSON.
+ * @returns Empty success result when the benchmark snapshot targets this package version.
+ */
+async function checkCommittedBenchmarkMetadata(summary) {
+    const metadata = await readPackageMetadata();
+    if (!metadata.ok) {
+        return metadata;
+    }
+    if (!isRecord(summary)) {
+        return err("benchmark summary must be an object");
+    }
+    if (summary.package !== metadata.value.name) {
+        return err(`benchmark summary package ${String(summary.package)} does not match ${metadata.value.name}`);
+    }
+    if (summary.version !== metadata.value.version) {
+        return err(`benchmark summary version ${String(summary.version)} does not match ${metadata.value.version}; run npm run bench:record`);
+    }
+    return ok(undefined);
 }
 
 /**
@@ -476,16 +501,13 @@ function compareBenchmarkFloors(summary, printRows) {
     return ok(undefined);
 }
 
-/**
- * @brief Create directories used by benchmark artifacts.
- */
 async function ensureOutputDirectories() {
     await mkdir(dirname(rawPath), { recursive: true });
     await mkdir(dirname(svgPath), { recursive: true });
 }
 
 /**
- * @brief Execute Vitest bench with JSON output enabled.
+ * @brief Run Vitest bench with JSON output enabled.
  * @returns Empty result when the process exits successfully.
  */
 function runVitestBench(outputPath, runIndex, runCount) {
@@ -519,11 +541,6 @@ async function readJson(path) {
     return ok(JSON.parse(await readFile(path, "utf8")));
 }
 
-/**
- * @brief Convert raw Vitest bench output into a stable public report.
- * @param raw Raw JSON emitted by Vitest bench.
- * @returns Benchmark summary consumed by README graph generation.
- */
 async function summarizeRawBenchmarks(raw) {
     const rawRuns = readRawBenchmarkRuns(raw);
     if (!rawRuns.ok) {
@@ -593,11 +610,6 @@ async function summarizeRawBenchmarks(raw) {
     });
 }
 
-/**
- * @brief Read raw Vitest runs from either legacy or aggregate raw JSON.
- * @param raw Raw benchmark JSON value.
- * @returns Array of raw Vitest outputs in execution order.
- */
 function readRawBenchmarkRuns(raw) {
     if (isBenchmarkAggregate(raw)) {
         const runs = [];
@@ -616,21 +628,12 @@ function readRawBenchmarkRuns(raw) {
     return ok([raw]);
 }
 
-/**
- * @brief Check whether raw JSON is the TypeSea multi-run aggregate format.
- * @param raw Raw JSON value.
- * @returns True when the value stores multiple Vitest runs.
- */
 function isBenchmarkAggregate(raw) {
     return isRecord(raw) &&
         raw.schemaVersion === 2 &&
         Array.isArray(raw.runs);
 }
 
-/**
- * @brief Read package name and version.
- * @returns Package metadata used in benchmark summaries.
- */
 async function readPackageMetadata() {
     const metadata = await readJson("package.json");
     if (!metadata.ok) {
@@ -688,11 +691,6 @@ function findBenchmarkGroup(files, groupName) {
     return undefined;
 }
 
-/**
- * @brief Read normalized rows from one benchmark group.
- * @param group Raw Vitest benchmark group.
- * @returns Rows in display order.
- */
 function readRows(rawRuns, suiteSpec) {
     const rows = [];
     const specs = suiteSpec.benchmarks;
@@ -910,9 +908,6 @@ function readSuite(suites, id) {
     };
 }
 
-/**
- * @brief Read the hz value for one row id.
- */
 function readHz(suite, id) {
     const rows = Array.isArray(suite.rows) ? suite.rows : [];
     for (let index = 0; index < rows.length; index += 1) {
@@ -924,9 +919,6 @@ function readHz(suite, id) {
     return 0;
 }
 
-/**
- * @brief Read one committed benchmark row by suite and row id.
- */
 function readSummaryHz(summary, suiteId, rowId) {
     const suites = Array.isArray(summary.suites) ? summary.suites : [];
     const suite = readSuite(suites, suiteId);
@@ -1004,9 +996,6 @@ function escapeXml(value) {
         .replaceAll("\"", "&quot;");
 }
 
-/**
- * @brief Check record shape.
- */
 function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }

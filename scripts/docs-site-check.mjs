@@ -1,5 +1,12 @@
 import { readdir, readFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+
+const documentPairs = [
+    ["README.md", "docs/ko/readme.md"],
+    ["docs/api.md", "docs/ko/api.md"],
+    ["docs/seaflow.md", "docs/ko/seaflow.md"],
+    ["docs/sea-breeze.md", "docs/ko/sea-breeze.md"],
+    ["docs/engine-notes.md", "docs/ko/engine-notes.md"]
+];
 
 const result = await main();
 if (!result.ok) {
@@ -8,257 +15,146 @@ if (!result.ok) {
 }
 
 /**
- * @brief Run this module top-level workflow.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
+ * @brief Validate the documentation source boundary without installing the site toolchain.
+ * @details GitHub Pages performs the full pnpm build; the root release gate checks inputs
+ * so package verification stays independent from website-only dependencies.
  */
 async function main() {
-    const source = await readFile("docs/index.html", "utf8");
-    const required = [
-        "<title>TypeSea Docs</title>",
-        'id="overview"',
-        'id="quick-start"',
-        'id="architecture"',
-        'id="api"',
-        'id="adapters"',
-        'id="benchmarks"',
-        'id="release"',
-        'id="files"',
-        "Sea-of-Nodes validation IR",
-        "Zod, Valibot, and Ajv",
-        "npm run release:check",
-        'href="https://github.com/Feralthedogg/TypeSea"',
-        'href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/api.md"',
-        'href="https://github.com/Feralthedogg/TypeSea/blob/main/docs/engine-notes.md"'
-    ];
-
-    for (let index = 0; index < required.length; index += 1) {
-        const needle = required[index];
-        if (needle !== undefined && !source.includes(needle)) {
-            return err(`docs/index.html missing ${needle}`);
-        }
-    }
-
-    const hrefs = collectHrefs(source);
-    for (let index = 0; index < hrefs.length; index += 1) {
-        const href = hrefs[index];
-        if (href === undefined) {
-            continue;
-        }
-        if (href.startsWith("http://") || href.startsWith("https://")) {
-            if (!href.startsWith("https://github.com/Feralthedogg/TypeSea")) {
-                return err(`docs/index.html has unsupported remote link ${href}`);
-            }
-            continue;
-        }
-        if (href.startsWith("#")) {
-            const id = href.slice(1);
-            if (!source.includes(`id="${id}"`)) {
-                return err(`docs/index.html has broken anchor ${href}`);
-            }
-        }
-    }
-
-    const published = await checkPublishedDocs("docs");
-    if (!published.ok) {
-        return published;
-    }
-
-    return ok(undefined);
-}
-
-/**
- * @brief Validate published docs.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
-async function checkPublishedDocs(root) {
-    const files = await collectPublishedFiles(root);
-    for (let index = 0; index < files.length; index += 1) {
-        const file = files[index];
-        if (file === undefined) {
-            continue;
-        }
-        const source = await readFile(file, "utf8");
-        const active = checkActiveMarkup(file, source);
-        if (!active.ok) {
-            return active;
-        }
-        const refs = collectResourceRefs(source);
-        for (let refIndex = 0; refIndex < refs.length; refIndex += 1) {
-            const ref = refs[refIndex];
-            if (ref === undefined) {
-                continue;
-            }
-            const value = ref.value.trim();
-            if (isExecutableReference(value)) {
-                return err(`${file} has executable ${ref.name} ${value}`);
-            }
-            if (isRemoteReference(value) &&
-                !value.startsWith("https://github.com/Feralthedogg/TypeSea")) {
-                return err(`${file} has unsupported remote ${ref.name} ${value}`);
-            }
-        }
+    const failures = [];
+    await checkDocumentPairs(failures);
+    await checkMessages(failures);
+    await checkSiteConfiguration(failures);
+    await checkPagesWorkflow(failures);
+    await checkLegacyOutputRemoved(failures);
+    if (failures.length !== 0) {
+        return err(failures.join("\n"));
     }
     return ok(undefined);
 }
 
-/**
- * @brief Collect published files.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
-async function collectPublishedFiles(root) {
-    const files = [];
-    const entries = await readdir(root, { withFileTypes: true });
-    for (let index = 0; index < entries.length; index += 1) {
-        const entry = entries[index];
-        if (entry === undefined) {
+/** Validate that every maintained English document has a non-empty Korean peer. */
+async function checkDocumentPairs(failures) {
+    for (const pair of documentPairs) {
+        const [englishPath, koreanPath] = pair;
+        if (englishPath === undefined || koreanPath === undefined) {
             continue;
         }
-        const path = join(root, entry.name);
-        if (entry.isDirectory()) {
-            files.push(...await collectPublishedFiles(path));
+        const [english, korean] = await Promise.all([
+            readFile(englishPath, "utf8"),
+            readFile(koreanPath, "utf8")
+        ]);
+        expect(english.trim().startsWith("# "), `${englishPath} must start with an H1`, failures);
+        expect(korean.trim().startsWith("# "), `${koreanPath} must start with an H1`, failures);
+        expect(english.trim().length !== 0, `${englishPath} must not be empty`, failures);
+        expect(korean.trim().length !== 0, `${koreanPath} must not be empty`, failures);
+        expect(
+            countHeadings(english, 2) === countHeadings(korean, 2),
+            `${englishPath} and ${koreanPath} must expose the same H2 count`,
+            failures
+        );
+    }
+}
+
+/** Paraglide message keys are a compile-time UI contract and must remain symmetric. */
+async function checkMessages(failures) {
+    const [englishText, koreanText] = await Promise.all([
+        readFile("website/messages/en.json", "utf8"),
+        readFile("website/messages/ko.json", "utf8")
+    ]);
+    const english = JSON.parse(englishText);
+    const korean = JSON.parse(koreanText);
+    if (!isRecord(english) || !isRecord(korean)) {
+        failures.push("Paraglide message catalogs must be objects");
+        return;
+    }
+    const englishKeys = Object.keys(english).sort();
+    const koreanKeys = Object.keys(korean).sort();
+    expect(
+        JSON.stringify(englishKeys) === JSON.stringify(koreanKeys),
+        "English and Korean Paraglide catalogs must contain identical keys",
+        failures
+    );
+    for (const key of englishKeys) {
+        if (key === "$schema") {
             continue;
         }
-        if (isPublishedMarkup(path)) {
-            files.push(path);
-        }
+        expect(isNonEmptyString(english[key]), `English message ${key} must be non-empty`, failures);
+        expect(isNonEmptyString(korean[key]), `Korean message ${key} must be non-empty`, failures);
     }
-    return files;
 }
 
-/**
- * @brief Check published markup.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
-function isPublishedMarkup(path) {
-    const extension = extname(path);
-    return extension === ".html" || extension === ".svg";
+/** Verify the framework, localization, and Lily source-copy boundaries. */
+async function checkSiteConfiguration(failures) {
+    const [packageText, inlangText, viteSource, componentsText] = await Promise.all([
+        readFile("website/package.json", "utf8"),
+        readFile("website/project.inlang/settings.json", "utf8"),
+        readFile("website/vite.config.ts", "utf8"),
+        readFile("website/components.json", "utf8")
+    ]);
+    const metadata = JSON.parse(packageText);
+    const inlang = JSON.parse(inlangText);
+    const components = JSON.parse(componentsText);
+    expect(isRecord(metadata) && metadata.packageManager === "pnpm@10.13.1", "website must pin pnpm 10.13.1", failures);
+    expect(
+        isRecord(metadata) && isRecord(metadata.devDependencies) &&
+            typeof metadata.devDependencies["@sveltejs/kit"] === "string" &&
+            typeof metadata.devDependencies["@inlang/paraglide-js"] === "string",
+        "website must declare SvelteKit and Paraglide",
+        failures
+    );
+    expect(
+        isRecord(inlang) && inlang.baseLocale === "en" &&
+            Array.isArray(inlang.locales) && inlang.locales.join(",") === "en,ko",
+        "inlang must declare English and Korean locales",
+        failures
+    );
+    expect(viteSource.includes("strategy: ['url', 'cookie', 'baseLocale']"), "Paraglide URL strategy must remain explicit", failures);
+    expect(viteSource.includes("adapter-static"), "website must use the SvelteKit static adapter", failures);
+    expect(
+        isRecord(components) && components.registry === "https://lily-svelte.pages.dev/registry",
+        "website must retain the Lily registry boundary",
+        failures
+    );
 }
 
-/**
- * @brief Validate active markup.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
-function checkActiveMarkup(file, source) {
-    const blocked = [
-        /<script\b/iu,
-        /<iframe\b/iu,
-        /<object\b/iu,
-        /<embed\b/iu,
-        /<foreignObject\b/iu,
-        /<form\b/iu,
-        /\ssrcdoc\s*=/iu,
-        /\son[a-z0-9_-]+\s*=/iu
-    ];
+/** Pages must install and build the isolated pnpm application. */
+async function checkPagesWorkflow(failures) {
+    const workflow = await readFile(".github/workflows/pages.yml", "utf8");
+    expect(workflow.includes("pnpm/action-setup"), "Pages workflow must set up pnpm", failures);
+    expect(workflow.includes("website/pnpm-lock.yaml"), "Pages workflow must cache the website lockfile", failures);
+    expect(workflow.includes("path: website/build"), "Pages workflow must upload website/build", failures);
+    expect(workflow.includes("BASE_PATH: /TypeSea"), "Pages workflow must configure the repository base path", failures);
+}
 
-    for (let index = 0; index < blocked.length; index += 1) {
-        const pattern = blocked[index];
-        if (pattern !== undefined && pattern.test(source)) {
-            return err(`${file} has active markup`);
-        }
+/** A generated HTML copy would create a second, stale documentation source. */
+async function checkLegacyOutputRemoved(failures) {
+    const docsEntries = await readdir("docs");
+    expect(!docsEntries.includes("index.html"), "docs/index.html must not be checked in", failures);
+}
+
+function countHeadings(source, level) {
+    const marker = "#".repeat(level);
+    return source.split("\n").filter((line) => line.startsWith(`${marker} `)).length;
+}
+
+function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value) {
+    return typeof value === "string" && value.trim().length !== 0;
+}
+
+function expect(condition, message, failures) {
+    if (!condition) {
+        failures.push(message);
     }
-
-    return ok(undefined);
 }
 
-/**
- * @brief Collect resource refs.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
-function collectResourceRefs(source) {
-    const refs = [];
-    const pattern = /\b(href|src|srcset|xlink:href|action|formaction|poster)\s*=\s*(["'])(.*?)\2/giu;
-    let match = pattern.exec(source);
-    while (match !== null) {
-        const name = match[1];
-        const value = match[3];
-        if (name !== undefined && value !== undefined) {
-            const values = splitReferenceValues(name, value);
-            for (let index = 0; index < values.length; index += 1) {
-                const item = values[index];
-                if (item !== undefined) {
-                    refs.push({
-                        name,
-                        value: item
-                    });
-                }
-            }
-        }
-        match = pattern.exec(source);
-    }
-    return refs;
-}
-
-/**
- * @brief Split reference values.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
-function splitReferenceValues(name, value) {
-    if (name.toLowerCase() !== "srcset") {
-        return [value];
-    }
-    const parts = value.split(",");
-    const refs = [];
-    for (let index = 0; index < parts.length; index += 1) {
-        const part = parts[index];
-        if (part === undefined) {
-            continue;
-        }
-        const ref = part.trim().split(/\s+/u)[0];
-        if (ref !== undefined && ref.length !== 0) {
-            refs.push(ref);
-        }
-    }
-    return refs;
-}
-
-/**
- * @brief Check executable reference.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
-function isExecutableReference(value) {
-    const lowered = value.trim().toLowerCase();
-    return lowered.startsWith("javascript:") ||
-        lowered.startsWith("data:text/html");
-}
-
-/**
- * @brief Check remote reference.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
-function isRemoteReference(value) {
-    return value.startsWith("http://") || value.startsWith("https://");
-}
-
-/**
- * @brief Collect hrefs.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
-function collectHrefs(source) {
-    const hrefs = [];
-    const pattern = /href="([^"]+)"/gu;
-    let match = pattern.exec(source);
-    while (match !== null) {
-        const href = match[1];
-        if (href !== undefined) {
-            hrefs.push(href);
-        }
-        match = pattern.exec(source);
-    }
-    return hrefs;
-}
-
-/**
- * @brief Construct a successful result value.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function ok(value) {
     return { ok: true, value };
 }
 
-/**
- * @brief Construct a failed result value.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function err(error) {
     return { ok: false, error };
 }

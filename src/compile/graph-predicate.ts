@@ -1,8 +1,6 @@
 /**
  * @file graph-predicate.ts
  * @brief Predicate source emitter backed by optimized Sea-of-Nodes graphs.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 
 import {
@@ -678,7 +676,7 @@ function emitPresentArrayEveryCheck(
 }
 
 /**
- * @brief Execute emit unsafe array every check.
+ * @brief Emit unsafe array every check.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeArrayEveryCheck(
@@ -822,7 +820,7 @@ function emitTupleItemsCheck(
 }
 
 /**
- * @brief Execute emit unsafe tuple items check.
+ * @brief Emit unsafe tuple items check.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeTupleItemsCheck(
@@ -913,7 +911,7 @@ function emitRecordEveryCheck(
 }
 
 /**
- * @brief Execute emit unsafe record every check.
+ * @brief Emit unsafe record every check.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeRecordEveryCheck(
@@ -1101,7 +1099,7 @@ function emitDiscriminantDispatchReturn(
 }
 
 /**
- * @brief Execute emit unsafe discriminant dispatch return.
+ * @brief Emit unsafe discriminant dispatch return.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeDiscriminantDispatchReturn(
@@ -1696,8 +1694,6 @@ function readStringAndPlan(
 
 /**
  * @brief Maintain the single-subject invariant for string plan folding.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param current Previously observed subject id.
  * @param next Subject id from the next string predicate.
  * @returns The shared subject id, or undefined when predicates target different values.
@@ -1830,8 +1826,6 @@ function readNumberAndPlan(
 
 /**
  * @brief Maintain the single-subject invariant for numeric plan folding.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param current Previously observed numeric subject id.
  * @param next Subject id from the next numeric predicate.
  * @returns The shared subject id, or undefined on subject drift.
@@ -2289,7 +2283,7 @@ function emitObjectShapeCheck(
 }
 
 /**
- * @brief Execute emit early strict key count.
+ * @brief Emit early strict key count.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitEarlyStrictKeyCount(
@@ -2725,7 +2719,7 @@ function objectEntriesContainSchemaCheck(
 }
 
 /**
- * @brief Execute emit unsafe object shape entries.
+ * @brief Emit unsafe object shape entries.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeObjectShapeEntries(
@@ -2839,7 +2833,7 @@ function emitObjectShapeStrictKeys(
 }
 
 /**
- * @brief Execute emit unsafe strict key loop.
+ * @brief Emit unsafe strict key loop.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeStrictKeyLoop(
@@ -3224,8 +3218,6 @@ function unaryPredicateCheckExpression(tag: number, value: string): string {
 
 /**
  * @brief Check whether a predicate node is already proven in this branch.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param graph Graph being emitted.
  * @param node Candidate predicate node.
  * @param value Root input expression.
@@ -3327,8 +3319,6 @@ function isKnownPredicate(
 
 /**
  * @brief Test whether a node tag can participate in predicate fact tracking.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param tag Candidate NodeTag value.
  * @returns True for primitive/object/array/null/undefined predicate tags.
  */
@@ -3431,8 +3421,6 @@ function dataSlotKey(object: NodeId, key: string, objectExpression: string): str
 
 /**
  * @brief Check whether a cached data slot already proved a literal value.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param schema Literal schema being emitted.
  * @param cacheKey Descriptor cache key for the property slot.
  * @param state Current branch state.
@@ -3488,7 +3476,7 @@ function objectGuardStatement(value: string, state: GraphEmitState): string {
 }
 
 /**
- * @brief Execute object reject expression.
+ * @brief Build the object rejection predicate used by generated graph checks.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function objectRejectExpression(value: string): string {
@@ -3513,8 +3501,6 @@ function emitSubjectAlias(expression: string, state: GraphEmitState): string {
 
 /**
  * @brief Decide whether an expression can be reused without a temporary alias.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value JavaScript expression text.
  * @returns True when the expression is a simple generated identifier.
  */
@@ -3536,8 +3522,6 @@ function isGeneratedIdentifier(value: string): boolean {
 
 /**
  * @brief Validate the first character of an emitter-owned identifier.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param code UTF-16 code unit.
  * @returns True for `$`, `_`, or ASCII letters.
  */
@@ -3550,8 +3534,6 @@ function isIdentifierStart(code: number): boolean {
 
 /**
  * @brief Validate a non-leading character of an emitter-owned identifier.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param code UTF-16 code unit.
  * @returns True for identifier-start characters or ASCII digits.
  */
@@ -3693,8 +3675,6 @@ function findParamNode(graph: Graph): NodeId | undefined {
 
 /**
  * @brief Check whether every required object key already has a data guard.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param object Object node id.
  * @param keys Required property keys.
  * @param objectExpression JavaScript object expression.
@@ -3740,7 +3720,7 @@ function keyMembershipExpression(
 }
 
 /**
- * @brief Execute unsafe key membership expression.
+ * @brief Build inline key membership checks for unsafe literal keys.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function unsafeKeyMembershipExpression(
@@ -3761,7 +3741,7 @@ function unsafeKeyMembershipExpression(
 }
 
 /**
- * @brief Execute unsafe property read expression.
+ * @brief Build a direct property read for unsafe and unchecked modes.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function unsafePropertyReadExpression(
@@ -3783,7 +3763,7 @@ function isAsciiIdentifierName(value: string): boolean {
 }
 
 /**
- * @brief Execute unsafe string literal expression.
+ * @brief Escape a string literal for direct insertion into generated source.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function unsafeStringLiteralExpression(value: string): string {
@@ -3824,7 +3804,7 @@ function regexExpression(
 }
 
 /**
- * @brief Execute regex needs last index reset.
+ * @brief Detect regular expressions whose stateful flags require lastIndex reset.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function regexNeedsLastIndexReset(regex: RegExp): boolean {

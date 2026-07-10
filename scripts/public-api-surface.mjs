@@ -178,8 +178,6 @@ const expectedValueExports = [
     "fromJsonSchema",
     "function",
     "functionBuilder",
-    "fuzz",
-    "fuzzCases",
     "getErrorMap",
     "guid",
     "globalRegistry",
@@ -266,7 +264,6 @@ const expectedValueExports = [
     "safeExtend",
     "safeParse",
     "safeParseAsync",
-    "SeaFlow",
     "set",
     "schemaRegistryToJsonSchema",
     "schemaToJsonSchema",
@@ -605,7 +602,6 @@ if (!result.ok) {
 
 /**
  * @brief Run this module top-level workflow.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 async function main() {
     const declarations = await readFile("dist/index.d.ts", "utf8");
@@ -688,10 +684,6 @@ async function main() {
     return ok(undefined);
 }
 
-/**
- * @brief Parse exports.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function parseExports(source) {
     const values = [];
     const types = [];
@@ -766,10 +758,6 @@ function parseExports(source) {
     };
 }
 
-/**
- * @brief Read exported name.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function readExportedName(name) {
     if (name.startsWith("type ")) {
         const typeName = name.slice(5).trim();
@@ -782,8 +770,7 @@ function readExportedName(name) {
 }
 
 /**
- * @brief Execute compare set.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
+ * @brief Compare expected and actual public names for snapshot drift.
  */
 function compareSet(label, expected, actual) {
     const expectedSorted = expected.slice().sort();
@@ -802,10 +789,6 @@ function compareSet(label, expected, actual) {
     ].join("\n"));
 }
 
-/**
- * @brief Execute find duplicates.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function findDuplicates(values) {
     const duplicates = [];
     let previous = "";
@@ -822,10 +805,6 @@ function findDuplicates(values) {
     return duplicates;
 }
 
-/**
- * @brief Validate package exports.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function checkPackageExports(packageJson) {
     if (!isRecord(packageJson)) {
         return err("package.json is not an object");
@@ -891,8 +870,7 @@ function checkPackageExports(packageJson) {
 }
 
 /**
- * @brief Check record.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
+ * @brief Accept non-array objects before structured field reads.
  */
 function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -900,7 +878,6 @@ function isRecord(value) {
 
 /**
  * @brief Construct a successful result value.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function ok(value) {
     return { ok: true, value };
@@ -908,7 +885,6 @@ function ok(value) {
 
 /**
  * @brief Construct a failed result value.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function err(error) {
     return { ok: false, error };

@@ -166,24 +166,24 @@ diagnostic도 `-0`을 포함해 같은 literal formatting을 사용하므로 com
 
 benchmark suite는 두 질문을 분리합니다.
 
-- `compile.bench.ts`는 같은 TypeSea schema를 대상으로 TypeSea runtime-plan validator와 compiled validator를 비교합니다.
-- `ecosystem.bench.ts`는 하나의 JSON-compatible strict-object contract를 대상으로 TypeSea runtime-plan, TypeSea compiled, Zod, Valibot, Ajv를 비교합니다.
+- `compile.bench.ts`는 같은 TypeSea schema를 대상으로 TypeSea 런타임 plan validator와 compiled validator를 비교합니다.
+- `ecosystem.bench.ts`는 하나의 JSON 호환 strict object 계약을 대상으로 TypeSea 런타임 plan, TypeSea compiled, Zod, Valibot, Ajv를 비교합니다.
 
-Zod, Valibot, Ajv는 측정용 dev dependency입니다.
-`src`에서 import하지 않으며, package policy는 release 전에 runtime, peer, optional, bundled dependency field를 거부합니다.
+Zod, Valibot, Ajv는 측정용 개발 dependency입니다.
+`src`에서는 import하지 않으며, package policy는 릴리스 전에 runtime, peer, optional, bundled dependency field를 거부합니다.
 
-2026-07-06 KST의 마지막 clean 로컬 벤치마크는 JSON-compatible strict-object benchmark에서 아래 ecosystem path를 보고했습니다.
-커밋된 기준 데이터는 `bench/results/latest.json`이며, `npm run bench:record`가 전체 Vitest bench 3회의 중앙값으로 summary와 README SVG를 다시 생성합니다.
-`npm run bench:compare`는 committed summary를 release regression floor와 비교합니다.
+2026-07-09 KST의 마지막 clean 로컬 벤치마크는 JSON 호환 strict object benchmark에서 아래 경로들을 측정했습니다.
+커밋된 기준 데이터는 `bench/results/latest.json`이며, `npm run bench:record`는 전체 Vitest bench 3회의 중앙값으로 summary와 README SVG를 다시 생성합니다.
+`npm run bench:compare`는 커밋된 summary를 릴리스 회귀 방지 floor와 비교합니다.
 대상은 unchecked valid hot path, safe invalid fast-fail, safe valid throughput, presence-dispatch object union path입니다.
-`check:benchmarks`는 SVG freshness를 확인한 뒤 같은 floor check를 실행합니다.
+`check:benchmarks`는 SVG가 최신인지, 커밋된 benchmark summary가 현재 package version과 일치하는지 확인한 뒤 같은 floor check를 실행합니다.
 
 | Case | TypeSea runtime plan | TypeSea compiled safe | TypeSea compiled unsafe | TypeSea compiled unchecked | Ajv compiled |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Valid `is()` | 341,332 hz | 3,840,854 hz | 27,464,645 hz | 29,647,233 hz | 2,682,380 hz |
-| Valid `check()` | 294,582 hz | 2,914,942 hz | 21,517,947 hz | 31,707,555 hz | 2,876,907 hz |
-| Invalid `is()` | 2,223,276 hz | 30,513,434 hz | 28,172,129 hz | 36,659,550 hz | 15,870,460 hz |
-| Invalid `check()` | 280,569 hz | 1,460,301 hz | 2,144,535 hz | 2,658,950 hz | 19,847,089 hz |
+| Valid `is()` | 428,637 hz | 4,952,729 hz | 31,992,573 hz | 39,651,592 hz | 4,047,925 hz |
+| Valid `check()` | 414,697 hz | 4,422,123 hz | 25,915,737 hz | 32,844,863 hz | 4,238,051 hz |
+| Invalid `is()` | 2,891,226 hz | 40,230,201 hz | 49,473,616 hz | 48,593,951 hz | 27,612,151 hz |
+| Invalid `check()` | 345,894 hz | 1,714,191 hz | 2,689,279 hz | 3,207,055 hz | 29,466,173 hz |
 
 benchmark number는 machine-local telemetry입니다.
 regression을 잡는 데 유용하지만 고정된 throughput floor를 약속하지 않습니다.

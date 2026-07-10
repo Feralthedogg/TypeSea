@@ -81,7 +81,7 @@ or lossy export blocker is present.
 | --- | --- | --- |
 | `z.string()`, `z.number()`, `z.boolean()`, `z.bigint()`, `z.symbol()`, `z.date()` | Supported and compiled | Primitive guards are TypeSea guards with Zod-style constructors and aliases. |
 | String, number, bigint, date, array, set, map, and file checks | Supported and compiled | Built-in checks such as `.min()`, `.max()`, `.email()`, `.uuid()`, `.int()`, `.gte()`, `.nonempty()`, and `.mime()` stay in the normal validator pipeline. |
-| `z.object()`, `.strict()`, `.loose()`, `.passthrough()`, `.strip()`, `.extend()`, `.pick()`, `.omit()`, `.partial()`, `.required()` | Supported and compiled | Safe strict objects reject undeclared own string, symbol, and non-enumerable keys without reading through prototypes. |
+| `z.object()`, `.strict()`, `.loose()`, `.passthrough()`, `.strip()`, `.extend()`, `.pick()`, `.omit()`, `.partial()`, `.required()` | Supported and compiled | `z.object()` follows Zod v4 strip-by-default output semantics; safe strict objects reject undeclared own string, symbol, and non-enumerable keys without reading through prototypes. |
 | `z.array()`, `z.tuple()`, tuple rest, `z.record()`, `z.map()`, `z.set()`, `z.enum()`, `z.literal()` | Supported and compiled | Container schemas keep TypeSea's own presence, tuple, and key semantics. |
 | `z.union()`, `z.discriminatedUnion()`, `z.intersection()` | Supported and compiled | Object-union preflight is optimized when branches expose required keys or discriminators. Wide overlapping unions may still need branch probing. |
 | `z.default()`, `z.prefault()`, `z.catch()`, `z.pipe()`, `z.codec()`, `z.coerce.*`, transforms, and overwrites | Supported as decoder/codec pipelines | Use parse/decode APIs for output-changing behavior. These paths may block JSON Schema export or standalone AOT when semantics would be lost. |
@@ -1042,6 +1042,11 @@ interface SeaFlowCase {
 `fuzz(source, options)` yields values only. `fuzzCases(source, options)` yields
 the structured cases above. `SeaFlow.cases(...)` is the same function on a
 frozen namespace object.
+
+Before filtering and yielding, SeaFlow validates each candidate against the
+local schema that produced it. This keeps `case.valid` aligned with the runtime
+predicate when length, range, format, or container constraints overlap.
+Custom refinement predicates execute during this reconciliation step.
 
 `SeaFlowOptions` supports `intensity: "low" | "high" | "extreme"`,
 `maxDepth`, `maxYields`, `includeInvalid`, and `includeSecurity`. Lazy schemas

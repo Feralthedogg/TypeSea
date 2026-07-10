@@ -346,10 +346,6 @@ function randomDiscriminatedUnion(
     });
 }
 
-/**
- * @brief Build the fixed presence-dispatch fuzz schema.
- * @returns Guard that must lower to PresenceDispatch.
- */
 function presenceDispatchFuzzGuard(): Guard<unknown, Presence> {
     const Operators = t.object({
         eq: t.optional(t.string),

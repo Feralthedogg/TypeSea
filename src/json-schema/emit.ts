@@ -660,6 +660,7 @@ function emitPatternPropertiesFragment(
             jsonSchemaMemberContext(context, "patternProperties")
         );
         path.pop();
+        path.pop();
         if (emitted === undefined) {
             failed = true;
             continue;

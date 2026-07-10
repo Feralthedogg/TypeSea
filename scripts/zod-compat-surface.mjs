@@ -304,9 +304,6 @@ async function checkRepresentativeBehavior() {
     return ok(undefined);
 }
 
-/**
- * @brief Build representative Zod and TypeSea schema pairs.
- */
 function representativeSchemas(zod, typeSea) {
     return [
         {
@@ -382,9 +379,6 @@ function representativeSchemas(zod, typeSea) {
     ];
 }
 
-/**
- * @brief Read one schema object's public member names.
- */
 function readInstanceNames(value) {
     const names = new Set();
     let current = value;
@@ -408,9 +402,6 @@ function readInstanceNames(value) {
     return Array.from(names).sort();
 }
 
-/**
- * @brief Parse through one Zod-like schema.
- */
 function readParseResult(schema, value) {
     const result = schema.safeParse(value);
     if (!isRecord(result) || typeof result["success"] !== "boolean") {
@@ -472,7 +463,7 @@ function sameData(left, right) {
 }
 
 /**
- * @brief Check record.
+ * @brief Accept non-array objects before structured field reads.
  */
 function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);

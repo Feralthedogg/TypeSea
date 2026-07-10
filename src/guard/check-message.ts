@@ -36,7 +36,7 @@ export function readCheckMessage(
 }
 
 /**
- * @brief Check record.
+ * @brief Accept non-array objects before structured field reads.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === "object" && value !== null && !Array.isArray(value);

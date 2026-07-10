@@ -1,8 +1,6 @@
 /**
  * @file compile/check-scalar.ts
  * @brief Scalar diagnostic validator snippets.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 
 import {
@@ -44,8 +42,6 @@ import type { EmitContext } from "./types.js";
 
 /**
  * @brief emit string check.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param schema String schema with scalar checks.
  * @param value Generated expression for the candidate value.
  * @param path Generated expression for the current diagnostic path.
@@ -758,8 +754,6 @@ export function emitUndefinedLeafCheckAtTwoSegments(
 
 /**
  * @brief emit string check at one appended path segment.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param schema String schema with scalar checks.
  * @param value Generated expression for the candidate value.
  * @param path Generated expression for the current diagnostic path.
@@ -971,8 +965,6 @@ function emitStringCheckAtSegment(
 
 /**
  * @brief emit string check at two appended path segments.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param schema String schema with scalar checks.
  * @param value Generated expression for the candidate value.
  * @param path Generated expression for the current diagnostic path.
@@ -1197,8 +1189,6 @@ function emitStringCheckAtTwoSegments(
 
 /**
  * @brief emit number check.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param schema Number schema with scalar checks.
  * @param value Generated expression for the candidate value.
  * @param path Generated expression for the current diagnostic path.
@@ -1519,8 +1509,6 @@ function bigintDisplay(value: bigint): string {
 
 /**
  * @brief emit number check at one appended path segment.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param schema Number schema with scalar checks.
  * @param value Generated expression for the candidate value.
  * @param path Generated expression for the current diagnostic path.
@@ -1643,8 +1631,6 @@ function emitNumberCheckAtSegment(
 
 /**
  * @brief emit number check at two appended path segments.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param schema Number schema with scalar checks.
  * @param value Generated expression for the candidate value.
  * @param path Generated expression for the current diagnostic path.
@@ -1773,8 +1759,6 @@ function emitNumberCheckAtTwoSegments(
 
 /**
  * @brief emit literal check.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Literal expected by the schema.
  * @param checked Generated expression for the candidate value.
  * @param path Generated expression for the current diagnostic path.
@@ -1805,8 +1789,6 @@ export function emitLiteralCheck(
 
 /**
  * @brief emit literal check at one appended path segment.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Literal expected by the schema.
  * @param checked Generated expression for the candidate value.
  * @param path Generated expression for the current diagnostic path.
@@ -1836,8 +1818,6 @@ function emitLiteralCheckAtSegment(
 
 /**
  * @brief emit literal check at two appended path segments.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Literal expected by the schema.
  * @param checked Generated expression for the candidate value.
  * @param path Generated expression for the current diagnostic path.
@@ -1870,8 +1850,6 @@ function emitLiteralCheckAtTwoSegments(
 
 /**
  * @brief emit undefined literal check at one appended path segment.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Literal expected by the schema.
  * @param path Generated expression for the current diagnostic path.
  * @param segmentExpression Generated expression for the appended path segment.
@@ -1906,8 +1884,6 @@ function emitUndefinedLiteralCheckAtSegment(
 
 /**
  * @brief emit undefined literal check at two appended path segments.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Literal expected by the schema.
  * @param path Generated expression for the current diagnostic path.
  * @param firstSegmentExpression Generated expression for the parent segment.

@@ -38,9 +38,7 @@ import type {
 } from "./types.js";
 
 /**
- * @brief emit array.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
+ * @brief Emit an array schema with item and length constraints.
  */
 export function emitArray(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
@@ -96,9 +94,7 @@ export function emitArray(
 }
 
 /**
- * @brief emit tuple.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
+ * @brief Emit a fixed/rest tuple schema without weakening positional semantics.
  */
 export function emitTuple(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Tuple }>,
@@ -196,9 +192,7 @@ export function emitTuple(
 }
 
 /**
- * @brief emit record.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
+ * @brief Emit an enumerable-string record schema and its key constraints.
  */
 export function emitRecord(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Record }>,
@@ -283,9 +277,7 @@ export function emitRecord(
 }
 
 /**
- * @brief emit object.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
+ * @brief Emit object properties, required keys, mode, and catchall semantics.
  */
 export function emitObject(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>,

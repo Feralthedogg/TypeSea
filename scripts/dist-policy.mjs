@@ -27,10 +27,6 @@ if (violations.length !== 0) {
     process.exitCode = 1;
 }
 
-/**
- * @brief Execute scan.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 async function scan(path) {
     const entries = await readdir(path, { withFileTypes: true });
     for (let index = 0; index < entries.length; index += 1) {
@@ -59,11 +55,6 @@ async function scan(path) {
     }
 }
 
-/**
- * @brief Check whether a forbidden token occurrence is an intentional API name.
- * @param line Built source line containing a broad forbidden token match.
- * @returns True when the line belongs to the decoder fallback API surface.
- */
 function isAllowedForbiddenLine(line) {
     for (let index = 0; index < allowedForbiddenLines.length; index += 1) {
         const snippet = allowedForbiddenLines[index];
@@ -75,8 +66,7 @@ function isAllowedForbiddenLine(line) {
 }
 
 /**
- * @brief Check built public file.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
+ * @brief Select generated JavaScript and declaration files for dist policy.
  */
 function isBuiltPublicFile(name) {
     return name.endsWith(".js") || name.endsWith(".d.ts");

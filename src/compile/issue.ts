@@ -1,8 +1,6 @@
 /**
  * @file compile/issue.ts
  * @brief Diagnostic issue source snippets.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 
 import { UUID_PATTERN } from "../schema/index.js";
@@ -12,8 +10,6 @@ import type { EmitContext } from "./types.js";
 
 /**
  * @brief emit pattern issue.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Generated expression for the string value.
  * @param path Generated expression for the current diagnostic path.
  * @param issues Generated expression for the diagnostic buffer.
@@ -53,8 +49,6 @@ export function emitPatternIssue(
 
 /**
  * @brief emit pattern issue at one appended path segment.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Generated expression for the string value.
  * @param path Generated expression for the current diagnostic path.
  * @param segmentExpression Generated expression for the appended segment.
@@ -93,8 +87,6 @@ export function emitPatternIssueAtSegment(
 
 /**
  * @brief emit pattern issue at two appended path segments.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Generated expression for the string value.
  * @param path Generated expression for the current diagnostic path.
  * @param firstSegmentExpression Generated expression for the first appended segment.
@@ -136,8 +128,6 @@ export function emitPatternIssueAtTwoSegments(
 
 /**
  * @brief Decide whether a RegExp must be reset before generated testing.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param regex RegExp stored in the generated side table.
  * @returns True for stateful global or sticky expressions.
  */
@@ -147,8 +137,6 @@ function regexNeedsLastIndexReset(regex: RegExp): boolean {
 
 /**
  * @brief emit issue.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param issues Generated expression for the diagnostic buffer.
  * @param path Generated expression for the current diagnostic path.
  * @param code Issue code string.
@@ -176,8 +164,6 @@ export function emitIssue(
 
 /**
  * @brief emit issue at one appended path segment.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param issues Generated expression for the diagnostic buffer.
  * @param path Generated expression for the current diagnostic path.
  * @param segmentExpression Generated expression for the appended segment.
@@ -208,8 +194,6 @@ export function emitIssueAtSegment(
 
 /**
  * @brief emit issue at two appended path segments.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param issues Generated expression for the diagnostic buffer.
  * @param path Generated expression for the current diagnostic path.
  * @param firstSegmentExpression Generated expression for the first appended segment.
@@ -243,8 +227,6 @@ export function emitIssueAtTwoSegments(
 
 /**
  * @brief emit issue expr.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param issues Generated expression for the diagnostic buffer.
  * @param path Generated expression for the current diagnostic path.
  * @param code Issue code string.
@@ -273,8 +255,6 @@ export function emitIssueExpr(
 
 /**
  * @brief emit issue expr at one appended path segment.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param issues Generated expression for the diagnostic buffer.
  * @param path Generated expression for the current diagnostic path.
  * @param segmentExpression Generated expression for the appended segment.
@@ -325,8 +305,6 @@ export function emitIssueExprAtSegment(
 
 /**
  * @brief emit issue expr at two appended path segments.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param issues Generated expression for the diagnostic buffer.
  * @param path Generated expression for the current diagnostic path.
  * @param firstSegmentExpression Generated expression for the first appended segment.
@@ -376,8 +354,6 @@ function issueArguments(
 
 /**
  * @brief Extract the numeric side-table index from a generated string reference.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param expression Candidate generated expression such as `u[3]`.
  * @returns Index text when the expression is a plain string-table read.
  */

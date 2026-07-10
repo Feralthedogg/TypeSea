@@ -1,8 +1,6 @@
 /**
  * @file compile-names.ts
  * @brief Generated function-name and string literal helpers.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  *
  * @invariant User-provided names never enter generated source until they are
  * reduced to a strict-mode-safe identifier with a fixed length bound.
@@ -12,8 +10,6 @@ const MAX_GENERATED_FUNCTION_NAME_LENGTH = 96;
 
 /**
  * @brief Convert a user supplied compile name into a strict-mode function id.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Requested public function name.
  * @returns Identifier-safe, reserved-word-safe, bounded function name.
  */
@@ -37,8 +33,6 @@ export function safeFunctionName(value: string): string {
 
 /**
  * @brief Quote a string for generated JavaScript source.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Runtime string to embed.
  * @returns JSON-escaped string literal source.
  */
@@ -48,8 +42,6 @@ export function stringLiteral(value: string): string {
 
 /**
  * @brief Strict-mode names that cannot be emitted as generated function ids.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 const reservedFunctionNames = new Set<string>([
     "arguments",

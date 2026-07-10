@@ -102,6 +102,48 @@ describe("security regression coverage", () => {
         }
     });
 
+    test("runtime-object guards reject revoked proxies without throwing", async () => {
+        class Marker {
+            public readonly marker = true;
+        }
+
+        const guards: readonly Guard<unknown>[] = [
+            t.date,
+            t.map(t.string, t.number),
+            t.set(t.number),
+            t.file(),
+            t.instanceOf(Marker)
+        ];
+        const revoked = Proxy.revocable({}, {});
+        revoked.revoke();
+
+        for (let index = 0; index < guards.length; index += 1) {
+            const guard = guards[index];
+            if (guard === undefined) {
+                continue;
+            }
+            const compiled = compile(guard, {
+                name: `revoked_runtime_${String(index)}`
+            });
+            const asyncGuard = compileAsync(guard, {
+                name: `revoked_runtime_async_${String(index)}`,
+                yieldEvery: 1,
+                yieldTimeout: 0
+            });
+
+            expect(() => guard.is(revoked.proxy)).not.toThrow();
+            expect(guard.is(revoked.proxy)).toBe(false);
+            expect(() => guard.check(revoked.proxy)).not.toThrow();
+            expect(guard.check(revoked.proxy).ok).toBe(false);
+            expect(() => compiled.is(revoked.proxy)).not.toThrow();
+            expect(compiled.is(revoked.proxy)).toBe(false);
+            await expect(asyncGuard.is(revoked.proxy)).resolves.toBe(false);
+            await expect(asyncGuard.check(revoked.proxy)).resolves.toMatchObject({
+                ok: false
+            });
+        }
+    });
+
     test("raw object schemas cannot hide non-enumerable key lookup entries", () => {
         const keyLookup = Object.create(null) as Record<string, true>;
         Object.defineProperty(keyLookup, "evil", {

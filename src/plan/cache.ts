@@ -80,6 +80,35 @@ function schemaRequiresTrackingInner(
         return false;
     }
     seen.add(schema);
+
+    const composite = compositeSchemaRequiresTracking(schema, seen);
+    if (composite !== undefined) {
+        return composite;
+    }
+
+    const wrapper = wrapperSchemaRequiresTracking(schema, seen);
+    if (wrapper !== undefined) {
+        return wrapper;
+    }
+
+    const scalar = scalarSchemaRequiresTracking(schema);
+    if (scalar !== undefined) {
+        return scalar;
+    }
+
+    return false;
+}
+
+/**
+ * @brief Check schema variants that own child collections or multiple edges.
+ * @param schema Current schema node.
+ * @param seen Schema identities already visited in this walk.
+ * @returns True or false for handled composite tags, undefined for scalar tags.
+ */
+function compositeSchemaRequiresTracking(
+    schema: Schema,
+    seen: WeakSet<object>
+): boolean | undefined {
     switch (schema.tag) {
         case SchemaTag.Lazy:
             return true;
@@ -102,20 +131,31 @@ function schemaRequiresTrackingInner(
             return schemaRequiresTrackingInner(schema.base, seen) ||
                 schemaRequiresTrackingInner(schema.value, seen);
         case SchemaTag.Object:
-            for (let index = 0; index < schema.entries.length; index += 1) {
-                const entry = schema.entries[index];
-                if (entry !== undefined &&
-                    schemaRequiresTrackingInner(entry.schema, seen)) {
-                    return true;
-                }
-            }
-            return false;
+            return objectEntriesRequireTracking(schema.entries, seen);
         case SchemaTag.Union:
         case SchemaTag.Xor:
             return schemaArrayRequiresTracking(schema.options, seen);
         case SchemaTag.Intersection:
             return schemaRequiresTrackingInner(schema.left, seen) ||
                 schemaRequiresTrackingInner(schema.right, seen);
+        case SchemaTag.DiscriminatedUnion:
+            return discriminatedCasesRequireTracking(schema.cases, seen);
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Check schema wrappers whose recursion state is inherited from children.
+ * @param schema Current schema node.
+ * @param seen Schema identities already visited in this walk.
+ * @returns True or false for handled wrapper tags, undefined for scalar tags.
+ */
+function wrapperSchemaRequiresTracking(
+    schema: Schema,
+    seen: WeakSet<object>
+): boolean | undefined {
+    switch (schema.tag) {
         case SchemaTag.Optional:
         case SchemaTag.Undefinedable:
         case SchemaTag.Nullable:
@@ -131,18 +171,61 @@ function schemaRequiresTrackingInner(
         case SchemaTag.PatternProperties:
             return schemaRequiresTrackingInner(schema.inner, seen) ||
                 patternPropertiesRequireTracking(schema, seen);
-        case SchemaTag.DiscriminatedUnion:
-            for (let index = 0; index < schema.cases.length; index += 1) {
-                const unionCase = schema.cases[index];
-                if (unionCase !== undefined &&
-                    schemaRequiresTrackingInner(unionCase.schema, seen)) {
-                    return true;
-                }
-            }
-            return false;
         case SchemaTag.Refine:
         case SchemaTag.Readonly:
             return schemaRequiresTrackingInner(schema.inner, seen);
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Scan object entries for recursion tracking needs.
+ * @param entries Object entry vector.
+ * @param seen Schema identities already visited in this walk.
+ * @returns True when a property schema can reach a lazy boundary.
+ */
+function objectEntriesRequireTracking(
+    entries: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>["entries"],
+    seen: WeakSet<object>
+): boolean {
+    for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (entry !== undefined &&
+            schemaRequiresTrackingInner(entry.schema, seen)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Scan discriminated-union cases for recursion tracking needs.
+ * @param cases Discriminated union case vector.
+ * @param seen Schema identities already visited in this walk.
+ * @returns True when a case schema can reach a lazy boundary.
+ */
+function discriminatedCasesRequireTracking(
+    cases: Extract<Schema, { readonly tag: typeof SchemaTag.DiscriminatedUnion }>["cases"],
+    seen: WeakSet<object>
+): boolean {
+    for (let index = 0; index < cases.length; index += 1) {
+        const unionCase = cases[index];
+        if (unionCase !== undefined &&
+            schemaRequiresTrackingInner(unionCase.schema, seen)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Return false for schema variants that cannot own lazy child edges.
+ * @param schema Current schema node.
+ * @returns False for every scalar schema tag.
+ */
+function scalarSchemaRequiresTracking(schema: Schema): boolean | undefined {
+    switch (schema.tag) {
         case SchemaTag.Unknown:
         case SchemaTag.Never:
         case SchemaTag.String:
@@ -155,6 +238,8 @@ function schemaRequiresTrackingInner(
         case SchemaTag.Boolean:
         case SchemaTag.Literal:
             return false;
+        default:
+            return undefined;
     }
 }
 

@@ -1,8 +1,6 @@
 /**
  * @file modifier.ts
  * @brief Presence, lazy, and refinement guard builders.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 
 import { PresenceTag, SchemaTag } from "../kind/index.js";
@@ -46,8 +44,6 @@ type CustomPredicate<TValue> =
 
 /**
  * @brief Mark a guard optional for object shape construction.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  * @param guard Guard whose value type is preserved.
  * @returns Fresh optional guard.
  */
@@ -79,8 +75,6 @@ export function exactOptional<TGuard extends Guard<unknown, Presence>>(
 
 /**
  * @brief Allow explicit undefined as a value.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  * @param guard Guard to wrap.
  * @returns Fresh undefinedable guard preserving original presence.
  */
@@ -95,8 +89,6 @@ export function undefinedable<TGuard extends Guard<unknown, Presence>>(
 
 /**
  * @brief Allow explicit null as a value.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  * @param guard Guard to wrap.
  * @returns Fresh nullable guard preserving original presence.
  */
@@ -201,8 +193,6 @@ export function custom<TValue = unknown>(
 
 /**
  * @brief Resolve recursive schemas once and reuse the frozen schema handle.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  * @param get Resolver returning the recursive guard.
  * @returns Fresh lazy guard.
  * @throws TypeError when the resolver is not callable.
@@ -229,8 +219,6 @@ export function lazy<TGuard extends Guard<unknown, Presence>>(
 
 /**
  * @brief Attach a boolean refinement while preserving TypeSea's strict true contract.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  * @param guard Guard that must pass before the predicate runs.
  * @param predicate User predicate that must return the boolean literal true.
  * @param name Diagnostic name for refinement failures.

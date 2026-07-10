@@ -25,7 +25,22 @@ const forbiddenSnippets = [
     "field " + "contract",
     "Borrowed input slot " + "named",
     "Documents one concrete " + "slot",
-    "Defines a closed compile-time " + "contract"
+    "Defines a closed compile-time " + "contract",
+    "This helper keeps a local " + "invariant explicit",
+    "Builder helpers normalize " + "user-facing fluent calls",
+    "Script helpers keep " + "release and policy checks deterministic",
+    "@brief Check " + "record.",
+    "@brief Execute " + "scan",
+    "@brief Execute find " + "forbidden snippet",
+    "@brief aot " + "issue",
+    "@brief emit " + "array.",
+    "@brief emit " + "tuple.",
+    "@brief emit " + "record.",
+    "@brief emit " + "object.",
+    "@brief " + "start",
+    "@brief " + "constructor",
+    "@returns True if " + "successful",
+    "@returns False if " + "unsuccessful"
 ];
 const violations = [];
 
@@ -46,10 +61,6 @@ if (violations.length !== 0) {
     process.exitCode = 1;
 }
 
-/**
- * @brief Execute scan path.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 async function scanPath(path) {
     const entry = await lstat(path);
     if (entry.isDirectory()) {
@@ -61,10 +72,6 @@ async function scanPath(path) {
     }
 }
 
-/**
- * @brief Execute scan directory.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 async function scanDirectory(path) {
     const entries = await readdir(path, { withFileTypes: true });
     for (let index = 0; index < entries.length; index += 1) {
@@ -84,10 +91,6 @@ async function scanDirectory(path) {
     }
 }
 
-/**
- * @brief Execute scan file.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 async function scanFile(path) {
     const source = await readFile(path, "utf8");
     const lines = source.split("\n");
@@ -107,11 +110,6 @@ async function scanFile(path) {
     }
 }
 
-/**
- * @brief Check whether a forbidden token occurrence is an intentional API name.
- * @param line Source line containing a broad forbidden token match.
- * @returns True when the line belongs to the decoder fallback API surface.
- */
 function isAllowedForbiddenLine(line) {
     for (let index = 0; index < allowedForbiddenLines.length; index += 1) {
         const snippet = allowedForbiddenLines[index];
@@ -122,10 +120,6 @@ function isAllowedForbiddenLine(line) {
     return false;
 }
 
-/**
- * @brief Execute find forbidden snippet.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function findForbiddenSnippet(line) {
     for (let index = 0; index < forbiddenSnippets.length; index += 1) {
         const snippet = forbiddenSnippets[index];
@@ -136,10 +130,6 @@ function findForbiddenSnippet(line) {
     return undefined;
 }
 
-/**
- * @brief Check checked source file.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function isCheckedSourceFile(name) {
     return name.endsWith(".ts") || name.endsWith(".mjs");
 }

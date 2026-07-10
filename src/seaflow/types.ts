@@ -44,8 +44,8 @@ export interface SeaFlowOptions {
 
 /**
  * @brief Structured output from `fuzzCases()`.
- * @details The `valid` bit is a prediction made by SeaFlow from the schema. It
- * is intentionally stored beside the value so tests can assert
+ * @details The `valid` bit is reconciled against the executable schema. It is
+ * stored beside the value so tests can assert
  * `guard.is(case.value) === case.valid` without rebuilding solver state.
  */
 export interface SeaFlowCase {

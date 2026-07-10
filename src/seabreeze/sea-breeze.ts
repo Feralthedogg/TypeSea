@@ -343,12 +343,41 @@ export class SeaBreezeArena {
         if (this.#fieldLength >= this.#fieldKeys.length) {
             throw new RangeError("SeaBreezeArena field capacity exhausted");
         }
-        const slot = this.#fieldLength;
+        const slot = start + count;
+        if (slot < this.#fieldLength) {
+            this.#shiftFieldSuffix(slot, root);
+        }
         this.#fieldKeys[slot] = key;
         this.#fieldTypes[slot] = this.find(type);
         this.#fieldPresence[slot] = presence;
         this.#fieldLength += 1;
         this.#fieldCounts[root] = count + 1;
+    }
+
+    /**
+     * @brief Open one slot inside the packed field table.
+     * @param slot Insertion point owned by the object receiving a new field.
+     * @param owner Object root whose start remains fixed.
+     * @details Sequential construction stays on the direct append path. This
+     * branch handles interleaved and recursive object construction without
+     * allocating a temporary field vector.
+     */
+    #shiftFieldSuffix(slot: number, owner: SeaBreezeNodeId): void {
+        for (let index = this.#fieldLength; index > slot; index -= 1) {
+            this.#fieldKeys[index] = this.#fieldKeys[index - 1] ?? 0;
+            this.#fieldTypes[index] = this.#fieldTypes[index - 1] ?? 0;
+            this.#fieldPresence[index] = this.#fieldPresence[index - 1] ?? 0;
+        }
+        for (let node = 0; node < this.#nodeLength; node += 1) {
+            if (node === owner || this.#kinds[node] !== SeaBreezeKind.Object) {
+                continue;
+            }
+            const start = this.#fieldStarts[node] ?? 0;
+            const count = this.#fieldCounts[node] ?? 0;
+            if (start > slot || (start === slot && count > 0)) {
+                this.#fieldStarts[node] = start + 1;
+            }
+        }
     }
 
     /**

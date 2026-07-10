@@ -15,8 +15,9 @@ import type {
 import { JSON_SCHEMA_UNREPRESENTABLE_OPEN } from "./read.js";
 
 /**
- * @brief Execute push json schema issue.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Append a JSON Schema export issue with a defensive path copy.
+ * @details Export traversal mutates one shared path stack, so diagnostics must
+ * own their path snapshot before control returns to the caller.
  */
 export function pushJsonSchemaIssue(
     path: readonly PathSegment[],

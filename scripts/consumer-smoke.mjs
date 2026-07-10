@@ -27,7 +27,6 @@ if (!result.ok) {
 
 /**
  * @brief Run this module top-level workflow.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 async function main() {
     const pack = await run(
@@ -62,6 +61,8 @@ async function main() {
     await writeFile(join(workspace, "zod.ts"), zodTypeSource());
     await writeFile(join(workspace, "seaflow.mjs"), seaflowRuntimeSource());
     await writeFile(join(workspace, "seaflow.ts"), seaflowTypeSource());
+    await writeFile(join(workspace, "seabreeze.mjs"), seabreezeRuntimeSource());
+    await writeFile(join(workspace, "seabreeze.ts"), seabreezeTypeSource());
     await writeFile(join(workspace, "subpath.ts"), subpathTypeSource());
     await writeFile(join(workspace, "tsconfig.json"), tsconfigSource());
     for (let index = 0; index < blockedSubpaths.length; index += 1) {
@@ -97,6 +98,10 @@ async function main() {
     const seaflowRuntime = await run("node", ["seaflow.mjs"], workspace);
     if (!seaflowRuntime.ok) {
         return seaflowRuntime;
+    }
+    const seabreezeRuntime = await run("node", ["seabreeze.mjs"], workspace);
+    if (!seabreezeRuntime.ok) {
+        return seabreezeRuntime;
     }
     for (let index = 0; index < blockedSubpaths.length; index += 1) {
         const subpath = blockedSubpaths[index];
@@ -173,6 +178,25 @@ async function main() {
     if (!seaflowTypes.ok) {
         return seaflowTypes;
     }
+    const seabreezeTypes = await run(
+        "npx",
+        [
+            "tsc",
+            "seabreeze.ts",
+            "--ignoreConfig",
+            "--module",
+            "NodeNext",
+            "--moduleResolution",
+            "NodeNext",
+            "--target",
+            "ES2023",
+            "--noEmit"
+        ],
+        workspace
+    );
+    if (!seabreezeTypes.ok) {
+        return seabreezeTypes;
+    }
     return run(
         "npx",
         [
@@ -191,10 +215,6 @@ async function main() {
     );
 }
 
-/**
- * @brief Validate installed package metadata.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 async function checkInstalledPackageMetadata() {
     const source = await readFile(
         join(workspace, "node_modules", "typesea", "package.json"),
@@ -225,10 +245,6 @@ async function checkInstalledPackageMetadata() {
     return ok(undefined);
 }
 
-/**
- * @brief Parse pack output.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function parsePackOutput(stdout) {
     const parsed = JSON.parse(stdout);
     if (!Array.isArray(parsed)) {
@@ -247,7 +263,6 @@ function parsePackOutput(stdout) {
 
 /**
  * @brief Run time source.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function runtimeSource() {
     return [
@@ -300,8 +315,11 @@ function runtimeSource() {
 
 function seaflowRuntimeSource() {
     return [
+        "import * as root from 'typesea';",
         "import { fuzzCases } from 'typesea/seaflow';",
         "import { t } from 'typesea';",
+        "if (Object.prototype.hasOwnProperty.call(root, 'fuzzCases')) process.exit(1);",
+        "if (Object.prototype.hasOwnProperty.call(root, 'SeaFlow')) process.exit(1);",
         "const User = t.strictObject({ id: t.string.uuid(), age: t.number.int().gte(0) });",
         "const cases = [...fuzzCases(User, { intensity: 'high', maxYields: 32 })];",
         "if (cases.length === 0) process.exit(1);",
@@ -312,9 +330,39 @@ function seaflowRuntimeSource() {
     ].join("\n");
 }
 
+function seabreezeRuntimeSource() {
+    return [
+        "import * as root from 'typesea';",
+        "import { createSeaBreeze, emitSeaBreezeBooleanSourceBundle, seaBreezeReader, SeaBreezeArena, SeaBreezePresence } from 'typesea/seabreeze';",
+        "if (Object.prototype.hasOwnProperty.call(root, 'createSeaBreeze')) process.exit(1);",
+        "const sea = createSeaBreeze({ maxNodes: 64, maxFields: 16 });",
+        "const User = sea.object({",
+        "  id: sea.string(),",
+        "  age: sea.optional(sea.number()),",
+        "  tags: sea.array(sea.string())",
+        "});",
+        "const FastUser = sea.compile(User, { name: 'consumerSeaBreezeUser' });",
+        "if (!FastUser.is({ id: 'u1', tags: ['typed'] })) process.exit(1);",
+        "if (FastUser.is({ id: 'u1', tags: [1] })) process.exit(1);",
+        "const emitted = sea.emit(User, { name: 'consumerSeaBreezeSource' });",
+        "if (emitted.dynamicSchemas.length !== 0 || !emitted.source.includes('function consumerSeaBreezeSource')) process.exit(1);",
+        "const arena = new SeaBreezeArena({ maxNodes: 32, maxFields: 8 });",
+        "const object = arena.allocObject();",
+        "arena.appendField(object, 1, arena.number, SeaBreezePresence.Required);",
+        "const direct = emitSeaBreezeBooleanSourceBundle(seaBreezeReader(arena), object, {",
+        "  keyTable: ['', 'id'],",
+        "  objectMode: 'strict',",
+        "  mode: 'safe',",
+        "  name: 'consumerSeaBreezeDirect'",
+        "});",
+        "if (direct.dynamicSchemas.length !== 0 || !direct.source.includes('function consumerSeaBreezeDirect')) process.exit(1);",
+        "console.log('consumer seabreeze runtime ok');",
+        ""
+    ].join("\n");
+}
+
 /**
  * @brief Run mini entry runtime source.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function miniRuntimeSource() {
     return [
@@ -338,7 +386,6 @@ function miniRuntimeSource() {
 
 /**
  * @brief Run Zod facade runtime source.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function zodRuntimeSource() {
     return [
@@ -408,7 +455,6 @@ function zodRuntimeSource() {
 
 /**
  * @brief Run mini entry type source.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function miniTypeSource() {
     return [
@@ -440,9 +486,32 @@ function seaflowTypeSource() {
     ].join("\n");
 }
 
+function seabreezeTypeSource() {
+    return [
+        "import { createSeaBreeze, SeaBreezeArena, SeaBreezeKind, SeaBreezePresence, type SeaBreezeBuilderOptions, type SeaBreezeShape } from 'typesea/seabreeze';",
+        "const options: SeaBreezeBuilderOptions = { maxNodes: 64, maxFields: 16 };",
+        "const sea = createSeaBreeze(options);",
+        "const shape: SeaBreezeShape = {",
+        "  id: sea.string(),",
+        "  age: sea.optional(sea.number())",
+        "};",
+        "const user = sea.object(shape);",
+        "const schema = sea.schema(user);",
+        "const compiled = sea.compile(user, { name: 'typedSeaBreezeUser' });",
+        "const arena = new SeaBreezeArena({ maxNodes: 16, maxFields: 4 });",
+        "const variable = arena.allocVar(0);",
+        "const joined = arena.principalJoin(variable, arena.string);",
+        "if (arena.kindOf(joined) === SeaBreezeKind.String) {",
+        "  compiled.is({ id: 'u1' });",
+        "}",
+        "arena.appendField(arena.allocObject(), 1, arena.number, SeaBreezePresence.Required);",
+        "void schema;",
+        ""
+    ].join("\n");
+}
+
 /**
  * @brief Run Zod facade type source.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function zodTypeSource() {
     return [
@@ -530,10 +599,6 @@ function zodTypeSource() {
     ].join("\n");
 }
 
-/**
- * @brief Execute subpath source.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function subpathSource(specifier) {
     return [
         `await import(${JSON.stringify(specifier)});`,
@@ -542,10 +607,6 @@ function subpathSource(specifier) {
     ].join("\n");
 }
 
-/**
- * @brief Execute subpath type source.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function subpathTypeSource() {
     return [
         "import { GraphBuilder } from 'typesea/dist/ir.js';",
@@ -554,10 +615,6 @@ function subpathTypeSource() {
     ].join("\n");
 }
 
-/**
- * @brief Execute type source.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function typeSource() {
     return [
         "import { compile, isSchemaRegistryValue, schemaRegistryToJsonSchema, t, toJSONSchema, type GlobalRegistryMetadata, type Infer, type JsonSchema, type JsonSchemaCyclesMode, type JsonSchemaOverride, type JsonSchemaRegistryDocument, type JsonSchemaReusedMode, type JsonSchemaTarget, type JsonSchemaUnrepresentableMode, type JsonSchemaUriMapper, type SchemaRegistryEntry } from 'typesea';",
@@ -611,10 +668,6 @@ function typeSource() {
     ].join("\n");
 }
 
-/**
- * @brief Execute tsconfig source.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function tsconfigSource() {
     return JSON.stringify({
         compilerOptions: {
@@ -631,7 +684,6 @@ function tsconfigSource() {
 
 /**
  * @brief Run local helper.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function run(command, args, cwd) {
     return runProcess(command, args, cwd, true);
@@ -639,7 +691,6 @@ function run(command, args, cwd) {
 
 /**
  * @brief Run expect failure.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function runExpectFailure(command, args, cwd) {
     return runProcess(command, args, cwd, false);
@@ -647,7 +698,6 @@ function runExpectFailure(command, args, cwd) {
 
 /**
  * @brief Run process.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function runProcess(command, args, cwd, expectSuccess) {
     return new Promise((resolvePromise) => {
@@ -680,8 +730,7 @@ function runProcess(command, args, cwd, expectSuccess) {
 }
 
 /**
- * @brief Check record.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
+ * @brief Accept non-array objects before structured field reads.
  */
 function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -689,7 +738,6 @@ function isRecord(value) {
 
 /**
  * @brief Construct a successful result value.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function ok(value) {
     return { ok: true, value };
@@ -697,7 +745,6 @@ function ok(value) {
 
 /**
  * @brief Construct a failed result value.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function err(error) {
     return { ok: false, error };

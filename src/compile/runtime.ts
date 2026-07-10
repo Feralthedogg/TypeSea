@@ -1,8 +1,6 @@
 /**
  * @file compile-runtime.ts
  * @brief Runtime support passed into generated validator factories.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  *
  * @section side_tables Side-table ABI
  * Generated validators receive literals, regexps, keysets, strings, and
@@ -16,8 +14,6 @@ import type { LiteralValue, Schema } from "../schema/index.js";
 
 /**
  * @brief Allocation-lean validator root generated for `is` calls.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Candidate runtime value.
  * @returns True when the generated predicate accepts the value.
  */
@@ -51,8 +47,6 @@ export type IssueCollectorRoot = (value: unknown) => readonly Issue[] | undefine
 
 /**
  * @brief Result-producing wrapper generated beside every compiled predicate.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Candidate runtime value.
  * @returns TypeSea check result carrying the accepted value or issue list.
  */

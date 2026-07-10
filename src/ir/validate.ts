@@ -142,6 +142,35 @@ function isGraphNodeValue(
      * The tag switch is deliberately closed. Unknown node tags are rejected at
      * the boundary so optimizer passes can stay exhaustive over NodeTag.
      */
+    const primitive = isPrimitiveGraphNodeValue(tag, value, deps, nodeCount);
+    if (primitive !== undefined) {
+        return primitive;
+    }
+
+    const aggregate = isAggregateGraphNodeValue(tag, value, deps, nodeCount, state);
+    if (aggregate !== undefined) {
+        return aggregate;
+    }
+
+    return isControlGraphNodeValue(tag, value, deps, nodeCount);
+}
+
+/**
+ * @brief Validate leaf, unary, binary, and scalar predicate IR nodes.
+ * @param tag Raw node tag read from the arena node.
+ * @param value Candidate node record.
+ * @param deps Dependency vector already validated for bounds.
+ * @param nodeCount Total arena size for named edge bounds.
+ * @returns True or false for handled primitive nodes, undefined for foreign tags.
+ * @details Primitive nodes do not own child graphs, so they can be checked without
+ * touching the recursive graph-validation state.
+ */
+function isPrimitiveGraphNodeValue(
+    tag: unknown,
+    value: Readonly<Record<string, unknown>>,
+    deps: readonly NodeId[],
+    nodeCount: number
+): boolean | undefined {
     switch (tag) {
         case NodeTag.Start:
         case NodeTag.Param:
@@ -185,6 +214,30 @@ function isGraphNodeValue(
         case NodeTag.StrictKeys:
             return isStringArray(readOwnDataProperty(value, "keys")) &&
                 isSingleDepNode(value, deps, "object", nodeCount);
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Validate IR nodes that carry lowered schema payloads or child graphs.
+ * @param tag Raw node tag read from the arena node.
+ * @param value Candidate node record.
+ * @param deps Dependency vector already validated for bounds.
+ * @param nodeCount Total arena size for named edge bounds.
+ * @param state Shared recursion state for embedded graphs.
+ * @returns True or false for handled aggregate nodes, undefined for foreign tags.
+ * @details Aggregate nodes are the bridge between schema payloads and lowered
+ * graph fragments. Isolating them keeps recursion evidence local.
+ */
+function isAggregateGraphNodeValue(
+    tag: unknown,
+    value: Readonly<Record<string, unknown>>,
+    deps: readonly NodeId[],
+    nodeCount: number,
+    state: GraphValidationState
+): boolean | undefined {
+    switch (tag) {
         case NodeTag.ArrayEvery:
             return isSchemaValue(readOwnDataProperty(value, "item")) &&
                 isArrayChecks(readOwnDataProperty(value, "checks")) &&
@@ -215,6 +268,28 @@ function isGraphNodeValue(
         case NodeTag.SchemaCheck:
             return isSchemaValue(readOwnDataProperty(value, "schema")) &&
                 isSingleDepNode(value, deps, "value", nodeCount);
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Validate control and variadic boolean IR nodes.
+ * @param tag Raw node tag read from the arena node.
+ * @param value Candidate node record.
+ * @param deps Dependency vector already validated for bounds.
+ * @param nodeCount Total arena size for named edge bounds.
+ * @returns True when the control payload mirrors its dependency vector.
+ * @details This final tier fails closed for unknown tags after primitive and
+ * aggregate node families have declined the payload.
+ */
+function isControlGraphNodeValue(
+    tag: unknown,
+    value: Readonly<Record<string, unknown>>,
+    deps: readonly NodeId[],
+    nodeCount: number
+): boolean {
+    switch (tag) {
         case NodeTag.And:
         case NodeTag.Or: {
             const values = readOwnDataProperty(value, "values");

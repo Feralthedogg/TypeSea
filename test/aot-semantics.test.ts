@@ -65,7 +65,7 @@ describe("AOT module emission", () => {
         });
         const resolved = plugin.resolveId("typesea:aot/user");
         const transformed = plugin.transform(
-            "const User = compileCached(\"user\", () => makeUser(), { name: \"aotUser\" });\nexport { User };",
+            "import { compileCached } from \"typesea\";\nconst User = compileCached(\"user\", () => makeUser(), { name: \"aotUser\" });\nexport { User };",
             "/project/src/user.ts"
         );
 
@@ -103,7 +103,7 @@ describe("AOT module emission", () => {
             transformCompileCached: true,
             readFile(path): string {
                 expect(path).toBe("/project/src/user.ts");
-                return "const User = compileCached(\"user\", () => makeUser(), { name: \"aotUser\" });\nexport { User };";
+                return "import { compileCached } from \"typesea\";\nconst User = compileCached(\"user\", () => makeUser(), { name: \"aotUser\" });\nexport { User };";
             }
         });
 
@@ -126,6 +126,70 @@ describe("AOT module emission", () => {
             .toContain("import __typesea_aotuser from \"typesea:aot/user\";");
         expect(transformed?.contents).toContain("const User = __typesea_aotuser;");
         expect(transformed?.contents).not.toContain("compileCached(");
+    });
+
+    test("rewrites only TypeSea compileCached bindings outside comments and strings", () => {
+        const User = t.strictObject({
+            id: t.string
+        });
+        const plugin = createTypeSeaRollupPlugin({
+            entries: [
+                {
+                    id: "user",
+                    guard: User,
+                    options: undefined
+                }
+            ],
+            transformCompileCached: true
+        });
+        const transformed = plugin.transform([
+            "import { compileCached as cached } from \"typesea\";",
+            "const text = \"compileCached('user', () => bad)\";",
+            "// compileCached(\"user\", () => bad)",
+            "/* compileCached(\"user\", () => bad) */",
+            "const User = cached(\"user\", () => makeUser());"
+        ].join("\n"), "/project/src/user.ts");
+        const local = plugin.transform([
+            "const compileCached = (value: string) => value;",
+            "const value = compileCached(\"user\");"
+        ].join("\n"), "/project/src/local.ts");
+
+        expect(transformed?.code).toContain("import __typesea_aotuser from \"typesea:aot/user\";");
+        expect(transformed?.code).toContain("const User = __typesea_aotuser;");
+        expect(transformed?.code).toContain("\"compileCached('user', () => bad)\"");
+        expect(transformed?.code).toContain("// compileCached(\"user\", () => bad)");
+        expect(transformed?.code).toContain("/* compileCached(\"user\", () => bad) */");
+        expect(local).toBeNull();
+    });
+
+    test("rewrites macros in object literals and template expressions", () => {
+        const User = t.strictObject({
+            id: t.string
+        });
+        const plugin = createTypeSeaRollupPlugin({
+            entries: [
+                {
+                    id: "user",
+                    guard: User,
+                    options: undefined
+                }
+            ],
+            transformCompileCached: true
+        });
+        const transformed = plugin.transform([
+            "import { compileCached as cached } from \"typesea\";",
+            "const Guards = { User: cached(\"user\", () => makeUser()) };",
+            "const Label = `${cached(\"user\", () => makeUser()).is(value)}`;",
+            "function local() { return cached(\"user\", () => makeUser()); }"
+        ].join("\n"), "/project/src/expressions.ts");
+
+        expect(transformed?.code)
+            .toContain("const Guards = { User: __typesea_aotuser };");
+        expect(transformed?.code)
+            .toContain("const Label = `${__typesea_aotuser.is(value)}`;");
+        expect(transformed?.code)
+            .toContain("function local() { return cached(\"user\", () => makeUser()); }");
+        expect(transformed?.code.match(/typesea:aot\/user/gu)).toHaveLength(1);
     });
 
     test("emits importable ESM validators matching interpreter semantics", async () => {

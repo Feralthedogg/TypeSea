@@ -4,6 +4,7 @@ import { afterAll, beforeAll, bench, describe } from "vitest";
 import { z } from "zod";
 import { compile, t, toJsonSchema } from "../src/index.js";
 import {
+    BENCH_WARMUP_HOOK_TIMEOUT_MS,
     readWarmupSink,
     warmupSync,
     type WarmupTask
@@ -128,7 +129,7 @@ const warmupTasks: readonly WarmupTask[] = [
 beforeAll((): void => {
     warmupSync(warmupTasks);
     booleanSink = readWarmupSink() === true;
-});
+}, BENCH_WARMUP_HOOK_TIMEOUT_MS);
 
 describe("ecosystem comparison valid", () => {
     bench("typesea interpreted", () => {

@@ -1,8 +1,6 @@
 /**
  * @file guard.ts
  * @brief Object guard class and object builder API.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 
 import { objectEntryCanBeOmitted, type ObjectSchema, type Schema } from "../../schema/index.js";
@@ -68,8 +66,6 @@ export interface PatternPropertyGuardInput {
 
 /**
  * @brief Guard subclass with object-specific shape operations.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  *
  * @invariant Methods preserve the original object mode. Strict schemas stay
  * strict after shape edits; passthrough schemas stay passthrough.
@@ -232,8 +228,6 @@ export class ObjectGuard<
 
 /**
  * @brief Build an object guard that accepts unspecified enumerable keys.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export function object<const TShape extends ObjectShape>(
     shape: TShape
@@ -289,8 +283,6 @@ export function looseObject(
 
 /**
  * @brief Build an object guard that rejects unspecified own keys.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export function strictObject<const TShape extends ObjectShape>(
     shape: TShape
@@ -320,8 +312,7 @@ export function strictObject(
 }
 
 /**
- * @brief Execute extend.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Return an object guard with additional or overridden fields.
  */
 export function extend<
     const TShape extends ObjectShape,
@@ -335,7 +326,7 @@ export function extend<
 }
 
 /**
- * @brief Execute safe extend.
+ * @brief Return a Zod-compatible safe extension of an object guard.
  * @details Runtime construction follows the same hardened schema merge as
  * extend. The method name gives callers a Zod-compatible, intention-revealing
  * API for shape extension.
@@ -352,7 +343,7 @@ export function safeExtend<
 }
 
 /**
- * @brief Execute object merge.
+ * @brief Merge another object guard while preserving the left unknown-key mode.
  * @details The left object keeps its unknown-key mode. The right object supplies
  * overriding fields and, when present, a catchall schema.
  */
@@ -369,8 +360,7 @@ export function merge<
 }
 
 /**
- * @brief Execute pick.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Keep only the selected object fields.
  */
 export function pick<
     const TShape extends ObjectShape,
@@ -401,8 +391,7 @@ export function pick<
 }
 
 /**
- * @brief Execute omit.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Remove selected object fields.
  */
 export function omit<
     const TShape extends ObjectShape,
@@ -433,8 +422,7 @@ export function omit<
 }
 
 /**
- * @brief Execute partial.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Make all or selected object fields optional.
  */
 export function partial<
     const TShape extends ObjectShape,
@@ -463,7 +451,7 @@ export function partial<
 }
 
 /**
- * @brief Execute deep partial.
+ * @brief Recursively make object fields optional.
  */
 export function deepPartial<
     const TShape extends ObjectShape,
@@ -475,8 +463,7 @@ export function deepPartial<
 }
 
 /**
- * @brief Execute required.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Make all or selected object fields required.
  */
 export function required<
     const TShape extends ObjectShape,
@@ -802,8 +789,7 @@ function objectShapeFromSchema(schema: ObjectSchema): ObjectShape {
 }
 
 /**
- * @brief Execute extend object guard.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Apply object extension after validating the receiver schema.
  */
 function extendObjectGuard<
     TShape extends ObjectShape,
@@ -820,7 +806,7 @@ function extendObjectGuard<
 }
 
 /**
- * @brief Execute merge object guard.
+ * @brief Apply object merge after validating both guard operands.
  */
 function mergeObjectGuard<
     TShape extends ObjectShape,
@@ -839,8 +825,7 @@ function mergeObjectGuard<
 }
 
 /**
- * @brief Execute pick object guard.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Apply object field selection from a key list or key mask.
  */
 function pickObjectGuard<
     TShape extends ObjectShape,
@@ -857,8 +842,7 @@ function pickObjectGuard<
 }
 
 /**
- * @brief Execute omit object guard.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Apply object field exclusion from a key list or key mask.
  */
 function omitObjectGuard<
     TShape extends ObjectShape,
@@ -875,8 +859,7 @@ function omitObjectGuard<
 }
 
 /**
- * @brief Execute partial object guard.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Rewrite selected object entries to optional presence.
  */
 function partialObjectGuard<
     TShape extends ObjectShape,
@@ -895,7 +878,7 @@ function partialObjectGuard<
 }
 
 /**
- * @brief Execute deep partial object guard.
+ * @brief Rewrite nested object entries to optional presence.
  */
 function deepPartialObjectGuard<
     TShape extends ObjectShape,
@@ -910,8 +893,7 @@ function deepPartialObjectGuard<
 }
 
 /**
- * @brief Execute required object guard.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Rewrite selected object entries to required presence.
  */
 function requiredObjectGuard<
     TShape extends ObjectShape,
@@ -930,7 +912,7 @@ function requiredObjectGuard<
 }
 
 /**
- * @brief Execute object mode rewrite.
+ * @brief Rewrite passthrough, strip, or strict object mode.
  */
 function objectModeGuard<
     TShape extends ObjectShape,
@@ -944,7 +926,7 @@ function objectModeGuard<
 }
 
 /**
- * @brief Execute object catchall rewrite.
+ * @brief Attach a catchall schema for unknown string keys.
  */
 function catchallObjectGuard<
     TShape extends ObjectShape,

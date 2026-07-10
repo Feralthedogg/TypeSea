@@ -785,8 +785,7 @@ function isReactHookFormErrorBranch(
 const rootIssuePath: readonly PathSegment[] = Object.freeze(["root"]);
 
 /**
- * @brief Check record.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Accept non-array objects before structured field reads.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === "object" && value !== null && !Array.isArray(value);

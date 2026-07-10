@@ -1,8 +1,6 @@
 /**
  * @file table.ts
  * @brief Frozen public builder table.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 
 import {
@@ -14,6 +12,7 @@ import {
     promise,
     safeDecodeAsync
 } from "../async/index.js";
+import { ObjectModeTag } from "../kind/index.js";
 import { getErrorMap, resetErrorMap, setErrorMap } from "../guard/index.js";
 import type { BaseGuard, UnionGuard, XorGuard } from "../guard/index.js";
 import { globalRegistry, registry } from "../registry/index.js";
@@ -111,7 +110,13 @@ import {
     stringToNumber,
     stringToURL,
     utf8ToBytes,
-    transform
+    transform,
+    type BaseCodec,
+    type BaseDecoder,
+    type InferDecodedObject,
+    type InferEncodedObject,
+    type ObjectCodecShape,
+    type ObjectDecodeShape
 } from "../decoder/index.js";
 import {
     array,
@@ -161,6 +166,7 @@ import {
     merge,
     nonpassthrough,
     nonstrict,
+    ObjectGuard,
     object,
     omit,
     oneOfKeys,
@@ -171,7 +177,8 @@ import {
     safeExtend,
     strict,
     strictObject,
-    strip
+    strip,
+    type ObjectShape
 } from "./object/index.js";
 import {
     bigint,
@@ -440,10 +447,12 @@ type ZodNamespace = Omit<
     | "null"
     | "undefined"
     | "void"
+    | "object"
     | "union"
     | "xor"
 > & ZodFunctionalHelpers &
 Readonly<Record<ZodWildcardKey, () => typeof unknownGuard>> & {
+    readonly object: typeof zodObject;
     readonly unknown: () => typeof unknownGuard;
     readonly never: () => typeof neverGuard;
     readonly null: () => typeof nullGuard;
@@ -516,6 +525,7 @@ type ZodFunctionalHelpers = typeof zodFunctionalHelpers;
 export const z: ZodNamespace = Object.freeze({
     ...t,
     ...zodFunctionalHelpers,
+    object: zodObject,
     [zodWildcardKey]: singleton(unknownGuard),
     unknown: singleton(unknownGuard),
     never: singleton(neverGuard),
@@ -536,6 +546,41 @@ export const z: ZodNamespace = Object.freeze({
     instanceof: instanceOf,
     TimePrecision: zodTimePrecision
 } as const);
+
+/**
+ * @brief Build a Zod-style object guard with strip-by-default output semantics.
+ * @param shape Object field, codec, or decoder shape.
+ * @returns Strip-mode object guard, codec, or decoder depending on child shape.
+ * @details Native `t.object()` remains TypeSea's passthrough builder. The `z`
+ * namespace follows Zod v4, where parse-like success paths project unknown keys
+ * away unless callers opt into `.passthrough()` or `.loose()`.
+ */
+function zodObject<const TShape extends ObjectShape>(
+    shape: TShape
+): ObjectGuard<TShape, typeof ObjectModeTag.Strip>;
+
+function zodObject<const TShape extends ObjectCodecShape>(
+    shape: TShape
+): BaseCodec<InferEncodedObject<TShape>, InferDecodedObject<TShape>>;
+
+function zodObject<const TShape extends ObjectDecodeShape>(
+    shape: TShape
+): BaseDecoder<InferDecodedObject<TShape>>;
+
+function zodObject(
+    shape: ObjectDecodeShape
+): ObjectGuard<ObjectShape, typeof ObjectModeTag.Strip> |
+    BaseCodec<unknown, unknown> |
+    BaseDecoder<unknown> {
+    const guard = object(shape) as
+        ObjectGuard<ObjectShape, typeof ObjectModeTag.Passthrough> |
+        BaseCodec<unknown, unknown> |
+        BaseDecoder<unknown>;
+    if (guard instanceof ObjectGuard) {
+        return guard.strip();
+    }
+    return guard;
+}
 
 /**
  * @brief Build a Zod-style union from an option tuple.

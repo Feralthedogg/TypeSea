@@ -456,6 +456,32 @@ function countSchemaUse(
     }
     expanded.add(schema);
     active.add(schema);
+    countSchemaChildren(schema, counts, expanded, active);
+    active.delete(schema);
+}
+
+/**
+ * @brief Dispatch child-use counting by schema family.
+ */
+function countSchemaChildren(
+    schema: Schema,
+    counts: Map<Schema, number>,
+    expanded: Set<Schema>,
+    active: Set<Schema>
+): void {
+    if (countLeafSchemaChildren(schema)) {
+        return;
+    }
+    if (countCompositeSchemaChildren(schema, counts, expanded, active)) {
+        return;
+    }
+    countWrapperSchemaChildren(schema, counts, expanded, active);
+}
+
+/**
+ * @brief Accept schema tags that do not own child schema identities.
+ */
+function countLeafSchemaChildren(schema: Schema): boolean {
     switch (schema.tag) {
         case SchemaTag.Unknown:
         case SchemaTag.Never:
@@ -469,21 +495,82 @@ function countSchemaUse(
         case SchemaTag.File:
         case SchemaTag.InstanceOf:
         case SchemaTag.Lazy:
-            break;
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Count child uses for collection, branch, and binary schema tags.
+ */
+function countCompositeSchemaChildren(
+    schema: Schema,
+    counts: Map<Schema, number>,
+    expanded: Set<Schema>,
+    active: Set<Schema>
+): boolean {
+    switch (schema.tag) {
         case SchemaTag.Array:
             countSchemaUse(schema.item, counts, expanded, active);
-            break;
+            return true;
         case SchemaTag.Object:
             countObjectSchemaUses(schema, counts, expanded, active);
-            break;
+            return true;
         case SchemaTag.Union:
         case SchemaTag.Xor:
             countSchemaListUses(schema.options, counts, expanded, active);
-            break;
+            return true;
         case SchemaTag.Intersection:
             countSchemaUse(schema.left, counts, expanded, active);
             countSchemaUse(schema.right, counts, expanded, active);
-            break;
+            return true;
+        case SchemaTag.DiscriminatedUnion:
+            for (let index = 0; index < schema.cases.length; index += 1) {
+                const unionCase = schema.cases[index];
+                if (unionCase !== undefined) {
+                    countSchemaUse(unionCase.schema, counts, expanded, active);
+                }
+            }
+            return true;
+        case SchemaTag.Tuple:
+            countSchemaListUses(schema.items, counts, expanded, active);
+            if (schema.rest !== undefined) {
+                countSchemaUse(schema.rest, counts, expanded, active);
+            }
+            return true;
+        case SchemaTag.Record:
+            if (schema.key !== undefined) {
+                countSchemaUse(schema.key, counts, expanded, active);
+            }
+            countSchemaUse(schema.value, counts, expanded, active);
+            return true;
+        case SchemaTag.Map:
+            countSchemaUse(schema.key, counts, expanded, active);
+            countSchemaUse(schema.value, counts, expanded, active);
+            return true;
+        case SchemaTag.Set:
+            countSchemaUse(schema.item, counts, expanded, active);
+            return true;
+        case SchemaTag.Property:
+            countSchemaUse(schema.base, counts, expanded, active);
+            countSchemaUse(schema.value, counts, expanded, active);
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Count child uses for wrapper and object-policy schema tags.
+ */
+function countWrapperSchemaChildren(
+    schema: Schema,
+    counts: Map<Schema, number>,
+    expanded: Set<Schema>,
+    active: Set<Schema>
+): boolean {
+    switch (schema.tag) {
         case SchemaTag.Optional:
         case SchemaTag.Undefinedable:
         case SchemaTag.Nullable:
@@ -493,46 +580,15 @@ function countSchemaUse(
         case SchemaTag.Readonly:
         case SchemaTag.Refine:
             countSchemaUse(schema.inner, counts, expanded, active);
-            break;
-        case SchemaTag.DiscriminatedUnion:
-            for (let index = 0; index < schema.cases.length; index += 1) {
-                const unionCase = schema.cases[index];
-                if (unionCase !== undefined) {
-                    countSchemaUse(unionCase.schema, counts, expanded, active);
-                }
-            }
-            break;
-        case SchemaTag.Tuple:
-            countSchemaListUses(schema.items, counts, expanded, active);
-            if (schema.rest !== undefined) {
-                countSchemaUse(schema.rest, counts, expanded, active);
-            }
-            break;
-        case SchemaTag.Record:
-            if (schema.key !== undefined) {
-                countSchemaUse(schema.key, counts, expanded, active);
-            }
-            countSchemaUse(schema.value, counts, expanded, active);
-            break;
-        case SchemaTag.Map:
-            countSchemaUse(schema.key, counts, expanded, active);
-            countSchemaUse(schema.value, counts, expanded, active);
-            break;
-        case SchemaTag.Set:
-            countSchemaUse(schema.item, counts, expanded, active);
-            break;
-        case SchemaTag.Property:
-            countSchemaUse(schema.base, counts, expanded, active);
-            countSchemaUse(schema.value, counts, expanded, active);
-            break;
+            return true;
         case SchemaTag.KeyedObject:
         case SchemaTag.PropertyCount:
             countSchemaUse(schema.inner, counts, expanded, active);
-            break;
+            return true;
         case SchemaTag.PropertyNames:
             countSchemaUse(schema.inner, counts, expanded, active);
             countSchemaUse(schema.key, counts, expanded, active);
-            break;
+            return true;
         case SchemaTag.PatternProperties:
             countSchemaUse(schema.inner, counts, expanded, active);
             for (let index = 0; index < schema.entries.length; index += 1) {
@@ -544,9 +600,10 @@ function countSchemaUse(
             if (schema.additional !== undefined) {
                 countSchemaUse(schema.additional, counts, expanded, active);
             }
-            break;
+            return true;
+        default:
+            return false;
     }
-    active.delete(schema);
 }
 
 /**

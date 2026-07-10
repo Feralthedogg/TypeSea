@@ -1,8 +1,6 @@
 /**
  * @file types.ts
  * @brief Shared builder type algebra.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 
 import type {
@@ -13,15 +11,11 @@ import type {
 
 /**
  * @brief Tuple builder input shape.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export type TupleShape = readonly Guard<unknown, Presence>[];
 
 /**
  * @brief Infer tuple runtime value from a tuple guard shape.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export type InferTuple<TShape extends TupleShape> = {
     readonly [TKey in keyof TShape]: Infer<TShape[TKey]>;
@@ -39,16 +33,12 @@ export type InferTupleWithRest<
 
 /**
  * @brief Non-empty union builder input.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export type UnionInput =
     readonly [Guard<unknown, Presence>, ...Guard<unknown, Presence>[]];
 
 /**
  * @brief Compile-time guard that each case owns the requested literal tag.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export type DiscriminatedUnionCases<
     TKey extends string,

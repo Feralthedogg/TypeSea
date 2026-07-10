@@ -1,8 +1,6 @@
 /**
  * @file compile/guard.ts
  * @brief Compiled guard construction and receiver validation.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 
 import {
@@ -511,7 +509,7 @@ export function compileBoolean<TValue, TPresence extends Presence>(
 }
 
 /**
- * @brief Execute define trusted hot methods.
+ * @brief Install trusted hot-path methods on a compiled guard instance.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function defineTrustedHotMethods<
@@ -534,7 +532,7 @@ function defineTrustedHotMethods<
         guard,
         "is",
         /**
-         * @brief Execute compiled trusted is.
+         * @brief Run the trusted predicate after receiver validation.
          * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
          */
         function compiledTrustedIs(
@@ -553,7 +551,7 @@ function defineTrustedHotMethods<
             guard,
             "check",
             /**
-             * @brief Execute compiled trusted check.
+             * @brief Run a trusted check and finalize accepted values.
              * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
              */
             function compiledTrustedCheck(
@@ -580,7 +578,7 @@ function defineTrustedHotMethods<
             guard,
             "check",
             /**
-             * @brief Execute compiled trusted check.
+             * @brief Run a trusted check without finalization overhead.
              * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
              */
             function compiledTrustedCheck(
@@ -622,7 +620,7 @@ function defineTrustedHotMethods<
             guard,
             "assert",
             /**
-             * @brief Execute compiled trusted assert.
+             * @brief Assert with trusted diagnostics and accepted-value finalization.
              * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
              */
             function compiledTrustedAssert(
@@ -650,7 +648,7 @@ function defineTrustedHotMethods<
             guard,
             "checkFirst",
             /**
-             * @brief Execute compiled trusted checkFirst.
+             * @brief Run first-issue checking and finalize accepted values.
              * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
              */
             function compiledTrustedCheckFirst(
@@ -677,7 +675,7 @@ function defineTrustedHotMethods<
             guard,
             "assert",
             /**
-             * @brief Execute compiled trusted assert.
+             * @brief Assert with trusted diagnostics and no finalization pass.
              * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
              */
             function compiledTrustedAssert(
@@ -708,7 +706,7 @@ function defineTrustedHotMethods<
             guard,
             "checkFirst",
             /**
-             * @brief Execute compiled trusted checkFirst.
+             * @brief Run first-issue checking without finalization overhead.
              * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
              */
             function compiledTrustedCheckFirst(
@@ -783,8 +781,6 @@ function readCompileSchema(guard: unknown): Schema {
 
 /**
  * @brief Accept only the literal boolean success value from compiled predicates.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Predicate return value.
  * @returns True only for `true`.
  */
@@ -793,7 +789,7 @@ function isStrictTrue(value: unknown): boolean {
 }
 
 /**
- * @brief Execute a generated predicate with hostile-input failure closure.
+ * @brief Run a generated predicate with hostile-input failure closure.
  */
 function runCompiledPredicate<TValue, TPresence extends Presence>(
     test: BooleanPredicate,
@@ -811,7 +807,7 @@ function runCompiledPredicate<TValue, TPresence extends Presence>(
 }
 
 /**
- * @brief Execute a trusted generated predicate with hostile-input failure closure.
+ * @brief Run a trusted generated predicate with hostile-input failure closure.
  */
 function runTrustedPredicate<TValue, TPresence extends Presence>(
     test: BooleanPredicate,
@@ -830,8 +826,6 @@ function runTrustedPredicate<TValue, TPresence extends Presence>(
 
 /**
  * @brief Read one own data slot from a compile input object.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param value Object being normalized.
  * @param key Field name or symbol.
  * @returns Stored field value, or undefined when absent.
@@ -887,7 +881,7 @@ function runCompiledCheck<TValue>(
 }
 
 /**
- * @brief Execute a generated Result-returning checker with fail-closed traps.
+ * @brief Run a generated Result-returning checker with fail-closed traps.
  */
 function runCompiledCheckResult<TValue>(
     check: CheckResultRoot,
@@ -946,7 +940,7 @@ function runCompiledCheckFirst<TValue>(
 }
 
 /**
- * @brief Execute define readonly property.
+ * @brief Define a non-writable method slot on a compiled guard.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function defineReadonlyProperty(
@@ -1148,7 +1142,7 @@ function readConsoleWarn(): (message: string) => void {
 }
 
 /**
- * @brief Check record.
+ * @brief Accept non-array objects before structured field reads.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

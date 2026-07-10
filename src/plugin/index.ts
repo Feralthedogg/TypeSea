@@ -262,6 +262,42 @@ interface CompileCachedMatch {
     readonly key: string;
 }
 
+interface CompileCachedBindings {
+    readonly functions: ReadonlySet<string>;
+    readonly namespaces: ReadonlySet<string>;
+}
+
+interface IdentifierRead {
+    readonly value: string;
+    readonly end: number;
+}
+
+interface StringLiteralRead {
+    readonly value: string;
+    readonly end: number;
+}
+
+interface StaticImportRead {
+    readonly clause: string;
+    readonly source: string;
+    readonly end: number;
+}
+
+interface CompileScanCodeFrame {
+    readonly kind: "code";
+    readonly braceBlocks: boolean[];
+    readonly stopAtClosingBrace: boolean;
+    blockDepth: number;
+}
+
+interface CompileScanTemplateFrame {
+    readonly kind: "template";
+}
+
+type CompileScanFrame = CompileScanCodeFrame | CompileScanTemplateFrame;
+
+const MAX_TEMPLATE_SCAN_DEPTH = 64;
+
 /**
  * @brief Create a Rollup-compatible AOT plugin.
  * @param options Static AOT entries and optional macro transform flag.
@@ -478,21 +514,11 @@ function transformCompileCachedCalls(
     code: string,
     state: AotPluginState
 ): TypeSeaTransformResult | null {
-    if (!code.includes("compileCached")) {
+    const bindings = readCompileCachedBindings(code);
+    if (bindings.functions.size === 0 && bindings.namespaces.size === 0) {
         return null;
     }
-    const replacements: CompileCachedMatch[] = [];
-    let offset = 0;
-    for (;;) {
-        const match = findCompileCachedCall(code, offset);
-        if (match === undefined) {
-            break;
-        }
-        offset = match.end;
-        if (state.entries.has(match.key)) {
-            replacements.push(match);
-        }
-    }
+    const replacements = findCompileCachedCalls(code, state, bindings);
     if (replacements.length === 0) {
         return null;
     }
@@ -516,25 +542,213 @@ function transformCompileCachedCalls(
 }
 
 /**
- * @brief Find the next compileCached call with a static string key.
+ * @brief Find module-scope TypeSea compileCached calls with static string keys.
+ * @remarks Calls are matched only through bindings imported from TypeSea.
+ * Strings, comments, template text, and nested statement blocks are left
+ * untouched. Object literals and template expressions remain executable module
+ * expressions and are scanned through an explicit bounded stack.
  */
-function findCompileCachedCall(
+function findCompileCachedCalls(
     code: string,
-    offset: number
-): CompileCachedMatch | undefined {
-    const needle = "compileCached";
-    let index = code.indexOf(needle, offset);
-    while (index >= 0) {
-        if (isIdentifierBoundary(code, index - 1) &&
-            isIdentifierBoundary(code, index + needle.length)) {
-            const open = skipWhitespace(code, index + needle.length);
-            if (code.charCodeAt(open) === 40) {
-                return readCompileCachedCall(code, index, open);
+    state: AotPluginState,
+    bindings: CompileCachedBindings
+): CompileCachedMatch[] {
+    const matches: CompileCachedMatch[] = [];
+    const frames: CompileScanFrame[] = [{
+        kind: "code",
+        braceBlocks: [],
+        blockDepth: 0,
+        stopAtClosingBrace: false
+    }];
+    let index = 0;
+    let templateDepth = 0;
+    while (index < code.length && frames.length > 0) {
+        const frame = frames[frames.length - 1];
+        if (frame === undefined) {
+            break;
+        }
+        const current = code.charCodeAt(index);
+        if (frame.kind === "template") {
+            if (current === 92) {
+                index += 2;
+                continue;
+            }
+            if (current === 96) {
+                frames.pop();
+                templateDepth -= 1;
+                index += 1;
+                continue;
+            }
+            if (current === 36 && code.charCodeAt(index + 1) === 123) {
+                frames.push({
+                    kind: "code",
+                    braceBlocks: [],
+                    blockDepth: 0,
+                    stopAtClosingBrace: true
+                });
+                index += 2;
+                continue;
+            }
+            index += 1;
+            continue;
+        }
+        if (current === 34 || current === 39) {
+            index = skipString(code, index);
+            continue;
+        }
+        if (current === 96) {
+            if (templateDepth >= MAX_TEMPLATE_SCAN_DEPTH) {
+                return matches;
+            }
+            frames.push({ kind: "template" });
+            templateDepth += 1;
+            index += 1;
+            continue;
+        }
+        if (current === 47 && code.charCodeAt(index + 1) === 47) {
+            index = skipLineComment(code, index + 2);
+            continue;
+        }
+        if (current === 47 && code.charCodeAt(index + 1) === 42) {
+            index = skipBlockComment(code, index + 2);
+            continue;
+        }
+        if (current === 123) {
+            const block = !isExpressionBrace(code, index);
+            frame.braceBlocks.push(block);
+            if (block) {
+                frame.blockDepth += 1;
+            }
+            index += 1;
+            continue;
+        }
+        if (current === 125) {
+            const block = frame.braceBlocks.pop();
+            if (block === undefined) {
+                if (frame.stopAtClosingBrace) {
+                    frames.pop();
+                }
+                index += 1;
+                continue;
+            }
+            if (block) {
+                frame.blockDepth -= 1;
+            }
+            index += 1;
+            continue;
+        }
+        const identifier = readIdentifier(code, index);
+        if (identifier === undefined) {
+            index += 1;
+            continue;
+        }
+        if (frame.blockDepth === 0) {
+            const match = readCompileCachedCallFromIdentifier(
+                code,
+                identifier,
+                state,
+                bindings
+            );
+            if (match !== undefined) {
+                matches.push(match);
+                index = match.end;
+                continue;
             }
         }
-        index = code.indexOf(needle, index + needle.length);
+        index = identifier.end;
     }
-    return undefined;
+    return matches;
+}
+
+/**
+ * @brief Distinguish expression object braces from statement blocks.
+ * @param code Complete module source.
+ * @param start Opening brace offset.
+ * @returns True when the preceding token requires an expression.
+ */
+function isExpressionBrace(code: string, start: number): boolean {
+    const previous = previousCodeIndex(code, start - 1);
+    if (previous < 0) {
+        return false;
+    }
+    const token = code.charCodeAt(previous);
+    return token === 33 ||
+        token === 37 ||
+        token === 38 ||
+        token === 40 ||
+        token === 42 ||
+        token === 43 ||
+        token === 44 ||
+        token === 45 ||
+        token === 47 ||
+        token === 58 ||
+        token === 60 ||
+        token === 61 ||
+        token === 62 ||
+        token === 63 ||
+        token === 91 ||
+        token === 94 ||
+        token === 123 ||
+        token === 124 ||
+        token === 126;
+}
+
+/**
+ * @brief Find the previous non-whitespace source offset.
+ */
+function previousCodeIndex(code: string, start: number): number {
+    let index = start;
+    while (index >= 0) {
+        const current = code.charCodeAt(index);
+        if (current !== 9 && current !== 10 && current !== 13 && current !== 32) {
+            return index;
+        }
+        index -= 1;
+    }
+    return -1;
+}
+
+/**
+ * @brief Read one possible TypeSea compileCached invocation.
+ */
+function readCompileCachedCallFromIdentifier(
+    code: string,
+    identifier: IdentifierRead,
+    state: AotPluginState,
+    bindings: CompileCachedBindings
+): CompileCachedMatch | undefined {
+    if (bindings.functions.has(identifier.value)) {
+        const open = skipTrivia(code, identifier.end);
+        if (code.charCodeAt(open) === 40) {
+            return readCompileCachedCall(
+                code,
+                identifier.end - identifier.value.length,
+                open,
+                state
+            );
+        }
+    }
+    if (!bindings.namespaces.has(identifier.value)) {
+        return undefined;
+    }
+    const dot = skipTrivia(code, identifier.end);
+    if (code.charCodeAt(dot) !== 46) {
+        return undefined;
+    }
+    const member = readIdentifier(code, skipTrivia(code, dot + 1));
+    if (member?.value !== "compileCached") {
+        return undefined;
+    }
+    const open = skipTrivia(code, member.end);
+    if (code.charCodeAt(open) !== 40) {
+        return undefined;
+    }
+    return readCompileCachedCall(
+        code,
+        identifier.end - identifier.value.length,
+        open,
+        state
+    );
 }
 
 /**
@@ -543,11 +757,12 @@ function findCompileCachedCall(
 function readCompileCachedCall(
     code: string,
     start: number,
-    open: number
+    open: number,
+    state: AotPluginState
 ): CompileCachedMatch | undefined {
-    const keyStart = skipWhitespace(code, open + 1);
+    const keyStart = skipTrivia(code, open + 1);
     const key = readStringLiteral(code, keyStart);
-    if (key === undefined) {
+    if (key === undefined || !state.entries.has(key.value)) {
         return undefined;
     }
     const end = findMatchingParen(code, open);
@@ -557,14 +772,14 @@ function readCompileCachedCall(
     return {
         start,
         end: end + 1,
-        key
+        key: key.value
     };
 }
 
 /**
  * @brief Read a single or double quoted string literal.
  */
-function readStringLiteral(code: string, start: number): string | undefined {
+function readStringLiteral(code: string, start: number): StringLiteralRead | undefined {
     const quote = code.charCodeAt(start);
     if (quote !== 34 && quote !== 39) {
         return undefined;
@@ -574,7 +789,10 @@ function readStringLiteral(code: string, start: number): string | undefined {
     while (index < code.length) {
         const current = code.charCodeAt(index);
         if (current === quote) {
-            return chars.join("");
+            return {
+                value: chars.join(""),
+                end: index + 1
+            };
         }
         if (current === 92) {
             const escaped = code[index + 1];
@@ -589,6 +807,269 @@ function readStringLiteral(code: string, start: number): string | undefined {
         index += 1;
     }
     return undefined;
+}
+
+/**
+ * @brief Collect TypeSea compileCached bindings from static imports.
+ */
+function readCompileCachedBindings(code: string): CompileCachedBindings {
+    const functions = new Set<string>();
+    const namespaces = new Set<string>();
+    let index = 0;
+    let blockDepth = 0;
+    while (index < code.length) {
+        const skipped = skipNonCode(code, index);
+        if (skipped !== index) {
+            index = skipped;
+            continue;
+        }
+        const current = code.charCodeAt(index);
+        if (current === 123) {
+            blockDepth += 1;
+            index += 1;
+            continue;
+        }
+        if (current === 125) {
+            blockDepth = Math.max(0, blockDepth - 1);
+            index += 1;
+            continue;
+        }
+        const identifier = readIdentifier(code, index);
+        if (identifier === undefined) {
+            index += 1;
+            continue;
+        }
+        if (blockDepth === 0 && identifier.value === "import") {
+            const declaration = readStaticImport(code, identifier.end);
+            if (declaration !== undefined) {
+                if (isTypeSeaImportSource(declaration.source)) {
+                    readCompileCachedBindingsFromImport(
+                        declaration.clause,
+                        functions,
+                        namespaces
+                    );
+                }
+                index = declaration.end;
+                continue;
+            }
+        }
+        index = identifier.end;
+    }
+    return {
+        functions,
+        namespaces
+    };
+}
+
+/**
+ * @brief Read one static import declaration after the import keyword.
+ */
+function readStaticImport(code: string, afterImport: number): StaticImportRead | undefined {
+    const cursor = skipTrivia(code, afterImport);
+    if (code.charCodeAt(cursor) === 40) {
+        return undefined;
+    }
+    if (identifierAt(code, cursor, "type")) {
+        return undefined;
+    }
+    const sideEffectSource = readStringLiteral(code, cursor);
+    if (sideEffectSource !== undefined) {
+        return {
+            clause: "",
+            source: sideEffectSource.value,
+            end: skipOptionalSemicolon(code, sideEffectSource.end)
+        };
+    }
+    const from = findImportFrom(code, cursor);
+    if (from === undefined) {
+        return undefined;
+    }
+    const source = readStringLiteral(code, skipTrivia(code, from + "from".length));
+    if (source === undefined) {
+        return undefined;
+    }
+    return {
+        clause: code.slice(cursor, from),
+        source: source.value,
+        end: skipOptionalSemicolon(code, source.end)
+    };
+}
+
+/**
+ * @brief Locate the from keyword in a static import clause.
+ */
+function findImportFrom(code: string, start: number): number | undefined {
+    let index = start;
+    let braceDepth = 0;
+    while (index < code.length) {
+        const skipped = skipNonCode(code, index);
+        if (skipped !== index) {
+            index = skipped;
+            continue;
+        }
+        const current = code.charCodeAt(index);
+        if (current === 59) {
+            return undefined;
+        }
+        if (current === 123) {
+            braceDepth += 1;
+            index += 1;
+            continue;
+        }
+        if (current === 125) {
+            braceDepth = Math.max(0, braceDepth - 1);
+            index += 1;
+            continue;
+        }
+        const identifier = readIdentifier(code, index);
+        if (identifier === undefined) {
+            index += 1;
+            continue;
+        }
+        if (braceDepth === 0 && identifier.value === "from") {
+            return index;
+        }
+        index = identifier.end;
+    }
+    return undefined;
+}
+
+/**
+ * @brief Extract compileCached named and namespace imports from one clause.
+ */
+function readCompileCachedBindingsFromImport(
+    clause: string,
+    functions: Set<string>,
+    namespaces: Set<string>
+): void {
+    readNamespaceImportBinding(clause, namespaces);
+    const named = readNamedImportClause(clause);
+    if (named !== undefined) {
+        readNamedCompileCachedBindings(named, functions);
+    }
+}
+
+/**
+ * @brief Extract `import * as ns` bindings.
+ */
+function readNamespaceImportBinding(clause: string, namespaces: Set<string>): void {
+    const star = skipTrivia(clause, 0);
+    if (clause.charCodeAt(star) !== 42) {
+        return;
+    }
+    const keyword = readIdentifier(clause, skipTrivia(clause, star + 1));
+    if (keyword?.value !== "as") {
+        return;
+    }
+    const local = readIdentifier(clause, skipTrivia(clause, keyword.end));
+    if (local !== undefined) {
+        namespaces.add(local.value);
+    }
+}
+
+/**
+ * @brief Read the contents of a named import brace pair.
+ */
+function readNamedImportClause(clause: string): string | undefined {
+    const open = clause.indexOf("{");
+    if (open < 0) {
+        return undefined;
+    }
+    let depth = 0;
+    for (let index = open; index < clause.length; index += 1) {
+        const current = clause.charCodeAt(index);
+        if (current === 123) {
+            depth += 1;
+            continue;
+        }
+        if (current === 125) {
+            depth -= 1;
+            if (depth === 0) {
+                return clause.slice(open + 1, index);
+            }
+        }
+    }
+    return undefined;
+}
+
+/**
+ * @brief Extract compileCached local names from a named import list.
+ */
+function readNamedCompileCachedBindings(named: string, functions: Set<string>): void {
+    const parts = named.split(",");
+    for (let index = 0; index < parts.length; index += 1) {
+        const part = parts[index];
+        if (part === undefined) {
+            continue;
+        }
+        const names = readImportSpecifierIdentifiers(part);
+        if (names[0] !== "compileCached") {
+            continue;
+        }
+        const asIndex = names.indexOf("as");
+        functions.add(asIndex >= 0
+            ? names[asIndex + 1] ?? "compileCached"
+            : "compileCached");
+    }
+}
+
+/**
+ * @brief Read identifiers from one import specifier while ignoring `type`.
+ */
+function readImportSpecifierIdentifiers(specifier: string): string[] {
+    const names: string[] = [];
+    let index = 0;
+    while (index < specifier.length) {
+        const skipped = skipNonCode(specifier, index);
+        if (skipped !== index) {
+            index = skipped;
+            continue;
+        }
+        const identifier = readIdentifier(specifier, index);
+        if (identifier === undefined) {
+            index += 1;
+            continue;
+        }
+        if (identifier.value !== "type") {
+            names.push(identifier.value);
+        }
+        index = identifier.end;
+    }
+    return names;
+}
+
+/**
+ * @brief Check whether an import source belongs to TypeSea.
+ */
+function isTypeSeaImportSource(source: string): boolean {
+    return source === "typesea" || source.startsWith("typesea/");
+}
+
+/**
+ * @brief Read an identifier at one source index.
+ */
+function readIdentifier(code: string, start: number): IdentifierRead | undefined {
+    const first = code.charCodeAt(start);
+    if (!isIdentifierStartCode(first)) {
+        return undefined;
+    }
+    let index = start + 1;
+    while (index < code.length && isIdentifierPartCode(code.charCodeAt(index))) {
+        index += 1;
+    }
+    return {
+        value: code.slice(start, index),
+        end: index
+    };
+}
+
+/**
+ * @brief Check for a whole identifier at one index.
+ */
+function identifierAt(code: string, start: number, expected: string): boolean {
+    return code.startsWith(expected, start) &&
+        isIdentifierBoundary(code, start - 1) &&
+        isIdentifierBoundary(code, start + expected.length);
 }
 
 /**
@@ -741,6 +1222,72 @@ function skipWhitespace(code: string, start: number): number {
         index += 1;
     }
     return index;
+}
+
+/**
+ * @brief Skip whitespace and comments between tokens.
+ */
+function skipTrivia(code: string, start: number): number {
+    let index = start;
+    for (;;) {
+        const whitespace = skipWhitespace(code, index);
+        if (whitespace !== index) {
+            index = whitespace;
+            continue;
+        }
+        if (code.charCodeAt(index) === 47 && code.charCodeAt(index + 1) === 47) {
+            index = skipLineComment(code, index + 2);
+            continue;
+        }
+        if (code.charCodeAt(index) === 47 && code.charCodeAt(index + 1) === 42) {
+            index = skipBlockComment(code, index + 2);
+            continue;
+        }
+        return index;
+    }
+}
+
+/**
+ * @brief Skip source regions that are not executable tokens.
+ */
+function skipNonCode(code: string, start: number): number {
+    const current = code.charCodeAt(start);
+    if (current === 34 || current === 39 || current === 96) {
+        return skipString(code, start);
+    }
+    if (current === 47 && code.charCodeAt(start + 1) === 47) {
+        return skipLineComment(code, start + 2);
+    }
+    if (current === 47 && code.charCodeAt(start + 1) === 42) {
+        return skipBlockComment(code, start + 2);
+    }
+    return start;
+}
+
+/**
+ * @brief Skip one optional semicolon after an import source literal.
+ */
+function skipOptionalSemicolon(code: string, start: number): number {
+    const semicolon = skipTrivia(code, start);
+    return code.charCodeAt(semicolon) === 59 ? semicolon + 1 : semicolon;
+}
+
+/**
+ * @brief Check identifier start code points used by JavaScript ASCII names.
+ */
+function isIdentifierStartCode(code: number): boolean {
+    return code === 36 ||
+        code === 95 ||
+        (code >= 65 && code <= 90) ||
+        (code >= 97 && code <= 122);
+}
+
+/**
+ * @brief Check identifier continuation code points used by JavaScript ASCII names.
+ */
+function isIdentifierPartCode(code: number): boolean {
+    return isIdentifierStartCode(code) ||
+        (code >= 48 && code <= 57);
 }
 
 /**

@@ -1,0 +1,19 @@
+{
+    "$schema": "https://lily-svelte.pages.dev/schema.json",
+    "tailwind": {
+        "css": "src/routes/layout.css",
+        "baseColor": "neutral"
+    },
+    "aliases": {
+        "components": "$lib/components",
+        "utils": "$lib/utils",
+        "ui": "$lib/components/ui",
+        "hooks": "$lib/hooks",
+        "lib": "$lib"
+    },
+    "typescript": true,
+    "registry": "https://lily-svelte.pages.dev/registry",
+    "iconLibrary": "lucide",
+    "menuColor": "default",
+    "menuAccent": "subtle"
+}

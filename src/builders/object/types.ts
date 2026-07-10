@@ -1,8 +1,6 @@
 /**
  * @file types.ts
  * @brief Object builder type algebra.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 
 import type {
@@ -36,8 +34,6 @@ export type RequiredKeys<TShape extends ObjectShape> = {
 
 /**
  * @brief Infer required and optional object fields from guard presence tags.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export type InferObject<TShape extends ObjectShape> = Simplify<
     {

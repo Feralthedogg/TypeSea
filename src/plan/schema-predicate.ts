@@ -85,6 +85,26 @@ export function executeSchemaKernel(
     state: ValidationState,
     runChild: ChildPredicateRunner
 ): boolean {
+    const scalar = executeScalarSchemaKernel(schema, value);
+    if (scalar !== undefined) {
+        return scalar;
+    }
+
+    const composite = executeCompositeSchemaKernel(schema, value, state, runChild);
+    if (composite !== undefined) {
+        return composite;
+    }
+
+    return executeWrapperSchemaKernel(schema, value, state, runChild);
+}
+
+/**
+ * @brief Execute scalar schema tags without child recursion.
+ * @param schema Schema node selected by the caller.
+ * @param value Candidate runtime value.
+ * @returns Predicate result for handled scalar tags, undefined for other tags.
+ */
+function executeScalarSchemaKernel(schema: Schema, value: unknown): boolean | undefined {
     switch (schema.tag) {
         case SchemaTag.Unknown:
             return true;
@@ -104,6 +124,30 @@ export function executeSchemaKernel(
             return typeof value === "boolean";
         case SchemaTag.Literal:
             return Object.is(value, schema.value);
+        case SchemaTag.File:
+            return isFileSchema(schema, value);
+        case SchemaTag.InstanceOf:
+            return ordinaryHasInstance(value, schema.constructor);
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Execute schema tags that own collections, branches, or binary edges.
+ * @param schema Schema node selected by the caller.
+ * @param value Candidate runtime value.
+ * @param state Shared validation state.
+ * @param runChild Child predicate runner for nested schemas.
+ * @returns Predicate result for handled composite tags, undefined for other tags.
+ */
+function executeCompositeSchemaKernel(
+    schema: Schema,
+    value: unknown,
+    state: ValidationState,
+    runChild: ChildPredicateRunner
+): boolean | undefined {
+    switch (schema.tag) {
         case SchemaTag.Array:
             return isArraySchema(schema, value, state, runChild);
         case SchemaTag.Tuple:
@@ -114,10 +158,6 @@ export function executeSchemaKernel(
             return isMapSchema(schema, value, state, runChild);
         case SchemaTag.Set:
             return isSetSchema(schema, value, state, runChild);
-        case SchemaTag.File:
-            return isFileSchema(schema, value);
-        case SchemaTag.InstanceOf:
-            return ordinaryHasInstance(value, schema.constructor);
         case SchemaTag.Property:
             return isPropertySchema(schema, value, state, runChild);
         case SchemaTag.Object:
@@ -142,6 +182,26 @@ export function executeSchemaKernel(
                 state,
                 runChild
             );
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Execute wrappers, lazy indirection, and executable refinements.
+ * @param schema Schema node selected by the caller.
+ * @param value Candidate runtime value.
+ * @param state Shared validation state.
+ * @param runChild Child predicate runner for nested schemas.
+ * @returns Predicate result for handled wrapper tags, or false for unknown tags.
+ */
+function executeWrapperSchemaKernel(
+    schema: Schema,
+    value: unknown,
+    state: ValidationState,
+    runChild: ChildPredicateRunner
+): boolean {
+    switch (schema.tag) {
         case SchemaTag.Brand:
             return runChild(schema.inner, value, state);
         case SchemaTag.Metadata:
@@ -171,6 +231,8 @@ export function executeSchemaKernel(
                 return true;
             }
             return isStrictTrue(schema.predicate(value));
+        default:
+            return false;
     }
 }
 
@@ -844,7 +906,6 @@ function readArrayKeyDataProperty(
 
 /**
  * @brief Check record schema.
- * @details This helper keeps a local invariant explicit at the module boundary.
  */
 function isRecordSchema(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Record }>,
@@ -1249,7 +1310,6 @@ function shouldRunRefinement(
 
 /**
  * @brief Check strict true.
- * @details This helper keeps a local invariant explicit at the module boundary.
  */
 function isStrictTrue(value: unknown): boolean {
     return value === true;

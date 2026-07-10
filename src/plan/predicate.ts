@@ -969,7 +969,6 @@ function shouldRunRefinement(
 
 /**
  * @brief Check strict true.
- * @details This helper keeps a local invariant explicit at the module boundary.
  */
 function isStrictTrue(value: unknown): boolean {
     return value === true;

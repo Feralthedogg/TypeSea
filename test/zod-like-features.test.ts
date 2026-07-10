@@ -850,6 +850,24 @@ describe("Zod-like public features", () => {
         });
     });
 
+    test("uses Zod-style strip output for z.object by default", () => {
+        const User = z.object({
+            id: z.string
+        });
+        const input = {
+            id: "u1",
+            extra: true
+        };
+
+        expect(User.is(input)).toBe(true);
+        expect(User.parse(input)).toEqual({ id: "u1" });
+        expect(input).toEqual({
+            id: "u1",
+            extra: true
+        });
+        expect(User.passthrough().parse(input)).toEqual(input);
+    });
+
     test("supports non-string discriminants in Zod-style case arrays", () => {
         const Event = z.discriminatedUnion("kind", [
             z.object({

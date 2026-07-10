@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TypeSea Static Analyzer</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <p class="eyebrow">TypeSea Workbench</p>
+            <h1>Static Analyzer</h1>
+        </div>
+        <div class="actions">
+            <button id="refreshButton" type="button">Refresh</button>
+            <a href="/api/analysis" target="_blank" rel="noreferrer">JSON</a>
+            <a href="/api/sarif" target="_blank" rel="noreferrer">SARIF</a>
+        </div>
+    </header>
+
+    <main class="layout">
+        <section class="summary" aria-label="Analysis summary">
+            <article>
+                <span>Files</span>
+                <strong id="metricFiles">0</strong>
+            </article>
+            <article>
+                <span>Runtime edges</span>
+                <strong id="metricEdges">0</strong>
+            </article>
+            <article>
+                <span>Functions</span>
+                <strong id="metricFunctions">0</strong>
+            </article>
+            <article>
+                <span>Call edges</span>
+                <strong id="metricCallEdges">0</strong>
+            </article>
+            <article>
+                <span>Cycles</span>
+                <strong id="metricCycles">0</strong>
+            </article>
+            <article>
+                <span>Findings</span>
+                <strong id="metricFindings">0</strong>
+            </article>
+            <article>
+                <span>Quality gate</span>
+                <strong id="metricGate">-</strong>
+            </article>
+        </section>
+
+        <section class="insights" aria-label="Analyzer insights">
+            <section class="panel gate-panel">
+                <div class="panel-header">
+                    <h2>Quality Gate</h2>
+                    <span id="gateStatus"></span>
+                </div>
+                <div id="profileName" class="profile-name"></div>
+                <div id="gateDetails" class="gate-details"></div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <h2>Rule Pack</h2>
+                    <span id="ruleCount"></span>
+                </div>
+                <div id="ruleList" class="rule-list"></div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <h2>Hotspots</h2>
+                    <span>risk weighted</span>
+                </div>
+                <div id="hotspotList" class="hotspot-list"></div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <h2>Function Graph</h2>
+                    <span id="functionGraphMeta"></span>
+                </div>
+                <div id="functionList" class="function-list"></div>
+            </section>
+        </section>
+
+        <section class="workspace">
+            <aside class="sidebar" aria-label="Files">
+                <div class="panel-header">
+                    <h2>Files</h2>
+                    <input id="fileSearch" type="search" placeholder="Filter files">
+                </div>
+                <div id="fileList" class="file-list"></div>
+            </aside>
+
+            <section class="main-column">
+                <section class="panel graph-panel" aria-label="Module graph">
+                    <div class="panel-header">
+                        <h2>Runtime Graph</h2>
+                        <div class="legend">
+                            <span><i class="dot error"></i>Error</span>
+                            <span><i class="dot warning"></i>Warning</span>
+                            <span><i class="dot info"></i>Info</span>
+                        </div>
+                    </div>
+                    <canvas id="graphCanvas" width="1200" height="560"></canvas>
+                </section>
+
+                <section class="split">
+                    <section class="panel" aria-label="Findings">
+                        <div class="panel-header">
+                            <h2>Findings</h2>
+                            <select id="severityFilter">
+                                <option value="all">All severities</option>
+                                <option value="error">Errors</option>
+                                <option value="warning">Warnings</option>
+                                <option value="info">Info</option>
+                            </select>
+                        </div>
+                        <div id="findingList" class="finding-list"></div>
+                    </section>
+
+                    <section class="panel source-panel" aria-label="Source">
+                        <div class="panel-header">
+                            <h2 id="sourceTitle">Source</h2>
+                            <span id="sourceMeta"></span>
+                        </div>
+                        <pre id="sourceView"><code>Select a file or finding.</code></pre>
+                    </section>
+                </section>
+            </section>
+        </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -77,6 +77,7 @@ import {
     makeValidationState,
     type ValidationState
 } from "../evaluate/state.js";
+import { finalizeAcceptedValue } from "../evaluate/finalize.js";
 
 const DEFAULT_YIELD_EVERY = 4096;
 const DEFAULT_YIELD_TIMEOUT_MS = 5;
@@ -198,8 +199,12 @@ export async function checkAsync<TValue, TPresence extends Presence>(
     value: unknown,
     options?: Partial<AsyncValidationOptions>
 ): Promise<CheckResult<RuntimeValue<TValue, TPresence>>> {
-    if (await isAsync(guard, value, options)) {
-        return ok(value as RuntimeValue<TValue, TPresence>);
+    const schema = readAsyncSchema(guard);
+    if (await isSchemaAsync(schema, value, makeAsyncState(options))) {
+        return ok(finalizeAcceptedValue(
+            schema,
+            value
+        ) as RuntimeValue<TValue, TPresence>);
     }
     return guard.check(value);
 }
@@ -258,6 +263,26 @@ async function isSchemaAsyncInner(
     value: unknown,
     state: AsyncValidationState
 ): Promise<boolean> {
+    const scalar = isScalarSchemaAsync(schema, value);
+    if (scalar !== undefined) {
+        return scalar;
+    }
+
+    const composite = await isCompositeSchemaAsync(schema, value, state);
+    if (composite !== undefined) {
+        return composite;
+    }
+
+    return await isWrapperSchemaAsync(schema, value, state);
+}
+
+/**
+ * @brief Execute scalar schema tags in the cooperative interpreter.
+ * @param schema Schema node selected by the dispatcher.
+ * @param value Candidate runtime value.
+ * @returns Predicate result for scalar tags, undefined for other tags.
+ */
+function isScalarSchemaAsync(schema: Schema, value: unknown): boolean | undefined {
     switch (schema.tag) {
         case SchemaTag.Unknown:
             return true;
@@ -277,6 +302,28 @@ async function isSchemaAsyncInner(
             return typeof value === "boolean";
         case SchemaTag.Literal:
             return Object.is(value, schema.value);
+        case SchemaTag.File:
+            return isFileSchema(schema, value);
+        case SchemaTag.InstanceOf:
+            return ordinaryHasInstance(value, schema.constructor);
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Execute schema tags that own child collections or branch edges.
+ * @param schema Schema node selected by the dispatcher.
+ * @param value Candidate runtime value.
+ * @param state Shared async validation state.
+ * @returns Predicate result for composite tags, undefined for other tags.
+ */
+async function isCompositeSchemaAsync(
+    schema: Schema,
+    value: unknown,
+    state: AsyncValidationState
+): Promise<boolean | undefined> {
+    switch (schema.tag) {
         case SchemaTag.Array:
             return isArraySchema(schema, value, state);
         case SchemaTag.Tuple:
@@ -287,10 +334,6 @@ async function isSchemaAsyncInner(
             return isMapSchema(schema, value, state);
         case SchemaTag.Set:
             return isSetSchema(schema, value, state);
-        case SchemaTag.File:
-            return isFileSchema(schema, value);
-        case SchemaTag.InstanceOf:
-            return ordinaryHasInstance(value, schema.constructor);
         case SchemaTag.Property:
             return isPropertySchema(schema, value, state);
         case SchemaTag.Object:
@@ -316,6 +359,24 @@ async function isSchemaAsyncInner(
                 value,
                 state
             );
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Execute wrappers, lazy indirection, and refinement schemas.
+ * @param schema Schema node selected by the dispatcher.
+ * @param value Candidate runtime value.
+ * @param state Shared async validation state.
+ * @returns Predicate result for wrapper tags, or false for unknown tags.
+ */
+async function isWrapperSchemaAsync(
+    schema: Schema,
+    value: unknown,
+    state: AsyncValidationState
+): Promise<boolean> {
+    switch (schema.tag) {
         case SchemaTag.Brand:
             return isSchemaAsync(schema.inner, value, state);
         case SchemaTag.Metadata:
@@ -344,6 +405,8 @@ async function isSchemaAsyncInner(
         case SchemaTag.Refine:
             return (await isSchemaAsync(schema.inner, value, state)) &&
                 schema.predicate(value);
+        default:
+            return false;
     }
 }
 

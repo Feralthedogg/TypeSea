@@ -328,9 +328,6 @@ export function isInspectableValue(value: unknown): boolean {
  * @returns True when value is a Date with a finite time value.
  */
 export function isValidDateObject(value: unknown): value is Date {
-    if (!(value instanceof Date)) {
-        return false;
-    }
     // eslint-disable-next-line no-restricted-syntax
     try {
         return Number.isFinite(Date.prototype.getTime.call(value));
@@ -352,16 +349,12 @@ export function readDateTime(value: Date): number {
  * @brief Read a Map iterator only after proving the internal Map slot exists.
  * @param value Candidate runtime value.
  * @returns Intrinsic entries iterator, or undefined for forged Map prototypes.
- * @details `instanceof Map` proves only the prototype chain. Calling the
- * intrinsic inside this helper turns forged internal-slot failures into ordinary
- * validation failure instead of exceptions escaping public guard APIs.
+ * @details Calling the intrinsic proves the internal Map slot while turning
+ * forged prototypes and hostile proxies into ordinary validation failure.
  */
 export function readMapEntries(
     value: unknown
 ): IterableIterator<[unknown, unknown]> | undefined {
-    if (!(value instanceof Map)) {
-        return undefined;
-    }
     // eslint-disable-next-line no-restricted-syntax
     try {
         return Map.prototype.entries.call(value) as IterableIterator<[unknown, unknown]>;
@@ -398,9 +391,6 @@ export function readMapSize(value: unknown): number | undefined {
  * @returns Intrinsic values iterator, or undefined for forged Set prototypes.
  */
 export function readSetValues(value: unknown): IterableIterator<unknown> | undefined {
-    if (!(value instanceof Set)) {
-        return undefined;
-    }
     // eslint-disable-next-line no-restricted-syntax
     try {
         return Set.prototype.values.call(value) as IterableIterator<unknown>;
@@ -415,9 +405,6 @@ export function readSetValues(value: unknown): IterableIterator<unknown> | undef
  * @returns Set size, or undefined if the intrinsic getter rejects the receiver.
  */
 export function readSetSize(value: unknown): number | undefined {
-    if (!(value instanceof Set)) {
-        return undefined;
-    }
     // eslint-disable-next-line no-restricted-syntax
     try {
         const size: unknown = Reflect.get(Set.prototype, "size", value);
@@ -437,7 +424,7 @@ export function readSetSize(value: unknown): number | undefined {
 export function readFileInfo(value: unknown): FileInfo | undefined {
     const constructor: unknown = globalThis.File;
     if (typeof constructor !== "function" ||
-        !Function.prototype[Symbol.hasInstance].call(constructor, value)) {
+        !ordinaryHasInstance(value, constructor)) {
         return undefined;
     }
     const prototype = readConstructorPrototype(constructor);
@@ -486,9 +473,14 @@ function readConstructorPrototype(value: object): object | undefined {
  */
 export function ordinaryHasInstance(
     value: unknown,
-    constructor: abstract new (...args: never[]) => unknown
+    constructor: object
 ): boolean {
-    return Function.prototype[Symbol.hasInstance].call(constructor, value);
+    // eslint-disable-next-line no-restricted-syntax
+    try {
+        return Function.prototype[Symbol.hasInstance].call(constructor, value);
+    } catch {
+        return false;
+    }
 }
 
 /**

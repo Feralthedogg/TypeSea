@@ -2058,7 +2058,11 @@ describe("public type contracts", () => {
         expect(ZodUnknown).toBe(BaseGuard);
         expect(ZodVoid).toBe(BaseGuard);
         expect(ZodXor).toBe(XorGuard);
-        expect(z.object).toBe(t.object);
+        expect(z.object).not.toBe(t.object);
+        expect(z.object({ id: z.string }).parse({ id: "u1", extra: true }))
+            .toEqual({ id: "u1" });
+        expect(t.object({ id: t.string }).parse({ id: "u1", extra: true }))
+            .toEqual({ id: "u1", extra: true });
         expect(z.string()).toBe(t.string());
         expect(z.number()).toBe(t.number());
         expect(z.boolean()).toBe(t.boolean());

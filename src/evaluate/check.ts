@@ -158,24 +158,47 @@ function collectIssuesInner(
     issues: Issue[],
     state: ValidationState
 ): void {
+    if (collectScalarSchemaIssues(schema, value, path, issues)) {
+        return;
+    }
+    if (collectCompositeSchemaIssues(schema, value, path, issues, state)) {
+        return;
+    }
+    collectWrapperSchemaIssues(schema, value, path, issues, state);
+}
+
+/**
+ * @brief Collect diagnostics for scalar and leaf schema tags.
+ * @param schema Schema node being diagnosed.
+ * @param value Candidate runtime value.
+ * @param path Mutable issue path stack.
+ * @param issues Output issue buffer.
+ * @returns True when the schema tag was handled by this family.
+ */
+function collectScalarSchemaIssues(
+    schema: Schema,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[]
+): boolean {
     switch (schema.tag) {
         case SchemaTag.Unknown:
-            return;
+            return true;
         case SchemaTag.Never:
             pushIssue(path, issues, "expected_never", "never", actualType(value));
-            return;
+            return true;
         case SchemaTag.String:
             collectStringIssues(schema, value, path, issues);
-            return;
+            return true;
         case SchemaTag.Number:
             collectNumberIssues(schema, value, path, issues);
-            return;
+            return true;
         case SchemaTag.Date:
             collectDateIssues(schema, value, path, issues);
-            return;
+            return true;
         case SchemaTag.BigInt:
             collectBigIntIssues(schema, value, path, issues);
-            return;
+            return true;
         case SchemaTag.Symbol:
             if (typeof value !== "symbol") {
                 pushIssue(
@@ -187,7 +210,7 @@ function collectIssuesInner(
                     schema.message
                 );
             }
-            return;
+            return true;
         case SchemaTag.Boolean:
             if (typeof value !== "boolean") {
                 pushIssue(
@@ -199,7 +222,7 @@ function collectIssuesInner(
                     schema.message
                 );
             }
-            return;
+            return true;
         case SchemaTag.Literal:
             if (!Object.is(value, schema.value)) {
                 pushIssue(
@@ -210,39 +233,61 @@ function collectIssuesInner(
                     actualType(value)
                 );
             }
-            return;
-        case SchemaTag.Array:
-            collectArrayIssues(schema, value, path, issues, state, collectIssues);
-            return;
-        case SchemaTag.Tuple:
-            collectTupleIssues(schema, value, path, issues, state, collectIssues);
-            return;
-        case SchemaTag.Record:
-            collectRecordIssues(schema, value, path, issues, state, collectIssues);
-            return;
-        case SchemaTag.Map:
-            collectMapIssues(schema, value, path, issues, state, collectIssues);
-            return;
-        case SchemaTag.Set:
-            collectSetIssues(schema, value, path, issues, state, collectIssues);
-            return;
+            return true;
         case SchemaTag.File:
             collectFileIssues(schema, value, path, issues);
-            return;
+            return true;
         case SchemaTag.InstanceOf:
             collectInstanceOfIssues(schema, value, path, issues);
-            return;
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Collect diagnostics for schema tags with child collections or branches.
+ * @param schema Schema node being diagnosed.
+ * @param value Candidate runtime value.
+ * @param path Mutable issue path stack.
+ * @param issues Output issue buffer.
+ * @param state Shared recursion, cycle, and graph execution state.
+ * @returns True when the schema tag was handled by this family.
+ */
+function collectCompositeSchemaIssues(
+    schema: Schema,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[],
+    state: ValidationState
+): boolean {
+    switch (schema.tag) {
+        case SchemaTag.Array:
+            collectArrayIssues(schema, value, path, issues, state, collectIssues);
+            return true;
+        case SchemaTag.Tuple:
+            collectTupleIssues(schema, value, path, issues, state, collectIssues);
+            return true;
+        case SchemaTag.Record:
+            collectRecordIssues(schema, value, path, issues, state, collectIssues);
+            return true;
+        case SchemaTag.Map:
+            collectMapIssues(schema, value, path, issues, state, collectIssues);
+            return true;
+        case SchemaTag.Set:
+            collectSetIssues(schema, value, path, issues, state, collectIssues);
+            return true;
         case SchemaTag.Property:
             collectPropertyIssues(schema, value, path, issues, state, collectIssues);
-            return;
+            return true;
         case SchemaTag.Object:
             collectObjectIssues(schema, value, path, issues, state, collectIssues);
-            return;
+            return true;
         case SchemaTag.Union:
             if (!isUnionSchema(schema.options, value, state)) {
                 pushIssue(path, issues, "expected_union", "union", actualType(value));
             }
-            return;
+            return true;
         case SchemaTag.Xor:
             if (!isXorSchema(schema.options, value, state)) {
                 pushIssue(
@@ -253,7 +298,7 @@ function collectIssuesInner(
                     actualType(value)
                 );
             }
-            return;
+            return true;
         case SchemaTag.Intersection:
             /*
              * Intersections accumulate diagnostics from both sides because both
@@ -261,18 +306,7 @@ function collectIssuesInner(
              */
             collectIssues(schema.left, value, path, issues, state);
             collectIssues(schema.right, value, path, issues, state);
-            return;
-        case SchemaTag.Optional:
-        case SchemaTag.Undefinedable:
-            if (value !== undefined) {
-                collectIssues(schema.inner, value, path, issues, state);
-            }
-            return;
-        case SchemaTag.Nullable:
-            if (value !== null) {
-                collectIssues(schema.inner, value, path, issues, state);
-            }
-            return;
+            return true;
         case SchemaTag.DiscriminatedUnion:
             collectDiscriminatedUnionIssues(
                 schema.key,
@@ -283,18 +317,51 @@ function collectIssuesInner(
                 state,
                 collectIssues
             );
-            return;
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Collect diagnostics for schema wrappers and executable refinements.
+ * @param schema Schema node being diagnosed.
+ * @param value Candidate runtime value.
+ * @param path Mutable issue path stack.
+ * @param issues Output issue buffer.
+ * @param state Shared recursion, cycle, and graph execution state.
+ * @returns True when the schema tag was handled by this family.
+ */
+function collectWrapperSchemaIssues(
+    schema: Schema,
+    value: unknown,
+    path: PathSegment[],
+    issues: Issue[],
+    state: ValidationState
+): boolean {
+    switch (schema.tag) {
+        case SchemaTag.Optional:
+        case SchemaTag.Undefinedable:
+            if (value !== undefined) {
+                collectIssues(schema.inner, value, path, issues, state);
+            }
+            return true;
+        case SchemaTag.Nullable:
+            if (value !== null) {
+                collectIssues(schema.inner, value, path, issues, state);
+            }
+            return true;
         case SchemaTag.Brand:
             collectIssues(schema.inner, value, path, issues, state);
-            return;
+            return true;
         case SchemaTag.Metadata:
             collectIssues(schema.inner, value, path, issues, state);
-            return;
+            return true;
         case SchemaTag.Message: {
             const start = issues.length;
             collectIssues(schema.inner, value, path, issues, state);
             applyIssueMessage(issues, start, schema.message);
-            return;
+            return true;
         }
         case SchemaTag.KeyedObject:
             if (isSchemaWithState(schema.inner, value, state)) {
@@ -302,38 +369,38 @@ function collectIssuesInner(
             } else {
                 collectIssues(schema.inner, value, path, issues, state);
             }
-            return;
+            return true;
         case SchemaTag.PropertyCount:
             if (isSchemaWithState(schema.inner, value, state)) {
                 collectPropertyCountIssue(schema.min, schema.max, value, path, issues);
             } else {
                 collectIssues(schema.inner, value, path, issues, state);
             }
-            return;
+            return true;
         case SchemaTag.PropertyNames:
             if (isSchemaWithState(schema.inner, value, state)) {
                 collectPropertyNamesIssues(schema.key, value, path, issues, state);
             } else {
                 collectIssues(schema.inner, value, path, issues, state);
             }
-            return;
+            return true;
         case SchemaTag.PatternProperties:
             if (isSchemaWithState(schema.inner, value, state)) {
                 collectPatternPropertiesIssues(schema, value, path, issues, state);
             } else {
                 collectIssues(schema.inner, value, path, issues, state);
             }
-            return;
+            return true;
         case SchemaTag.Readonly:
             collectIssues(schema.inner, value, path, issues, state);
-            return;
+            return true;
         case SchemaTag.Lazy:
             /*
              * Lazy schemas resolve through the shared state so recursive lazy
              * references are tracked consistently with predicate evaluation.
              */
             collectIssues(resolveLazySchema(schema, state.resolving), value, path, issues, state);
-            return;
+            return true;
         case SchemaTag.Refine:
             collectRefineIssues(
                 schema.inner,
@@ -350,7 +417,9 @@ function collectIssuesInner(
                 state,
                 collectIssues
             );
-            return;
+            return true;
+        default:
+            return false;
     }
 }
 

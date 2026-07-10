@@ -5,6 +5,7 @@
 
 import { SchemaTag } from "../kind/index.js";
 import type { Schema } from "../schema/index.js";
+import { isSchema } from "../evaluate/predicate.js";
 import { emitCompositeCases } from "./composite.js";
 import { normalizeSeaFlowOptions } from "./options.js";
 import { emitScalarCases } from "./scalar.js";
@@ -76,11 +77,12 @@ export function* emitSchemaCases(
     schema: Schema,
     context: SeaFlowContext
 ): IterableIterator<SeaFlowCase> {
-    if (isScalarSchema(schema)) {
-        yield* emitScalarCases(schema, context);
-        return;
+    const emitted = isScalarSchema(schema)
+        ? emitScalarCases(schema, context)
+        : emitCompositeCases(schema, context, emitSchemaCases);
+    for (const item of emitted) {
+        yield reconcileSeaFlowCase(schema, item);
     }
-    yield* emitCompositeCases(schema, context, emitSchemaCases);
 }
 
 /**
@@ -103,13 +105,41 @@ function rootContext(config: SeaFlowConfig): SeaFlowContext {
  * @returns True when the case should count toward `maxYields`.
  */
 function caseEnabled(item: SeaFlowCase, config: SeaFlowConfig): boolean {
-    if (item.kind === "invalid" && !config.includeInvalid) {
+    if (!item.valid && !config.includeInvalid) {
         return false;
     }
     if (item.kind === "security" && !config.includeSecurity) {
         return false;
     }
     return true;
+}
+
+/**
+ * @brief Reconcile solver metadata with the executable schema contract.
+ * @param schema Local schema that produced the candidate.
+ * @param item Candidate and provisional solver classification.
+ * @returns Frozen case whose verdict matches runtime validation.
+ * @details SeaFlow is test tooling rather than a validator hot path. Running the
+ * exact predicate here prevents heuristic sample synthesis from publishing a
+ * stale verdict when constraints overlap.
+ */
+function reconcileSeaFlowCase(schema: Schema, item: SeaFlowCase): SeaFlowCase {
+    const valid = isSchema(schema, item.value);
+    const kind = item.kind === "security"
+        ? "security"
+        : valid
+            ? "valid"
+            : "invalid";
+    if (item.valid === valid && item.kind === kind) {
+        return item;
+    }
+    return Object.freeze({
+        value: item.value,
+        valid,
+        kind,
+        reason: item.reason,
+        path: item.path
+    });
 }
 
 /**

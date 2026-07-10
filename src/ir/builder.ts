@@ -491,8 +491,7 @@ export class GraphBuilder {
 }
 
 /**
- * @brief Execute object shape all required.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Test whether an object-shape node can use the required-key fast path.
  */
 function objectShapeAllRequired(entries: readonly ObjectShapeEntry[]): boolean {
     for (let index = 0; index < entries.length; index += 1) {
@@ -521,16 +520,15 @@ function makeRegexInternKey(
 
 /**
  * @brief Encode one string segment for a flat composite key.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
+ * @details Length prefixes keep adjacent user-controlled strings from merging
+ * into the same intern key.
  */
 function lengthPrefixed(value: string): string {
     return `${String(value.length)}:${value};`;
 }
 
 /**
- * @brief Execute literal key.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Encode a literal value into a collision-free intern key segment.
  */
 function literalKey(value: LiteralValue): string {
     if (value === null) {
@@ -559,8 +557,7 @@ function literalKey(value: LiteralValue): string {
 }
 
 /**
- * @brief Build discriminant lookup.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Build a null-prototype discriminant dispatch table.
  */
 function makeDiscriminantLookup(
     literals: readonly string[]

@@ -1,8 +1,9 @@
 /**
  * @file compile/source.ts
  * @brief Generated validator source bundle assembly.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
+ * @details This module owns the compact JavaScript source shape shared by JIT
+ * runtime compilation and AOT module wrapping. Helper names and factory side
+ * table slots are ABI, not local implementation details.
  */
 
 import type { Schema } from "../schema/index.js";
@@ -20,9 +21,10 @@ import { safeFunctionName } from "./names.js";
 import type { CompileMode, CompiledSourceBundle } from "./types.js";
 
 /**
- * @brief emit compiled source bundle.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
+ * @brief Emit the full compiled guard factory body.
+ * @details The returned source expects the factory parameters
+ * `(l, r, k, u, d, m, mf, sk)`. Keep that order synchronized with
+ * `compile/guard.ts`, `compile/runtime.ts`, and `aot/index.ts`.
  * @param schema Root schema to compile.
  * @param name Requested public function name.
  * @param mode Compile mode controlling safety and allocation tradeoffs.
@@ -231,12 +233,7 @@ export function emitCompiledGraphBooleanSourceBundle(
 }
 
 /**
- * @brief Emit the success Result expression for compiled result().
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param mode Compile mode controlling object freezing.
- * @param value Generated expression for the accepted runtime value.
- * @returns JavaScript source for the success branch.
+ * @brief Emit the success branch with safe-mode publication semantics.
  */
 function emitSuccessResult(mode: CompileMode, value: string): string {
     if (mode === "safe") {
@@ -246,11 +243,7 @@ function emitSuccessResult(mode: CompileMode, value: string): string {
 }
 
 /**
- * @brief Decide whether the root predicate can use the public function name.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param name Sanitized generated function name.
- * @returns True when the name cannot shadow helpers or generated child ids.
+ * @brief Keep public names from shadowing factory slots or generated child ids.
  */
 function canUseDirectRootFunctionName(name: string): boolean {
     return !isRuntimeHelperName(name) &&
@@ -259,22 +252,14 @@ function canUseDirectRootFunctionName(name: string): boolean {
 }
 
 /**
- * @brief Decide whether the generated check tree mutates the path stack.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param checkFunctions Generated diagnostic function source.
- * @returns True when the frozen empty path singleton can be reused.
+ * @brief Reuse the frozen empty path only when diagnostics never push.
  */
 function canReuseFrozenRootPath(checkFunctions: string): boolean {
     return !checkFunctions.includes("p.push(");
 }
 
 /**
- * @brief Test whether a name is a generated factory parameter.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param name Candidate identifier.
- * @returns True when the name would shadow a factory side table.
+ * @brief Reserve factory side-table slots against user-provided function names.
  */
 function isFactoryParameterName(name: string): boolean {
     switch (name) {
@@ -294,11 +279,7 @@ function isFactoryParameterName(name: string): boolean {
 }
 
 /**
- * @brief Test whether a name matches TypeSea child function naming.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param name Candidate identifier.
- * @returns True for generated predicate/check names such as `p0` or `c12`.
+ * @brief Reserve generated predicate/check names such as `p0` or `c12`.
  */
 function isGeneratedFunctionName(name: string): boolean {
     if (name.length < 2) {
@@ -318,12 +299,10 @@ function isGeneratedFunctionName(name: string): boolean {
 }
 
 /**
- * @brief emit helper prelude.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param body Generated factory body without helper definitions.
- * @param rootPathIsFrozen True when path helpers may use the frozen empty path.
- * @returns JavaScript source for only the helpers referenced by `body`.
+ * @brief Emit only helpers reachable from the generated validator body.
+ * @details Helper names are intentionally tiny because they are injected into
+ * hot generated source. `readNeededHelpers()` closes transitive dependencies so
+ * AOT and JIT keep the same compact helper surface without dead helpers.
  */
 export function emitHelperPrelude(body: string, rootPathIsFrozen: boolean): string {
     const needed = readNeededHelpers(body);
@@ -373,13 +352,7 @@ export function emitHelperPrelude(body: string, rootPathIsFrozen: boolean): stri
 }
 
 /**
- * @brief Append one helper definition when referenced by generated code.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param chunks Mutable helper source list.
- * @param needed Helper names discovered in generated function bodies.
- * @param name Helper identifier.
- * @param source Helper source text.
+ * @brief Append one compact helper definition when it is actually referenced.
  */
 function pushHelper(
     chunks: string[],
@@ -394,10 +367,6 @@ function pushHelper(
 
 /**
  * @brief Discover runtime helpers referenced by generated validator bodies.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param body Generated factory body without helper definitions.
- * @returns Closed helper-name set including transitive helper dependencies.
  */
 function readNeededHelpers(body: string): Set<string> {
     const needed = new Set<string>();
@@ -410,8 +379,6 @@ function readNeededHelpers(body: string): Set<string> {
  * @brief Scan generated source for helper calls without allocating RegExp objects.
  * @details Helper names are intentionally short. Scanning by identifier prevents
  * false positives such as the `o(` suffix in a user function named `foo`.
- * @param body Generated factory body without helper definitions.
- * @param needed Mutable helper-name set.
  */
 function markCalledHelpers(body: string, needed: Set<string>): void {
     let index = 0;
@@ -453,10 +420,7 @@ function markCalledHelpers(body: string, needed: Set<string>): void {
 }
 
 /**
- * @brief close helper dependencies.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param needed Mutable helper-name set.
+ * @brief Close transitive helper dependencies until the set reaches a fixpoint.
  * @post Every helper required by another helper has been inserted.
  */
 function closeHelperDependencies(needed: Set<string>): void {
@@ -482,13 +446,7 @@ function closeHelperDependencies(needed: Set<string>): void {
 }
 
 /**
- * @brief add dependencies.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param needed Mutable helper-name set.
- * @param name Helper whose dependencies should be inserted.
- * @param dependencies Helper names required by `name`.
- * @returns True when the set changed.
+ * @brief Insert helper dependencies for one already-needed helper.
  */
 function addDependencies(
     needed: Set<string>,
@@ -510,11 +468,7 @@ function addDependencies(
 }
 
 /**
- * @brief Test whether an identifier is a generated runtime helper.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param name Candidate identifier.
- * @returns True when `name` is reserved for helper prelude emission.
+ * @brief Recognize reserved helper identifiers in generated source.
  */
 function isRuntimeHelperName(name: string): boolean {
     switch (name) {
@@ -557,12 +511,7 @@ function isRuntimeHelperName(name: string): boolean {
 }
 
 /**
- * @brief Test whether an identifier occurrence is a function declaration name.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param source Full generated source being scanned.
- * @param start Start offset of the identifier.
- * @returns True when the identifier follows `function `.
+ * @brief Avoid treating a helper's own declaration name as a helper call.
  */
 function isFunctionNamePosition(source: string, start: number): boolean {
     const prefix = "function ";
@@ -571,11 +520,7 @@ function isFunctionNamePosition(source: string, start: number): boolean {
 }
 
 /**
- * @brief Test ASCII identifier-start characters used by generated code.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param code Character code under inspection.
- * @returns True for `$`, `_`, and ASCII letters.
+ * @brief Match the intentionally tiny identifier grammar emitted by TypeSea.
  */
 function isIdentifierStartCode(code: number): boolean {
     return code === 36 ||
@@ -584,13 +529,6 @@ function isIdentifierStartCode(code: number): boolean {
         (code >= 97 && code <= 122);
 }
 
-/**
- * @brief Test ASCII identifier-part characters used by generated code.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
- * @param code Character code under inspection.
- * @returns True for identifier-start characters and digits.
- */
 function isIdentifierPartCode(code: number): boolean {
     return isIdentifierStartCode(code) || (code >= 48 && code <= 57);
 }

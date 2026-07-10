@@ -1,8 +1,6 @@
 /**
  * @file scalar.ts
  * @brief Primitive and literal guard builders.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 
 import { SchemaTag } from "../kind/index.js";
@@ -101,8 +99,6 @@ export const string: CallableStringGuard = makeCallableGuard<StringGuard>(
 
 /**
  * @brief Shared unknown guard singleton.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export const unknownGuard = new BaseGuard<unknown>({
     tag: SchemaTag.Unknown
@@ -110,8 +106,6 @@ export const unknownGuard = new BaseGuard<unknown>({
 
 /**
  * @brief Shared never guard singleton.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export const neverGuard = new BaseGuard<never>({
     tag: SchemaTag.Never
@@ -119,8 +113,6 @@ export const neverGuard = new BaseGuard<never>({
 
 /**
  * @brief Shared finite number guard singleton.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export const numberGuard = new NumberGuard({
     tag: SchemaTag.Number,
@@ -178,8 +170,6 @@ export function file(options?: CheckMessageInput): FileGuard {
 
 /**
  * @brief Shared bigint guard singleton.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export const bigintGuard = new BigIntGuard({
     tag: SchemaTag.BigInt,
@@ -200,8 +190,6 @@ export const bigint: CallableBigIntGuard = makeCallableGuard<BigIntGuard>(
 
 /**
  * @brief Shared symbol guard singleton.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export const symbolGuard = new BaseGuard<symbol>({
     tag: SchemaTag.Symbol
@@ -220,8 +208,6 @@ export const symbol: CallableSymbolGuard = makeCallableGuard<BaseGuard<symbol>>(
 
 /**
  * @brief Shared boolean guard singleton.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export const booleanGuard = new BaseGuard<boolean>({
     tag: SchemaTag.Boolean

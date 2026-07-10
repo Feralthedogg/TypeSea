@@ -399,9 +399,6 @@ function matchesNumberKeywords(schema: JsonSchemaObject, value: JsonValue): bool
     return true;
 }
 
-/**
- * @brief Read modern or draft-04 exclusive minimum test value.
- */
 function readExclusiveMinimum(schema: JsonSchemaObject): number {
     const value = schema.exclusiveMinimum;
     if (value === true) {
@@ -410,9 +407,6 @@ function readExclusiveMinimum(schema: JsonSchemaObject): number {
     return typeof value === "number" ? value : Number.NEGATIVE_INFINITY;
 }
 
-/**
- * @brief Read modern or draft-04 exclusive maximum test value.
- */
 function readExclusiveMaximum(schema: JsonSchemaObject): number {
     const value = schema.exclusiveMaximum;
     if (value === true) {
@@ -570,9 +564,6 @@ function matchesAdditionalProperties(
     return true;
 }
 
-/**
- * @brief Evaluate patternProperties matching.
- */
 function matchesPatternProperties(
     patterns: Readonly<Record<string, JsonSchema>>,
     value: JsonObject
@@ -603,9 +594,6 @@ function matchesPatternProperties(
     return true;
 }
 
-/**
- * @brief Test whether a key is covered by a patternProperties table.
- */
 function keyMatchesPatternProperty(
     patterns: Readonly<Record<string, JsonSchema>>,
     key: string

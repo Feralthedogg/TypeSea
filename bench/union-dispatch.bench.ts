@@ -1,6 +1,10 @@
 import { beforeAll, bench, describe } from "vitest";
 import { compile, t } from "../src/index.js";
-import { warmupSync, type WarmupTask } from "./warmup.js";
+import {
+    BENCH_WARMUP_HOOK_TIMEOUT_MS,
+    warmupSync,
+    type WarmupTask
+} from "./warmup.js";
 
 const Operators = t.object({
     eq: t.optional(t.string),
@@ -64,7 +68,7 @@ const warmupTasks: readonly WarmupTask[] = [
 
 beforeAll((): void => {
     warmupSync(warmupTasks);
-});
+}, BENCH_WARMUP_HOOK_TIMEOUT_MS);
 
 describe("presence-dispatched object unions", () => {
     bench("interpreted logical branch", () => {

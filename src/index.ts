@@ -519,18 +519,15 @@ export {
     spa
 } from "./parse/index.js";
 
-export {
-    SeaFlow,
-    fuzz,
-    fuzzCases,
-    type SeaFlowCase,
-    type SeaFlowCaseKind,
-    type SeaFlowConfig,
-    type SeaFlowContext,
-    type SeaFlowGuardSource,
-    type SeaFlowIntensity,
-    type SeaFlowOptions,
-    type SeaFlowSource
+export type {
+    SeaFlowCase,
+    SeaFlowCaseKind,
+    SeaFlowConfig,
+    SeaFlowContext,
+    SeaFlowGuardSource,
+    SeaFlowIntensity,
+    SeaFlowOptions,
+    SeaFlowSource
 } from "./seaflow/index.js";
 
 export {

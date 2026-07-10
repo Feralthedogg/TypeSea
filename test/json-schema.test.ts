@@ -15,6 +15,7 @@ import {
     type JsonSchemaUnrepresentableMode,
     type Schema
 } from "../src/index.js";
+import { SchemaTag } from "../src/kind/index.js";
 
 const UUID_PATTERN_SOURCE =
     "^(?:00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$";
@@ -1555,6 +1556,39 @@ describe("JSON Schema export", () => {
                 [["nope", "nullable"], "unsupported_refine"],
                 [["nope", "nullable"], "unsupported_child"],
                 [["nope"], "unsupported_child"]
+            ]);
+        }
+    });
+
+    test("restores patternProperties export paths after unsupported entries", () => {
+        const schema = {
+            tag: SchemaTag.PatternProperties,
+            inner: t.object({}).schema,
+            entries: [
+                {
+                    source: "^x_",
+                    regex: /^x_/,
+                    schema: t.symbol.schema
+                },
+                {
+                    source: "^y_",
+                    regex: /^y_/,
+                    schema: t.symbol.schema
+                }
+            ],
+            keys: [],
+            keyLookup: Object.freeze(Object.create(null)) as Record<string, true>,
+            additional: undefined,
+            allowAdditional: true
+        } as unknown as Schema;
+
+        const result = schemaToJsonSchema(schema);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+            expect(result.error.map((issue) => [issue.path, issue.code])).toEqual([
+                [["patternProperties", "^x_"], "unsupported_symbol"],
+                [["patternProperties", "^y_"], "unsupported_symbol"]
             ]);
         }
     });

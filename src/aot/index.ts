@@ -12,9 +12,9 @@ import {
 } from "../schema/index.js";
 
 /**
- * @brief aot issue code.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
+ * @brief Closed reason codes for schemas that cannot be emitted as standalone AOT.
+ * @details Each code names a construct whose semantics depend on runtime state,
+ * host intrinsics, or side tables that source emission cannot faithfully capture.
  */
 export type AotIssueCode =
     | "unsupported_aot_lazy"
@@ -26,9 +26,7 @@ export type AotIssueCode =
     | "unsupported_aot_symbol_literal";
 
 /**
- * @brief aot issue.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
+ * @brief Structured diagnostic emitted when AOT would lose runtime semantics.
  */
 export interface AotIssue {
     readonly path: readonly PathSegment[];
@@ -37,9 +35,7 @@ export interface AotIssue {
 }
 
 /**
- * @brief aot compile options.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
+ * @brief Options controlling standalone validator source generation.
  */
 export interface AotCompileOptions {
     readonly name: string | undefined;
@@ -47,9 +43,7 @@ export interface AotCompileOptions {
 }
 
 /**
- * @brief resolved aot compile options.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
+ * @brief Closed AOT config after defaults and validation.
  */
 interface ResolvedAotCompileOptions {
     readonly name: string;
@@ -123,8 +117,6 @@ function readAotSchema(guard: unknown): Schema {
 
 /**
  * @brief Normalize AOT compile options.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
  * @param options Optional user options object.
  * @returns Complete options with defaults.
  * @throws TypeError when option fields have unsupported types.
@@ -196,6 +188,28 @@ function scanAotSchema(
         return;
     }
     seen.add(schema);
+
+    if (scanAotScalarSchema(schema, path, issues)) {
+        return;
+    }
+    if (scanAotRuntimeObjectSchema(schema, path, issues)) {
+        return;
+    }
+    if (scanAotCompositeSchema(schema, path, issues, seen)) {
+        return;
+    }
+    scanAotWrapperSchema(schema, path, issues, seen);
+}
+
+/**
+ * @brief Scan scalar schema tags for AOT-only semantic gaps.
+ * @returns True when the schema tag was handled by this family.
+ */
+function scanAotScalarSchema(
+    schema: Schema,
+    path: readonly PathSegment[],
+    issues: AotIssue[]
+): boolean {
     switch (schema.tag) {
         case SchemaTag.Literal:
             if (typeof schema.value === "symbol") {
@@ -206,7 +220,7 @@ function scanAotSchema(
                     "AOT modules cannot preserve symbol literal identity"
                 );
             }
-            return;
+            return true;
         case SchemaTag.Date:
             pushIssue(
                 path,
@@ -214,22 +228,40 @@ function scanAotSchema(
                 "unsupported_aot_date",
                 "AOT modules cannot preserve JavaScript Date object validation yet"
             );
-            return;
-        case SchemaTag.Array:
-            scanAotSchema(schema.item, path.concat("items"), issues, seen);
-            return;
-        case SchemaTag.Tuple:
-            scanSchemaArray(schema.items, path, issues, seen);
-            if (schema.rest !== undefined) {
-                scanAotSchema(schema.rest, path.concat("rest"), issues, seen);
+            return true;
+        case SchemaTag.Unknown:
+        case SchemaTag.Never:
+        case SchemaTag.String:
+        case SchemaTag.Number:
+            return true;
+        case SchemaTag.BigInt:
+            if (hasBigIntModuloCheck(schema)) {
+                pushIssue(
+                    path,
+                    issues,
+                    "unsupported_aot_bigint_checks",
+                    "AOT modules cannot preserve BigInt multipleOf checks yet"
+                );
             }
-            return;
-        case SchemaTag.Record:
-            if (schema.key !== undefined) {
-                scanAotSchema(schema.key, path.concat("propertyNames"), issues, seen);
-            }
-            scanAotSchema(schema.value, path.concat("additionalProperties"), issues, seen);
-            return;
+            return true;
+        case SchemaTag.Symbol:
+        case SchemaTag.Boolean:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Reject schema tags that depend on runtime object contracts.
+ * @returns True when the schema tag was handled as an unsupported runtime object.
+ */
+function scanAotRuntimeObjectSchema(
+    schema: Schema,
+    path: readonly PathSegment[],
+    issues: AotIssue[]
+): boolean {
+    switch (schema.tag) {
         case SchemaTag.Map:
         case SchemaTag.Set:
         case SchemaTag.File:
@@ -241,7 +273,38 @@ function scanAotSchema(
                 "unsupported_aot_runtime_object",
                 "AOT modules cannot preserve JavaScript runtime object contracts yet"
             );
-            return;
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Scan schema tags that own child collections or branch edges.
+ * @returns True when the schema tag was handled by this family.
+ */
+function scanAotCompositeSchema(
+    schema: Schema,
+    path: readonly PathSegment[],
+    issues: AotIssue[],
+    seen: WeakSet<object>
+): boolean {
+    switch (schema.tag) {
+        case SchemaTag.Array:
+            scanAotSchema(schema.item, path.concat("items"), issues, seen);
+            return true;
+        case SchemaTag.Tuple:
+            scanSchemaArray(schema.items, path, issues, seen);
+            if (schema.rest !== undefined) {
+                scanAotSchema(schema.rest, path.concat("rest"), issues, seen);
+            }
+            return true;
+        case SchemaTag.Record:
+            if (schema.key !== undefined) {
+                scanAotSchema(schema.key, path.concat("propertyNames"), issues, seen);
+            }
+            scanAotSchema(schema.value, path.concat("additionalProperties"), issues, seen);
+            return true;
         case SchemaTag.Object:
             scanObjectEntries(schema.entries, path, issues, seen);
             if (schema.catchall !== undefined) {
@@ -252,15 +315,39 @@ function scanAotSchema(
                     seen
                 );
             }
-            return;
+            return true;
         case SchemaTag.Union:
         case SchemaTag.Xor:
             scanSchemaArray(schema.options, path, issues, seen);
-            return;
+            return true;
         case SchemaTag.Intersection:
             scanAotSchema(schema.left, path.concat("left"), issues, seen);
             scanAotSchema(schema.right, path.concat("right"), issues, seen);
-            return;
+            return true;
+        case SchemaTag.DiscriminatedUnion:
+            for (let index = 0; index < schema.cases.length; index += 1) {
+                const unionCase = schema.cases[index];
+                if (unionCase !== undefined) {
+                    scanAotSchema(unionCase.schema, path.concat(index), issues, seen);
+                }
+            }
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Scan wrappers and executable schema nodes for AOT portability.
+ * @returns True when the schema tag was handled by this family.
+ */
+function scanAotWrapperSchema(
+    schema: Schema,
+    path: readonly PathSegment[],
+    issues: AotIssue[],
+    seen: WeakSet<object>
+): boolean {
+    switch (schema.tag) {
         case SchemaTag.Optional:
         case SchemaTag.Undefinedable:
         case SchemaTag.Nullable:
@@ -270,15 +357,15 @@ function scanAotSchema(
         case SchemaTag.KeyedObject:
         case SchemaTag.PropertyCount:
             scanAotSchema(schema.inner, path.concat("inner"), issues, seen);
-            return;
+            return true;
         case SchemaTag.PropertyNames:
             scanAotSchema(schema.inner, path.concat("inner"), issues, seen);
             scanAotSchema(schema.key, path.concat("propertyNames"), issues, seen);
-            return;
+            return true;
         case SchemaTag.PatternProperties:
             scanAotSchema(schema.inner, path.concat("inner"), issues, seen);
             scanPatternProperties(schema, path, issues, seen);
-            return;
+            return true;
         case SchemaTag.Readonly:
             pushIssue(
                 path,
@@ -287,15 +374,7 @@ function scanAotSchema(
                 "AOT modules cannot preserve readonly Object.freeze side effects yet"
             );
             scanAotSchema(schema.inner, path.concat("inner"), issues, seen);
-            return;
-        case SchemaTag.DiscriminatedUnion:
-            for (let index = 0; index < schema.cases.length; index += 1) {
-                const unionCase = schema.cases[index];
-                if (unionCase !== undefined) {
-                    scanAotSchema(unionCase.schema, path.concat(index), issues, seen);
-                }
-            }
-            return;
+            return true;
         case SchemaTag.Lazy:
             pushIssue(
                 path,
@@ -303,7 +382,7 @@ function scanAotSchema(
                 "unsupported_aot_lazy",
                 "AOT modules cannot preserve lazy resolvers"
             );
-            return;
+            return true;
         case SchemaTag.Refine:
             pushIssue(
                 path,
@@ -311,32 +390,14 @@ function scanAotSchema(
                 "unsupported_aot_refine",
                 "AOT modules cannot preserve refinement predicates"
             );
-            return;
-        case SchemaTag.Unknown:
-        case SchemaTag.Never:
-        case SchemaTag.String:
-        case SchemaTag.Number:
-            return;
-        case SchemaTag.BigInt:
-            if (hasBigIntModuloCheck(schema)) {
-                pushIssue(
-                    path,
-                    issues,
-                    "unsupported_aot_bigint_checks",
-                    "AOT modules cannot preserve BigInt multipleOf checks yet"
-                );
-            }
-            return;
-        case SchemaTag.Symbol:
-        case SchemaTag.Boolean:
-            return;
+            return true;
+        default:
+            return false;
     }
 }
 
 /**
- * @brief scan schema array.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
+ * @brief Scan child schema vectors while preserving path indexes.
  */
 function scanSchemaArray(
     schemas: readonly Schema[],
@@ -369,9 +430,7 @@ function hasBigIntModuloCheck(
 }
 
 /**
- * @brief scan object entries.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
+ * @brief Scan object fields under their public property paths.
  */
 function scanObjectEntries(
     entries: readonly {
@@ -391,7 +450,7 @@ function scanObjectEntries(
 }
 
 /**
- * @brief scan pattern-property entries.
+ * @brief Scan pattern-property children and the additional fallback schema.
  */
 function scanPatternProperties(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.PatternProperties }>,
@@ -411,9 +470,7 @@ function scanPatternProperties(
 }
 
 /**
- * @brief module bundle input.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
+ * @brief Side-table data captured from generated predicate source.
  */
 interface ModuleBundleInput {
     readonly source: string;
@@ -424,9 +481,7 @@ interface ModuleBundleInput {
 }
 
 /**
- * @brief emit module source.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
+ * @brief Wrap compact predicate factory source as an importable ESM module.
  */
 function emitModuleSource(bundle: ModuleBundleInput): string {
     return [
@@ -455,9 +510,7 @@ function emitModuleSource(bundle: ModuleBundleInput): string {
 }
 
 /**
- * @brief emit declaration source.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
+ * @brief Emit the declaration companion for generated AOT modules.
  */
 function emitDeclarationSource(): string {
     return [
@@ -487,9 +540,7 @@ function emitDeclarationSource(): string {
 }
 
 /**
- * @brief serialize literal array.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
+ * @brief Serialize literal side-table entries into standalone source.
  */
 function serializeLiteralArray(values: readonly LiteralValue[]): string {
     const parts = new Array<string>(values.length);
@@ -503,9 +554,7 @@ function serializeLiteralArray(values: readonly LiteralValue[]): string {
 }
 
 /**
- * @brief serialize literal.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
+ * @brief Serialize one literal without JSON losing non-finite and sentinel values.
  */
 function serializeLiteral(value: LiteralValue): string {
     switch (typeof value) {
@@ -539,9 +588,7 @@ function serializeLiteral(value: LiteralValue): string {
 }
 
 /**
- * @brief serialize reg exp array.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
+ * @brief Serialize RegExp side-table entries with source and flags intact.
  */
 function serializeRegExpArray(values: readonly RegExp[]): string {
     const parts = new Array<string>(values.length);
@@ -555,8 +602,7 @@ function serializeRegExpArray(values: readonly RegExp[]): string {
 }
 
 /**
- * @brief Execute push issue.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Append an AOT issue with a defensive path copy.
  */
 function pushIssue(
     path: readonly PathSegment[],
@@ -572,8 +618,7 @@ function pushIssue(
 }
 
 /**
- * @brief Execute freeze aot issues.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Freeze AOT diagnostics before returning them across the API boundary.
  */
 function freezeAotIssues(issues: readonly AotIssue[]): readonly AotIssue[] {
     for (let index = 0; index < issues.length; index += 1) {
@@ -588,8 +633,6 @@ function freezeAotIssues(issues: readonly AotIssue[]): readonly AotIssue[] {
 
 /**
  * @brief Accept option and guard records before local field reads.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
  * @param value Candidate object.
  * @returns True for non-array objects.
  */
@@ -606,8 +649,6 @@ function isObjectLike(value: unknown): value is object {
 
 /**
  * @brief Read one own data slot from an AOT input object.
- * @details AOT helpers serialize only portable data because standalone modules cannot close
- * over runtime side tables.
  * @param value Object being normalized.
  * @param key Field name or symbol.
  * @returns Stored field value, or undefined when absent.

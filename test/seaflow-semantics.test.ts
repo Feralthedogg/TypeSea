@@ -1,13 +1,16 @@
 import { describe, expect, test } from "vitest";
 import {
+    fromJsonSchema,
+    t,
+    type Guard,
+    type Presence
+} from "../src/index.js";
+import {
     SeaFlow,
     fuzz,
     fuzzCases,
-    t,
-    type Guard,
-    type Presence,
     type SeaFlowCase
-} from "../src/index.js";
+} from "../src/seaflow/index.js";
 
 describe("SeaFlow symbolic fuzzer", () => {
     test("emits bounded object cases with semantic labels", () => {
@@ -84,6 +87,60 @@ describe("SeaFlow symbolic fuzzer", () => {
         expect(validOnly.every((item) => User.is(item.value))).toBe(true);
         expect(noSecurity.some((item) => item.kind === "invalid")).toBe(true);
         expect(noSecurity.every((item) => item.kind !== "security")).toBe(true);
+    });
+
+    test("keeps property-count wrapper verdicts aligned with generated payloads", () => {
+        const imported = fromJsonSchema({
+            type: "object",
+            minProperties: 1,
+            maxProperties: 2,
+            properties: {
+                id: { type: "string" },
+                count: { type: "number" }
+            }
+        });
+        expect(imported.ok).toBe(true);
+        if (!imported.ok) {
+            return;
+        }
+
+        const cases = [...fuzzCases(imported.value, {
+            intensity: "extreme",
+            includeSecurity: true,
+            maxYields: 64
+        })];
+
+        expect(cases.some((item) => item.reason === "object.proto")).toBe(true);
+        assertCaseLabels(imported.value, cases);
+    });
+
+    test("reconciles constrained solver samples with runtime verdicts", () => {
+        const guards: readonly Guard<unknown, Presence>[] = [
+            t.array(t.string).min(3),
+            t.map(t.string, t.number).min(2),
+            t.set(t.number).max(0),
+            t.string.regex(/^z$/u, "single_z"),
+            t.number.gt(0)
+        ];
+
+        for (let index = 0; index < guards.length; index += 1) {
+            const guard = guards[index];
+            if (guard === undefined) {
+                continue;
+            }
+            const cases = [...fuzzCases(guard, {
+                intensity: "extreme",
+                maxYields: 64
+            })];
+            assertCaseLabels(guard, cases);
+
+            const passing = [...fuzzCases(guard, {
+                intensity: "extreme",
+                includeInvalid: false,
+                maxYields: 64
+            })];
+            expect(passing.every((item) => guard.is(item.value))).toBe(true);
+        }
     });
 
     test("generates strict-union hybrid probes", () => {

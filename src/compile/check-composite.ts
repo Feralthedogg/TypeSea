@@ -1,8 +1,6 @@
 /**
  * @file compile/check-composite.ts
  * @brief Composite diagnostic validator snippets.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 
 import {
@@ -38,8 +36,6 @@ import type { EmitContext } from "./types.js";
 
 /**
  * @brief check function emitter.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 export type CheckFunctionEmitter = (
     schema: Schema,
@@ -48,8 +44,6 @@ export type CheckFunctionEmitter = (
 
 /**
  * @brief emit array check.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param item Schema applied to each logical array slot.
  * @param value Generated expression for the candidate value.
  * @param path Generated expression for the mutable diagnostic path.
@@ -152,8 +146,6 @@ export function emitArrayCheck(
 
 /**
  * @brief emit tuple check.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 export function emitTupleCheck(
     items: readonly Schema[],
@@ -233,7 +225,7 @@ export function emitTupleCheck(
 }
 
 /**
- * @brief Execute emit unsafe array check.
+ * @brief Emit unsafe array check.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeArrayCheck(
@@ -383,7 +375,7 @@ function emitArrayLengthIssuesAtSegment(
 }
 
 /**
- * @brief Execute emit unsafe tuple check.
+ * @brief Emit unsafe tuple check.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeTupleCheck(
@@ -442,8 +434,6 @@ function emitUnsafeTupleCheck(
 
 /**
  * @brief emit array check at one appended object-field segment.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param item Schema applied to each logical array slot.
  * @param value Generated expression for the candidate value.
  * @param path Generated expression for the mutable diagnostic path.
@@ -559,8 +549,6 @@ function emitArrayCheckAtSegment(
 
 /**
  * @brief emit tuple check at one appended object-field segment.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 function emitTupleCheckAtSegment(
     items: readonly Schema[],
@@ -646,7 +634,7 @@ function emitTupleCheckAtSegment(
 }
 
 /**
- * @brief Execute emit unsafe array check at segment.
+ * @brief Emit unsafe array check at segment.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeArrayCheckAtSegment(
@@ -697,7 +685,7 @@ function emitUnsafeArrayCheckAtSegment(
 }
 
 /**
- * @brief Execute emit unsafe tuple check at segment.
+ * @brief Emit unsafe tuple check at segment.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeTupleCheckAtSegment(
@@ -756,8 +744,6 @@ function emitUnsafeTupleCheckAtSegment(
 
 /**
  * @brief emit record check.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 export function emitRecordCheck(
     item: Schema,
@@ -813,8 +799,6 @@ export function emitRecordCheck(
 
 /**
  * @brief emit record check at one appended object-field segment.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 function emitRecordCheckAtSegment(
     item: Schema,
@@ -876,7 +860,7 @@ function emitRecordCheckAtSegment(
 }
 
 /**
- * @brief Execute emit unsafe record check.
+ * @brief Emit unsafe record check.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeRecordCheck(
@@ -925,7 +909,7 @@ function emitUnsafeRecordCheck(
 }
 
 /**
- * @brief Execute emit unsafe record check at segment.
+ * @brief Emit unsafe record check at segment.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeRecordCheckAtSegment(
@@ -974,8 +958,6 @@ function emitUnsafeRecordCheckAtSegment(
 
 /**
  * @brief emit object check.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 export function emitObjectCheck(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>,
@@ -1152,7 +1134,7 @@ function objectKeyExpressions(
 }
 
 /**
- * @brief Execute emit unsafe object check.
+ * @brief Emit unsafe object check.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeObjectCheck(
@@ -1275,7 +1257,7 @@ function emitUnsafeObjectCatchallCheck(
 }
 
 /**
- * @brief Execute emit object field check.
+ * @brief Emit object field check.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitObjectFieldCheck(
@@ -1314,7 +1296,7 @@ function emitObjectFieldCheck(
 }
 
 /**
- * @brief Execute emit composite check at segment.
+ * @brief Emit composite check at segment.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitCompositeCheckAtSegment(
@@ -1366,8 +1348,6 @@ function emitCompositeCheckAtSegment(
 
 /**
  * @brief emit discriminated union check.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 export function emitDiscriminatedUnionCheck(
     key: string,
@@ -1432,7 +1412,7 @@ export function emitDiscriminatedUnionCheck(
 }
 
 /**
- * @brief Execute emit unsafe discriminated union check.
+ * @brief Emit unsafe discriminated union check.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeDiscriminatedUnionCheck(
@@ -1478,7 +1458,7 @@ function emitUnsafeDiscriminatedUnionCheck(
 }
 
 /**
- * @brief Execute object reject expression.
+ * @brief Build the object rejection predicate used by generated checks.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function objectRejectExpression(value: string): string {
@@ -1502,7 +1482,7 @@ function isUncheckedMode(context: EmitContext): boolean {
 }
 
 /**
- * @brief Execute unsafe property read expression.
+ * @brief Build a direct property read for unsafe and unchecked modes.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function unsafePropertyReadExpression(
@@ -1516,7 +1496,7 @@ function unsafePropertyReadExpression(
 }
 
 /**
- * @brief Execute unsafe key membership expression.
+ * @brief Build inline key membership checks for unsafe literal keys.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function unsafeKeyMembershipExpression(
@@ -1537,7 +1517,7 @@ function unsafeKeyMembershipExpression(
 }
 
 /**
- * @brief Execute safe key membership expression.
+ * @brief Build inline key membership checks using side-table string refs.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function safeKeyMembershipExpression(
@@ -1566,7 +1546,7 @@ function isAsciiIdentifierName(value: string): boolean {
 }
 
 /**
- * @brief Execute unsafe string literal expression.
+ * @brief Escape a string literal for direct insertion into generated source.
  * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function unsafeStringLiteralExpression(value: string): string {

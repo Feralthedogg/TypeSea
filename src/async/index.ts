@@ -773,16 +773,14 @@ export function asyncDecoder<TValue, TPresence extends Presence>(
 ): BaseAsyncDecoder<RuntimeValue<TValue, TPresence>>;
 
 /**
- * @brief Execute async decoder.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Wrap an existing sync or async decoder as an async pipeline.
  */
 export function asyncDecoder<TValue>(
     source: Decoder<TValue> | AsyncDecoder<TValue>
 ): BaseAsyncDecoder<TValue>;
 
 /**
- * @brief Execute async decoder.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Normalize a guard, decoder, or async decoder into an async pipeline.
  */
 export function asyncDecoder(source: AsyncDecodeSource): BaseAsyncDecoder<unknown> {
     return makeAsyncDecoder(source);
@@ -823,8 +821,7 @@ export function asyncRefine<TValue, TPresence extends Presence>(
 ): BaseAsyncDecoder<RuntimeValue<TValue, TPresence>>;
 
 /**
- * @brief Execute async refine.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Append an async predicate to an existing decoder.
  */
 export function asyncRefine<TValue>(
     source: Decoder<TValue> | AsyncDecoder<TValue>,
@@ -833,8 +830,7 @@ export function asyncRefine<TValue>(
 ): BaseAsyncDecoder<TValue>;
 
 /**
- * @brief Execute async refine.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Normalize a source and append an async predicate.
  */
 export function asyncRefine(
     source: AsyncDecodeSource,
@@ -855,8 +851,7 @@ export function asyncTransform<TValue, TPresence extends Presence, TNext>(
 ): BaseAsyncDecoder<TNext>;
 
 /**
- * @brief Execute async transform.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Append an async mapper to an existing decoder.
  */
 export function asyncTransform<TValue, TNext>(
     source: Decoder<TValue> | AsyncDecoder<TValue>,
@@ -864,8 +859,7 @@ export function asyncTransform<TValue, TNext>(
 ): BaseAsyncDecoder<TNext>;
 
 /**
- * @brief Execute async transform.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Normalize a source and append an async mapper.
  */
 export function asyncTransform(
     source: AsyncDecodeSource,
@@ -875,8 +869,7 @@ export function asyncTransform(
 }
 
 /**
- * @brief Execute async pipe.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Pipe one async decode source into the next decode source.
  */
 export function asyncPipe<TNext extends AsyncDecodeSource>(
     source: AsyncDecodeSource,
@@ -915,7 +908,6 @@ setGuardPromiseFactory(<TValue, TPresence extends Presence>(
 
 /**
  * @brief Check async decoder value.
- * @details This helper keeps a local invariant explicit at the module boundary.
  */
 export function isAsyncDecoderValue(
     value: unknown

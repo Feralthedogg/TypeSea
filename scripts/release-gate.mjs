@@ -17,7 +17,6 @@ if (!result.ok) {
 
 /**
  * @brief Run steps.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function runSteps(items) {
     for (let index = 0; index < items.length; index += 1) {
@@ -38,7 +37,6 @@ function runSteps(items) {
 
 /**
  * @brief Run local helper.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function run(command, args) {
     const child = spawnSync(command, args, {
@@ -55,7 +53,6 @@ function run(command, args) {
 
 /**
  * @brief Construct a successful result value.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function ok(value) {
     return { ok: true, value };
@@ -63,7 +60,6 @@ function ok(value) {
 
 /**
  * @brief Construct a failed result value.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function err(error) {
     return { ok: false, error };

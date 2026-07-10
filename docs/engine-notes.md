@@ -222,21 +222,22 @@ Zod, Valibot, and Ajv are dev dependencies for measurement only. They are not
 imported by `src`, and package policy rejects runtime, peer, optional, or
 bundled dependency fields before release.
 
-Last clean local benchmark on 2026-07-06 KST reported these ecosystem paths over the
+Last clean local benchmark on 2026-07-09 KST reported these ecosystem paths over the
 JSON-compatible strict-object benchmark. The committed source of truth is
 `bench/results/latest.json`; `npm run bench:record` refreshes that summary and
 the README SVG from the median of 3 full Vitest runs.
 `npm run bench:compare` checks the committed summary against release regression
 floors for unchecked valid hot path, safe invalid fast-fail, safe valid
 throughput, and presence-dispatch object union paths. `check:benchmarks` runs
-the same floor check after verifying the SVG is fresh.
+the same floor check after verifying the SVG is fresh and the committed
+benchmark summary matches the current package version.
 
 | Case | TypeSea runtime plan | TypeSea compiled safe | TypeSea compiled unsafe | TypeSea compiled unchecked | Ajv compiled |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Valid `is()` | 341,332 hz | 3,840,854 hz | 27,464,645 hz | 29,647,233 hz | 2,682,380 hz |
-| Valid `check()` | 294,582 hz | 2,914,942 hz | 21,517,947 hz | 31,707,555 hz | 2,876,907 hz |
-| Invalid `is()` | 2,223,276 hz | 30,513,434 hz | 28,172,129 hz | 36,659,550 hz | 15,870,460 hz |
-| Invalid `check()` | 280,569 hz | 1,460,301 hz | 2,144,535 hz | 2,658,950 hz | 19,847,089 hz |
+| Valid `is()` | 428,637 hz | 4,952,729 hz | 31,992,573 hz | 39,651,592 hz | 4,047,925 hz |
+| Valid `check()` | 414,697 hz | 4,422,123 hz | 25,915,737 hz | 32,844,863 hz | 4,238,051 hz |
+| Invalid `is()` | 2,891,226 hz | 40,230,201 hz | 49,473,616 hz | 48,593,951 hz | 27,612,151 hz |
+| Invalid `check()` | 345,894 hz | 1,714,191 hz | 2,689,279 hz | 3,207,055 hz | 29,466,173 hz |
 
 Benchmark numbers are machine-local telemetry. They are useful for catching
 regressions, not for promising a fixed throughput floor. Unsafe and unchecked

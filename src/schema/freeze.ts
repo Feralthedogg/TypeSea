@@ -35,26 +35,68 @@ function freezeSchemaInner(schema: Schema, frozen: WeakSet<object>): Schema {
         return schema;
     }
     frozen.add(schema);
+    if (freezeScalarSchemaChildren(schema, frozen)) {
+        return Object.freeze(schema);
+    }
+    if (freezeCompositeSchemaChildren(schema, frozen)) {
+        return Object.freeze(schema);
+    }
+    freezeWrapperSchemaChildren(schema, frozen);
+    return Object.freeze(schema);
+}
+
+/**
+ * @brief Freeze child data owned by scalar schema records.
+ * @param schema Schema node being hardened.
+ * @param frozen Object identities already hardened in this traversal.
+ * @returns True when this helper handled the schema tag.
+ */
+function freezeScalarSchemaChildren(schema: Schema, frozen: WeakSet<object>): boolean {
     switch (schema.tag) {
         case SchemaTag.String:
             freezeStringChecks(schema.checks, frozen);
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.Number:
-            freezeArray(schema.checks, frozen);
-            return Object.freeze(schema);
         case SchemaTag.Date:
             freezeArray(schema.checks, frozen);
-            return Object.freeze(schema);
+            return true;
+        case SchemaTag.File:
+            freezeFileChecks(schema.checks, frozen);
+            return true;
+        case SchemaTag.Unknown:
+        case SchemaTag.Never:
+        case SchemaTag.Symbol:
+        case SchemaTag.Boolean:
+        case SchemaTag.InstanceOf:
+        case SchemaTag.Literal:
+        case SchemaTag.Lazy:
+            return true;
+        case SchemaTag.BigInt:
+            Object.freeze(schema.checks);
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Freeze child data owned by composite schema records.
+ * @param schema Schema node being hardened.
+ * @param frozen Object identities already hardened in this traversal.
+ * @returns True when this helper handled the schema tag.
+ */
+function freezeCompositeSchemaChildren(schema: Schema, frozen: WeakSet<object>): boolean {
+    switch (schema.tag) {
         case SchemaTag.Array:
             freezeSchemaInner(schema.item, frozen);
             freezeArray(schema.checks, frozen);
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.Tuple:
             freezeSchemaArray(schema.items, frozen);
             if (schema.rest !== undefined) {
                 freezeSchemaInner(schema.rest, frozen);
             }
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.Record:
             if (schema.key !== undefined) {
                 freezeSchemaInner(schema.key, frozen);
@@ -63,23 +105,20 @@ function freezeSchemaInner(schema: Schema, frozen: WeakSet<object>): Schema {
                 Object.freeze(schema.requiredKeys);
             }
             freezeSchemaInner(schema.value, frozen);
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.Map:
             freezeSchemaInner(schema.key, frozen);
             freezeSchemaInner(schema.value, frozen);
             freezeArray(schema.checks, frozen);
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.Set:
             freezeSchemaInner(schema.item, frozen);
             freezeArray(schema.checks, frozen);
-            return Object.freeze(schema);
-        case SchemaTag.File:
-            freezeFileChecks(schema.checks, frozen);
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.Property:
             freezeSchemaInner(schema.base, frozen);
             freezeSchemaInner(schema.value, frozen);
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.Object:
             freezeObjectEntries(schema.entries, frozen);
             if (schema.catchall !== undefined) {
@@ -87,50 +126,55 @@ function freezeSchemaInner(schema: Schema, frozen: WeakSet<object>): Schema {
             }
             Object.freeze(schema.keys);
             Object.freeze(schema.keyLookup);
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.Union:
         case SchemaTag.Xor:
             freezeSchemaArray(schema.options, frozen);
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.Intersection:
             freezeSchemaInner(schema.left, frozen);
             freezeSchemaInner(schema.right, frozen);
-            return Object.freeze(schema);
+            return true;
+        case SchemaTag.DiscriminatedUnion:
+            freezeDiscriminatedUnionCases(schema.cases, frozen);
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Freeze child data owned by wrapper and policy schema records.
+ * @param schema Schema node being hardened.
+ * @param frozen Object identities already hardened in this traversal.
+ * @returns True when this helper handled the schema tag.
+ */
+function freezeWrapperSchemaChildren(schema: Schema, frozen: WeakSet<object>): boolean {
+    switch (schema.tag) {
         case SchemaTag.Optional:
         case SchemaTag.Undefinedable:
         case SchemaTag.Nullable:
-            freezeSchemaInner(schema.inner, frozen);
-            return Object.freeze(schema);
-        case SchemaTag.DiscriminatedUnion:
-            freezeDiscriminatedUnionCases(schema.cases, frozen);
-            return Object.freeze(schema);
         case SchemaTag.Brand:
+        case SchemaTag.Message:
+        case SchemaTag.Readonly:
+        case SchemaTag.PropertyCount:
             freezeSchemaInner(schema.inner, frozen);
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.Metadata:
             freezeSchemaInner(schema.inner, frozen);
             if (schema.metadata.examples !== undefined) {
                 Object.freeze(schema.metadata.examples);
             }
             Object.freeze(schema.metadata);
-            return Object.freeze(schema);
-        case SchemaTag.Message:
-            freezeSchemaInner(schema.inner, frozen);
-            return Object.freeze(schema);
-        case SchemaTag.Readonly:
-            freezeSchemaInner(schema.inner, frozen);
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.KeyedObject:
             freezeSchemaInner(schema.inner, frozen);
             Object.freeze(schema.keys);
-            return Object.freeze(schema);
-        case SchemaTag.PropertyCount:
-            freezeSchemaInner(schema.inner, frozen);
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.PropertyNames:
             freezeSchemaInner(schema.inner, frozen);
             freezeSchemaInner(schema.key, frozen);
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.PatternProperties:
             freezeSchemaInner(schema.inner, frozen);
             freezePatternPropertyEntries(schema.entries, frozen);
@@ -139,24 +183,15 @@ function freezeSchemaInner(schema: Schema, frozen: WeakSet<object>): Schema {
             if (schema.additional !== undefined) {
                 freezeSchemaInner(schema.additional, frozen);
             }
-            return Object.freeze(schema);
+            return true;
         case SchemaTag.Refine:
             freezeSchemaInner(schema.inner, frozen);
             if (schema.path !== undefined) {
                 Object.freeze(schema.path);
             }
-            return Object.freeze(schema);
-        case SchemaTag.Unknown:
-        case SchemaTag.Never:
-        case SchemaTag.Symbol:
-        case SchemaTag.Boolean:
-        case SchemaTag.InstanceOf:
-        case SchemaTag.Literal:
-        case SchemaTag.Lazy:
-            return Object.freeze(schema);
-        case SchemaTag.BigInt:
-            Object.freeze(schema.checks);
-            return Object.freeze(schema);
+            return true;
+        default:
+            return false;
     }
 }
 

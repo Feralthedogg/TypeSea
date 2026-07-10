@@ -1,8 +1,6 @@
 /**
  * @file compile/context.ts
  * @brief Generated-source emitter side-table context.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  */
 
 import type { LiteralValue, Schema } from "../schema/index.js";
@@ -10,8 +8,6 @@ import type { CompileMode, EmitContext } from "./types.js";
 
 /**
  * @brief Create one mutable source-emission context.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param mode Compile mode that controls safety and allocation tradeoffs.
  * @returns Fresh side-table context consumed by predicate and diagnostic emitters.
  * @invariant Side tables are append-only during one bundle emission.
@@ -36,8 +32,6 @@ export function createEmitContext(mode: CompileMode): EmitContext {
 
 /**
  * @brief Append a literal to the generated factory side table.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param context Mutable emission context.
  * @param value Literal value referenced by generated source.
  * @returns Index used by generated code to read `l[index]`.
@@ -50,8 +44,6 @@ export function pushLiteral(context: EmitContext, value: LiteralValue): number {
 
 /**
  * @brief Append a regular expression to the generated factory side table.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param context Mutable emission context.
  * @param value Source RegExp from the schema.
  * @returns Index used by generated code to read `r[index]`.
@@ -65,8 +57,6 @@ export function pushRegex(context: EmitContext, value: RegExp): number {
 
 /**
  * @brief Append a keyset to the generated factory side table.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param context Mutable emission context.
  * @param value Frozen or caller-owned key list used by object checks.
  * @returns Index used by generated code to read `k[index]`.
@@ -79,8 +69,6 @@ export function pushKeyset(context: EmitContext, value: readonly string[]): numb
 
 /**
  * @brief Return a generated expression for a string side-table entry.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param context Mutable emission context.
  * @param value String value to intern.
  * @returns Generated expression of the form `u[index]`.
@@ -91,8 +79,6 @@ export function stringRef(context: EmitContext, value: string): string {
 
 /**
  * @brief Intern a string in the generated factory side table.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param context Mutable emission context.
  * @param value String value referenced by generated source.
  * @returns Stable side-table index for the string.
@@ -114,8 +100,6 @@ export function pushString(context: EmitContext, value: string): number {
 
 /**
  * @brief Append a dynamic schema to the generated factory side table.
- * @details Generated-source helpers keep the side-table ABI and JavaScript source shape
- * stable across runtime and AOT emission.
  * @param context Mutable emission context.
  * @param value Schema used by fallback or lazy generated paths.
  * @returns Index used by generated code to read `d[index]`.

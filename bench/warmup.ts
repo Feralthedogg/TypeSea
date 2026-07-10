@@ -14,6 +14,8 @@ export const BENCH_SYNC_WARMUP_ITERATIONS = 50_000;
 
 export const BENCH_ASYNC_WARMUP_ITERATIONS = 32;
 
+export const BENCH_WARMUP_HOOK_TIMEOUT_MS = 60_000;
+
 let warmupSink: unknown;
 
 /**

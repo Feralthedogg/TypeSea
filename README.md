@@ -68,12 +68,12 @@ publicProcedure.input(userInput).mutation(({ input }) => {
 
 ## Benchmark Headline
 
-Last clean committed local benchmark on 2026-07-06 KST:
+Last clean committed local benchmark on 2026-07-09 KST:
 `npm run bench:record`, median of 3 full runs, strict-object contract,
 operations per second on one machine. The chart is generated from
 [`bench/results/latest.json`](https://github.com/Feralthedogg/TypeSea/blob/main/bench/results/latest.json).
 
-![TypeSea benchmark comparison](https://feralthedogg.github.io/TypeSea/assets/benchmark-headline.svg)
+![TypeSea benchmark comparison](https://feralthedogg.github.io/TypeSea/benchmark-headline.svg)
 
 TypeSea safe compiled validators are already in Ajv's boolean hot-path class
 while keeping descriptor-based hostile-input semantics. Unsafe and unchecked
@@ -247,6 +247,9 @@ published as `typesea/seaflow` so production validators do not pay for the
 fuzzer unless you import it. `maxYields` is a hard upper bound, not a target:
 small schemas may naturally emit fewer cases when the solver has exhausted its
 finite edge set.
+Before filtering, SeaFlow checks each generated value against its local schema,
+so `item.valid` matches the executable validator even when multiple constraints
+overlap. This reconciliation executes custom refinement predicates.
 
 ### SeaBreeze Arena Inference
 
@@ -434,7 +437,7 @@ failed check() -> schema-aware diagnostic collector
 
 ## Performance Snapshot
 
-Last clean local benchmark on 2026-07-06 KST, using `npm run bench:record` with the
+Last clean local benchmark on 2026-07-09 KST, using `npm run bench:record` with the
 median of 3 full Vitest runs over the benchmark strict-object contract. The raw
 Vitest JSON is stored in
 [`bench/results/raw.json`](https://github.com/Feralthedogg/TypeSea/blob/main/bench/results/raw.json),
@@ -444,55 +447,55 @@ These are operations per second on one machine, not release guarantees.
 
 | Valid object path | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 341,332 |
-| TypeSea compiled safe `is()` | 3,840,854 |
-| TypeSea compiled unsafe `is()` | 27,464,645 |
-| TypeSea compiled unchecked `is()` | 29,647,233 |
-| Zod `safeParse` | 911,576 |
-| Valibot `safeParse` | 946,246 |
-| Ajv compiled | 2,682,380 |
+| TypeSea interpreted `is()` | 428,637 |
+| TypeSea compiled safe `is()` | 4,952,729 |
+| TypeSea compiled unsafe `is()` | 31,992,573 |
+| TypeSea compiled unchecked `is()` | 39,651,592 |
+| Zod `safeParse` | 1,278,093 |
+| Valibot `safeParse` | 1,252,213 |
+| Ajv compiled | 4,047,925 |
 
 | Valid diagnostic path | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 294,582 |
-| TypeSea compiled safe `check()` | 2,914,942 |
-| TypeSea compiled unsafe `check()` | 21,517,947 |
-| TypeSea compiled unchecked `check()` | 31,707,555 |
-| Zod `safeParse` | 883,138 |
-| Valibot `safeParse` | 893,898 |
-| Ajv compiled | 2,876,907 |
+| TypeSea interpreted `check()` | 414,697 |
+| TypeSea compiled safe `check()` | 4,422,123 |
+| TypeSea compiled unsafe `check()` | 25,915,737 |
+| TypeSea compiled unchecked `check()` | 32,844,863 |
+| Zod `safeParse` | 1,295,961 |
+| Valibot `safeParse` | 1,244,209 |
+| Ajv compiled | 4,238,051 |
 
 | Invalid object path | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 2,223,276 |
-| TypeSea compiled safe `is()` | 30,513,434 |
-| TypeSea compiled unsafe `is()` | 28,172,129 |
-| TypeSea compiled unchecked `is()` | 36,659,550 |
-| Zod `safeParse` | 60,043 |
-| Valibot `safeParse` | 533,818 |
-| Ajv compiled | 15,870,460 |
+| TypeSea interpreted `is()` | 2,891,226 |
+| TypeSea compiled safe `is()` | 40,230,201 |
+| TypeSea compiled unsafe `is()` | 49,473,616 |
+| TypeSea compiled unchecked `is()` | 48,593,951 |
+| Zod `safeParse` | 82,424 |
+| Valibot `safeParse` | 897,869 |
+| Ajv compiled | 27,612,151 |
 
 | Invalid diagnostic path | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 280,569 |
-| TypeSea compiled safe `check()` | 1,460,301 |
-| TypeSea compiled unsafe `check()` | 2,144,535 |
-| TypeSea compiled unchecked `check()` | 2,658,950 |
-| Zod `safeParse` | 59,685 |
-| Valibot `safeParse` | 592,515 |
-| Ajv compiled | 19,847,089 |
+| TypeSea interpreted `check()` | 345,894 |
+| TypeSea compiled safe `check()` | 1,714,191 |
+| TypeSea compiled unsafe `check()` | 2,689,279 |
+| TypeSea compiled unchecked `check()` | 3,207,055 |
+| Zod `safeParse` | 80,559 |
+| Valibot `safeParse` | 845,532 |
+| Ajv compiled | 29,466,173 |
 
 | Presence-dispatched object union | hz |
 | --- | ---: |
-| TypeSea interpreted logical branch | 893,483 |
-| TypeSea compiled safe logical branch | 3,671,517 |
-| TypeSea compiled unsafe logical branch | 31,475,593 |
-| TypeSea interpreted fallback record branch | 355,598 |
-| TypeSea compiled safe fallback record branch | 4,724,044 |
-| TypeSea compiled unsafe fallback record branch | 9,841,223 |
-| TypeSea interpreted invalid branch | 520,812 |
-| TypeSea compiled safe invalid branch | 11,309,279 |
-| TypeSea compiled unsafe invalid branch | 14,484,249 |
+| TypeSea interpreted logical branch | 1,118,624 |
+| TypeSea compiled safe logical branch | 5,151,943 |
+| TypeSea compiled unsafe logical branch | 44,039,351 |
+| TypeSea interpreted fallback record branch | 412,629 |
+| TypeSea compiled safe fallback record branch | 6,139,899 |
+| TypeSea compiled unsafe fallback record branch | 13,643,825 |
+| TypeSea interpreted invalid branch | 594,288 |
+| TypeSea compiled safe invalid branch | 15,148,274 |
+| TypeSea compiled unsafe invalid branch | 26,067,883 |
 
 The safe compiled path stays close to Ajv while retaining TypeSea hostile-input
 semantics: descriptor-based property reads, symbol/non-enumerable strict-key
@@ -543,6 +546,9 @@ export for `import z from "typesea/zod"` migration code. It is still TypeSea
 underneath, has no runtime dependency on Zod, and is covered by dev-only Zod
 parity tests for representative migration-safe schemas, primitive-safe
 coercion, decoder output wrappers, top-level wrappers, and object modifiers.
+In the `z` namespace, `z.object(shape)` follows Zod v4 strip-by-default output
+semantics; call `.passthrough()` or `.loose()` when unknown keys should be kept.
+Native `t.object(shape)` remains TypeSea's explicit passthrough object builder.
 For 1.x, TypeSea owns these subpath names as stable migration facades, but they
 remain best-effort compatibility layers over TypeSea's guard engine rather than
 a promise to clone Zod's internal parser engine or every future upstream
@@ -1094,15 +1100,22 @@ provenance.
 ## Documentation
 
 - [Documentation site](https://feralthedogg.github.io/TypeSea/)
-- [API reference](https://feralthedogg.github.io/TypeSea/#api-reference)
-- [SeaFlow fuzzer guide](https://feralthedogg.github.io/TypeSea/#seaflow)
-- [SeaBreeze arena inference](https://feralthedogg.github.io/TypeSea/#seabreeze)
-- [Engine notes](https://feralthedogg.github.io/TypeSea/#engine-notes)
+- [API reference](https://feralthedogg.github.io/TypeSea/api/)
+- [SeaFlow fuzzer guide](https://feralthedogg.github.io/TypeSea/seaflow/)
+- [SeaBreeze arena inference](https://feralthedogg.github.io/TypeSea/seabreeze/)
+- [Engine notes](https://feralthedogg.github.io/TypeSea/engine/)
 - [Security policy](https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md)
 
 ---
 
 ## Migration Notes
+
+### 1.1.0 to 1.1.1
+
+Existing schemas and SeaBreeze callers keep working. `1.1.1` is a patch
+release focused on release-gate stability, benchmark metadata freshness,
+package export checks, and published `typesea/seabreeze` consumer-smoke
+coverage. It does not change the public validator API.
 
 ### 1.0.0 to 1.1.0
 

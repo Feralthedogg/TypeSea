@@ -57,7 +57,7 @@ publicProcedure.input(userInput).mutation(({ input }) => {
 
 ## 벤치마크 요약
 
-마지막 clean 로컬 벤치마크는 2026-07-06 KST에 실행했습니다.
+마지막 clean 로컬 벤치마크는 2026-07-09 KST에 실행했습니다.
 명령은 `npm run bench:record`이며, strict object 계약을 대상으로 한 단일 머신의 초당 실행 횟수입니다.
 그래프는 [`bench/results/latest.json`](../../bench/results/latest.json)에서 생성합니다.
 아래 수치는 회귀를 잡기 위한 로컬 측정값이지, 릴리스 성능 보증값은 아닙니다.
@@ -376,62 +376,62 @@ failed check() -> schema-aware diagnostic collector
 
 ## 성능 스냅샷
 
-마지막 clean 로컬 벤치마크는 2026-07-06 KST에 실행했습니다.
+마지막 clean 로컬 벤치마크는 2026-07-09 KST에 실행했습니다.
 `npm run bench:record`로 전체 Vitest 벤치를 3회 실행한 뒤 중앙값을 사용했고, benchmark strict-object 계약을 대상으로 했습니다.
 raw Vitest JSON은 [`bench/results/raw.json`](../../bench/results/raw.json)에, README 그래프용 stable summary는 [`bench/results/latest.json`](../../bench/results/latest.json)에 저장합니다.
 아래 값은 단일 머신의 초당 실행 횟수이며 릴리스 성능 보증값은 아닙니다.
 
 | 유효한 객체: boolean 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 341,332 |
-| TypeSea compiled safe `is()` | 3,840,854 |
-| TypeSea compiled unsafe `is()` | 27,464,645 |
-| TypeSea compiled unchecked `is()` | 29,647,233 |
-| Zod `safeParse` | 911,576 |
-| Valibot `safeParse` | 946,246 |
-| Ajv compiled | 2,682,380 |
+| TypeSea interpreted `is()` | 428,637 |
+| TypeSea compiled safe `is()` | 4,952,729 |
+| TypeSea compiled unsafe `is()` | 31,992,573 |
+| TypeSea compiled unchecked `is()` | 39,651,592 |
+| Zod `safeParse` | 1,278,093 |
+| Valibot `safeParse` | 1,252,213 |
+| Ajv compiled | 4,047,925 |
 
 | 유효한 객체: 진단 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 294,582 |
-| TypeSea compiled safe `check()` | 2,914,942 |
-| TypeSea compiled unsafe `check()` | 21,517,947 |
-| TypeSea compiled unchecked `check()` | 31,707,555 |
-| Zod `safeParse` | 883,138 |
-| Valibot `safeParse` | 893,898 |
-| Ajv compiled | 2,876,907 |
+| TypeSea interpreted `check()` | 414,697 |
+| TypeSea compiled safe `check()` | 4,422,123 |
+| TypeSea compiled unsafe `check()` | 25,915,737 |
+| TypeSea compiled unchecked `check()` | 32,844,863 |
+| Zod `safeParse` | 1,295,961 |
+| Valibot `safeParse` | 1,244,209 |
+| Ajv compiled | 4,238,051 |
 
 | 잘못된 객체: boolean 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `is()` | 2,223,276 |
-| TypeSea compiled safe `is()` | 30,513,434 |
-| TypeSea compiled unsafe `is()` | 28,172,129 |
-| TypeSea compiled unchecked `is()` | 36,659,550 |
-| Zod `safeParse` | 60,043 |
-| Valibot `safeParse` | 533,818 |
-| Ajv compiled | 15,870,460 |
+| TypeSea interpreted `is()` | 2,891,226 |
+| TypeSea compiled safe `is()` | 40,230,201 |
+| TypeSea compiled unsafe `is()` | 49,473,616 |
+| TypeSea compiled unchecked `is()` | 48,593,951 |
+| Zod `safeParse` | 82,424 |
+| Valibot `safeParse` | 897,869 |
+| Ajv compiled | 27,612,151 |
 
 | 잘못된 객체: 진단 경로 | hz |
 | --- | ---: |
-| TypeSea interpreted `check()` | 280,569 |
-| TypeSea compiled safe `check()` | 1,460,301 |
-| TypeSea compiled unsafe `check()` | 2,144,535 |
-| TypeSea compiled unchecked `check()` | 2,658,950 |
-| Zod `safeParse` | 59,685 |
-| Valibot `safeParse` | 592,515 |
-| Ajv compiled | 19,847,089 |
+| TypeSea interpreted `check()` | 345,894 |
+| TypeSea compiled safe `check()` | 1,714,191 |
+| TypeSea compiled unsafe `check()` | 2,689,279 |
+| TypeSea compiled unchecked `check()` | 3,207,055 |
+| Zod `safeParse` | 80,559 |
+| Valibot `safeParse` | 845,532 |
+| Ajv compiled | 29,466,173 |
 
-| Presence-dispatched object union | hz |
+| presence-dispatched 객체 유니온 | hz |
 | --- | ---: |
-| TypeSea interpreted logical branch | 893,483 |
-| TypeSea compiled safe logical branch | 3,671,517 |
-| TypeSea compiled unsafe logical branch | 31,475,593 |
-| TypeSea interpreted fallback record branch | 355,598 |
-| TypeSea compiled safe fallback record branch | 4,724,044 |
-| TypeSea compiled unsafe fallback record branch | 9,841,223 |
-| TypeSea interpreted invalid branch | 520,812 |
-| TypeSea compiled safe invalid branch | 11,309,279 |
-| TypeSea compiled unsafe invalid branch | 14,484,249 |
+| TypeSea interpreted logical branch | 1,118,624 |
+| TypeSea compiled safe logical branch | 5,151,943 |
+| TypeSea compiled unsafe logical branch | 44,039,351 |
+| TypeSea interpreted fallback record branch | 412,629 |
+| TypeSea compiled safe fallback record branch | 6,139,899 |
+| TypeSea compiled unsafe fallback record branch | 13,643,825 |
+| TypeSea interpreted invalid branch | 594,288 |
+| TypeSea compiled safe invalid branch | 15,148,274 |
+| TypeSea compiled unsafe invalid branch | 26,067,883 |
 
 safe compiled path는 TypeSea의 적대적 입력 방어를 유지하면서 Ajv에 가깝게 동작합니다.
 descriptor 기반 property read, symbol/non-enumerable strict-key rejection, key presence semantics, immutable diagnostics, TypeScript guard inference를 유지합니다.
@@ -526,6 +526,9 @@ plain guard에는 Zod식 instance decode/encode alias도 있습니다:
 
 `t.iso.date()`, `t.iso.datetime()`, `t.iso.time()`, `t.iso.duration()`은 기존 top-level ISO format helper와 같은 의미를 가진 Zod 호환 별칭입니다.
 `t.looseObject(shape)`는 TypeSea의 기본 passthrough object mode를 명시적으로 드러내는 별칭입니다.
+`z.object(shape)`는 Zod v4처럼 기본 parse output에서 unknown key를 strip합니다.
+unknown key를 보존해야 한다면 `.passthrough()`나 `.loose()`를 호출하세요.
+native `t.object(shape)`는 기존 TypeSea 의미 그대로 passthrough object builder입니다.
 `loose()`와 `nonstrict()`는 object guard를 passthrough mode로 바꾸고, `nonpassthrough()`는 `strict()`와 같은 Zod migration 별칭입니다.
 string의 `date()`, `datetime()`, `time()`, `duration()`은 같은 ISO method를 부르는 fluent 별칭입니다.
 `minLength`, `maxLength`, `minValue`, `maxValue`, `isInt`, `isFinite`는 Zod 스타일 읽기 전용 metadata property입니다. string guard와 number guard는 Zod 스타일 `type`, `format` metadata도 노출합니다.
@@ -937,15 +940,22 @@ CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께
 ## 문서
 
 - [문서 사이트](https://feralthedogg.github.io/TypeSea/)
-- [API 레퍼런스](https://feralthedogg.github.io/TypeSea/#api-reference)
-- [SeaFlow 퍼저 가이드](https://feralthedogg.github.io/TypeSea/#seaflow)
-- [SeaBreeze arena 추론](https://feralthedogg.github.io/TypeSea/#seabreeze)
-- [엔진 노트](https://feralthedogg.github.io/TypeSea/#engine-notes)
+- [API 레퍼런스](https://feralthedogg.github.io/TypeSea/ko/api/)
+- [SeaFlow 퍼저 가이드](https://feralthedogg.github.io/TypeSea/ko/seaflow/)
+- [SeaBreeze arena 추론](https://feralthedogg.github.io/TypeSea/ko/seabreeze/)
+- [엔진 노트](https://feralthedogg.github.io/TypeSea/ko/engine/)
 - [보안 정책](https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md)
 
 ---
 
 ## 마이그레이션 노트
+
+### 1.1.0에서 1.1.1
+
+기존 schema와 SeaBreeze 호출 코드는 그대로 동작합니다.
+`1.1.1`은 공개 검증기 API를 바꾸지 않는 패치 릴리스입니다.
+릴리스 게이트 안정화, 벤치마크 메타데이터 최신성 검사, 패키지 export 검사,
+그리고 배포된 `typesea/seabreeze` subpath를 실제 소비자 프로젝트에서 불러오는 smoke test를 보강했습니다.
 
 ### 1.0.0에서 1.1.0
 

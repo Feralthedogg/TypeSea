@@ -7,3 +7,16 @@ coverage/
 .env.*
 !.env.example
 .editorconfig
+
+# Local compiler and benchmark experiments.
+/scratch/
+/analyze.js
+/complex-temp.ts
+/customer-jit.js
+/demo_insane.ts
+/demo_magic.ts
+/dump-beautiful.ts
+/dump-complex-jit.ts
+/dump-lab.ts
+/prep-temp.cjs
+/trade-jit.js

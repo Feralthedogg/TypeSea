@@ -553,14 +553,12 @@ export function decoder<TValue, TPresence extends Presence>(
 ): BaseDecoder<RuntimeValue<TValue, TPresence>>;
 
 /**
- * @brief Execute decoder.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Wrap an existing decoder without changing its output type.
  */
 export function decoder<TValue>(source: Decoder<TValue>): BaseDecoder<TValue>;
 
 /**
- * @brief Execute decoder.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Normalize a guard or decoder into a synchronous decoder pipeline.
  */
 export function decoder(source: DecodeSource): BaseDecoder<unknown> {
     return makeDecoder(source);
@@ -849,7 +847,6 @@ export function invertCodec<TSource extends Codec<unknown, unknown>>(
 
 /**
  * @brief Build decoder.
- * @details This helper keeps a local invariant explicit at the module boundary.
  */
 function makeDecoder(source: DecodeSource): BaseDecoder<unknown> {
     const run = readDecodeSourceRunner<unknown>(source, "decoder source");
@@ -867,8 +864,7 @@ export function transform<TValue, TPresence extends Presence, TNext>(
 ): BaseDecoder<TNext>;
 
 /**
- * @brief Execute transform.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Append a synchronous mapper to an existing decoder.
  */
 export function transform<TValue, TNext>(
     source: Decoder<TValue>,
@@ -876,8 +872,7 @@ export function transform<TValue, TNext>(
 ): BaseDecoder<TNext>;
 
 /**
- * @brief Execute transform.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Normalize a source and append a synchronous mapper.
  */
 export function transform(
     source: DecodeSource,
@@ -898,8 +893,7 @@ export function success(source: DecodeSource): BaseDecoder<boolean> {
 }
 
 /**
- * @brief Execute pipe.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Pipe one decode source into the next decode source.
  */
 export function pipe<TNext extends DecodeSource>(
     source: DecodeSource,
@@ -2549,8 +2543,7 @@ export const coerce = Object.freeze({
 } as const);
 
 /**
- * @brief Execute coerce string.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Build a decoder using JavaScript string coercion.
  */
 export function coerceString(): CoerceStringDecoder {
     return new CoerceStringDecoder((value: unknown): CheckResult<string> => {
@@ -2564,8 +2557,7 @@ export function coerceString(): CoerceStringDecoder {
 }
 
 /**
- * @brief Execute coerce number.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Build a decoder using JavaScript number coercion.
  */
 export function coerceNumber(): CoerceNumberDecoder {
     return new CoerceNumberDecoder((value: unknown): CheckResult<number> => {
@@ -2579,8 +2571,7 @@ export function coerceNumber(): CoerceNumberDecoder {
 }
 
 /**
- * @brief Execute coerce boolean.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Build a decoder using JavaScript boolean coercion.
  */
 export function coerceBoolean(): BaseDecoder<boolean> {
     return new BaseDecoder<boolean>((value: unknown): CheckResult<boolean> => {
@@ -2657,7 +2648,6 @@ export function stringbool(options?: Partial<StringBoolOptions>): BaseCodec<stri
 
 /**
  * @brief Check decoder value.
- * @details This helper keeps a local invariant explicit at the module boundary.
  */
 export function isDecoderValue(value: unknown): value is Decoder<unknown> {
     return isConstructedDecoder(value);
@@ -3304,7 +3294,7 @@ function encodeObjectValue(
 }
 
 /**
- * @brief Execute object field runners in one direction.
+ * @brief Run object field decoders in either decode or encode direction.
  * @param config Frozen object decode config.
  * @param value Candidate object.
  * @param encoding Whether to use codec encode runners.

@@ -50,6 +50,16 @@ function makePredicate(bundle: CompiledSourceBundle): (value: unknown) => boolea
 }
 
 describe("SeaBreeze arena solver", () => {
+    test("keeps SeaBreeze behind its dedicated subpath", async () => {
+        const root = await import("../src/index.js");
+        const seabreeze = await import("../src/seabreeze/index.js");
+
+        expect(Object.prototype.hasOwnProperty.call(root, "createSeaBreeze")).toBe(false);
+        expect(Object.prototype.hasOwnProperty.call(root, "SeaBreezeArena")).toBe(false);
+        expect(seabreeze.createSeaBreeze).toBe(createSeaBreeze);
+        expect(seabreeze.SeaBreezeArena).toBe(SeaBreezeArena);
+    });
+
     test("binds Hindley-Milner variables without allocating result objects", () => {
         const arena = new SeaBreezeArena({
             maxNodes: 32,
@@ -101,6 +111,83 @@ describe("SeaBreeze arena solver", () => {
         expect(arena.fieldKeyAt(joined, 2)).toBe(3);
         expect(arena.fieldPresenceAt(joined, 2)).toBe(SeaBreezePresence.Optional);
         expect(arena.fieldTypeAt(joined, 2)).toBe(arena.boolean);
+    });
+
+    test("keeps object field spans isolated during interleaved appends", () => {
+        const arena = new SeaBreezeArena({
+            maxNodes: 32,
+            maxFields: 16
+        });
+        const left = arena.allocObject();
+        arena.appendField(left, 1, arena.string, SeaBreezePresence.Required);
+        const right = arena.allocObject();
+        arena.appendField(right, 2, arena.number, SeaBreezePresence.Required);
+        arena.appendField(left, 3, arena.boolean, SeaBreezePresence.Required);
+
+        expect(arena.fieldCount(left)).toBe(2);
+        expect(arena.fieldKeyAt(left, 0)).toBe(1);
+        expect(arena.fieldKeyAt(left, 1)).toBe(3);
+        expect(arena.fieldTypeAt(left, 1)).toBe(arena.boolean);
+        expect(arena.fieldCount(right)).toBe(1);
+        expect(arena.fieldKeyAt(right, 0)).toBe(2);
+        expect(arena.fieldTypeAt(right, 0)).toBe(arena.number);
+
+        const leftGuard = new BaseGuard<unknown>(lowerSeaBreezeToSchema(arena, left, {
+            keyTable: ["", "name", "age", "active"],
+            objectMode: "strict"
+        }));
+        const rightGuard = new BaseGuard<unknown>(lowerSeaBreezeToSchema(arena, right, {
+            keyTable: ["", "name", "age", "active"],
+            objectMode: "strict"
+        }));
+
+        expect(leftGuard.is({ name: "Ada", active: true })).toBe(true);
+        expect(leftGuard.is({ name: "Ada", age: 37 })).toBe(false);
+        expect(rightGuard.is({ age: 37 })).toBe(true);
+    });
+
+    test("keeps nested object joins contiguous during recursive lowering", () => {
+        const arena = new SeaBreezeArena({
+            maxNodes: 64,
+            maxFields: 32
+        });
+        const leftInner = arena.allocObject();
+        arena.appendField(leftInner, 10, arena.number, SeaBreezePresence.Required);
+        const rightInner = arena.allocObject();
+        arena.appendField(rightInner, 10, arena.string, SeaBreezePresence.Required);
+        const leftOuter = arena.allocObject();
+        arena.appendField(leftOuter, 1, leftInner, SeaBreezePresence.Required);
+        const rightOuter = arena.allocObject();
+        arena.appendField(rightOuter, 1, rightInner, SeaBreezePresence.Required);
+
+        const joined = arena.principalJoin(leftOuter, rightOuter);
+        const nested = arena.fieldTypeAt(joined, 0);
+
+        expect(arena.fieldKeyAt(joined, 0)).toBe(1);
+        expect(arena.kindOf(nested)).toBe(SeaBreezeKind.Object);
+        expect(arena.fieldKeyAt(nested, 0)).toBe(10);
+        expect(arena.kindOf(arena.fieldTypeAt(nested, 0))).toBe(SeaBreezeKind.Union);
+
+        const guard = new BaseGuard<unknown>(lowerSeaBreezeToSchema(arena, joined, {
+            keyTable: [
+                "",
+                "item",
+                "k2",
+                "k3",
+                "k4",
+                "k5",
+                "k6",
+                "k7",
+                "k8",
+                "k9",
+                "value"
+            ],
+            objectMode: "strict"
+        }));
+
+        expect(guard.is({ item: { value: 1 } })).toBe(true);
+        expect(guard.is({ item: { value: "one" } })).toBe(true);
+        expect(guard.is({ item: { value: false } })).toBe(false);
     });
 
     test("joins array element variables through the same principal path", () => {

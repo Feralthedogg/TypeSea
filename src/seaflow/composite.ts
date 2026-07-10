@@ -86,9 +86,11 @@ export function* emitCompositeCases(
             yield* emitChild(schema.inner, descendContext(context));
             break;
         case SchemaTag.KeyedObject:
-        case SchemaTag.PropertyCount:
         case SchemaTag.PropertyNames:
             yield* emitChild(schema.inner, descendContext(context));
+            break;
+        case SchemaTag.PropertyCount:
+            yield* emitPropertyCountCases(schema, context, emitChild);
             break;
         case SchemaTag.PatternProperties:
             yield* emitPatternPropertiesCases(schema, context, emitChild);
@@ -449,6 +451,28 @@ function* emitDiscriminatedUnionCases(
 }
 
 /**
+ * @brief Forward property-count cases with wrapper-level verdict correction.
+ * @remarks Inner object solvers may add security keys that are valid for a
+ * passthrough object but invalid once min/max property bounds wrap it. SeaFlow
+ * keeps the original reason while recomputing the final predicate contract.
+ */
+function* emitPropertyCountCases(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.PropertyCount }>,
+    context: SeaFlowContext,
+    emitChild: SeaFlowEmitter
+): IterableIterator<SeaFlowCase> {
+    for (const item of emitChild(schema.inner, descendContext(context))) {
+        yield makeSeaFlowCase(
+            context,
+            item.value,
+            item.valid && propertyCountMatches(schema, item.value),
+            item.kind,
+            item.reason
+        );
+    }
+}
+
+/**
  * @brief Emit pattern-property child probes while preserving the base schema.
  */
 function* emitPatternPropertiesCases(
@@ -656,6 +680,21 @@ function copyRecord(value: unknown): Record<string, unknown> {
         }
     }
     return output;
+}
+
+/**
+ * @brief Check own enumerable string-key count for a property-count wrapper.
+ */
+function propertyCountMatches(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.PropertyCount }>,
+    value: unknown
+): boolean {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const count = Object.keys(value).length;
+    return (schema.min === undefined || count >= schema.min) &&
+        (schema.max === undefined || count <= schema.max);
 }
 
 /**

@@ -11,6 +11,18 @@ const runtimeDependencyFields = [
     "bundledDependencies"
 ];
 
+const forbiddenPackagePaths = [
+    ".github/",
+    "bench/",
+    "docs/",
+    "scripts/",
+    "src/",
+    "test/",
+    "eslint.config.",
+    "package-lock.json",
+    "tsconfig"
+];
+
 const expectedFiles = [
     "LICENSE",
     "README.md",
@@ -513,7 +525,6 @@ if (!result.ok) {
 
 /**
  * @brief Run this module top-level workflow.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 async function main() {
     const packageJson = JSON.parse(await readFile("package.json", "utf8"));
@@ -542,6 +553,10 @@ async function main() {
     const files = parsed.value;
     const expected = expectedFiles.slice().sort();
     const actual = files.slice().sort();
+    const forbidden = findForbiddenPackagePath(actual);
+    if (forbidden !== undefined) {
+        return err(`package contains development-only path: ${forbidden}`);
+    }
     const missing = expected.filter((path) => !actual.includes(path));
     const extra = actual.filter((path) => !expected.includes(path));
     if (missing.length !== 0 || extra.length !== 0) {
@@ -556,9 +571,26 @@ async function main() {
 }
 
 /**
- * @brief Validate zero runtime dependencies.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
+ * @brief Find a development-only path in the npm package file list.
+ * @param files Packed file paths returned by npm.
+ * @returns Forbidden path when one is present.
  */
+function findForbiddenPackagePath(files) {
+    for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
+        const path = files[fileIndex];
+        if (path === undefined) {
+            continue;
+        }
+        for (let prefixIndex = 0; prefixIndex < forbiddenPackagePaths.length; prefixIndex += 1) {
+            const prefix = forbiddenPackagePaths[prefixIndex];
+            if (prefix !== undefined && path.startsWith(prefix)) {
+                return path;
+            }
+        }
+    }
+    return undefined;
+}
+
 function checkZeroRuntimeDependencies(packageJson) {
     for (let index = 0; index < runtimeDependencyFields.length; index += 1) {
         const field = runtimeDependencyFields[index];
@@ -571,7 +603,6 @@ function checkZeroRuntimeDependencies(packageJson) {
 
 /**
  * @brief Validate release metadata.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function checkReleaseMetadata(packageJson) {
     if (packageJson["version"] === "0.0.0") {
@@ -607,13 +638,39 @@ function checkReleaseMetadata(packageJson) {
     if (!isRecord(root) || root["default"] !== "./dist/index.js") {
         return err("package root default export is required");
     }
+    return checkExportConditions(exportsField);
+}
+
+function checkExportConditions(exportsField) {
+    const entries = Object.entries(exportsField);
+    for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (entry === undefined) {
+            continue;
+        }
+        const [specifier, value] = entry;
+        if (specifier === "./package.json") {
+            if (value !== "./package.json") {
+                return err("package.json export must point to package.json");
+            }
+            continue;
+        }
+        if (!isRecord(value)) {
+            return err(`package export ${specifier} must be a condition record`);
+        }
+        if (typeof value["types"] !== "string") {
+            return err(`package export ${specifier} is missing a types condition`);
+        }
+        if (typeof value["import"] !== "string") {
+            return err(`package export ${specifier} is missing an import condition`);
+        }
+        if (value["default"] !== value["import"]) {
+            return err(`package export ${specifier} default must match import`);
+        }
+    }
     return ok(undefined);
 }
 
-/**
- * @brief Parse pack output.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
- */
 function parsePackOutput(stdout) {
     const parsed = JSON.parse(stdout);
     if (!Array.isArray(parsed)) {
@@ -644,7 +701,6 @@ function parsePackOutput(stdout) {
 
 /**
  * @brief Run local helper.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function run(command, args) {
     const child = spawnSync(command, args, {
@@ -661,8 +717,7 @@ function run(command, args) {
 }
 
 /**
- * @brief Check record.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
+ * @brief Accept non-array objects before structured field reads.
  */
 function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -670,7 +725,6 @@ function isRecord(value) {
 
 /**
  * @brief Construct a successful result value.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function ok(value) {
     return { ok: true, value };
@@ -678,7 +732,6 @@ function ok(value) {
 
 /**
  * @brief Construct a failed result value.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function err(error) {
     return { ok: false, error };

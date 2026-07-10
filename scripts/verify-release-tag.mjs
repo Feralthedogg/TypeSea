@@ -8,7 +8,6 @@ if (!result.ok) {
 
 /**
  * @brief Run this module top-level workflow.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 async function main() {
     const source = await readFile("package.json", "utf8");
@@ -27,8 +26,7 @@ async function main() {
 }
 
 /**
- * @brief Check record.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
+ * @brief Accept non-array objects before structured field reads.
  */
 function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -36,7 +34,6 @@ function isRecord(value) {
 
 /**
  * @brief Construct a successful result value.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function ok(value) {
     return { ok: true, value };
@@ -44,7 +41,6 @@ function ok(value) {
 
 /**
  * @brief Construct a failed result value.
- * @details Script helpers keep release and policy checks deterministic for CI and local runs.
  */
 function err(error) {
     return { ok: false, error };

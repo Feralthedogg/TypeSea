@@ -94,7 +94,9 @@ describe("TypeSea core guards", () => {
         expectTypeOf<UserOutput>().toEqualTypeOf<User>();
         expectTypeOf<WildcardValue>().toEqualTypeOf<unknown>();
         expect(User.is(valid)).toBe(true);
-        expect(z.object).toBe(t.object);
+        expect(z.object).not.toBe(t.object);
+        expect(z.object({ id: z.string }).parse({ id: "u1", extra: true }))
+            .toEqual({ id: "u1" });
         expect(z.string()).toBe(t.string());
         expect(z.null().is(null)).toBe(true);
         expect(z.undefined().is(undefined)).toBe(true);
@@ -1056,6 +1058,36 @@ describe("TypeSea core guards", () => {
         if (parsed.success) {
             expect(parsed.data).toBe(safeValue);
             expect(Object.isFrozen(parsed.data)).toBe(true);
+        }
+    });
+
+    test("finalizes output wrappers reached through lazy schemas", () => {
+        const LazyStrip = t.lazy(() => t.object({
+            id: t.string
+        }).strip());
+        const LazyReadonly = t.lazy(() => t.object({
+            id: t.string
+        }).readonly());
+        const FastStrip = compile(LazyStrip, { name: "lazyStripFinalization" });
+        const FastReadonly = compile(LazyReadonly, { name: "lazyReadonlyFinalization" });
+        const interpretedStrip = LazyStrip.check({ id: "slow", extra: true });
+        const compiledStrip = FastStrip.check({ id: "fast", extra: true });
+        const interpretedReadonly = LazyReadonly.check({ id: "slow" });
+        const compiledReadonly = FastReadonly.check({ id: "fast" });
+
+        expect(interpretedStrip).toEqual({
+            ok: true,
+            value: { id: "slow" }
+        });
+        expect(compiledStrip).toEqual({
+            ok: true,
+            value: { id: "fast" }
+        });
+        expect(interpretedReadonly.ok).toBe(true);
+        expect(compiledReadonly.ok).toBe(true);
+        if (interpretedReadonly.ok && compiledReadonly.ok) {
+            expect(Object.isFrozen(interpretedReadonly.value)).toBe(true);
+            expect(Object.isFrozen(compiledReadonly.value)).toBe(true);
         }
     });
 
@@ -2103,6 +2135,36 @@ describe("TypeSea core guards", () => {
         expect((await AsyncNumbers.check([1, 2.5])).ok).toBe(false);
         expect(AsyncNumbers.sync.is(values)).toBe(true);
     }, 15_000);
+
+    test("finalizes successful cooperative validation outputs", async () => {
+        const StripUser = t.object({
+            id: t.string
+        }).strip();
+        const ReadonlyUser = t.object({
+            id: t.string
+        }).readonly();
+        const stripped = await checkAsync(StripUser, {
+            id: "user",
+            extra: true
+        }, {
+            yieldEvery: 1,
+            yieldTimeout: 0
+        });
+        const asyncReadonly = compileAsync(ReadonlyUser, {
+            name: "asyncReadonlyFinalization",
+            yieldEvery: 1,
+            yieldTimeout: 0
+        });
+        const readonlyValue = { id: "user" };
+        const readonlyResult = await asyncReadonly.check(readonlyValue);
+
+        expect(stripped).toEqual({
+            ok: true,
+            value: { id: "user" }
+        });
+        expect(readonlyResult.ok).toBe(true);
+        expect(Object.isFrozen(readonlyValue)).toBe(true);
+    });
 
     test("reuses compiled output for the same guard instance and options", () => {
         const User = t.object({

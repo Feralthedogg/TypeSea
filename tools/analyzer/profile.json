@@ -1,0 +1,23 @@
+{
+    "name": "TypeSea strict static-analysis profile",
+    "warningBudget": 200,
+    "securityWarningBudget": 0,
+    "cycleBudget": 0,
+    "errorBudget": 0,
+    "rules": {
+        "dynamic-code-sink": {
+            "enabled": true
+        },
+        "throw-in-library-core": {
+            "severity": "info",
+            "enabled": true
+        },
+        "missing-public-jsdoc": {
+            "severity": "info",
+            "enabled": true
+        }
+    },
+    "baseline": {
+        "ignoredFingerprints": []
+    }
+}

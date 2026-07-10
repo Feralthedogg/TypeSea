@@ -17,6 +17,7 @@ import {
     type TypeSeaEsbuildResolveResult
 } from "../src/index.js";
 import {
+    BENCH_WARMUP_HOOK_TIMEOUT_MS,
     warmupAsync,
     warmupSync,
     type AsyncWarmupTask,
@@ -144,7 +145,7 @@ const asyncWarmupTasks: readonly AsyncWarmupTask[] = [
 beforeAll(async (): Promise<void> => {
     warmupSync(warmupTasks);
     await warmupAsync(asyncWarmupTasks);
-}, 60_000);
+}, BENCH_WARMUP_HOOK_TIMEOUT_MS);
 
 describe("runtime feature extensions", () => {
     bench("compiled is valid", () => {
@@ -204,9 +205,6 @@ describe("runtime feature extensions", () => {
     });
 });
 
-/**
- * @brief Read one captured esbuild onLoad registration by namespace.
- */
 function readEsbuildLoad(
     loads: readonly EsbuildLoadRegistration[],
     namespace: string

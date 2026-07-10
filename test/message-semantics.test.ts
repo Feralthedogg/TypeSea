@@ -19,6 +19,7 @@ import {
     type CheckResult,
     type FlattenedIssueMessages,
     type FormattedIssueMessages,
+    type Issue,
     type IssueSource,
     type IssueMessageCatalog,
     type MessageLocale,
@@ -239,6 +240,24 @@ describe("issue message formatting and i18n", () => {
             .toBe("Expected length >= 2 at $[\"user\"][\"name\"]; received length 0.");
         expect(firstTag._errors[0])
             .toBe("Expected length >= 2 at $[\"tags\"][0]; received length 1.");
+    });
+
+    test("preserves prototype-named paths in legacy formatting", () => {
+        const issue: Issue = {
+            path: ["__proto__"],
+            code: "expected_string",
+            expected: "string",
+            actual: "number",
+            message: undefined
+        };
+        const formatted = formatError([issue]);
+        const child = formatted["__proto__"] as FormattedIssueMessages;
+
+        expect(Object.getPrototypeOf(formatted)).toBe(null);
+        expect(Object.prototype.hasOwnProperty.call(formatted, "__proto__")).toBe(true);
+        expect(child._errors).toEqual([
+            "Expected string at $[\"__proto__\"]; received number."
+        ]);
     });
 
     test("projects TypeSea diagnostics to Zod-style issues and errors", () => {

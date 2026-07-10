@@ -1,8 +1,6 @@
 /**
  * @file schema.ts
  * @brief Object schema construction and shape rewrites.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 
 import {
@@ -27,8 +25,6 @@ import type { ObjectShape } from "./types.js";
 
 /**
  * @brief normalized object entry schema.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 interface NormalizedObjectEntrySchema {
     readonly schema: Schema;
@@ -37,8 +33,6 @@ interface NormalizedObjectEntrySchema {
 
 /**
  * @brief Normalize an object shape into ordered entries and lookup metadata.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 export function objectSchema(
     shape: ObjectShape,

@@ -115,6 +115,37 @@ function isSchemaRecord(
     state: SchemaValidationState
 ): boolean {
     const tag = readOwnDataProperty(value, "tag");
+
+    const scalar = isScalarSchemaRecord(tag, value);
+    if (scalar !== undefined) {
+        return scalar;
+    }
+
+    const composite = isCompositeSchemaRecord(tag, value, state);
+    if (composite !== undefined) {
+        return composite;
+    }
+
+    const wrapper = isWrapperSchemaRecord(tag, value, state);
+    if (wrapper !== undefined) {
+        return wrapper;
+    }
+
+    return isStructuralSchemaRecord(tag, value, state);
+}
+
+/**
+ * @brief Validate leaf-like schema records.
+ * @param tag Raw schema tag read from the data-only node.
+ * @param value Candidate schema record.
+ * @returns True or false for handled scalar tags, undefined for foreign tags.
+ * @details Keeping scalar admission separate avoids a monolithic schema dispatcher
+ * while preserving the exact field checks used by the old switch.
+ */
+function isScalarSchemaRecord(
+    tag: unknown,
+    value: Readonly<Record<string, unknown>>
+): boolean | undefined {
     switch (tag) {
         case SchemaTag.Unknown:
         case SchemaTag.Never:
@@ -142,6 +173,32 @@ function isSchemaRecord(
              */
             return !isMissingDataProperty(literal) && isLiteralValue(literal);
         }
+        case SchemaTag.File:
+            return isOptionalString(readOwnDataProperty(value, "message")) &&
+                isFileChecks(readOwnDataProperty(value, "checks"));
+        case SchemaTag.InstanceOf:
+            return typeof readOwnDataProperty(value, "constructor") === "function" &&
+                typeof readOwnDataProperty(value, "name") === "string";
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Validate schema records that own child collections or binary edges.
+ * @param tag Raw schema tag read from the data-only node.
+ * @param value Candidate schema record.
+ * @param state Recursion state for nested schemas.
+ * @returns True or false for handled composite tags, undefined for foreign tags.
+ * @details Composite tags are where recursion happens, so this helper keeps child
+ * traversal rules explicit and separate from scalar field admission.
+ */
+function isCompositeSchemaRecord(
+    tag: unknown,
+    value: Readonly<Record<string, unknown>>,
+    state: SchemaValidationState
+): boolean | undefined {
+    switch (tag) {
         case SchemaTag.Array:
             return isSchemaValueInner(readOwnDataProperty(value, "item"), state) &&
                 isArrayChecks(readOwnDataProperty(value, "checks"));
@@ -160,12 +217,6 @@ function isSchemaRecord(
         case SchemaTag.Set:
             return isSchemaValueInner(readOwnDataProperty(value, "item"), state) &&
                 isArrayChecks(readOwnDataProperty(value, "checks"));
-        case SchemaTag.File:
-            return isOptionalString(readOwnDataProperty(value, "message")) &&
-                isFileChecks(readOwnDataProperty(value, "checks"));
-        case SchemaTag.InstanceOf:
-            return typeof readOwnDataProperty(value, "constructor") === "function" &&
-                typeof readOwnDataProperty(value, "name") === "string";
         case SchemaTag.Property:
             return typeof readOwnDataProperty(value, "key") === "string" &&
                 isSchemaValueInner(readOwnDataProperty(value, "base"), state) &&
@@ -178,12 +229,32 @@ function isSchemaRecord(
         case SchemaTag.Intersection:
             return isSchemaValueInner(readOwnDataProperty(value, "left"), state) &&
                 isSchemaValueInner(readOwnDataProperty(value, "right"), state);
+        case SchemaTag.DiscriminatedUnion:
+            return isDiscriminatedUnionSchemaValue(value, state);
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Validate schema records that wrap exactly one inner schema.
+ * @param tag Raw schema tag read from the data-only node.
+ * @param value Candidate schema record.
+ * @param state Recursion state for the wrapped schema.
+ * @returns True or false for handled wrapper tags, undefined for foreign tags.
+ * @details Wrappers add policy or metadata around an inner schema without owning
+ * independent collection structure.
+ */
+function isWrapperSchemaRecord(
+    tag: unknown,
+    value: Readonly<Record<string, unknown>>,
+    state: SchemaValidationState
+): boolean | undefined {
+    switch (tag) {
         case SchemaTag.Optional:
         case SchemaTag.Undefinedable:
         case SchemaTag.Nullable:
             return isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
-        case SchemaTag.DiscriminatedUnion:
-            return isDiscriminatedUnionSchemaValue(value, state);
         case SchemaTag.Brand:
             return typeof readOwnDataProperty(value, "brand") === "string" &&
                 isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
@@ -195,6 +266,26 @@ function isSchemaRecord(
                 isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
         case SchemaTag.Readonly:
             return isSchemaValueInner(readOwnDataProperty(value, "inner"), state);
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Validate structural policy and executable schema records.
+ * @param tag Raw schema tag read from the data-only node.
+ * @param value Candidate schema record.
+ * @param state Recursion state for nested schemas.
+ * @returns True when the structural payload is well-formed.
+ * @details This is the final dispatcher tier. Unknown tags fail closed here so
+ * callers never accidentally admit a future schema variant without a validator.
+ */
+function isStructuralSchemaRecord(
+    tag: unknown,
+    value: Readonly<Record<string, unknown>>,
+    state: SchemaValidationState
+): boolean {
+    switch (tag) {
         case SchemaTag.KeyedObject:
             return isStringArray(readOwnDataProperty(value, "keys")) &&
                 isKeyRuleValue(readOwnDataProperty(value, "rule")) &&

@@ -1,8 +1,6 @@
 /**
  * @file composite.ts
  * @brief Composite guard builders.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  */
 
 import {
@@ -140,8 +138,6 @@ interface DiscriminantLiteralRead {
 
 /**
  * @brief Build an array guard.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  * @param item Guard used for each logical array slot.
  * @returns Fresh array guard.
  */
@@ -172,8 +168,6 @@ export function array(
 
 /**
  * @brief Build a fixed-length tuple guard.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  * @param shape Ordered guard list for tuple indexes.
  * @returns Fresh tuple guard preserving item order.
  * @throws TypeError when shape is not an array-like tuple input.
@@ -298,8 +292,6 @@ export function templateLiteral<const TParts extends readonly TemplateLiteralPar
 
 /**
  * @brief Build a string-keyed record guard.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  * @param value Guard used for each enumerable own record value.
  * @returns Fresh record guard.
  */
@@ -532,8 +524,6 @@ export function set(
 
 /**
  * @brief Build a union guard from one or more guards.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  * @param guards Non-empty guard list.
  * @returns Fresh union guard.
  * @throws TypeError when called without guards.
@@ -586,8 +576,6 @@ export function xor<const TGuards extends UnionInput>(
 
 /**
  * @brief Build an intersection guard.
- * @details Builder helpers normalize user-facing fluent calls into immutable schema nodes
- * with stable metadata.
  * @param left Left-hand guard.
  * @param right Right-hand guard.
  * @returns Fresh guard requiring both schemas to accept the value.

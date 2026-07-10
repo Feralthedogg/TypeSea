@@ -733,9 +733,14 @@ interface MutableFormattedIssueMessages {
  * @brief Allocate one legacy formatted error node.
  */
 function makeMutableFormattedNode(): MutableFormattedIssueMessages {
-    return {
-        _errors: []
-    };
+    const node = Object.create(null) as MutableFormattedIssueMessages;
+    Object.defineProperty(node, "_errors", {
+        configurable: false,
+        enumerable: true,
+        value: [],
+        writable: false
+    });
+    return node;
 }
 
 /**
@@ -1594,8 +1599,7 @@ function defaultPathFormatter(path: readonly PathSegment[]): string {
 }
 
 /**
- * @brief Check record.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Accept non-array objects before structured field reads.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === "object" && value !== null && !Array.isArray(value);

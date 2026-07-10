@@ -67,16 +67,38 @@ export function finalizeAcceptedValue<TValue>(
 }
 
 /**
- * @brief Inspect output-affecting wrappers without resolving lazy schemas.
+ * @brief Inspect output-affecting wrappers without resolving lazy callbacks.
  */
 function schemaNeedsFinalizationInner(schema: Schema, seen: WeakSet<object>): boolean {
     if (seen.has(schema)) {
         return false;
     }
     seen.add(schema);
+
+    const composite = compositeSchemaNeedsFinalization(schema, seen);
+    if (composite !== undefined) {
+        return composite;
+    }
+
+    const wrapper = wrapperSchemaNeedsFinalization(schema, seen);
+    if (wrapper !== undefined) {
+        return wrapper;
+    }
+
+    return scalarSchemaNeedsFinalization(schema);
+}
+
+/**
+ * @brief Inspect collection and branch schemas for finalization requirements.
+ * @param schema Schema node being inspected.
+ * @param seen Schema identities already visited in this walk.
+ * @returns True or false for handled composite tags, undefined for other tags.
+ */
+function compositeSchemaNeedsFinalization(
+    schema: Schema,
+    seen: WeakSet<object>
+): boolean | undefined {
     switch (schema.tag) {
-        case SchemaTag.Readonly:
-            return true;
         case SchemaTag.Array:
             return schemaNeedsFinalizationInner(schema.item, seen);
         case SchemaTag.Tuple:
@@ -110,6 +132,26 @@ function schemaNeedsFinalizationInner(schema: Schema, seen: WeakSet<object>): bo
         case SchemaTag.Intersection:
             return schemaNeedsFinalizationInner(schema.left, seen) ||
                 schemaNeedsFinalizationInner(schema.right, seen);
+        case SchemaTag.DiscriminatedUnion:
+            return unionCasesNeedFinalization(schema.cases, seen);
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Inspect wrapper schemas for finalization propagation.
+ * @param schema Schema node being inspected.
+ * @param seen Schema identities already visited in this walk.
+ * @returns True or false for handled wrapper tags, undefined for other tags.
+ */
+function wrapperSchemaNeedsFinalization(
+    schema: Schema,
+    seen: WeakSet<object>
+): boolean | undefined {
+    switch (schema.tag) {
+        case SchemaTag.Readonly:
+            return true;
         case SchemaTag.Optional:
         case SchemaTag.Undefinedable:
         case SchemaTag.Nullable:
@@ -122,10 +164,23 @@ function schemaNeedsFinalizationInner(schema: Schema, seen: WeakSet<object>): bo
         case SchemaTag.PatternProperties:
         case SchemaTag.Refine:
             return schemaNeedsFinalizationInner(schema.inner, seen);
-        case SchemaTag.DiscriminatedUnion:
-            return unionCasesNeedFinalization(schema.cases, seen);
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * @brief Return finalization requirements for scalar and unresolved lazy schemas.
+ * @param schema Schema node being inspected.
+ * @returns True for lazy indirection and false for scalar schema tags.
+ * @details Lazy schemas defer inspection until successful publication. Marking
+ * them for finalization preserves callback isolation while allowing resolved
+ * strip and readonly wrappers to run.
+ */
+function scalarSchemaNeedsFinalization(schema: Schema): boolean {
+    switch (schema.tag) {
         case SchemaTag.Lazy:
-            return false;
+            return true;
         case SchemaTag.Unknown:
         case SchemaTag.Never:
         case SchemaTag.String:
@@ -137,6 +192,8 @@ function schemaNeedsFinalizationInner(schema: Schema, seen: WeakSet<object>): bo
         case SchemaTag.Literal:
         case SchemaTag.File:
         case SchemaTag.InstanceOf:
+            return false;
+        default:
             return false;
     }
 }

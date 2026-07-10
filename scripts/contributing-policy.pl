@@ -1,0 +1,22612 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+use File::Find qw(find);
+use IO::Handle;
+use IO::Socket::INET;
+use JSON::PP qw(decode_json);
+
+my $show_notices = grep { $_ eq "--verbose" || $_ eq "-v" } @ARGV;
+my $strict_warnings = grep { $_ eq "--strict-warnings" } @ARGV;
+my $json_report = grep { $_ eq "--json" } @ARGV;
+my $sarif_report = grep { $_ eq "--sarif" } @ARGV;
+my $html_report = grep { $_ eq "--html" } @ARGV;
+my $serve_report = has_arg("--serve");
+my $serve_port = read_arg_value("--serve") // 7331;
+my $baseline_path = read_arg_value("--baseline");
+my $write_baseline_path = read_arg_value("--write-baseline");
+my $triage_path = read_arg_value("--triage");
+my $write_triage_template_path = read_arg_value("--write-triage-template");
+my $profile_path = read_arg_value("--profile");
+my $compare_report_path = read_arg_value("--compare-report");
+my $history_path = read_arg_value("--history");
+my $write_history_path = read_arg_value("--write-history");
+my $new_code_base = read_arg_value("--new-code-base");
+my @new_code_files = read_arg_values("--new-code-file");
+my $declared_analyzer_rule_codes_cache;
+
+run_lexer_self_tests();
+run_function_ir_self_tests();
+run_source_suppression_self_tests();
+run_type_escape_domain_self_tests();
+run_regex_safety_domain_self_tests();
+run_secret_leak_domain_self_tests();
+run_workflow_security_domain_self_tests();
+run_package_lock_security_domain_self_tests();
+run_package_license_domain_self_tests();
+run_api_surface_domain_self_tests();
+run_release_consistency_domain_self_tests();
+run_test_evidence_domain_self_tests();
+run_benchmark_evidence_domain_self_tests();
+run_rule_metadata_domain_self_tests();
+run_waiver_model_self_tests();
+run_review_governance_model_self_tests();
+run_analysis_coverage_model_self_tests();
+run_root_cause_model_self_tests();
+run_rule_health_model_self_tests();
+run_finding_provenance_model_self_tests();
+run_finding_witness_model_self_tests();
+run_finding_confidence_model_self_tests();
+run_security_exploitability_model_self_tests();
+run_security_dataflow_model_self_tests();
+run_path_feasibility_model_self_tests();
+run_context_sensitivity_model_self_tests();
+run_quality_profile_model_self_tests();
+run_analysis_run_manifest_self_tests();
+run_change_impact_model_self_tests();
+run_history_lifecycle_model_self_tests();
+run_defect_lineage_model_self_tests();
+run_proof_obligation_model_self_tests();
+run_defect_routing_model_self_tests();
+
+my $ir = build_policy_ir();
+my @diagnostics = analyze_policy_ir($ir);
+push @diagnostics, source_suppression_rule_diagnostics($ir->{source}{source_suppressions}, \@diagnostics);
+push @diagnostics, source_suppression_wildcard_diagnostics($ir->{source}{source_suppressions});
+push @diagnostics, analyze_rule_metadata_integrity(\@diagnostics);
+my $profile = read_policy_profile($profile_path);
+my $quality_profile_model = quality_profile_model($profile, \@diagnostics);
+@diagnostics = apply_policy_profile(\@diagnostics, $profile);
+push @diagnostics, quality_profile_diagnostics($quality_profile_model);
+my $baseline = read_policy_baseline($baseline_path);
+annotate_diagnostics(\@diagnostics, $baseline);
+apply_source_suppressions(\@diagnostics, $ir->{source}{source_suppressions});
+my $ownership_index = ownership_index();
+annotate_diagnostic_owners(\@diagnostics, $ownership_index);
+my $triage_ledger = read_triage_ledger($triage_path);
+apply_triage_ledger(\@diagnostics, $triage_ledger);
+push @diagnostics, triage_ledger_diagnostics($triage_ledger);
+ensure_diagnostic_fingerprints(\@diagnostics);
+annotate_diagnostic_owners(\@diagnostics, $ownership_index);
+my $rule_metadata_model = rule_metadata_integrity_model(\@diagnostics);
+$ir->{policy_runtime}{rule_metadata_model} = $rule_metadata_model;
+$ir->{policy_runtime}{suppressed_diagnostics} = count_suppressed(@diagnostics);
+
+my $errors = count_severity("error", @diagnostics);
+my $warnings = count_severity("warning", @diagnostics);
+my $notices = count_severity("notice", @diagnostics);
+my $defect_ledger = defect_ledger(\@diagnostics);
+my $rule_health_model = rule_health_model($defect_ledger);
+my $root_cause_model = root_cause_model($defect_ledger);
+my $finding_provenance_model = finding_provenance_model(\@diagnostics, $defect_ledger);
+my $finding_witness_model = finding_witness_model(\@diagnostics, $defect_ledger);
+my $finding_confidence_model = finding_confidence_model(\@diagnostics, $defect_ledger);
+my $analysis_run_manifest = analysis_run_manifest($ir, $profile, \@diagnostics);
+my $triage_model = triage_model(\@diagnostics, $triage_ledger);
+my $waiver_model = waiver_model(\@diagnostics, $ir->{source}{source_suppressions});
+my $review_governance_model = review_governance_model(\@diagnostics, $defect_ledger);
+$ir->{policy_runtime}{review_governance_model} = $review_governance_model;
+my $analysis_coverage_model = analysis_coverage_model($ir, \@diagnostics);
+my $ownership_model = ownership_model(\@diagnostics, $ownership_index);
+my $defect_routing_model = defect_routing_model($defect_ledger, $ownership_model, $profile);
+$ir->{policy_runtime}{defect_routing_model} = $defect_routing_model;
+my $component_model = component_model(\@diagnostics);
+my $quality_gate = compute_policy_quality_gate($ir, \@diagnostics, $profile);
+$quality_gate = apply_component_quality_gate($quality_gate, $component_model, $profile);
+$quality_gate = apply_root_cause_quality_gate($quality_gate, $root_cause_model, $profile);
+$quality_gate = apply_rule_health_quality_gate($quality_gate, $rule_health_model, $profile);
+$quality_gate = apply_finding_provenance_quality_gate($quality_gate, $finding_provenance_model, $profile);
+$quality_gate = apply_finding_witness_quality_gate($quality_gate, $finding_witness_model, $profile);
+$quality_gate = apply_finding_confidence_quality_gate($quality_gate, $finding_confidence_model, $profile);
+$quality_gate = apply_analysis_run_manifest_quality_gate($quality_gate, $analysis_run_manifest, $profile);
+$quality_gate = apply_ownership_quality_gate($quality_gate, $ownership_model, $profile);
+$quality_gate = apply_defect_routing_quality_gate($quality_gate, $defect_routing_model, $profile);
+$quality_gate = apply_triage_quality_gate($quality_gate, $triage_model, $profile);
+$quality_gate = apply_waiver_quality_gate($quality_gate, $waiver_model, $profile);
+$quality_gate = apply_review_governance_quality_gate($quality_gate, $review_governance_model, $profile);
+$quality_gate = apply_analysis_coverage_quality_gate($quality_gate, $analysis_coverage_model, $profile);
+$ir->{policy_runtime}{quality_profile_model} = $quality_profile_model;
+$quality_gate = apply_quality_profile_quality_gate($quality_gate, $quality_profile_model, $profile);
+my $defect_delta = defect_delta($compare_report_path, $defect_ledger);
+$quality_gate = apply_defect_delta_quality_gate($quality_gate, $defect_delta, $profile);
+my $new_code_scope = new_code_scope($new_code_base, \@new_code_files, \@diagnostics);
+$quality_gate = apply_new_code_quality_gate($quality_gate, $new_code_scope, $profile);
+my $change_impact_model = change_impact_model($ir, $new_code_scope);
+$quality_gate = apply_change_impact_quality_gate($quality_gate, $change_impact_model, $profile);
+my $effective_history_path = defined $history_path ? $history_path : $write_history_path;
+my $history_trend = history_trend($effective_history_path, \@diagnostics, $quality_gate, $defect_ledger);
+my $aging_model = issue_aging_model($history_trend, $defect_ledger, $profile);
+$quality_gate = apply_issue_aging_quality_gate($quality_gate, $aging_model, $profile);
+$quality_gate = apply_history_quality_gate($quality_gate, $history_trend, $profile);
+my $assurance_case = assurance_case($ir, \@diagnostics, $quality_gate);
+$quality_gate = apply_assurance_quality_gate($quality_gate, $assurance_case, $profile);
+my $compliance_model = compliance_model(\@diagnostics, $quality_gate, $assurance_case);
+$quality_gate = apply_compliance_quality_gate($quality_gate, $compliance_model, $profile);
+my $security_hotspot_model = security_hotspot_model(\@diagnostics);
+$quality_gate = apply_security_hotspot_quality_gate($quality_gate, $security_hotspot_model, $profile);
+my $security_exploitability_model = security_exploitability_model(\@diagnostics, $defect_ledger, $security_hotspot_model);
+$ir->{policy_runtime}{security_exploitability_model} = $security_exploitability_model;
+$quality_gate = apply_security_exploitability_quality_gate($quality_gate, $security_exploitability_model, $profile);
+my $security_dataflow_model = security_dataflow_model($ir);
+$ir->{policy_runtime}{security_dataflow_model} = $security_dataflow_model;
+$quality_gate = apply_security_dataflow_quality_gate($quality_gate, $security_dataflow_model, $profile);
+my $path_feasibility_model = path_feasibility_model($ir);
+$ir->{policy_runtime}{path_feasibility_model} = $path_feasibility_model;
+$quality_gate = apply_path_feasibility_quality_gate($quality_gate, $path_feasibility_model, $profile);
+my $context_sensitivity_model = context_sensitivity_model($ir);
+$ir->{policy_runtime}{context_sensitivity_model} = $context_sensitivity_model;
+$quality_gate = apply_context_sensitivity_quality_gate($quality_gate, $context_sensitivity_model, $profile);
+my $soundness_model = soundness_model($ir, \@diagnostics, $quality_gate, $assurance_case, $compliance_model);
+$quality_gate = apply_soundness_quality_gate($quality_gate, $soundness_model, $profile);
+my $proof_obligation_model = proof_obligation_model($assurance_case, $compliance_model, $soundness_model);
+$ir->{policy_runtime}{proof_obligation_model} = $proof_obligation_model;
+$quality_gate = apply_proof_obligation_quality_gate($quality_gate, $proof_obligation_model, $profile);
+refresh_history_current_gate($history_trend, $quality_gate);
+
+write_policy_baseline($write_baseline_path, \@diagnostics) if defined $write_baseline_path;
+write_triage_template($write_triage_template_path, $defect_ledger) if defined $write_triage_template_path;
+write_history_ledger($write_history_path, $history_trend) if defined $write_history_path;
+
+if ($serve_report) {
+    serve_analysis_dashboard(machine_report_payload($ir, \@diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model), $serve_port);
+} elsif ($html_report) {
+    emit_html_report($ir, \@diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model);
+} elsif ($sarif_report) {
+    emit_sarif_report($ir, \@diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model);
+} elsif ($json_report) {
+    emit_json_report($ir, \@diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model);
+} else {
+    emit_quality_gate($quality_gate);
+    emit_diagnostics(@diagnostics);
+}
+
+if ($quality_gate->{status} ne "passed" || ($strict_warnings && $warnings != 0)) {
+    print STDERR summary_line($errors, $warnings, $notices, "failed") if !$json_report && !$sarif_report;
+    exit 1;
+}
+
+print summary_line($errors, $warnings, $notices, "ok") if !$json_report && !$sarif_report;
+
+sub build_policy_ir {
+    my $package = read_json("package.json");
+    my $package_lock = read_json("package-lock.json");
+    my $tsconfig = read_json("tsconfig.json");
+    my $benchmark = read_json("bench/results/latest.json");
+    my $contributing = read_text("CONTRIBUTING.md");
+    my $tests = test_ir();
+
+    my $ir = {
+        document => document_ir($contributing),
+        package => package_ir($package),
+        package_lock => package_lock_security_ir($package, $package_lock),
+        licenses => package_license_ir($package, $package_lock),
+        api_surface => api_surface_ir($package),
+        release_consistency => release_consistency_ir($package, $package_lock, $benchmark),
+        tsconfig => tsconfig_ir($tsconfig),
+        scripts => script_ir($package),
+        source => source_ir(),
+        tests => $tests,
+        test_evidence => test_evidence_ir($tests),
+        benchmarks => benchmark_ir($benchmark),
+        benchmark_evidence => benchmark_evidence_ir($benchmark),
+        secrets => secret_leak_ir(),
+        workflows => workflow_security_ir(),
+        release => release_ir(),
+        policy => policy_script_ir()
+    };
+
+    return $ir;
+}
+
+sub analyze_policy_ir {
+    my ($ir) = @_;
+    my @out;
+    push @out, analyze_document($ir);
+    push @out, analyze_zero_dependencies($ir);
+    push @out, analyze_v8_performance($ir);
+    push @out, analyze_safe_mode_security($ir);
+    push @out, analyze_compiler_architecture($ir);
+    push @out, analyze_source_parse_health($ir);
+    push @out, analyze_module_graph($ir);
+    push @out, analyze_interprocedural_static_analysis($ir);
+    push @out, analyze_schema_tag_coverage($ir);
+    push @out, analyze_ir_node_coverage($ir);
+    push @out, analyze_generated_source_abi($ir);
+    push @out, analyze_coding_style($ir);
+    push @out, analyze_policy_engine($ir);
+    push @out, analyze_ci_release($ir);
+    push @out, analyze_api_surface($ir);
+    push @out, analyze_release_consistency($ir);
+    push @out, analyze_test_evidence($ir);
+    push @out, analyze_benchmark_evidence($ir);
+    push @out, analyze_pr_requirements($ir);
+    push @out, analyze_contributing_coverage($ir, \@out);
+    return @out;
+}
+
+sub analyze_document {
+    my ($ir) = @_;
+    my @out;
+    my $doc = $ir->{document};
+    for my $required (
+        "1.1. Zero Dependencies",
+        "1.2. Extreme V8 Performance (Zero-cost Abstraction)",
+        "1.3. Uncompromising Security (Safe Mode)",
+        "2. Compiler Architecture",
+        "3.1. Documentation (JSDoc)",
+        "3.2. Strict TypeScript & Type Inference",
+        "3.3. Test-Driven & CI/CD Gates",
+        "5. Submitting a Pull Request"
+    ) {
+        if (!exists $doc->{sections}{$required}) {
+            push @out, diagnostic("error", "doc.section", "CONTRIBUTING.md", "missing required section '$required'");
+        }
+    }
+
+    if ($doc->{requirement_count} < 12) {
+        push @out, diagnostic(
+            "warning",
+            "doc.requirements",
+            "CONTRIBUTING.md",
+            "few machine-readable requirements found; keep bullets and numbered rules explicit"
+        );
+    } else {
+        push @out, diagnostic(
+            "notice",
+            "doc.requirements",
+            "CONTRIBUTING.md",
+            "parsed " . $doc->{requirement_count} . " contributing requirements into policy IR"
+        );
+    }
+    return @out;
+}
+
+sub analyze_zero_dependencies {
+    my ($ir) = @_;
+    my @out;
+    my $pkg = $ir->{package};
+
+    for my $field (@{$pkg->{runtime_dependency_fields}}) {
+        my $value = $pkg->{json}{$field};
+        next if !defined $value;
+        if (ref($value) eq "HASH" && keys(%{$value}) == 0) {
+            next;
+        }
+        if (ref($value) eq "ARRAY" && @{$value} == 0) {
+            next;
+        }
+        push @out, diagnostic("error", "deps.runtime", "package.json", "runtime dependency field '$field' must stay absent or empty");
+    }
+
+    my $external_tooling = 0;
+    for my $name (sort keys %{$pkg->{dev_dependencies}}) {
+        if ($name =~ /(?:^|\/)(?:babel|prettier|swc|rollup|esbuild)$/i) {
+            $external_tooling += 1;
+            push @out, diagnostic(
+                "warning",
+                "deps.generated-code-tooling",
+                "package.json",
+                "dev dependency '$name' looks like external parsing/formatting/build tooling; CONTRIBUTING says generated-code infrastructure stays in-house"
+            );
+        }
+    }
+    if ($external_tooling == 0) {
+        push @out, diagnostic("notice", "deps.generated-code-tooling", "package.json", "no banned generated-code parser/formatter tooling is present");
+    }
+
+    for my $entry (@{$ir->{source}{bare_imports}}) {
+        push @out, diagnostic(
+            "error",
+            "deps.src-import",
+            $entry->{path} . ":" . $entry->{line},
+            "runtime src imports must stay relative or node: builtins, found '$entry->{specifier}'"
+        );
+    }
+
+    if (@{$ir->{source}{bare_imports}} == 0) {
+        push @out, diagnostic("notice", "deps.src-import", "src", "runtime source imports are relative or node: builtins");
+    }
+
+    my $lock = object_or_empty($ir->{package_lock});
+    push @out, diagnostic(
+        "notice",
+        "supply.lockfile-domain",
+        "package-lock.json",
+        "lockfile supply-chain domain: lockfile_version=" . int($lock->{lockfileVersion} // 0) .
+            ", packages=" . int($lock->{packageCount} // 0) .
+            ", dev_packages=" . int($lock->{devPackageCount} // 0) .
+            ", runtime_deps=" . int($lock->{runtimeDependencyCount} // 0) .
+            ", risks=" . int($lock->{lockRiskFindings} // 0)
+    );
+    my @lock_findings = @{array_or_empty($lock->{findings})};
+    my @runtime_findings = grep {
+        ($_->{kind} // "") eq "runtime_dependency"
+    } @lock_findings;
+    if (int($lock->{runtimeDependencyCount} // 0) != 0) {
+        push @out, diagnostic(
+            "error",
+            "supply.lockfile-runtime",
+            "package-lock.json",
+            "package manifest or lockfile root contains runtime dependencies",
+            flow_steps_from_package_lock_findings(\@runtime_findings)
+        );
+    } else {
+        push @out, diagnostic("notice", "supply.lockfile-runtime", "package-lock.json", "package manifest and lockfile root contain zero runtime dependencies");
+    }
+    my @integrity_findings = grep {
+        ($_->{kind} // "") ne "runtime_dependency"
+    } @lock_findings;
+    if (@integrity_findings != 0) {
+        push @out, diagnostic(
+            budgeted_flow_severity(scalar(@integrity_findings), default_policy_profile()->{packageLockRiskBudget}),
+            "supply.lockfile-integrity",
+            $integrity_findings[0]{where},
+            scalar(@integrity_findings) . " package-lock supply-chain risk finding(s) require review",
+            flow_steps_from_package_lock_findings(\@integrity_findings)
+        );
+    } else {
+        push @out, diagnostic("notice", "supply.lockfile-integrity", "package-lock.json", "package-lock entries use registry HTTPS tarballs with integrity and no lifecycle-script risk");
+    }
+
+    my $licenses = object_or_empty($ir->{licenses});
+    push @out, diagnostic(
+        "notice",
+        "legal.license-domain",
+        "package-lock.json",
+        "license compliance domain: root=" . ($licenses->{rootLicense} // "") .
+            ", packages=" . int($licenses->{packageLicenses} // 0) .
+            ", missing=" . int($licenses->{missingLicenses} // 0) .
+            ", denied=" . int($licenses->{deniedLicenses} // 0) .
+            ", review=" . int($licenses->{licenseReviewFindings} // 0)
+    );
+    my @license_risks = grep {
+        ($_->{risk} // "") eq "high"
+    } @{array_or_empty($licenses->{findings})};
+    if (@license_risks != 0) {
+        push @out, diagnostic(
+            budgeted_flow_severity(scalar(@license_risks), default_policy_profile()->{licenseRiskBudget}),
+            "legal.license-risk",
+            $license_risks[0]{where},
+            scalar(@license_risks) . " denied or missing package license finding(s) require remediation",
+            flow_steps_from_license_findings(\@license_risks)
+        );
+    } else {
+        push @out, diagnostic("notice", "legal.license-risk", "package-lock.json", "package manifest and lockfile contain no denied or missing licenses");
+    }
+    my @license_reviews = grep {
+        ($_->{risk} // "") eq "review"
+    } @{array_or_empty($licenses->{findings})};
+    if (@license_reviews > default_policy_profile()->{licenseReviewBudget}) {
+        push @out, diagnostic(
+            "warning",
+            "legal.license-review",
+            $license_reviews[0]{where},
+            scalar(@license_reviews) . " review-required package license finding(s) exceed the reviewed budget",
+            flow_steps_from_license_findings(\@license_reviews)
+        );
+    } else {
+        push @out, diagnostic(
+            "notice",
+            "legal.license-review",
+            "package-lock.json",
+            "review-required licenses are within budget: " .
+                scalar(@license_reviews) . "/" . default_policy_profile()->{licenseReviewBudget}
+        );
+    }
+
+    return @out;
+}
+
+sub analyze_v8_performance {
+    my ($ir) = @_;
+    my @out;
+    my $source = $ir->{source};
+    my $bench = $ir->{benchmarks};
+
+    if ($source->{compile}{new_function_count} == 0) {
+        push @out, diagnostic("error", "jit.codegen", "src/compile", "compiled guard source no longer uses new Function");
+    } else {
+        push @out, diagnostic("notice", "jit.codegen", "src/compile", "compiled guard source still enters V8 through new Function");
+    }
+    if ($source->{compile}{side_table_refs} == 0) {
+        push @out, diagnostic("error", "jit.side-table", "src/compile", "generated code no longer references side-table literals");
+    } else {
+        push @out, diagnostic("notice", "jit.side-table", "src/compile", "generated source fragments reference side-table literals");
+    }
+    if ($source->{compile}{break_label_refs} == 0) {
+        push @out, diagnostic("warning", "jit.break-label", "src/compile", "no generated break-label references found");
+    } else {
+        push @out, diagnostic("notice", "jit.break-label", "src/compile", "generated code keeps labeled-break control flow evidence");
+    }
+    if ($source->{compile}{switch_refs} == 0) {
+        push @out, diagnostic("warning", "jit.jump-table", "src/compile", "no generated switch dispatch references found");
+    } else {
+        push @out, diagnostic("notice", "jit.jump-table", "src/compile", "generated or compiler code contains switch dispatch evidence");
+    }
+    if ($source->{compile}{compile_warning_refs} == 0) {
+        push @out, diagnostic("warning", "jit.cold-start", "src/compile", "compile() cold-start warning hook was not found");
+    } else {
+        push @out, diagnostic("notice", "jit.cold-start", "src/compile", "compile() cold-start warning hook is present");
+    }
+    if ($source->{compile}{closure_arrow_refs} != 0) {
+        push @out, diagnostic("warning", "jit.no-closure", "src/compile", "generated hot-path fragments contain arrow closures");
+    } else {
+        push @out, diagnostic("notice", "jit.no-closure", "src/compile", "generated hot-path fragments avoid arrow closure syntax");
+    }
+
+    my $hot = $bench->{rows_by_id}{"valid-is/typesea-unchecked"};
+    if (!defined $hot) {
+        push @out, diagnostic("warning", "bench.hot-path", "bench/results/latest.json:1", "missing valid unchecked hot-path benchmark row");
+    } elsif ($hot->{hz} < 40_000_000) {
+        push @out, diagnostic(
+            "warning",
+            "bench.hot-path",
+            "bench/results/latest.json:1",
+            "unchecked valid hot path is " . format_hz($hot->{hz}) . " hz, below CONTRIBUTING target 40M+"
+        );
+    } else {
+        push @out, diagnostic(
+            "notice",
+            "bench.hot-path",
+            "bench/results/latest.json:1",
+            "unchecked valid hot path meets 40M+ target at " . format_hz($hot->{hz}) . " hz"
+        );
+    }
+
+    my $invalid = $bench->{rows_by_id}{"invalid-is/typesea-safe"};
+    if (defined $invalid && $invalid->{hz} >= 40_000_000) {
+        push @out, diagnostic(
+            "notice",
+            "bench.invalid-fast-path",
+            "bench/results/latest.json:1",
+            "safe invalid fast path is " . format_hz($invalid->{hz}) . " hz"
+        );
+    }
+
+    return @out;
+}
+
+sub analyze_safe_mode_security {
+    my ($ir) = @_;
+    my @out;
+    my $security = $ir->{source}{security};
+    my $regex = object_or_empty($ir->{source}{regex_safety_domain});
+    my $secrets = object_or_empty($ir->{secrets});
+
+    if ($security->{descriptor_reads} == 0) {
+        push @out, diagnostic("error", "safe.descriptor", "src", "safe-mode descriptor reads were not found");
+    }
+    if ($security->{descriptor_value_proofs} == 0) {
+        push @out, diagnostic("error", "safe.accessor", "src", "hostile accessor value-proof checks were not found");
+    } else {
+        push @out, diagnostic("notice", "safe.accessor", "src", "hostile accessor value-proof checks are present");
+    }
+    if ($security->{direct_prop_reads_in_plan} != 0) {
+        push @out, diagnostic(
+            "warning",
+            "safe.direct-read",
+            "src/plan src/evaluate src/async-validation",
+            "possible direct property reads found in safe/interpreter paths; review before release"
+        );
+    } else {
+        push @out, diagnostic("notice", "safe.direct-read", "src/plan src/evaluate src/async-validation", "safe/interpreter paths avoid direct value.property reads");
+    }
+    if ($security->{regression_file}) {
+        push @out, diagnostic("notice", "safe.regression", "test/security-regression.test.ts", "security regression suite is present");
+    }
+    push @out, diagnostic(
+        "notice",
+        "security.regex-domain",
+        "src",
+        "regex safety domain: total=" . int($regex->{totalRegexps} // 0) .
+            ", literals=" . int($regex->{regexLiterals} // 0) .
+            ", constructors=" . int($regex->{regexConstructors} // 0) .
+            ", dynamic_constructors=" . int($regex->{dynamicRegexConstructors} // 0) .
+            ", stateful=" . int($regex->{statefulRegexps} // 0) .
+            ", redos_risks=" . int($regex->{totalRedosRisks} // 0)
+    );
+    if (int($regex->{totalRedosRisks} // 0) != 0) {
+        my @findings = @{array_or_empty($regex->{findings})};
+        my $first = @findings != 0 ? $findings[0] : { where => "src" };
+        push @out, diagnostic(
+            budgeted_flow_severity(int($regex->{totalRedosRisks} // 0), default_policy_profile()->{redosRiskBudget}),
+            "security.redos-risk",
+            $first->{where},
+            int($regex->{totalRedosRisks} // 0) .
+                " regex pattern(s) contain ReDoS risk heuristics",
+            flow_steps_from_regex_findings(\@findings)
+        );
+    } else {
+        push @out, diagnostic("notice", "security.redos-risk", "src", "regex literals and string constructors avoid known ReDoS risk heuristics");
+    }
+    push @out, diagnostic(
+        "notice",
+        "security.secret-domain",
+        "src scripts test bench .github",
+        "secret leak domain: scanned_files=" . int($secrets->{scannedFiles} // 0) .
+            ", leaks=" . int($secrets->{totalLeaks} // 0) .
+            ", aws=" . int($secrets->{awsAccessKeys} // 0) .
+            ", github=" . int($secrets->{githubTokens} // 0) .
+            ", npm=" . int($secrets->{npmTokens} // 0) .
+            ", private_keys=" . int($secrets->{privateKeys} // 0) .
+            ", generic=" . int($secrets->{genericCredentials} // 0)
+    );
+    if (int($secrets->{totalLeaks} // 0) != 0) {
+        my @findings = @{array_or_empty($secrets->{findings})};
+        my $first = @findings != 0 ? $findings[0] : { where => "src" };
+        push @out, diagnostic(
+            budgeted_flow_severity(int($secrets->{totalLeaks} // 0), default_policy_profile()->{secretLeakBudget}),
+            "security.secret-leak",
+            $first->{where},
+            int($secrets->{totalLeaks} // 0) .
+                " hardcoded secret-like value(s) found in repository source",
+            flow_steps_from_secret_findings(\@findings)
+        );
+    } else {
+        push @out, diagnostic("notice", "security.secret-leak", "src scripts test bench .github", "no hardcoded secret-like values were found in scanned source");
+    }
+    return @out;
+}
+
+sub analyze_compiler_architecture {
+    my ($ir) = @_;
+    my @out;
+    my $arch = $ir->{source}{architecture};
+
+    for my $stage (
+        ["builder", "src/builders"],
+        ["lowering", "src/lower"],
+        ["optimize", "src/optimize"],
+        ["compile", "src/compile"],
+        ["evaluate", "src/evaluate"],
+        ["aot", "src/aot"],
+        ["async", "src/async-validation"],
+        ["json_schema", "src/json-schema"]
+    ) {
+        my ($key, $path) = @{$stage};
+        if (!$arch->{$key}) {
+            push @out, diagnostic("error", "arch.$key", $path, "required compiler stage is missing");
+        } else {
+            push @out, diagnostic("notice", "arch.$key", $path, "required compiler stage is present");
+        }
+    }
+
+    my @feature_tests = (
+        ["interpreter/JIT parity", "test/compile-parity.test.ts"],
+        ["AOT semantics", "test/aot-semantics.test.ts"],
+        ["async semantics", "test/async-semantics.test.ts"],
+        ["JSON Schema semantics", "test/json-schema-semantics.test.ts"],
+        ["core semantics", "test/core.test.ts"]
+    );
+    for my $test (@feature_tests) {
+        my ($label, $path) = @{$test};
+        if (!exists $ir->{tests}{files}{$path}) {
+            push @out, diagnostic("error", "arch.test", $path, "$label tests are missing");
+        }
+    }
+
+    if ($arch->{optimizer_mentions} < 3) {
+        push @out, diagnostic("warning", "arch.optimize", "src/optimize", "few optimizer pass markers found");
+    } else {
+        push @out, diagnostic("notice", "arch.optimize", "src/optimize", "optimizer pass markers are present");
+    }
+
+    return @out;
+}
+
+sub analyze_module_graph {
+    my ($ir) = @_;
+    my @out;
+    my $source = $ir->{source};
+
+    for my $entry (@{$source->{unresolved_imports}}) {
+        push @out, diagnostic(
+            "error",
+            "graph.unresolved-import",
+            $entry->{path} . ":" . $entry->{line},
+            "relative import '$entry->{specifier}' does not resolve to a source module"
+        );
+    }
+
+    my $cycle_count = scalar(@{$source->{import_cycles}});
+    if ($cycle_count != 0) {
+        push @out, diagnostic(
+            "warning",
+            "graph.cycles",
+            "src",
+            "module import graph contains $cycle_count cycle(s); review for compiler-layer coupling"
+        );
+    } else {
+        push @out, diagnostic("notice", "graph.cycles", "src", "module import graph is acyclic");
+    }
+
+    my @layer_edges = sort keys %{$source->{layer_edges}};
+    if (@layer_edges < 8) {
+        push @out, diagnostic("warning", "graph.layer-density", "src", "few layer edges found; module graph IR may be under-parsed");
+    } else {
+        push @out, diagnostic(
+            "notice",
+            "graph.layer-density",
+            "src",
+            "resolved " . scalar(@{$source->{import_edges}}) . " source import edges across " . scalar(@layer_edges) . " layer edges"
+        );
+    }
+
+    for my $edge (@{$source->{import_edges}}) {
+        next if $edge->{type_only};
+        if (is_forbidden_runtime_layer_edge($edge->{from_layer}, $edge->{to_layer})) {
+            push @out, diagnostic(
+                "warning",
+                "graph.layer-boundary",
+                $edge->{from} . ":" . $edge->{line},
+                "runtime import from layer '$edge->{from_layer}' to '$edge->{to_layer}' should be reviewed"
+            );
+        }
+    }
+
+    return @out;
+}
+
+sub analyze_interprocedural_static_analysis {
+    my ($ir) = @_;
+    my @out;
+    my $analysis = $ir->{source}{function_analysis};
+    my $functions = $analysis->{functions};
+    my $graph = $analysis->{graph};
+    my $abstract = $analysis->{abstract};
+
+    if (@{$functions} < 200) {
+        push @out, diagnostic(
+            "warning",
+            "flow.function-ir",
+            "src",
+            "function front-end parsed only " . scalar(@{$functions}) . " functions; static-analysis coverage may be under-parsed"
+        );
+    } else {
+        push @out, diagnostic(
+            "notice",
+            "flow.function-ir",
+            "src",
+            "function front-end summarized " . scalar(@{$functions}) . " functions"
+        );
+    }
+
+    if (@{$graph->{edges}} < 300) {
+        push @out, diagnostic(
+            "warning",
+            "flow.callgraph",
+            "src",
+            "call graph resolved only " . scalar(@{$graph->{edges}}) . " edges; review parser precision"
+        );
+    } else {
+        push @out, diagnostic(
+            "notice",
+            "flow.callgraph",
+            "src",
+            "call graph resolved " . scalar(@{$graph->{edges}}) . " function edges"
+        );
+    }
+
+    if ($abstract->{recursion}{cycles} != 0) {
+        push @out, diagnostic(
+            "notice",
+            "flow.recursion",
+            "src",
+            "function call graph contains " . $abstract->{recursion}{cycles} .
+                " recursive SCC(s); bounded=" . $abstract->{recursion}{boundedCycles} .
+                ", unbounded=" . $abstract->{recursion}{unboundedCycles}
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.recursion", "src", "function call graph is acyclic");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.recursion-domain",
+        "src",
+        "recursion proof domain: admission_guards=" . $abstract->{recursion}{proofTotals}{admissionGuards} .
+            ", cycle_guards=" . $abstract->{recursion}{proofTotals}{cycleGuards} .
+            ", depth_guards=" . $abstract->{recursion}{proofTotals}{depthGuards} .
+            ", weak_guards=" . $abstract->{recursion}{proofTotals}{weakGuards}
+    );
+
+    if ($abstract->{recursion}{unboundedCycles} != 0) {
+        my $cycle = $abstract->{recursion}{unbounded}[0];
+        push @out, diagnostic(
+            budgeted_flow_severity($abstract->{recursion}{unboundedCycles}, default_policy_profile()->{unboundedRecursionBudget}),
+            "flow.recursion-gap",
+            $cycle->{where},
+            $abstract->{recursion}{unboundedCycles} .
+                " recursive SCC(s) lack a cycle, depth, weak-map, or TypeSea admission proof",
+            flow_steps_from_recursion_cycle($cycle)
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.recursion-gap", "src", "all recursive SCCs carry bounded-recursion proof evidence");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.cfg",
+        "src",
+        "CFG summary has " . $abstract->{cfg}{blocks} . " block(s), " .
+            $abstract->{cfg}{edges} . " edge(s), " .
+            $abstract->{cfg}{decisions} . " decision(s), and max depth " .
+            $abstract->{cfg}{maxDepth}
+    );
+
+    if (@{$abstract->{unreachable_functions}} != 0) {
+        my $fn = $abstract->{unreachable_functions}[0];
+        push @out, diagnostic(
+            "warning",
+            "flow.unreachable",
+            $fn->{path} . ":" . $fn->{line},
+            scalar(@{$abstract->{unreachable_functions}}) .
+                " function(s) contain statement-like tokens after a terminating control-flow edge"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.unreachable", "src", "CFG scan found no statement-like code after terminating edges");
+    }
+
+    if ($abstract->{high_complexity_count} != 0) {
+        my $fn = $abstract->{max_complexity_function};
+        push @out, diagnostic(
+            "warning",
+            "flow.complexity",
+            $fn->{path} . ":" . $fn->{line},
+            $abstract->{high_complexity_count} . " function(s) exceed local complexity budget; worst is " .
+                $fn->{name} . " at " . $fn->{complexity}
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.complexity", "src", "all parsed functions fit the local complexity budget");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.clone-domain",
+        "src",
+        "clone domain: windows=" . $abstract->{clone_domain}{windowCount} .
+            ", duplicate_groups=" . $abstract->{clone_domain}{duplicateGroups} .
+            ", cross_file_groups=" . $abstract->{clone_domain}{crossFileGroups} .
+            ", duplicated_occurrences=" . $abstract->{clone_domain}{duplicatedOccurrences}
+    );
+
+    if ($abstract->{clone_domain}{duplicateGroups} > default_policy_profile()->{duplicateBlockBudget}) {
+        my $group = $abstract->{clone_domain}{topGroups}[0];
+        push @out, diagnostic(
+            "warning",
+            "flow.clone-gap",
+            $group->{first}{path} . ":" . $group->{first}{line},
+            $abstract->{clone_domain}{duplicateGroups} .
+                " normalized token clone group(s) exceed the maintainability budget",
+            flow_steps_from_clone_group($group)
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.clone-gap", "src", "normalized token clone groups fit the maintainability budget");
+    }
+
+    if (@{$abstract->{descriptor_without_proof}} != 0) {
+        my $fn = $abstract->{descriptor_without_proof}[0];
+        push @out, diagnostic(
+            "warning",
+            "flow.descriptor-proof",
+            $fn->{path} . ":" . $fn->{line},
+            scalar(@{$abstract->{descriptor_without_proof}}) .
+                " safe-path function(s) read descriptor values without a same-function value-slot proof"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.descriptor-proof", "src", "function summaries preserve hostile-accessor descriptor proof evidence");
+    }
+
+    if (@{$abstract->{descriptor_order_violations}} != 0) {
+        my $fn = $abstract->{descriptor_order_violations}[0];
+        push @out, diagnostic(
+            "warning",
+            "flow.descriptor-dominance",
+            $fn->{path} . ":" . $fn->{line},
+            scalar(@{$abstract->{descriptor_order_violations}}) .
+                " safe-path function(s) may read descriptor.value before a value-slot proof dominates the read"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.descriptor-dominance", "src", "descriptor value reads are ordered after local value-slot proof evidence");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.abstract-domain",
+        "src",
+        "descriptor domain states: proofed=" . $abstract->{domains}{descriptor}{proofed} .
+            ", factory_proofed=" . $abstract->{domains}{descriptor}{factory_proofed} .
+            ", missing_proof=" . $abstract->{domains}{descriptor}{missing_proof} .
+            ", value_before_proof=" . $abstract->{domains}{descriptor}{value_before_proof}
+    );
+
+    push @out, diagnostic(
+        "notice",
+        "flow.branch-state",
+        "src",
+        "branch-state facts: created=" . $abstract->{branch_state}{factsCreated} .
+            ", factory=" . $abstract->{branch_state}{factoryFacts} .
+            ", guarded_reads=" . $abstract->{branch_state}{guardedReads} .
+            ", branch_merges=" . $abstract->{branch_state}{branchMerges} .
+            ", max_live=" . $abstract->{branch_state}{maxLiveFacts}
+    );
+
+    if (@{$abstract->{branch_state_leaks}} != 0) {
+        my $fn = $abstract->{branch_state_leaks}[0];
+        push @out, diagnostic(
+            "warning",
+            "flow.branch-leak",
+            $fn->{path} . ":" . $fn->{line},
+            scalar(@{$abstract->{branch_state_leaks}}) .
+                " function(s) read descriptor values without a branch-state guard fact"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.branch-leak", "src", "branch-state guard facts cover descriptor value reads");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.loop-bound-domain",
+        "src",
+        "loop-bound domain: loops=" . $abstract->{loop_bound_domain}{loops} .
+            ", length_bounded=" . $abstract->{loop_bound_domain}{lengthBoundedLoops} .
+            ", key_bounded=" . $abstract->{loop_bound_domain}{keyBoundedLoops} .
+            ", budget_bounded=" . $abstract->{loop_bound_domain}{budgetBoundedLoops} .
+            ", hot_unbounded=" . $abstract->{loop_bound_domain}{hotPathUnboundedLoops}
+    );
+
+    if (@{$abstract->{loop_bound_gaps}} != 0) {
+        my $fn = $abstract->{loop_bound_gaps}[0];
+        my $count = scalar(@{$abstract->{loop_bound_gaps}});
+        push @out, diagnostic(
+            budgeted_flow_severity($count, default_policy_profile()->{hotUnboundedLoopBudget}),
+            "flow.loop-bound-gap",
+            $fn->{path} . ":" . $fn->{line},
+            $count .
+                " hot validation function(s) contain loops without length, key, fixed, or budget bound evidence"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.loop-bound-gap", "src", "hot validation loops carry local bound evidence");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.range-domain",
+        "src",
+        "range domain: lower_bounds=" . $abstract->{range_domain}{lowerBounds} .
+            ", upper_bounds=" . $abstract->{range_domain}{upperBounds} .
+            ", length_upper_bounds=" . $abstract->{range_domain}{lengthUpperBounds} .
+            ", bounded_index_reads=" . $abstract->{range_domain}{boundedIndexReads} .
+            ", safe_path_gaps=" . $abstract->{range_domain}{safePathRangeGaps}
+    );
+
+    if (@{$abstract->{range_gaps}} != 0) {
+        my $fn = $abstract->{range_gaps}[0];
+        my $count = scalar(@{$abstract->{range_gaps}});
+        push @out, diagnostic(
+            budgeted_flow_severity($count, default_policy_profile()->{rangeGapBudget}),
+            "flow.range-gap",
+            $fn->{path} . ":" . $fn->{line},
+            $count .
+                " safe validation function(s) index hostile values without local interval lower/upper evidence"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.range-gap", "src", "hostile safe-path indexes carry local interval evidence");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.index-domain",
+        "src",
+        "index domain: indexed_reads=" . $abstract->{index_domain}{indexedReads} .
+            ", guarded_reads=" . $abstract->{index_domain}{guardedReads} .
+            ", descriptor_index_reads=" . $abstract->{index_domain}{descriptorIndexReads} .
+            ", length_facts=" . $abstract->{index_domain}{lengthFacts}
+    );
+
+    if (@{$abstract->{index_gaps}} != 0) {
+        my $fn = $abstract->{index_gaps}[0];
+        push @out, diagnostic(
+            "warning",
+            "flow.index-gap",
+            $fn->{path} . ":" . $fn->{line},
+            scalar(@{$abstract->{index_gaps}}) .
+                " safe-path function(s) read hostile bracket indexes without a local length/index guard"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.index-gap", "src", "safe validation paths do not contain unguarded hostile bracket reads");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.mutation-domain",
+        "src",
+        "mutation domain: assignments=" . $abstract->{mutation_domain}{assignments} .
+            ", deletes=" . $abstract->{mutation_domain}{deletes} .
+            ", mutating_calls=" . $abstract->{mutation_domain}{mutatingCalls} .
+            ", hostile_mutations=" . $abstract->{mutation_domain}{hostileMutations}
+    );
+
+    if (@{$abstract->{mutation_gaps}} != 0) {
+        my $fn = $abstract->{mutation_gaps}[0];
+        push @out, diagnostic(
+            "warning",
+            "flow.mutation-gap",
+            $fn->{path} . ":" . $fn->{line},
+            scalar(@{$abstract->{mutation_gaps}}) .
+                " safe-path function(s) mutate hostile input parameters during validation"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.mutation-gap", "src", "safe validation paths do not mutate hostile input parameters");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.memory-alias-domain",
+        "src",
+        "memory alias domain: regions=" . $abstract->{memory_alias_domain}{trackedRegions} .
+            ", aliases=" . $abstract->{memory_alias_domain}{aliasFacts} .
+            ", clones=" . $abstract->{memory_alias_domain}{cloneFacts} .
+            ", freezes=" . $abstract->{memory_alias_domain}{freezeFacts} .
+            ", alias_mutations=" . $abstract->{memory_alias_domain}{aliasMutations} .
+            ", post_freeze_alias_mutations=" . $abstract->{memory_alias_domain}{postFreezeAliasMutations}
+    );
+
+    if (@{$abstract->{memory_alias_gaps}} != 0) {
+        my $fn = $abstract->{memory_alias_gaps}[0];
+        my $count = scalar(@{$abstract->{memory_alias_gaps}});
+        push @out, diagnostic(
+            budgeted_flow_severity($count, default_policy_profile()->{memoryAliasGapBudget}),
+            "flow.memory-alias-gap",
+            $fn->{path} . ":" . $fn->{line},
+            $count .
+                " TypeSea-sensitive function(s) mutate hostile or frozen heap regions through aliases"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.memory-alias-gap", "src", "TypeSea-sensitive paths do not mutate hostile or frozen heap regions through aliases");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.key-safety-domain",
+        "src",
+        "key-safety domain: dangerous_key_literals=" . $abstract->{key_safety_domain}{dangerousKeyLiterals} .
+            ", null_prototype_allocations=" . $abstract->{key_safety_domain}{nullPrototypeAllocations} .
+            ", own_key_enumerations=" . $abstract->{key_safety_domain}{ownKeyEnumerations} .
+            ", unsafe_bulk_transfers=" . $abstract->{key_safety_domain}{unsafeBulkTransfers}
+    );
+
+    if (@{$abstract->{key_safety_gaps}} != 0) {
+        my $fn = $abstract->{key_safety_gaps}[0];
+        push @out, diagnostic(
+            "warning",
+            "flow.key-safety-gap",
+            $fn->{path} . ":" . $fn->{line},
+            scalar(@{$abstract->{key_safety_gaps}}) .
+                " function(s) combine prototype-pollution key literals with unsafe bulk key transfer and no local proof site"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.key-safety-gap", "src", "prototype-pollution key literals are paired with local key-safety proof evidence");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.result-state-domain",
+        "src",
+        "Result-state domain: ok_facts=" . $abstract->{result_state_domain}{okFacts} .
+            ", postdominator_facts=" . $abstract->{result_state_domain}{postdominatorFacts} .
+            ", payload_reads=" . $abstract->{result_state_domain}{payloadReads} .
+            ", guarded_payload_reads=" . $abstract->{result_state_domain}{guardedPayloadReads} .
+            ", unguarded_payload_reads=" . $abstract->{result_state_domain}{unguardedPayloadReads}
+    );
+
+    if (@{$abstract->{result_state_gaps}} != 0) {
+        my $fn = $abstract->{result_state_gaps}[0];
+        my $count = scalar(@{$abstract->{result_state_gaps}});
+        push @out, diagnostic(
+            budgeted_flow_severity($count, default_policy_profile()->{resultStateGapBudget}),
+            "flow.result-state-gap",
+            $fn->{path} . ":" . $fn->{line},
+            $count .
+                " Result-sensitive function(s) read .value or .error without local .ok polarity evidence"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.result-state-gap", "src", "Result payload reads are covered by local .ok polarity evidence");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.freeze-state-domain",
+        "src",
+        "freeze-state domain: freeze_calls=" . $abstract->{freeze_state_domain}{freezeCalls} .
+            ", freeze_facts=" . $abstract->{freeze_state_domain}{freezeFacts} .
+            ", mutation_sites=" . $abstract->{freeze_state_domain}{mutationSites} .
+            ", post_freeze_mutations=" . $abstract->{freeze_state_domain}{postFreezeMutations}
+    );
+
+    if (@{$abstract->{freeze_state_gaps}} != 0) {
+        my $fn = $abstract->{freeze_state_gaps}[0];
+        my $count = scalar(@{$abstract->{freeze_state_gaps}});
+        push @out, diagnostic(
+            budgeted_flow_severity($count, default_policy_profile()->{freezeMutationBudget}),
+            "flow.freeze-state-gap",
+            $fn->{path} . ":" . $fn->{line},
+            $count .
+                " function(s) mutate a value after local Object.freeze evidence"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.freeze-state-gap", "src", "local Object.freeze facts have no later mutation in source paths");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.variant-state-domain",
+        "src",
+        "variant-state domain: discriminant_switches=" . $abstract->{variant_state_domain}{discriminantSwitches} .
+            ", schema_switches=" . $abstract->{variant_state_domain}{schemaSwitches} .
+            ", node_switches=" . $abstract->{variant_state_domain}{nodeSwitches} .
+            ", defaultless_switches=" . $abstract->{variant_state_domain}{defaultlessSwitches} .
+            ", fallthroughs=" . $abstract->{variant_state_domain}{nonemptyFallthroughs}
+    );
+
+    if (@{$abstract->{variant_state_gaps}} != 0) {
+        my $fn = $abstract->{variant_state_gaps}[0];
+        my $count = scalar(@{$abstract->{variant_state_gaps}});
+        push @out, diagnostic(
+            budgeted_flow_severity($count, default_policy_profile()->{variantSwitchGapBudget}),
+            "flow.variant-state-gap",
+            $fn->{path} . ":" . $fn->{line},
+            $count .
+                " discriminant switch function(s) lack default coverage or contain non-empty fallthrough"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.variant-state-gap", "src", "discriminant switches carry default coverage and no non-empty fallthrough");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.generated-source-domain",
+        "src",
+        "generated-source domain: builders=" . $abstract->{source_taint_domain}{sourceBuilders} .
+            ", fragments=" . $abstract->{source_taint_domain}{sourceFragments} .
+            ", escape_proofs=" . $abstract->{source_taint_domain}{escapeProofs} .
+            ", side_table_proofs=" . $abstract->{source_taint_domain}{sideTableProofs} .
+            ", propagated_proofs=" . $abstract->{source_provenance}{propagatedProofFunctions} .
+            ", gaps=" . scalar(@{$abstract->{source_taint_gaps}})
+    );
+
+    if (@{$abstract->{source_taint_gaps}} != 0) {
+        my $fn = $abstract->{source_taint_gaps}[0];
+        my $count = scalar(@{$abstract->{source_taint_gaps}});
+        push @out, diagnostic(
+            budgeted_flow_severity($count, default_policy_profile()->{generatedSourceGapBudget}),
+            "flow.generated-source-gap",
+            $fn->{path} . ":" . $fn->{line},
+            $count .
+                " generated-source builder function(s) assemble dynamic source without local or propagated escape, side-table, or ABI proof evidence"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.generated-source-gap", "src", "generated-source builders carry local escape or side-table proof evidence");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.exception-domain",
+        "src",
+        "exception domain: throws=" . $abstract->{exception_domain}{throws} .
+            ", try_blocks=" . $abstract->{exception_domain}{tryBlocks} .
+            ", catch_blocks=" . $abstract->{exception_domain}{catchBlocks} .
+            ", promise_rejects=" . $abstract->{exception_domain}{promiseRejects} .
+            ", validator_throws=" . $abstract->{exception_domain}{validatorThrows}
+    );
+
+    if (@{$abstract->{exception_gaps}} != 0) {
+        my $fn = $abstract->{exception_gaps}[0];
+        my $count = scalar(@{$abstract->{exception_gaps}});
+        push @out, diagnostic(
+            budgeted_flow_severity($count, default_policy_profile()->{hotValidationThrowBudget}),
+            "flow.exception-gap",
+            $fn->{path} . ":" . $fn->{line},
+            $count .
+                " V8-sensitive validation function(s) can throw; keep exception edges explicit and budgeted"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.exception-gap", "src", "V8-sensitive validation functions avoid direct throw edges");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.lifecycle-domain",
+        "src",
+        "lifecycle domain: enter_calls=" . $abstract->{lifecycle_domain}{enterCalls} .
+            ", leave_calls=" . $abstract->{lifecycle_domain}{leaveCalls} .
+            ", frame_acquires=" . $abstract->{lifecycle_domain}{frameAcquires} .
+            ", frame_releases=" . $abstract->{lifecycle_domain}{frameReleases} .
+            ", path_push_slots=" . $abstract->{lifecycle_domain}{pathPushSlots} .
+            ", path_pops=" . $abstract->{lifecycle_domain}{pathPops}
+    );
+
+    if (@{$abstract->{lifecycle_gaps}} != 0) {
+        my $fn = $abstract->{lifecycle_gaps}[0];
+        my $count = scalar(@{$abstract->{lifecycle_gaps}});
+        push @out, diagnostic(
+            budgeted_flow_severity($count, default_policy_profile()->{lifecycleGapBudget}),
+            "flow.lifecycle-gap",
+            $fn->{path} . ":" . $fn->{line},
+            $count .
+                " lifecycle-sensitive function(s) exit with active path/frame state or unmatched release"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.lifecycle-gap", "src", "path and frame lifecycles are balanced in sensitive source paths");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.lifecycle-fixpoint",
+        "src",
+        "lifecycle fixed-point marked " . $abstract->{lifecycle}{reachableLifecycleGapFunctions} .
+            " reachable gap function(s), propagated=" .
+            $abstract->{lifecycle}{propagatedGapFunctions}
+    );
+
+    if ($abstract->{lifecycle}{propagatedGapFunctions} != 0) {
+        my $path = $abstract->{lifecycle}{paths}[0];
+        my $sink = $path->[0];
+        push @out, diagnostic(
+            budgeted_flow_severity($abstract->{lifecycle}{propagatedGapFunctions}, default_policy_profile()->{interproceduralLifecycleGapBudget}),
+            "flow.lifecycle-path",
+            $sink->{path} . ":" . $sink->{line},
+            $abstract->{lifecycle}{propagatedGapFunctions} .
+                " caller function(s) can reach a lifecycle gap through the call graph",
+            flow_steps_from_lifecycle_path($path)
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.lifecycle-path", "src", "no caller reaches a lifecycle gap through the call graph");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.async-domain",
+        "src",
+        "async domain: awaits=" . $abstract->{async_domain}{awaits} .
+            ", await_in_loops=" . $abstract->{async_domain}{awaitsInLoops} .
+            ", loop_yields=" . $abstract->{async_domain}{loopYields} .
+            ", yield_calls=" . $abstract->{async_domain}{yieldCalls} .
+            ", promise_creations=" . $abstract->{async_domain}{promiseCreations} .
+            ", promise_combinators=" . $abstract->{async_domain}{promiseCombinators}
+    );
+
+    if (@{$abstract->{async_scheduling_gaps}} != 0) {
+        my $fn = $abstract->{async_scheduling_gaps}[0];
+        my $count = scalar(@{$abstract->{async_scheduling_gaps}});
+        push @out, diagnostic(
+            budgeted_flow_severity($count, default_policy_profile()->{asyncSchedulingGapBudget}),
+            "flow.async-scheduling-gap",
+            $fn->{path} . ":" . $fn->{line},
+            $count .
+                " async-sensitive function(s) contain sequential loop awaits or floating promises without local yield/combinator evidence"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.async-scheduling-gap", "src", "async-sensitive paths carry yield or promise-combinator scheduling evidence");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.symbolic-domain",
+        "src",
+        "symbolic executor: path_splits=" . $abstract->{symbolic_domain}{pathSplits} .
+            ", conditions=" . $abstract->{symbolic_domain}{pathConditions} .
+            ", fail_fast_cuts=" . $abstract->{symbolic_domain}{failFastCuts} .
+            ", closed_sinks=" . $abstract->{symbolic_domain}{closedSinkSites} .
+            ", open_sinks=" . $abstract->{symbolic_domain}{sourcePathOpenSinks}
+    );
+
+    if (@{$abstract->{symbolic_gaps}} != 0) {
+        my $fn = $abstract->{symbolic_gaps}[0];
+        my $count = scalar(@{$abstract->{symbolic_gaps}});
+        push @out, diagnostic(
+            budgeted_flow_severity($count, default_policy_profile()->{symbolicPathBudget}),
+            "flow.symbolic-path",
+            $fn->{path} . ":" . $fn->{line},
+            $count .
+                " TypeSea-sensitive function(s) leave hostile-input sink sites open after symbolic fail-fast/proof analysis",
+            flow_steps_from_symbolic_witness($fn->{symbolic_domain}{witness})
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.symbolic-path", "src", "symbolic executor found no open hostile-input sink in TypeSea-sensitive paths");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.symbolic-fixpoint",
+        "src",
+        "symbolic fixed-point marked " . $abstract->{symbolic_dataflow}{reachableOpenFunctions} .
+            " reachable open-sink function(s), propagated=" .
+            $abstract->{symbolic_dataflow}{propagatedOpenFunctions}
+    );
+
+    if ($abstract->{symbolic_dataflow}{propagatedOpenFunctions} != 0) {
+        my $path = $abstract->{symbolic_dataflow}{paths}[0];
+        my $caller = $path->[0];
+        push @out, diagnostic(
+            budgeted_flow_severity($abstract->{symbolic_dataflow}{propagatedOpenFunctions}, default_policy_profile()->{interproceduralSymbolicPathBudget}),
+            "flow.symbolic-caller-path",
+            $caller->{path} . ":" . $caller->{line},
+            $abstract->{symbolic_dataflow}{propagatedOpenFunctions} .
+                " caller function(s) can reach a symbolic hostile-input sink through the call graph",
+            flow_steps_from_symbolic_path($path)
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.symbolic-caller-path", "src", "no caller reaches a symbolic hostile-input sink through the call graph");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.nullish-domain",
+        "src",
+        "nullish domain: dereferences=" . $abstract->{nullish_domain}{dereferences} .
+            ", guarded=" . $abstract->{nullish_domain}{guardedDereferences} .
+            ", hostile=" . $abstract->{nullish_domain}{hostileDereferences} .
+            ", facts=" . $abstract->{nullish_domain}{factsCreated}
+    );
+
+    if (@{$abstract->{nullish_gaps}} != 0) {
+        my $fn = $abstract->{nullish_gaps}[0];
+        push @out, diagnostic(
+            "warning",
+            "flow.nullish-gap",
+            $fn->{path} . ":" . $fn->{line},
+            scalar(@{$abstract->{nullish_gaps}}) .
+                " safe-path function(s) dereference hostile parameters without local nullish presence evidence"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.nullish-gap", "src", "safe validation paths do not dereference hostile parameters without presence evidence");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.effect-domain",
+        "src",
+        "effect domain: allocations=" . $abstract->{effect}{totals}{allocations} .
+            ", loop_allocations=" . $abstract->{effect}{totals}{loopAllocations} .
+            ", reflection_arrays=" . $abstract->{effect}{totals}{reflectionArrays} .
+            ", closures=" . $abstract->{effect}{totals}{closures} .
+            ", propagated_functions=" . $abstract->{effect}{propagated_allocation_functions}
+    );
+
+    if (@{$abstract->{effect}{hot_loop_allocation_functions}} != 0) {
+        my $fn = $abstract->{effect}{hot_loop_allocation_functions}[0];
+        my $count = scalar(@{$abstract->{effect}{hot_loop_allocation_functions}});
+        push @out, diagnostic(
+            budgeted_flow_severity($count, default_policy_profile()->{hotLoopAllocationBudget}),
+            "flow.hot-loop-allocation",
+            $fn->{path} . ":" . $fn->{line},
+            $count .
+                " V8-sensitive validation function(s) contain loop-carried allocation sites"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.hot-loop-allocation", "src", "no V8-sensitive validation loop carries direct allocation sites");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.contract-domain",
+        "src",
+        "function contracts: validators=" . $abstract->{contracts}{totals}{validators} .
+            ", sanitizers=" . $abstract->{contracts}{totals}{sanitizers} .
+            ", descriptor_factories=" . $abstract->{contracts}{totals}{descriptorFactories} .
+            ", sinks=" . $abstract->{contracts}{totals}{sinks} .
+            ", sink_reachable=" . $abstract->{contracts}{sink_reachable_functions}
+    );
+
+    if (@{$abstract->{contracts}{contractless_sinks}} != 0) {
+        my $fn = $abstract->{contracts}{contractless_sinks}[0];
+        push @out, diagnostic(
+            "warning",
+            "flow.contract-gap",
+            $fn->{path} . ":" . $fn->{line},
+            scalar(@{$abstract->{contracts}{contractless_sinks}}) .
+                " sink-like function(s) are not explained by a sanitizer, descriptor factory, validator, or approved dynamic bridge contract"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.contract-gap", "src", "all sink-like functions have an explicit TypeSea contract role");
+    }
+
+    push @out, diagnostic(
+        "notice",
+        "flow.taint-fixpoint",
+        "src",
+        "taint fixed-point marked " . $abstract->{taint}{tainted_functions} .
+            " function(s), found " . scalar(@{$abstract->{taint}{interprocedural_paths}}) .
+            " interprocedural and " . scalar(@{$abstract->{taint}{local_paths}}) .
+            " local sink path(s)"
+    );
+
+    if (@{$abstract->{unapproved_dynamic_sinks}} != 0) {
+        my $fn = $abstract->{unapproved_dynamic_sinks}[0];
+        push @out, diagnostic(
+            "error",
+            "flow.dynamic-sink",
+            $fn->{path} . ":" . $fn->{line},
+            "dynamic code sink found outside approved TypeSea JIT/AOT bridge in function '" . $fn->{name} . "'"
+        );
+    } else {
+        push @out, diagnostic("notice", "flow.dynamic-sink", "src", "dynamic code sinks are confined to approved JIT/AOT bridge functions");
+    }
+
+    if (@{$abstract->{taint}{paths}} != 0) {
+        my $path = $abstract->{taint}{paths}[0];
+        my $sink = $path->[-1];
+        push @out, diagnostic(
+            "warning",
+            "flow.tainted-path",
+            $sink->{path} . ":" . $sink->{line},
+            scalar(@{$abstract->{taint}{interprocedural_paths}}) .
+                " interprocedural and " . scalar(@{$abstract->{taint}{local_paths}}) .
+                " local hostile-input path(s) reach sink-like operations; review sanitizer proof",
+            flow_steps_from_taint_path($path)
+        );
+    } else {
+        push @out, diagnostic(
+            "notice",
+            "flow.tainted-path",
+            "src",
+            "taint fixed-point marked " . $abstract->{taint}{tainted_functions} .
+                " function(s), with no hostile-input path reaching a sink candidate"
+        );
+    }
+
+    return @out;
+}
+
+sub analyze_source_parse_health {
+    my ($ir) = @_;
+    my @out;
+    my $errors = $ir->{source}{lex_errors};
+    for my $error (@{$errors}) {
+        push @out, diagnostic(
+            "error",
+            "lex.parse",
+            $error->{path} . ":" . $error->{line},
+            $error->{message}
+        );
+    }
+    if (@{$errors} == 0) {
+        push @out, diagnostic("notice", "lex.parse", "src", "TypeScript lexer completed without unterminated token errors");
+    }
+    my $invalid_suppressions = $ir->{source}{invalid_source_suppressions};
+    for my $entry (@{$invalid_suppressions}) {
+        push @out, diagnostic(
+            "warning",
+            "source.suppression-reason",
+            $entry->{path} . ":" . $entry->{line},
+            $entry->{message}
+        );
+    }
+    if (@{$invalid_suppressions} == 0) {
+        push @out, diagnostic("notice", "source.suppression-reason", "src", "source suppression comments include explicit rule codes and reasons");
+    }
+    return @out;
+}
+
+sub analyze_schema_tag_coverage {
+    my ($ir) = @_;
+    my @out;
+    my $source = $ir->{source};
+    my @tags = @{$source->{schema_tags}};
+    my @required_stages = ("lower", "evaluate", "compile", "async", "aot", "json_schema");
+
+    if (@tags == 0) {
+        push @out, diagnostic("error", "schema-tags.parse", "src/kind/index.ts", "failed to parse SchemaTag object");
+        return @out;
+    }
+
+    for my $stage (@required_stages) {
+        my @missing;
+        for my $tag (@tags) {
+            if (!$source->{schema_tag_coverage}{$stage}{$tag}) {
+                push @missing, $tag;
+            }
+        }
+        if (@missing != 0) {
+            push @out, diagnostic(
+                "error",
+                "schema-tags.$stage",
+                "src/$stage",
+                "SchemaTag coverage is missing: " . join(", ", @missing)
+            );
+        } else {
+            push @out, diagnostic(
+                "notice",
+                "schema-tags.$stage",
+                "src/$stage",
+                "$stage covers all " . scalar(@tags) . " SchemaTag variants"
+            );
+        }
+    }
+
+    return @out;
+}
+
+sub analyze_ir_node_coverage {
+    my ($ir) = @_;
+    my @out;
+    my $source = $ir->{source};
+    my @tags = @{$source->{node_tags}};
+    my @required_stages = ("ir", "optimize", "compile", "plan");
+
+    if (@tags == 0) {
+        push @out, diagnostic("error", "node-tags.parse", "src/kind/index.ts", "failed to parse NodeTag object");
+        return @out;
+    }
+
+    for my $stage (@required_stages) {
+        my @missing;
+        for my $tag (@tags) {
+            if (!$source->{node_tag_coverage}{$stage}{$tag}) {
+                push @missing, $tag;
+            }
+        }
+        if (@missing != 0) {
+            my $severity = $stage eq "optimize" ? "warning" : "error";
+            push @out, diagnostic(
+                $severity,
+                "node-tags.$stage",
+                "src/$stage",
+                "NodeTag coverage is missing: " . join(", ", @missing)
+            );
+        } else {
+            push @out, diagnostic(
+                "notice",
+                "node-tags.$stage",
+                "src/$stage",
+                "$stage covers all " . scalar(@tags) . " NodeTag variants"
+            );
+        }
+    }
+
+    return @out;
+}
+
+sub analyze_generated_source_abi {
+    my ($ir) = @_;
+    my @out;
+    my $abi = $ir->{source}{generated_abi};
+
+    for my $slot (
+        ["helper_h", "hasOwnProperty helper `h`"],
+        ["helper_gp", "getOwnPropertyDescriptor helper `gp`"],
+        ["helper_l", "literal side table `l`"],
+        ["helper_r", "RegExp side table `r`"],
+        ["helper_k", "keyset side table `k`"],
+        ["helper_u", "string side table `u`"],
+        ["helper_dynamic", "dynamic schema fallback helper `d`"],
+        ["helper_message", "message helper `m`"],
+        ["helper_mapfirst", "first-issue message helper `mf`"],
+        ["helper_strict_keys", "strict-key helper `sk`"]
+    ) {
+        my ($key, $label) = @{$slot};
+        if (!$abi->{$key}) {
+            push @out, diagnostic("error", "abi.$key", "src/compile/source.ts", "generated-source ABI is missing $label");
+        }
+    }
+
+    if (!$abi->{factory_parameters}) {
+        push @out, diagnostic("error", "abi.factory", "src/compile/source.ts", "compiled source factory parameter order was not found");
+    }
+    if (!$abi->{aot_wrapper_parameters}) {
+        push @out, diagnostic("error", "abi.aot", "src/aot/index.ts", "AOT wrapper does not appear to pass the compiled source ABI parameters");
+    }
+    if ($abi->{factory_parameters} && $abi->{aot_wrapper_parameters}) {
+        push @out, diagnostic("notice", "abi.factory", "src/compile/source.ts", "runtime and AOT share the generated-source helper ABI");
+    }
+
+    return @out;
+}
+
+sub analyze_coding_style {
+    my ($ir) = @_;
+    my @out;
+    my $ts = $ir->{tsconfig};
+    for my $flag (
+        "strict",
+        "noUncheckedIndexedAccess",
+        "exactOptionalPropertyTypes",
+        "noImplicitOverride",
+        "noImplicitReturns",
+        "noUncheckedSideEffectImports"
+    ) {
+        if (!$ts->{compilerOptions}{$flag}) {
+            push @out, diagnostic("error", "ts.strict.$flag", "tsconfig.json", "compiler option '$flag' must be true");
+        }
+    }
+    for my $pair (
+        ["module", "NodeNext"],
+        ["moduleResolution", "NodeNext"],
+        ["target", "ES2023"]
+    ) {
+        my ($field, $expected) = @{$pair};
+        if (!defined $ts->{compilerOptions}{$field} || $ts->{compilerOptions}{$field} ne $expected) {
+            push @out, diagnostic("error", "ts.$field", "tsconfig.json", "compiler option '$field' must be '$expected'");
+        }
+    }
+
+    if (!$ir->{tests}{public_type_expectations}) {
+        push @out, diagnostic("error", "types.expect", "test/public-types.test.ts", "public type tests must use expectTypeOf");
+    } else {
+        push @out, diagnostic("notice", "types.expect", "test/public-types.test.ts", "public type tests use expectTypeOf");
+    }
+    if ($ir->{source}{readonly_refs} < 100) {
+        push @out, diagnostic("warning", "types.readonly", "src", "few readonly declarations found; CONTRIBUTING requires immutable schema and IR structures");
+    } else {
+        push @out, diagnostic("notice", "types.readonly", "src", "readonly declarations are present across schema and IR structures");
+    }
+    my $type_escape = object_or_empty($ir->{source}{type_escape_domain});
+    push @out, diagnostic(
+        "notice",
+        "types.escape-domain",
+        "src",
+        "type escape domain: total=" . int($type_escape->{totalEscapes} // 0) .
+            ", explicit_any=" . int($type_escape->{explicitAny} // 0) .
+            ", as_any=" . int($type_escape->{asAny} // 0) .
+            ", double_assertions=" . int($type_escape->{doubleAssertions} // 0) .
+            ", non_null=" . int($type_escape->{nonNullAssertions} // 0) .
+            ", json_parse=" . int($type_escape->{uncheckedJsonParse} // 0) .
+            ", ts_suppressions=" . int($type_escape->{tsSuppressionComments} // 0)
+    );
+    if (int($type_escape->{totalEscapes} // 0) != 0) {
+        my @findings = @{array_or_empty($type_escape->{findings})};
+        my $first = @findings != 0 ? $findings[0] : { where => "src" };
+        push @out, diagnostic(
+            budgeted_flow_severity(int($type_escape->{totalEscapes} // 0), default_policy_profile()->{typeEscapeBudget}),
+            "types.unsafe-escape",
+            $first->{where},
+            int($type_escape->{totalEscapes} // 0) .
+                " TypeScript type-safety escape hatch(es) remain budgeted across src",
+            flow_steps_from_type_escape_findings(\@findings)
+        );
+    } else {
+        push @out, diagnostic("notice", "types.unsafe-escape", "src", "source tree contains no TypeScript type-safety escape hatches");
+    }
+    if ($ir->{source}{comment_policy}{boilerplate_guard}) {
+        push @out, diagnostic("notice", "docs.comments", "scripts/source-policy.mjs", "boilerplate comment templates are banned by source policy");
+    } else {
+        push @out, diagnostic("warning", "docs.comments", "scripts/source-policy.mjs", "source policy does not appear to block low-information JSDoc templates");
+    }
+
+    my $public_doc_ratio = $ir->{source}{public_doc_ratio};
+    if ($public_doc_ratio < 0.35) {
+        push @out, diagnostic(
+            "warning",
+            "docs.jsdoc-coverage",
+            "src",
+            "public declaration JSDoc proximity is low (" . percent($public_doc_ratio) . "); CONTRIBUTING asks for detailed C/C++ style comments"
+        );
+    } else {
+        push @out, diagnostic(
+            "notice",
+            "docs.jsdoc-coverage",
+            "src",
+            "public declaration JSDoc proximity is " . percent($public_doc_ratio)
+        );
+    }
+
+    return @out;
+}
+
+sub analyze_ci_release {
+    my ($ir) = @_;
+    my @out;
+    my $scripts = $ir->{scripts}{map};
+    my @required_check_parts = (
+        "npm run policy",
+        "npm run check:contributing",
+        "npm run check:benchmarks",
+        "npm run check:docs",
+        "npm run typecheck",
+        "npm run lint",
+        "npm run test",
+        "npm run build",
+        "npm run check:dist",
+        "npm run check:api",
+        "npm run check:zod-compat",
+        "npm run check:pack"
+    );
+    my $missing_check_parts = 0;
+    for my $part (@required_check_parts) {
+        if (!script_contains($scripts, "check", $part)) {
+            $missing_check_parts += 1;
+            push @out, diagnostic("error", "ci.check", "package.json", "check script must include '$part'");
+        }
+    }
+    if ($missing_check_parts == 0) {
+        push @out, diagnostic("notice", "ci.check", "package.json", "check script contains every required gate");
+    }
+    if (!script_equals($scripts, "check:contributing", "perl scripts/contributing-policy.pl")) {
+        push @out, diagnostic("error", "ci.contributing", "package.json", "check:contributing must run the Perl policy analyzer");
+    } else {
+        push @out, diagnostic("notice", "ci.contributing", "package.json", "check:contributing runs the Perl policy analyzer");
+    }
+    if (!script_equals($scripts, "prepack", "npm run check")) {
+        push @out, diagnostic("error", "ci.prepack", "package.json", "prepack must run the full check suite");
+    }
+    my $missing_publish_parts = 0;
+    for my $part ("--provenance", "--access public", "--ignore-scripts") {
+        if (!script_contains($scripts, "release:publish", $part)) {
+            $missing_publish_parts += 1;
+            push @out, diagnostic("error", "release.publish", "package.json", "release:publish must include '$part'");
+        }
+    }
+    if ($missing_publish_parts == 0) {
+        push @out, diagnostic("notice", "release.publish", "package.json", "release:publish includes provenance, public access, and ignored lifecycle scripts");
+    }
+
+    my $release = $ir->{release};
+    my $missing_release_steps = 0;
+    for my $step ("check", "check:consumer", "bench", "pack:dry") {
+        if (!$release->{steps}{$step}) {
+            $missing_release_steps += 1;
+            push @out, diagnostic("error", "release.gate", "scripts/release-gate.mjs", "release gate must run npm script '$step'");
+        }
+    }
+    if ($missing_release_steps == 0) {
+        push @out, diagnostic("notice", "release.gate", "scripts/release-gate.mjs", "release gate runs every required script");
+    }
+
+    my $pkg = $ir->{package};
+    my $missing_metadata = 0;
+    for my $field ("repository", "bugs", "homepage", "license", "author") {
+        if (!exists $pkg->{json}{$field}) {
+            $missing_metadata += 1;
+            push @out, diagnostic("warning", "release.metadata", "package.json", "missing package metadata '$field'");
+        }
+    }
+    if ($missing_metadata == 0) {
+        push @out, diagnostic("notice", "release.metadata", "package.json", "package release metadata is present");
+    }
+
+    my $workflow = object_or_empty($ir->{workflows});
+    push @out, diagnostic(
+        "notice",
+        "supply.workflow-domain",
+        ".github/workflows",
+        "workflow supply-chain domain: files=" . int($workflow->{workflowFiles} // 0) .
+            ", actions=" . int($workflow->{actionRefs} // 0) .
+            ", mutable_action_refs=" . int($workflow->{mutableActionRefs} // 0) .
+            ", write_permissions=" . int($workflow->{writePermissions} // 0) .
+            ", high_risk=" . int($workflow->{highRiskFindings} // 0)
+    );
+    my @high_risk_workflow_findings = grep {
+        ($_->{risk} // "") eq "high"
+    } @{array_or_empty($workflow->{findings})};
+    if (@high_risk_workflow_findings != 0) {
+        my $first = $high_risk_workflow_findings[0];
+        push @out, diagnostic(
+            budgeted_flow_severity(scalar(@high_risk_workflow_findings), default_policy_profile()->{workflowHighRiskBudget}),
+            "supply.workflow-permission",
+            $first->{where},
+            scalar(@high_risk_workflow_findings) . " high-risk GitHub Actions supply-chain finding(s) require review",
+            flow_steps_from_workflow_findings(\@high_risk_workflow_findings)
+        );
+    } else {
+        push @out, diagnostic("notice", "supply.workflow-permission", ".github/workflows", "workflow triggers and write permissions have no high-risk supply-chain findings");
+    }
+    my @mutable_action_findings = grep {
+        ($_->{kind} // "") eq "mutable_action_ref"
+    } @{array_or_empty($workflow->{findings})};
+    if (@mutable_action_findings > default_policy_profile()->{workflowMutableActionBudget}) {
+        push @out, diagnostic(
+            "warning",
+            "supply.workflow-action-ref",
+            $mutable_action_findings[0]{where},
+            scalar(@mutable_action_findings) . " workflow action reference(s) are mutable; pin to full commit SHA or raise the reviewed budget",
+            flow_steps_from_workflow_findings(\@mutable_action_findings)
+        );
+    } else {
+        push @out, diagnostic(
+            "notice",
+            "supply.workflow-action-ref",
+            ".github/workflows",
+            "workflow mutable action refs are within reviewed budget: " .
+                scalar(@mutable_action_findings) . "/" . default_policy_profile()->{workflowMutableActionBudget}
+        );
+    }
+    if (int($workflow->{releasePublishGaps} // 0) != 0) {
+        my @release_gaps = grep {
+            ($_->{kind} // "") eq "release_publish_gap"
+        } @{array_or_empty($workflow->{findings})};
+        push @out, diagnostic(
+            "warning",
+            "supply.workflow-publish",
+            $release_gaps[0]{where} // ".github/workflows/release.yml",
+            "release workflow is missing publish provenance or tag validation evidence",
+            flow_steps_from_workflow_findings(\@release_gaps)
+        );
+    } else {
+        push @out, diagnostic("notice", "supply.workflow-publish", ".github/workflows/release.yml", "release workflow carries tag validation, protected environment, provenance publish, and token permission evidence");
+    }
+
+    my $bad_exports = 0;
+    for my $subpath (sort keys %{$pkg->{exports}}) {
+        next if $subpath eq "./package.json";
+        my $entry = $pkg->{exports}{$subpath};
+        if (ref($entry) ne "HASH") {
+            $bad_exports += 1;
+            push @out, diagnostic("error", "exports.shape", "package.json", "export '$subpath' must be a condition object");
+            next;
+        }
+        for my $condition ("types", "import", "default") {
+            if (!exists $entry->{$condition}) {
+                $bad_exports += 1;
+                push @out, diagnostic("error", "exports.condition", "package.json", "export '$subpath' is missing '$condition'");
+            }
+        }
+    }
+    if ($bad_exports == 0) {
+        push @out, diagnostic("notice", "exports.condition", "package.json", "public exports include types/import/default conditions");
+    }
+    my $bad_files = 0;
+    for my $path ("src", "test", "bench", "scripts", "docs", "package-lock.json") {
+        if ($pkg->{files_index}{$path}) {
+            $bad_files += 1;
+            push @out, diagnostic("error", "package.files", "package.json", "npm package files must not include '$path'");
+        }
+    }
+    for my $path ("dist", "README.md", "SECURITY.md", "CHANGELOG.md") {
+        if (!$pkg->{files_index}{$path}) {
+            $bad_files += 1;
+            push @out, diagnostic("error", "package.files", "package.json", "npm package files must include '$path'");
+        }
+    }
+    if ($bad_files == 0) {
+        push @out, diagnostic("notice", "package.files", "package.json", "npm package files include runtime artifacts and exclude development roots");
+    }
+
+    return @out;
+}
+
+sub analyze_api_surface {
+    my ($ir) = @_;
+    my @out;
+    my $surface = object_or_empty($ir->{api_surface});
+    push @out, diagnostic(
+        "notice",
+        "api.surface-domain",
+        "package.json",
+        "public API surface domain: exports=" . int($surface->{packageExportEntries} // 0) .
+            ", documented=" . int($surface->{documentedExportEntries} // 0) .
+            ", shape_gaps=" . int($surface->{exportShapeGaps} // 0) .
+            ", doc_gaps=" . int($surface->{documentationGaps} // 0) .
+            ", stale_docs=" . int($surface->{staleDocumentationReferences} // 0)
+    );
+
+    my @drift_findings = grep {
+        ($_->{risk} // "") eq "high"
+    } @{array_or_empty($surface->{findings})};
+    if (@drift_findings != 0) {
+        push @out, diagnostic(
+            budgeted_flow_severity(scalar(@drift_findings), default_policy_profile()->{apiSurfaceDriftBudget}),
+            "api.surface-drift",
+            $drift_findings[0]{where},
+            scalar(@drift_findings) . " public API surface drift finding(s) require remediation",
+            flow_steps_from_api_surface_findings(\@drift_findings)
+        );
+    } else {
+        push @out, diagnostic("notice", "api.surface-drift", "package.json", "package exports and documented import specifiers are mutually consistent");
+    }
+
+    my @doc_findings = grep {
+        ($_->{kind} // "") eq "missing_documentation"
+    } @{array_or_empty($surface->{findings})};
+    if (@doc_findings != 0) {
+        push @out, diagnostic(
+            budgeted_flow_severity(scalar(@doc_findings), default_policy_profile()->{apiDocumentationGapBudget}),
+            "api.docs-coverage",
+            $doc_findings[0]{where},
+            scalar(@doc_findings) . " public package export(s) are missing README/docs coverage",
+            flow_steps_from_api_surface_findings(\@doc_findings)
+        );
+    } else {
+        push @out, diagnostic("notice", "api.docs-coverage", "README.md docs/api.md", "all public package export subpaths are covered by README or API docs");
+    }
+
+    return @out;
+}
+
+sub analyze_release_consistency {
+    my ($ir) = @_;
+    my @out;
+    my $release = object_or_empty($ir->{release_consistency});
+    push @out, diagnostic(
+        "notice",
+        "release.consistency-domain",
+        "package.json",
+        "release consistency domain: package=" . ($release->{packageName} // "") .
+            "\@" . ($release->{packageVersion} // "") .
+            ", lock=" . ($release->{lockfileName} // "") .
+            "\@" . ($release->{lockfileVersion} // "") .
+            ", benchmark=" . ($release->{benchmarkPackage} // "") .
+            "\@" . ($release->{benchmarkVersion} // "") .
+            ", changelog=" . ($release->{changelogVersion} // "") .
+            ", docs_site=" . int($release->{docsSiteVersionPresent} // 0) .
+            ", risks=" . int($release->{releaseConsistencyFindings} // 0)
+    );
+
+    my @findings = @{array_or_empty($release->{findings})};
+    if (@findings != 0) {
+        push @out, diagnostic(
+            budgeted_flow_severity(scalar(@findings), default_policy_profile()->{releaseConsistencyRiskBudget}),
+            "release.version-drift",
+            $findings[0]{where},
+            scalar(@findings) . " release metadata consistency finding(s) require remediation",
+            flow_steps_from_release_consistency_findings(\@findings)
+        );
+    } else {
+        push @out, diagnostic("notice", "release.version-drift", "package.json", "package, lockfile, benchmark, changelog, docs, and README release metadata agree");
+    }
+
+    return @out;
+}
+
+sub analyze_test_evidence {
+    my ($ir) = @_;
+    my @out;
+    my $evidence = object_or_empty($ir->{test_evidence});
+    push @out, diagnostic(
+        "notice",
+        "test.evidence-domain",
+        "test",
+        "test evidence domain: files=" . int($evidence->{testFiles} // 0) .
+            ", suites=" . int($evidence->{requiredSuites} // 0) .
+            ", covered_suites=" . int($evidence->{coveredSuites} // 0) .
+            ", required_files=" . int($evidence->{requiredFiles} // 0) .
+            ", present_required_files=" . int($evidence->{presentRequiredFiles} // 0) .
+            ", gaps=" . int($evidence->{testEvidenceGaps} // 0)
+    );
+
+    my @findings = @{array_or_empty($evidence->{findings})};
+    if (@findings != 0) {
+        push @out, diagnostic(
+            budgeted_flow_severity(scalar(@findings), default_policy_profile()->{testEvidenceGapBudget}),
+            "test.evidence-gap",
+            $findings[0]{where},
+            scalar(@findings) . " required TypeSea test evidence gap(s) require remediation",
+            flow_steps_from_test_evidence_findings(\@findings)
+        );
+    } else {
+        push @out, diagnostic("notice", "test.evidence-gap", "test", "core compiler, security, compatibility, and public-surface test suites are present");
+    }
+
+    return @out;
+}
+
+sub analyze_benchmark_evidence {
+    my ($ir) = @_;
+    my @out;
+    my $evidence = object_or_empty($ir->{benchmark_evidence});
+    push @out, diagnostic(
+        "notice",
+        "bench.evidence-domain",
+        "bench/results/latest.json",
+        "benchmark evidence domain: suites=" . int($evidence->{suites} // 0) .
+            ", rows=" . int($evidence->{rows} // 0) .
+            ", required_rows=" . int($evidence->{requiredRows} // 0) .
+            ", present_required_rows=" . int($evidence->{presentRequiredRows} // 0) .
+            ", metadata_gaps=" . int($evidence->{metadataGaps} // 0) .
+            ", gaps=" . int($evidence->{benchmarkEvidenceGaps} // 0) .
+            ", node=" . ($evidence->{nodeVersion} // "") .
+            ", v8=" . ($evidence->{v8Version} // "")
+    );
+
+    my @findings = @{array_or_empty($evidence->{findings})};
+    if (@findings != 0) {
+        push @out, diagnostic(
+            budgeted_flow_severity(scalar(@findings), default_policy_profile()->{benchmarkEvidenceGapBudget}),
+            "bench.evidence-gap",
+            $findings[0]{where},
+            scalar(@findings) . " required benchmark evidence gap(s) require remediation",
+            flow_steps_from_benchmark_evidence_findings(\@findings)
+        );
+    } else {
+        push @out, diagnostic("notice", "bench.evidence-gap", "bench/results/latest.json", "warm benchmark snapshot contains required TypeSea, ecosystem, union, and runtime feature evidence");
+    }
+
+    return @out;
+}
+
+sub analyze_rule_metadata_integrity {
+    my ($diagnostics) = @_;
+    my @out;
+    my @model_diagnostics = (
+        @{$diagnostics},
+        rule_metadata_synthetic_diagnostic("rule.metadata-domain"),
+        rule_metadata_synthetic_diagnostic("rule.metadata-gap"),
+        rule_metadata_synthetic_diagnostic("rule.metadata-generic")
+    );
+    my $model = rule_metadata_integrity_model(\@model_diagnostics);
+    push @out, diagnostic(
+        "notice",
+        "rule.metadata-domain",
+        "scripts/contributing-policy.pl",
+        "rule metadata domain: rules=" . int($model->{rules} // 0) .
+            ", complete=" . int($model->{completeRules} // 0) .
+            ", specific=" . int($model->{specificRules} // 0) .
+            ", generic=" . int($model->{genericRuleMetadataItems} // 0) .
+            ", gaps=" . int($model->{ruleMetadataGaps} // 0)
+    );
+
+    my @findings = @{array_or_empty($model->{findings})};
+    if (@findings != 0) {
+        push @out, diagnostic(
+            budgeted_flow_severity(scalar(@findings), default_policy_profile()->{ruleMetadataGapBudget}),
+            "rule.metadata-gap",
+            $findings[0]{where},
+            scalar(@findings) . " rule metadata integrity gap(s) require remediation",
+            flow_steps_from_rule_metadata_findings(\@findings)
+        );
+    } else {
+        push @out, diagnostic("notice", "rule.metadata-gap", "scripts/contributing-policy.pl", "all emitted rules include required SARIF and dashboard metadata");
+    }
+
+    my $generic = int($model->{genericRuleMetadataItems} // 0);
+    my $generic_budget = default_policy_profile()->{genericRuleMetadataBudget};
+    if ($generic > $generic_budget) {
+        push @out, diagnostic(
+            budgeted_flow_severity($generic, $generic_budget),
+            "rule.metadata-generic",
+            "scripts/contributing-policy.pl",
+            "$generic rule(s) still rely on prefix-derived generic metadata, above reviewed budget $generic_budget",
+            flow_steps_from_rule_metadata_findings($model->{genericSet})
+        );
+    } else {
+        push @out, diagnostic("notice", "rule.metadata-generic", "scripts/contributing-policy.pl", "generic rule metadata remains inside reviewed budget: $generic/$generic_budget");
+    }
+
+    return @out;
+}
+
+sub rule_metadata_synthetic_diagnostic {
+    my ($code) = @_;
+    return {
+        code => $code,
+        where => "scripts/contributing-policy.pl:1",
+        severity => "notice",
+        message => "synthetic rule metadata catalog seed"
+    };
+}
+
+sub analyze_pr_requirements {
+    my ($ir) = @_;
+    my @out;
+    if (!$ir->{tests}{files}{"test/security-regression.test.ts"}) {
+        push @out, diagnostic("error", "pr.security-regression", "test/security-regression.test.ts", "security regression suite is required before PR submission");
+    } else {
+        push @out, diagnostic("notice", "pr.security-regression", "test/security-regression.test.ts", "security regression suite is present");
+    }
+    if (!$ir->{scripts}{map}{"bench:compare"}) {
+        push @out, diagnostic("warning", "pr.bench-compare", "package.json", "bench:compare script is missing for optimization PR evidence");
+    } else {
+        push @out, diagnostic("notice", "pr.bench-compare", "package.json", "bench:compare is available for optimization PR evidence");
+    }
+    if (!$ir->{scripts}{map}{"check:api"}) {
+        push @out, diagnostic("error", "pr.api-surface", "package.json", "check:api script is required for public API changes");
+    } else {
+        push @out, diagnostic("notice", "pr.api-surface", "package.json", "check:api is available for public API changes");
+    }
+    return @out;
+}
+
+sub analyze_policy_engine {
+    my ($ir) = @_;
+    my @out;
+    my $policy = $ir->{policy};
+    if ($policy->{severity_levels}) {
+        push @out, diagnostic("notice", "policy.severity", "scripts/contributing-policy.pl", "policy diagnostics support error, warning, and notice levels");
+    } else {
+        push @out, diagnostic("error", "policy.severity", "scripts/contributing-policy.pl", "policy diagnostics must support error, warning, and notice levels");
+    }
+    if ($policy->{verbose_notices}) {
+        push @out, diagnostic("notice", "policy.verbose", "scripts/contributing-policy.pl", "verbose mode exposes notice-level coverage evidence");
+    } else {
+        push @out, diagnostic("error", "policy.verbose", "scripts/contributing-policy.pl", "policy analyzer must expose notices through --verbose");
+    }
+    if ($policy->{template_lexer_self_tests}) {
+        push @out, diagnostic("notice", "policy.template-lexer", "scripts/contributing-policy.pl", "nested template literal lexer self-tests are wired into the policy analyzer");
+    } else {
+        push @out, diagnostic("error", "policy.template-lexer", "scripts/contributing-policy.pl", "policy analyzer must self-test nested template literal tokenization");
+    }
+    if ($policy->{import_ast_self_tests}) {
+        push @out, diagnostic("notice", "policy.import-ast", "scripts/contributing-policy.pl", "type-only import/export classification self-tests are wired into the policy analyzer");
+    } else {
+        push @out, diagnostic("error", "policy.import-ast", "scripts/contributing-policy.pl", "policy analyzer must self-test type-only import/export classification");
+    }
+    if ($policy->{type_named_value_self_tests}) {
+        push @out, diagnostic("notice", "policy.import-type-name", "scripts/contributing-policy.pl", "value imports named 'type' are covered by lexer self-tests");
+    } else {
+        push @out, diagnostic("error", "policy.import-type-name", "scripts/contributing-policy.pl", "policy analyzer must self-test value imports named 'type'");
+    }
+    if ($policy->{lex_error_self_tests}) {
+        push @out, diagnostic("notice", "policy.lex-errors", "scripts/contributing-policy.pl", "unterminated token diagnostics are covered by lexer self-tests");
+    } else {
+        push @out, diagnostic("error", "policy.lex-errors", "scripts/contributing-policy.pl", "policy analyzer must self-test unterminated token diagnostics");
+    }
+    if ($policy->{dynamic_import_self_tests}) {
+        push @out, diagnostic("notice", "policy.dynamic-import", "scripts/contributing-policy.pl", "dynamic import graph extraction is covered by lexer self-tests");
+    } else {
+        push @out, diagnostic("error", "policy.dynamic-import", "scripts/contributing-policy.pl", "policy analyzer must self-test dynamic import graph extraction");
+    }
+    if ($policy->{semicolonless_import_self_tests}) {
+        push @out, diagnostic("notice", "policy.semicolonless-import", "scripts/contributing-policy.pl", "semicolonless import graph extraction is covered by lexer self-tests");
+    } else {
+        push @out, diagnostic("error", "policy.semicolonless-import", "scripts/contributing-policy.pl", "policy analyzer must self-test semicolonless import graph extraction");
+    }
+    if ($policy->{function_ir_self_tests}) {
+        push @out, diagnostic("notice", "policy.function-ir", "scripts/contributing-policy.pl", "function IR, call graph, and abstract-state self-tests are wired into the policy analyzer");
+    } else {
+        push @out, diagnostic("error", "policy.function-ir", "scripts/contributing-policy.pl", "policy analyzer must self-test function IR, call graph, and abstract-state extraction");
+    }
+    if ($policy->{clone_analysis}) {
+        push @out, diagnostic("notice", "policy.clone-analysis", "scripts/contributing-policy.pl", "normalized token clone analysis is wired into the policy analyzer");
+    } else {
+        push @out, diagnostic("error", "policy.clone-analysis", "scripts/contributing-policy.pl", "policy analyzer must expose a normalized token clone-analysis domain");
+    }
+    if ($policy->{machine_reports}) {
+        push @out, diagnostic("notice", "policy.machine-report", "scripts/contributing-policy.pl", "JSON and SARIF machine-readable report modes are wired into the policy analyzer");
+    } else {
+        push @out, diagnostic("error", "policy.machine-report", "scripts/contributing-policy.pl", "policy analyzer must expose JSON and SARIF report modes");
+    }
+    if ($policy->{dashboard_report}) {
+        push @out, diagnostic("notice", "policy.dashboard", "scripts/contributing-policy.pl", "HTML dashboard and local HTTP report modes are wired into the policy analyzer");
+    } else {
+        push @out, diagnostic("error", "policy.dashboard", "scripts/contributing-policy.pl", "policy analyzer must expose a human-readable dashboard report mode");
+    }
+    if ($policy->{baseline_suppression}) {
+        push @out, diagnostic("notice", "policy.baseline", "scripts/contributing-policy.pl", "deterministic fingerprints and baseline suppression are wired into the policy analyzer");
+    } else {
+        push @out, diagnostic("error", "policy.baseline", "scripts/contributing-policy.pl", "policy analyzer must expose deterministic fingerprints and baseline suppression");
+    }
+    if ($policy->{source_suppression}) {
+        push @out, diagnostic("notice", "policy.source-suppression", "scripts/contributing-policy.pl", "source suppression comments require explicit rule codes and reasons");
+    } else {
+        push @out, diagnostic("error", "policy.source-suppression", "scripts/contributing-policy.pl", "policy analyzer must support reasoned source suppression comments");
+    }
+    if ($policy->{type_escape_domain}) {
+        push @out, diagnostic("notice", "policy.type-escape-domain", "scripts/contributing-policy.pl", "TypeScript type-safety escape hatches are modeled, reported, and quality-gated");
+    } else {
+        push @out, diagnostic("error", "policy.type-escape-domain", "scripts/contributing-policy.pl", "policy analyzer must expose a TypeScript type-safety escape domain");
+    }
+    if ($policy->{regex_safety_domain}) {
+        push @out, diagnostic("notice", "policy.regex-safety-domain", "scripts/contributing-policy.pl", "regex ReDoS safety heuristics are modeled, reported, and quality-gated");
+    } else {
+        push @out, diagnostic("error", "policy.regex-safety-domain", "scripts/contributing-policy.pl", "policy analyzer must expose a regex ReDoS safety domain");
+    }
+    if ($policy->{secret_leak_domain}) {
+        push @out, diagnostic("notice", "policy.secret-leak-domain", "scripts/contributing-policy.pl", "hardcoded secret material is modeled, redacted, reported, and quality-gated");
+    } else {
+        push @out, diagnostic("error", "policy.secret-leak-domain", "scripts/contributing-policy.pl", "policy analyzer must expose a hardcoded secret leak domain");
+    }
+    if ($policy->{workflow_security_domain}) {
+        push @out, diagnostic("notice", "policy.workflow-security-domain", "scripts/contributing-policy.pl", "GitHub Actions supply-chain risk is modeled, reported, and quality-gated");
+    } else {
+        push @out, diagnostic("error", "policy.workflow-security-domain", "scripts/contributing-policy.pl", "policy analyzer must expose a GitHub Actions supply-chain domain");
+    }
+    if ($policy->{package_lock_security_domain}) {
+        push @out, diagnostic("notice", "policy.package-lock-security-domain", "scripts/contributing-policy.pl", "npm lockfile supply-chain risk is modeled, reported, and quality-gated");
+    } else {
+        push @out, diagnostic("error", "policy.package-lock-security-domain", "scripts/contributing-policy.pl", "policy analyzer must expose an npm lockfile supply-chain domain");
+    }
+    if ($policy->{package_license_domain}) {
+        push @out, diagnostic("notice", "policy.package-license-domain", "scripts/contributing-policy.pl", "package license compliance is modeled, reported, and quality-gated");
+    } else {
+        push @out, diagnostic("error", "policy.package-license-domain", "scripts/contributing-policy.pl", "policy analyzer must expose a package license compliance domain");
+    }
+    if ($policy->{api_surface_domain}) {
+        push @out, diagnostic("notice", "policy.api-surface-domain", "scripts/contributing-policy.pl", "public API surface drift is modeled, reported, and quality-gated");
+    } else {
+        push @out, diagnostic("error", "policy.api-surface-domain", "scripts/contributing-policy.pl", "policy analyzer must expose a public API surface drift domain");
+    }
+    if ($policy->{release_consistency_domain}) {
+        push @out, diagnostic("notice", "policy.release-consistency-domain", "scripts/contributing-policy.pl", "release metadata consistency is modeled, reported, and quality-gated");
+    } else {
+        push @out, diagnostic("error", "policy.release-consistency-domain", "scripts/contributing-policy.pl", "policy analyzer must expose a release metadata consistency domain");
+    }
+    if ($policy->{test_evidence_domain}) {
+        push @out, diagnostic("notice", "policy.test-evidence-domain", "scripts/contributing-policy.pl", "test evidence coverage is modeled, reported, and quality-gated");
+    } else {
+        push @out, diagnostic("error", "policy.test-evidence-domain", "scripts/contributing-policy.pl", "policy analyzer must expose a test evidence coverage domain");
+    }
+    if ($policy->{benchmark_evidence_domain}) {
+        push @out, diagnostic("notice", "policy.benchmark-evidence-domain", "scripts/contributing-policy.pl", "benchmark evidence coverage is modeled, reported, and quality-gated");
+    } else {
+        push @out, diagnostic("error", "policy.benchmark-evidence-domain", "scripts/contributing-policy.pl", "policy analyzer must expose a benchmark evidence coverage domain");
+    }
+    if ($policy->{rule_metadata_domain}) {
+        push @out, diagnostic("notice", "policy.rule-metadata-domain", "scripts/contributing-policy.pl", "rule metadata integrity is modeled, reported, and quality-gated");
+    } else {
+        push @out, diagnostic("error", "policy.rule-metadata-domain", "scripts/contributing-policy.pl", "policy analyzer must expose a rule metadata integrity domain");
+    }
+    if ($policy->{triage_ledger}) {
+        push @out, diagnostic("notice", "policy.triage-ledger", "scripts/contributing-policy.pl", "reviewed triage ledger, expiry checks, and triage template export are wired into the policy analyzer");
+    } else {
+        push @out, diagnostic("error", "policy.triage-ledger", "scripts/contributing-policy.pl", "policy analyzer must support owner/reason/expiry based triage ledgers");
+    }
+    if ($policy->{waiver_model}) {
+        push @out, diagnostic("notice", "policy.waiver-model", "scripts/contributing-policy.pl", "source, baseline, and triage waivers are audited with stale and expired waiver gates");
+    } else {
+        push @out, diagnostic("error", "policy.waiver-model", "scripts/contributing-policy.pl", "policy analyzer must expose waiver audit governance for suppressions and accepted risks");
+    }
+    if ($policy->{review_governance_model}) {
+        push @out, diagnostic("notice", "policy.review-governance-model", "scripts/contributing-policy.pl", "review decisions are audited against confidence, witness, owner, reason, and expiry evidence");
+    } else {
+        push @out, diagnostic("error", "policy.review-governance-model", "scripts/contributing-policy.pl", "policy analyzer must audit false-positive, accepted-risk, mitigated, and suppressed review decisions");
+    }
+    if ($policy->{analysis_coverage_model}) {
+        push @out, diagnostic("notice", "policy.analysis-coverage", "scripts/contributing-policy.pl", "analysis coverage dimensions are reported in JSON, SARIF, HTML, and the quality gate");
+    } else {
+        push @out, diagnostic("error", "policy.analysis-coverage", "scripts/contributing-policy.pl", "policy analyzer must expose analysis coverage gaps and gate them");
+    }
+    if ($policy->{finding_provenance_model}) {
+        push @out, diagnostic("notice", "policy.finding-provenance-model", "scripts/contributing-policy.pl", "finding provenance integrity is reported in JSON, SARIF, HTML, and the quality gate");
+    } else {
+        push @out, diagnostic("error", "policy.finding-provenance-model", "scripts/contributing-policy.pl", "policy analyzer must expose finding provenance integrity and gate missing metadata");
+    }
+    if ($policy->{finding_witness_model}) {
+        push @out, diagnostic("notice", "policy.finding-witness-model", "scripts/contributing-policy.pl", "finding witness completeness is reported in JSON, SARIF, HTML, and the quality gate");
+    } else {
+        push @out, diagnostic("error", "policy.finding-witness-model", "scripts/contributing-policy.pl", "policy analyzer must expose actionable finding witnesses and gate missing evidence");
+    }
+    if ($policy->{finding_confidence_model}) {
+        push @out, diagnostic("notice", "policy.finding-confidence-model", "scripts/contributing-policy.pl", "finding confidence calibration is reported in JSON, SARIF, HTML, and the quality gate");
+    } else {
+        push @out, diagnostic("error", "policy.finding-confidence-model", "scripts/contributing-policy.pl", "policy analyzer must expose confidence calibration and gate low-confidence findings");
+    }
+    if ($policy->{analysis_run_manifest}) {
+        push @out, diagnostic("notice", "policy.run-manifest", "scripts/contributing-policy.pl", "analysis run manifest captures reproducibility inputs in JSON, SARIF, HTML, and the quality gate");
+    } else {
+        push @out, diagnostic("error", "policy.run-manifest", "scripts/contributing-policy.pl", "policy analyzer must expose a reproducible analysis run manifest");
+    }
+    if ($policy->{quality_gate}) {
+        push @out, diagnostic("notice", "policy.quality-gate", "scripts/contributing-policy.pl", "rule profile and quality-gate budgets are wired into the policy analyzer");
+    } else {
+        push @out, diagnostic("error", "policy.quality-gate", "scripts/contributing-policy.pl", "policy analyzer must expose rule profile and quality-gate budgets");
+    }
+    if ($policy->{quality_profile_governance}) {
+        push @out, diagnostic("notice", "policy.quality-profile-governance", "scripts/contributing-policy.pl", "quality profiles are audited for rule drift, severity downgrades, disabled rules, expiry, and reasons");
+    } else {
+        push @out, diagnostic("error", "policy.quality-profile-governance", "scripts/contributing-policy.pl", "policy analyzer must audit quality-profile rule overrides before applying them");
+    }
+    if ($policy->{rule_catalog}) {
+        push @out, diagnostic("notice", "policy.rule-catalog", "scripts/contributing-policy.pl", "rule catalog, defect taxonomy, and SARIF rule metadata are wired into the policy analyzer");
+    } else {
+        push @out, diagnostic("error", "policy.rule-catalog", "scripts/contributing-policy.pl", "policy analyzer must expose rule catalog metadata for every diagnostic");
+    }
+    if ($policy->{quality_model}) {
+        push @out, diagnostic("notice", "policy.quality-model", "scripts/contributing-policy.pl", "quality ratings and technical-debt accounting are wired into machine reports and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.quality-model", "scripts/contributing-policy.pl", "policy analyzer must expose a quality model with technical-debt accounting");
+    }
+    if ($policy->{component_model}) {
+        push @out, diagnostic("notice", "policy.component-model", "scripts/contributing-policy.pl", "component risk modeling is wired into reports, dashboard, and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.component-model", "scripts/contributing-policy.pl", "policy analyzer must expose component-level risk modeling");
+    }
+    if ($policy->{root_cause_model}) {
+        push @out, diagnostic("notice", "policy.root-cause-model", "scripts/contributing-policy.pl", "root-cause correlation is wired into reports, dashboard, and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.root-cause-model", "scripts/contributing-policy.pl", "policy analyzer must correlate diagnostics into root-cause clusters");
+    }
+    if ($policy->{rule_health_model}) {
+        push @out, diagnostic("notice", "policy.rule-health-model", "scripts/contributing-policy.pl", "rule health and noisy-checker calibration are wired into reports, dashboard, and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.rule-health-model", "scripts/contributing-policy.pl", "policy analyzer must expose per-rule signal/noise health metrics");
+    }
+    if ($policy->{ownership_model}) {
+        push @out, diagnostic("notice", "policy.ownership-model", "scripts/contributing-policy.pl", "CODEOWNERS/layer ownership modeling is wired into reports, dashboard, and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.ownership-model", "scripts/contributing-policy.pl", "policy analyzer must assign diagnostics to owners and gate unowned open defects");
+    }
+    if ($policy->{defect_routing_model}) {
+        push @out, diagnostic("notice", "policy.defect-routing-model", "scripts/contributing-policy.pl", "active defects are routed to owners with SLA lanes and unrouted-defect quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.defect-routing-model", "scripts/contributing-policy.pl", "policy analyzer must expose owner-aware defect routing queues and gate unrouted defects");
+    }
+    if ($policy->{remediation_plan}) {
+        push @out, diagnostic("notice", "policy.remediation-plan", "scripts/contributing-policy.pl", "owner-aware remediation planning is wired into machine reports and dashboard output");
+    } else {
+        push @out, diagnostic("error", "policy.remediation-plan", "scripts/contributing-policy.pl", "policy analyzer must turn open defects into owner-aware remediation work items");
+    }
+    if ($policy->{issue_aging}) {
+        push @out, diagnostic("notice", "policy.issue-aging", "scripts/contributing-policy.pl", "history-backed issue aging and SLA gates are wired into reports and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.issue-aging", "scripts/contributing-policy.pl", "policy analyzer must expose issue aging, overdue counts, and max-age quality gates");
+    }
+    if ($policy->{assurance_case}) {
+        push @out, diagnostic("notice", "policy.assurance-case", "scripts/contributing-policy.pl", "TypeSea safety claims are wired into an assurance case with proof evidence and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.assurance-case", "scripts/contributing-policy.pl", "policy analyzer must expose proof obligations and assurance-case quality gates");
+    }
+    if ($policy->{compliance_model}) {
+        push @out, diagnostic("notice", "policy.compliance-model", "scripts/contributing-policy.pl", "TypeSea compliance controls are mapped to diagnostics, assurance claims, reports, and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.compliance-model", "scripts/contributing-policy.pl", "policy analyzer must expose a compliance control matrix with release-gate evidence");
+    }
+    if ($policy->{security_hotspot_model}) {
+        push @out, diagnostic("notice", "policy.security-hotspot-model", "scripts/contributing-policy.pl", "TypeSea security hotspots are review-modeled across reports, owners, and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.security-hotspot-model", "scripts/contributing-policy.pl", "policy analyzer must expose reviewable security hotspots for sensitive TypeSea boundaries");
+    }
+    if ($policy->{security_exploitability_model}) {
+        push @out, diagnostic("notice", "policy.security-exploitability-model", "scripts/contributing-policy.pl", "security hotspots are scored for exploitability and gated as release-blocking findings");
+    } else {
+        push @out, diagnostic("error", "policy.security-exploitability-model", "scripts/contributing-policy.pl", "policy analyzer must expose exploitability scoring for security hotspots");
+    }
+    if ($policy->{security_dataflow_model}) {
+        push @out, diagnostic("notice", "policy.security-dataflow-model", "scripts/contributing-policy.pl", "security source-to-sink dataflow is modeled across taint, symbolic, generated-source, and contract evidence");
+    } else {
+        push @out, diagnostic("error", "policy.security-dataflow-model", "scripts/contributing-policy.pl", "policy analyzer must expose a first-class security dataflow model");
+    }
+    if ($policy->{path_feasibility_model}) {
+        push @out, diagnostic("notice", "policy.path-feasibility-model", "scripts/contributing-policy.pl", "symbolic hostile-input paths are classified by feasibility evidence before release gating");
+    } else {
+        push @out, diagnostic("error", "policy.path-feasibility-model", "scripts/contributing-policy.pl", "policy analyzer must expose path feasibility classification for symbolic dataflow findings");
+    }
+    if ($policy->{context_sensitivity_model}) {
+        push @out, diagnostic("notice", "policy.context-sensitivity-model", "scripts/contributing-policy.pl", "sensitive call graph fan-in is modeled to expose context-insensitive summary risks");
+    } else {
+        push @out, diagnostic("error", "policy.context-sensitivity-model", "scripts/contributing-policy.pl", "policy analyzer must expose context-sensitivity risk metrics for sensitive call paths");
+    }
+    if ($policy->{soundness_model}) {
+        push @out, diagnostic("notice", "policy.soundness-model", "scripts/contributing-policy.pl", "TypeSea soundness envelope tracks analyzer assumptions, budgets, reports, and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.soundness-model", "scripts/contributing-policy.pl", "policy analyzer must expose a soundness envelope for unproven analyzer assumptions");
+    }
+    if ($policy->{proof_obligation_model}) {
+        push @out, diagnostic("notice", "policy.proof-obligation-model", "scripts/contributing-policy.pl", "proof obligations are consolidated across assurance, compliance, and soundness gates");
+    } else {
+        push @out, diagnostic("error", "policy.proof-obligation-model", "scripts/contributing-policy.pl", "policy analyzer must expose open and budgeted proof obligations as a gated model");
+    }
+    if ($policy->{defect_ledger}) {
+        push @out, diagnostic("notice", "policy.defect-ledger", "scripts/contributing-policy.pl", "defect ledger, lifecycle state, and triage priority scoring are wired into machine reports");
+    } else {
+        push @out, diagnostic("error", "policy.defect-ledger", "scripts/contributing-policy.pl", "policy analyzer must expose defect lifecycle and triage priority metadata");
+    }
+    if ($policy->{defect_delta}) {
+        push @out, diagnostic("notice", "policy.defect-delta", "scripts/contributing-policy.pl", "differential defect comparison is wired through --compare-report machine reports");
+    } else {
+        push @out, diagnostic("error", "policy.defect-delta", "scripts/contributing-policy.pl", "policy analyzer must compare current defects against a previous report");
+    }
+    if ($policy->{history_trend}) {
+        push @out, diagnostic("notice", "policy.history-trend", "scripts/contributing-policy.pl", "issue history trend tracking is wired into reports, dashboard, and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.history-trend", "scripts/contributing-policy.pl", "policy analyzer must persist and compare issue history snapshots");
+    }
+    if ($policy->{new_code_gate}) {
+        push @out, diagnostic("notice", "policy.new-code-gate", "scripts/contributing-policy.pl", "new-code scope analysis is wired into reports, dashboard, and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.new-code-gate", "scripts/contributing-policy.pl", "policy analyzer must support changed-file new-code quality gates");
+    }
+    if ($policy->{change_impact_model}) {
+        push @out, diagnostic("notice", "policy.change-impact-model", "scripts/contributing-policy.pl", "change-impact blast-radius analysis is wired into reports, dashboard, and quality gates");
+    } else {
+        push @out, diagnostic("error", "policy.change-impact-model", "scripts/contributing-policy.pl", "policy analyzer must expose changed-file reverse dependency impact for TypeSea critical layers");
+    }
+    return @out;
+}
+
+sub analyze_contributing_coverage {
+    my ($ir, $diagnostics) = @_;
+    my @out;
+    my %codes;
+    for my $diag (@{$diagnostics}) {
+        $codes{$diag->{code}} = 1;
+    }
+
+    my $covered = 0;
+    my $manual = 0;
+    my @missing;
+    for my $requirement (@{contributing_requirement_rules()}) {
+        if ($requirement->{manual}) {
+            $manual += 1;
+            next;
+        }
+        my $ok = 0;
+        for my $prefix (@{$requirement->{codes}}) {
+            for my $code (keys %codes) {
+                if (index($code, $prefix) == 0) {
+                    $ok = 1;
+                    last;
+                }
+            }
+            last if $ok;
+        }
+        if ($ok) {
+            $covered += 1;
+        } else {
+            push @missing, $requirement->{id};
+        }
+    }
+
+    for my $id (@missing) {
+        push @out, diagnostic(
+            "error",
+            "policy.coverage",
+            "CONTRIBUTING.md",
+            "CONTRIBUTING requirement '$id' has no policy diagnostic evidence"
+        );
+    }
+    if (@missing == 0) {
+        push @out, diagnostic(
+            "notice",
+            "policy.coverage",
+            "CONTRIBUTING.md",
+            "mapped $covered machine-checkable requirements and $manual manual-review requirements"
+        );
+    }
+
+    return @out;
+}
+
+sub contributing_requirement_rules {
+    return [
+        {
+            id => "zero-runtime-dependencies",
+            codes => ["deps.runtime", "deps.src-import"]
+        },
+        {
+            id => "no-external-generated-code-tooling",
+            codes => ["deps.generated-code-tooling"]
+        },
+        {
+            id => "hot-path-40m-target",
+            codes => ["bench.hot-path"]
+        },
+        {
+            id => "no-hot-path-closures",
+            codes => ["jit.no-closure"]
+        },
+        {
+            id => "break-label-control-flow",
+            codes => ["jit.break-label"]
+        },
+        {
+            id => "side-table-literals",
+            codes => ["jit.side-table"]
+        },
+        {
+            id => "jump-table-dispatch",
+            codes => ["jit.jump-table"]
+        },
+        {
+            id => "prototype-poisoning-defense",
+            codes => ["safe.direct-read", "safe.descriptor"]
+        },
+        {
+            id => "malicious-accessor-defense",
+            codes => ["safe.accessor", "safe.descriptor"]
+        },
+        {
+            id => "compiler-pipeline-stages",
+            codes => ["arch.builder", "arch.lowering", "arch.optimize", "arch.compile", "arch.evaluate", "arch.aot", "arch.async", "arch.json_schema"]
+        },
+        {
+            id => "schema-feature-stage-coverage",
+            codes => ["schema-tags."]
+        },
+        {
+            id => "ir-node-stage-coverage",
+            codes => ["node-tags."]
+        },
+        {
+            id => "generated-source-abi",
+            codes => ["abi."]
+        },
+        {
+            id => "diagnostic-error-warning-notice-levels",
+            codes => ["policy.severity", "policy.verbose", "policy.template-lexer", "policy.import-ast", "policy.import-type-name", "policy.lex-errors", "policy.dynamic-import", "policy.semicolonless-import", "policy.function-ir", "policy.clone-analysis", "policy.machine-report", "policy.dashboard", "policy.baseline", "policy.source-suppression", "policy.type-escape-domain", "policy.regex-safety-domain", "policy.secret-leak-domain", "policy.workflow-security-domain", "policy.package-lock-security-domain", "policy.package-license-domain", "policy.api-surface-domain", "policy.release-consistency-domain", "policy.test-evidence-domain", "policy.benchmark-evidence-domain", "policy.rule-metadata-domain", "policy.triage-ledger", "policy.waiver-model", "policy.review-governance-model", "policy.analysis-coverage", "policy.finding-provenance-model", "policy.finding-witness-model", "policy.finding-confidence-model", "policy.run-manifest", "policy.quality-gate", "policy.quality-profile-governance", "policy.rule-catalog", "policy.quality-model", "policy.component-model", "policy.root-cause-model", "policy.rule-health-model", "policy.ownership-model", "policy.defect-routing-model", "policy.remediation-plan", "policy.issue-aging", "policy.assurance-case", "policy.compliance-model", "policy.security-hotspot-model", "policy.security-exploitability-model", "policy.security-dataflow-model", "policy.path-feasibility-model", "policy.context-sensitivity-model", "policy.soundness-model", "policy.proof-obligation-model", "policy.defect-ledger", "policy.defect-delta", "policy.history-trend", "policy.new-code-gate", "policy.change-impact-model"]
+        },
+        {
+            id => "interprocedural-function-analysis",
+            codes => ["flow.function-ir", "flow.callgraph", "flow.recursion", "flow.recursion-domain", "flow.recursion-gap", "flow.cfg", "flow.unreachable", "flow.complexity", "flow.clone-domain", "flow.clone-gap", "flow.descriptor-proof", "flow.descriptor-dominance", "flow.abstract-domain", "flow.branch-state", "flow.branch-leak", "flow.loop-bound-domain", "flow.loop-bound-gap", "flow.range-domain", "flow.range-gap", "flow.index-domain", "flow.index-gap", "flow.mutation-domain", "flow.mutation-gap", "flow.memory-alias-domain", "flow.memory-alias-gap", "flow.key-safety-domain", "flow.key-safety-gap", "flow.result-state-domain", "flow.result-state-gap", "flow.freeze-state-domain", "flow.freeze-state-gap", "flow.variant-state-domain", "flow.variant-state-gap", "flow.generated-source-domain", "flow.generated-source-gap", "flow.exception-domain", "flow.exception-gap", "flow.lifecycle-domain", "flow.lifecycle-gap", "flow.lifecycle-fixpoint", "flow.lifecycle-path", "flow.async-domain", "flow.async-scheduling-gap", "flow.symbolic-domain", "flow.symbolic-path", "flow.symbolic-fixpoint", "flow.symbolic-caller-path", "flow.nullish-domain", "flow.nullish-gap", "flow.effect-domain", "flow.hot-loop-allocation", "flow.contract-domain", "flow.contract-gap", "flow.taint-fixpoint", "flow.dynamic-sink", "flow.tainted-path"]
+        },
+        {
+            id => "meaningful-jsdoc-policy",
+            codes => ["docs.comments", "docs.jsdoc-coverage"]
+        },
+        {
+            id => "readonly-immutability",
+            codes => ["types.readonly", "types.escape-domain", "types.unsafe-escape"]
+        },
+        {
+            id => "public-type-expectations",
+            codes => ["types.expect"]
+        },
+        {
+            id => "full-check-script",
+            codes => ["ci.check"]
+        },
+        {
+            id => "contributing-policy-gate",
+            codes => ["ci.contributing"]
+        },
+        {
+            id => "release-gate-coverage",
+            codes => ["release.", "policy.release-consistency-domain"]
+        },
+        {
+            id => "package-release-metadata",
+            codes => ["release.metadata", "exports.", "package.files"]
+        },
+        {
+            id => "security-regression-suite",
+            codes => ["pr.security-regression", "safe.regression", "security.regex-domain", "security.redos-risk"]
+        },
+        {
+            id => "test-evidence-portfolio",
+            codes => ["test.evidence-domain", "test.evidence-gap", "policy.test-evidence-domain"]
+        },
+        {
+            id => "optimization-pr-benchmark-evidence",
+            codes => ["pr.bench-compare", "bench.evidence-domain", "bench.evidence-gap", "policy.benchmark-evidence-domain"]
+        },
+        {
+            id => "rule-catalog-metadata-integrity",
+            codes => ["rule.metadata-domain", "rule.metadata-gap", "rule.metadata-generic", "policy.rule-metadata-domain"]
+        },
+        {
+            id => "public-api-change-gate",
+            codes => ["pr.api-surface", "api.surface-domain", "api.surface-drift", "api.docs-coverage", "policy.api-surface-domain"]
+        },
+        {
+            id => "focused-pr-scope",
+            manual => 1
+        },
+        {
+            id => "good-first-error-message-guidance",
+            manual => 1
+        },
+        {
+            id => "good-first-builder-api-guidance",
+            manual => 1
+        },
+        {
+            id => "good-first-test-coverage-guidance",
+            manual => 1
+        },
+        {
+            id => "good-first-documentation-guidance",
+            manual => 1
+        }
+    ];
+}
+
+sub document_ir {
+    my ($source) = @_;
+    my %sections;
+    my @requirements;
+    my @lines = split /\n/, $source;
+    my $current = "";
+    my $in_code = 0;
+    for (my $index = 0; $index < @lines; $index += 1) {
+        my $line = $lines[$index];
+        if ($line =~ /^```/) {
+            $in_code = !$in_code;
+            next;
+        }
+        if ($line =~ /^##+\s+(.+?)\s*\z/) {
+            $current = $1;
+            $sections{$current} = {
+                line => $index + 1,
+                title => $current
+            };
+            next;
+        }
+        next if $in_code;
+        if ($line =~ /^\s*(?:[-*]|\d+\.)\s+(.*\S)\s*\z/) {
+            push @requirements, {
+                line => $index + 1,
+                section => $current,
+                text => $1
+            };
+        }
+        if ($line =~ /^>\s+\*\*Requirement\*\*:\s*(.*\S)\s*\z/) {
+            push @requirements, {
+                line => $index + 1,
+                section => $current,
+                text => $1
+            };
+        }
+    }
+    return {
+        sections => \%sections,
+        requirements => \@requirements,
+        requirement_count => scalar(@requirements)
+    };
+}
+
+sub package_ir {
+    my ($package) = @_;
+    my @runtime_dependency_fields = (
+        "dependencies",
+        "peerDependencies",
+        "optionalDependencies",
+        "bundleDependencies",
+        "bundledDependencies"
+    );
+    my %files_index;
+    my $files = array_or_empty($package->{files});
+    for my $item (@{$files}) {
+        next if !defined $item;
+        $files_index{$item} = 1;
+    }
+    return {
+        json => $package,
+        runtime_dependency_fields => \@runtime_dependency_fields,
+        dev_dependencies => object_or_empty($package->{devDependencies}),
+        exports => object_or_empty($package->{exports}),
+        files => $files,
+        files_index => \%files_index
+    };
+}
+
+sub tsconfig_ir {
+    my ($tsconfig) = @_;
+    return {
+        json => $tsconfig,
+        compilerOptions => object_or_empty($tsconfig->{compilerOptions})
+    };
+}
+
+sub script_ir {
+    my ($package) = @_;
+    return {
+        map => object_or_empty($package->{scripts})
+    };
+}
+
+sub source_ir {
+    my @files = source_files("src", qr/\.ts\z/);
+    my @file_ir;
+    my @bare_imports;
+    my @unresolved_imports;
+    my @import_edges;
+    my @lex_errors;
+    my @functions;
+    my @clone_blocks;
+    my %source_suppressions;
+    my @invalid_source_suppressions;
+    my %modules_by_path;
+    my %layer_edges;
+    my @schema_tags = read_const_object_keys("src/kind/index.ts", "SchemaTag");
+    my @node_tags = read_const_object_keys("src/kind/index.ts", "NodeTag");
+    my %schema_tag_coverage;
+    my %node_tag_coverage;
+    my $type_escape_domain = empty_type_escape_domain();
+    my $regex_safety_domain = empty_regex_safety_domain();
+    my %schema_stage_roots = (
+        lower => ["src/lower/"],
+        evaluate => ["src/evaluate/", "src/plan/"],
+        compile => ["src/compile/"],
+        async => ["src/async-validation/"],
+        aot => ["src/aot/"],
+        json_schema => ["src/json-schema/"]
+    );
+    my %node_stage_roots = (
+        ir => ["src/ir/"],
+        optimize => ["src/optimize/"],
+        compile => ["src/compile/"],
+        plan => ["src/plan/"]
+    );
+    my $public_declarations = 0;
+    my $documented_public_declarations = 0;
+    my $readonly_refs = 0;
+    my %architecture = (
+        builder => -d "src/builders" ? 1 : 0,
+        lowering => -d "src/lower" ? 1 : 0,
+        optimize => -d "src/optimize" ? 1 : 0,
+        compile => -d "src/compile" ? 1 : 0,
+        evaluate => -d "src/evaluate" ? 1 : 0,
+        aot => -d "src/aot" ? 1 : 0,
+        async => -d "src/async-validation" ? 1 : 0,
+        json_schema => -d "src/json-schema" ? 1 : 0,
+        optimizer_mentions => 0
+    );
+    my %compile = (
+        new_function_count => 0,
+        side_table_refs => 0,
+        break_label_refs => 0,
+        switch_refs => 0,
+        compile_warning_refs => 0,
+        closure_arrow_refs => 0
+    );
+    my %security = (
+        descriptor_reads => 0,
+        descriptor_value_proofs => 0,
+        direct_prop_reads_in_plan => 0,
+        regression_file => -f "test/security-regression.test.ts" ? 1 : 0
+    );
+    my %generated_abi = (
+        source_bundle => -f "src/compile/source.ts" ? 1 : 0,
+        helper_h => 0,
+        helper_gp => 0,
+        helper_l => 0,
+        helper_r => 0,
+        helper_k => 0,
+        helper_u => 0,
+        helper_dynamic => 0,
+        helper_message => 0,
+        helper_mapfirst => 0,
+        helper_strict_keys => 0,
+        factory_parameters => 0,
+        aot_wrapper_parameters => 0
+    );
+
+    for my $path (@files) {
+        my $source = read_text($path);
+        my ($file_suppressions, $file_invalid_suppressions) = read_source_suppressions($path, $source);
+        for my $key (keys %{$file_suppressions}) {
+            $source_suppressions{$key} = $file_suppressions->{$key};
+        }
+        push @invalid_source_suppressions, @{$file_invalid_suppressions};
+        my $lex = lex_ts_source($source);
+        for my $error (@{$lex->{errors}}) {
+            push @lex_errors, {
+                path => $path,
+                line => $error->{line},
+                message => $error->{message}
+            };
+        }
+        my @tokens = @{$lex->{tokens}};
+        my $file_type_escape_domain = build_type_escape_domain_summary($path, \@tokens, $source);
+        merge_type_escape_domain($type_escape_domain, $file_type_escape_domain);
+        my $file_regex_safety_domain = build_regex_safety_domain_summary($path, \@tokens);
+        merge_regex_safety_domain($regex_safety_domain, $file_regex_safety_domain);
+        push @clone_blocks, @{clone_windows_for_file($path, \@tokens)};
+        my @imports = read_imports($path, \@tokens);
+        my @file_functions = read_function_summaries($path, \@tokens);
+        push @functions, @file_functions;
+        my $layer = source_layer($path);
+        $modules_by_path{$path} = {
+            path => $path,
+            layer => $layer
+        };
+        for my $import (@imports) {
+            my $specifier = $import->{specifier};
+            next if !defined $specifier;
+            if ($specifier =~ m{\A\.\.?/}) {
+                my $resolved = resolve_import_path($path, $specifier);
+                if (!defined $resolved) {
+                    push @unresolved_imports, $import;
+                    next;
+                }
+                my $target_layer = source_layer($resolved);
+                push @import_edges, {
+                    from => $path,
+                    to => $resolved,
+                    from_layer => $layer,
+                    to_layer => $target_layer,
+                    line => $import->{line},
+                    type_only => $import->{type_only}
+                };
+                $layer_edges{"$layer->$target_layer"} += 1;
+                next;
+            }
+            next if $specifier =~ /\Anode:/;
+            push @bare_imports, $import;
+        }
+
+        my $export_count = 0;
+        my $documented_export_count = 0;
+        for my $declaration (@{read_public_declarations($lex)}) {
+            $export_count += 1;
+            $documented_export_count += $declaration->{documented} ? 1 : 0;
+        }
+        $public_declarations += $export_count;
+        $documented_public_declarations += $documented_export_count;
+        $readonly_refs += count_token_value(\@tokens, "readonly");
+
+        if ($path =~ m{\Asrc/optimize/} && token_ir_mentions_any($lex, qw(fold peephole domain algebraic rewrite compact))) {
+            $architecture{optimizer_mentions} += 1;
+        }
+        if ($path =~ m{\Asrc/compile/}) {
+            $compile{new_function_count} += count_token_sequence(\@tokens, "new", "Function");
+            $compile{side_table_refs} += count_fragment_matches($lex, qr/\b[ulk]\[\$\{String\(/);
+            $compile{side_table_refs} += count_fragment_matches($lex, qr/\b[ulk]\[\d+\]/);
+            $compile{break_label_refs} += count_fragment_matches($lex, qr/\bbreak\s+\$\{/);
+            $compile{break_label_refs} += count_token_after(\@tokens, "break", "id");
+            $compile{switch_refs} += count_token_value(\@tokens, "switch");
+            $compile{switch_refs} += count_fragment_matches($lex, qr/\bswitch\s*\(/);
+            $compile{compile_warning_refs} += count_fragment_matches($lex, qr/compile\(\) was called/);
+            $compile{closure_arrow_refs} += count_fragment_matches($lex, qr/=>/);
+        }
+        for my $stage (keys %schema_stage_roots) {
+            next if !path_in_roots($path, $schema_stage_roots{$stage});
+            for my $tag (@schema_tags) {
+                if (has_token_sequence(\@tokens, "SchemaTag", ".", $tag)) {
+                    $schema_tag_coverage{$stage}{$tag} += 1;
+                }
+            }
+        }
+        for my $stage (keys %node_stage_roots) {
+            next if !path_in_roots($path, $node_stage_roots{$stage});
+            for my $tag (@node_tags) {
+                if (has_token_sequence(\@tokens, "NodeTag", ".", $tag)) {
+                    $node_tag_coverage{$stage}{$tag} += 1;
+                }
+            }
+        }
+        if ($path eq "src/compile/source.ts") {
+            $generated_abi{helper_h} += count_call_string_argument(\@tokens, "pushHelper", "h");
+            $generated_abi{helper_gp} += count_call_string_argument(\@tokens, "pushHelper", "gp");
+            $generated_abi{helper_l} += count_token_value(\@tokens, "literals");
+            $generated_abi{helper_r} += count_token_value(\@tokens, "regexps");
+            $generated_abi{helper_k} += count_token_value(\@tokens, "keysets");
+            $generated_abi{helper_u} += count_token_value(\@tokens, "strings");
+            $generated_abi{helper_dynamic} += count_case_string(\@tokens, "d");
+            $generated_abi{helper_message} += count_case_string(\@tokens, "m");
+            $generated_abi{helper_mapfirst} += count_case_string(\@tokens, "mf");
+            $generated_abi{helper_strict_keys} += count_case_string(\@tokens, "sk");
+        }
+        if ($path eq "src/compile/guard.ts") {
+            $generated_abi{factory_parameters} += count_new_function_abi(\@tokens);
+        }
+        if ($path eq "src/aot/index.ts") {
+            $generated_abi{aot_wrapper_parameters} += count_fragment_matches($lex, qr/function\(l,r,k,u,d,m,mf,sk\)/);
+            $generated_abi{aot_wrapper_parameters} += count_fragment_matches($lex, qr/\}\)\(l,r,k,u,d,m,mf,sk\)/);
+        }
+        if ($path =~ m{\Asrc/(?:plan|evaluate|async-validation|compile)/}) {
+            $security{descriptor_reads} += count_token_sequence(\@tokens, "Object", ".", "getOwnPropertyDescriptor");
+            $security{descriptor_reads} += count_call_name(\@tokens, "gp");
+            $security{descriptor_reads} += count_fragment_matches($lex, qr/\bgp\(/);
+            $security{descriptor_value_proofs} += count_token_sequence(\@tokens, "hasOwnProperty", ".", "call");
+            $security{descriptor_value_proofs} += count_token_sequence(\@tokens, "h", ".", "call");
+            $security{descriptor_value_proofs} += count_fragment_matches($lex, qr/h\.call\([^)]*,\s*["']value["']\)/);
+        }
+        if ($path =~ m{\Asrc/(?:plan|evaluate|async-validation)/}) {
+            $security{direct_prop_reads_in_plan} += count_direct_value_property_reads(\@tokens);
+        }
+
+        push @file_ir, {
+            path => $path,
+            import_count => scalar(@imports),
+            function_count => scalar(@file_functions),
+            export_count => $export_count,
+            documented_export_count => $documented_export_count,
+            type_escape_count => $file_type_escape_domain->{totalEscapes},
+            regex_count => $file_regex_safety_domain->{totalRegexps}
+        };
+    }
+
+    my $function_graph = build_function_graph(\@functions);
+    my $abstract_state = build_function_abstract_state(\@functions, $function_graph);
+    $abstract_state->{clone_domain} = build_clone_domain(\@clone_blocks);
+    my $ratio = $public_declarations == 0
+        ? 1
+        : $documented_public_declarations / $public_declarations;
+
+    return {
+        files => \@file_ir,
+        modules_by_path => \%modules_by_path,
+        import_edges => \@import_edges,
+        import_cycles => find_import_cycles(\@import_edges),
+        layer_edges => \%layer_edges,
+        lex_errors => \@lex_errors,
+        source_suppressions => \%source_suppressions,
+        invalid_source_suppressions => \@invalid_source_suppressions,
+        type_escape_domain => $type_escape_domain,
+        regex_safety_domain => $regex_safety_domain,
+        function_analysis => {
+            functions => \@functions,
+            graph => $function_graph,
+            abstract => $abstract_state
+        },
+        bare_imports => \@bare_imports,
+        unresolved_imports => \@unresolved_imports,
+        schema_tags => \@schema_tags,
+        node_tags => \@node_tags,
+        schema_tag_coverage => \%schema_tag_coverage,
+        node_tag_coverage => \%node_tag_coverage,
+        generated_abi => \%generated_abi,
+        architecture => \%architecture,
+        compile => \%compile,
+        security => \%security,
+        public_declarations => $public_declarations,
+        documented_public_declarations => $documented_public_declarations,
+        readonly_refs => $readonly_refs,
+        public_doc_ratio => $ratio,
+        comment_policy => {
+            boilerplate_guard => source_policy_has_boilerplate_guards()
+        }
+    };
+}
+
+sub empty_type_escape_domain {
+    return {
+        schemaVersion => 1,
+        model => "TypeSea type escape domain",
+        files => 0,
+        explicitAny => 0,
+        asAny => 0,
+        doubleAssertions => 0,
+        nonNullAssertions => 0,
+        uncheckedJsonParse => 0,
+        tsSuppressionComments => 0,
+        totalEscapes => 0,
+        findings => []
+    };
+}
+
+sub build_type_escape_domain_summary {
+    my ($path, $tokens, $source) = @_;
+    my $domain = empty_type_escape_domain();
+    $domain->{files} = 1;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        if (token_sequence_at($tokens, $index, "as", "any")) {
+            add_type_escape_finding(
+                $domain,
+                "as_any",
+                $path,
+                token_line($tokens, $index),
+                "`as any` bypasses TypeScript narrowing and must stay explicitly budgeted"
+            );
+            next;
+        }
+
+        if (token_sequence_at($tokens, $index, "as", "unknown", "as")) {
+            add_type_escape_finding(
+                $domain,
+                "double_assertion",
+                $path,
+                token_line($tokens, $index),
+                "`as unknown as` double assertion crosses an unchecked type boundary"
+            );
+            next;
+        }
+
+        if (is_explicit_any_token($tokens, $index)) {
+            add_type_escape_finding(
+                $domain,
+                "explicit_any",
+                $path,
+                token_line($tokens, $index),
+                "explicit `any` weakens TypeSea's unknown-first boundary"
+            );
+            next;
+        }
+
+        if (is_non_null_assertion_token($tokens, $index)) {
+            add_type_escape_finding(
+                $domain,
+                "non_null_assertion",
+                $path,
+                token_line($tokens, $index),
+                "non-null assertion skips TypeScript nullish proof obligations"
+            );
+            next;
+        }
+
+        if (token_sequence_at($tokens, $index, "JSON", ".", "parse", "(")) {
+            add_type_escape_finding(
+                $domain,
+                "unchecked_json_parse",
+                $path,
+                token_line($tokens, $index),
+                "`JSON.parse` returns unknown data and should be paired with TypeSea validation"
+            );
+            next;
+        }
+    }
+
+    my @lines = split /\n/, $source // "";
+    for (my $line_index = 0; $line_index < @lines; $line_index += 1) {
+        next if $lines[$line_index] !~ /\@ts-(?:ignore|expect-error)\b/;
+        add_type_escape_finding(
+            $domain,
+            "ts_suppression",
+            $path,
+            $line_index + 1,
+            "TypeScript diagnostic suppression must be reviewed as a type-safety escape hatch"
+        );
+    }
+
+    return $domain;
+}
+
+sub merge_type_escape_domain {
+    my ($target, $source) = @_;
+    $target->{files} += $source->{files};
+    for my $field (qw(explicitAny asAny doubleAssertions nonNullAssertions uncheckedJsonParse tsSuppressionComments totalEscapes)) {
+        $target->{$field} += $source->{$field};
+    }
+    push @{$target->{findings}}, @{$source->{findings}};
+}
+
+sub add_type_escape_finding {
+    my ($domain, $kind, $path, $line, $message) = @_;
+    my %field_by_kind = (
+        explicit_any => "explicitAny",
+        as_any => "asAny",
+        double_assertion => "doubleAssertions",
+        non_null_assertion => "nonNullAssertions",
+        unchecked_json_parse => "uncheckedJsonParse",
+        ts_suppression => "tsSuppressionComments"
+    );
+    my $field = $field_by_kind{$kind};
+    $domain->{$field} += 1 if defined $field;
+    $domain->{totalEscapes} += 1;
+    push @{$domain->{findings}}, {
+        kind => $kind,
+        path => $path,
+        line => $line,
+        where => "$path:$line",
+        message => $message
+    };
+}
+
+sub is_explicit_any_token {
+    my ($tokens, $index) = @_;
+    return 0 if token_type($tokens, $index) ne "id";
+    return 0 if token_value($tokens, $index) ne "any";
+    return 0 if token_value($tokens, $index - 1) eq ".";
+    return 0 if token_value($tokens, $index - 1) eq "as";
+    return 1;
+}
+
+sub is_non_null_assertion_token {
+    my ($tokens, $index) = @_;
+    return 0 if token_value($tokens, $index) ne "!";
+    my $previous = token_value($tokens, $index - 1);
+    my $next = token_value($tokens, $index + 1);
+    return 0 if $previous eq "" || $next eq "";
+    return 0 if is_typescript_keyword_value($previous);
+    return 0 if $previous eq "!" || $previous eq "=";
+    return 0 if $next eq "=";
+    return 0 if $next ne "." && $next ne "[" && $next ne "(";
+    return 1 if token_type($tokens, $index - 1) eq "id";
+    return 1 if $previous eq ")" || $previous eq "]";
+    return 0;
+}
+
+sub is_typescript_keyword_value {
+    my ($value) = @_;
+    my %keywords = map { $_ => 1 } qw(
+        as async await break case catch class const continue debugger default
+        delete do else export extends false finally for from function if import
+        in instanceof interface let new null of return satisfies switch this
+        throw true try type typeof undefined var void while with yield
+    );
+    return $keywords{$value // ""} ? 1 : 0;
+}
+
+sub empty_regex_safety_domain {
+    return {
+        schemaVersion => 1,
+        model => "TypeSea regex safety domain",
+        files => 0,
+        regexLiterals => 0,
+        regexConstructors => 0,
+        dynamicRegexConstructors => 0,
+        statefulRegexps => 0,
+        backreferenceRisks => 0,
+        nestedQuantifierRisks => 0,
+        quantifiedAlternationRisks => 0,
+        wildcardChainRisks => 0,
+        totalRegexps => 0,
+        totalRedosRisks => 0,
+        findings => []
+    };
+}
+
+sub build_regex_safety_domain_summary {
+    my ($path, $tokens) = @_;
+    my $domain = empty_regex_safety_domain();
+    $domain->{files} = 1;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        if (token_type($tokens, $index) eq "regex") {
+            my ($source, $flags) = split_regex_literal_token(token_value($tokens, $index));
+            next if !defined $source;
+            $domain->{regexLiterals} += 1;
+            analyze_regex_pattern($domain, $path, token_line($tokens, $index), $source, $flags, "literal");
+            next;
+        }
+
+        my $call_index = regexp_constructor_call_index($tokens, $index);
+        next if !defined $call_index;
+        $domain->{regexConstructors} += 1;
+        my $pattern_index = $call_index + 1;
+        if (token_type($tokens, $pattern_index) eq "string") {
+            my $flags = "";
+            if (token_value($tokens, $pattern_index + 1) eq "," &&
+                token_type($tokens, $pattern_index + 2) eq "string") {
+                $flags = token_value($tokens, $pattern_index + 2);
+            }
+            analyze_regex_pattern(
+                $domain,
+                $path,
+                token_line($tokens, $index),
+                token_value($tokens, $pattern_index),
+                $flags,
+                "constructor"
+            );
+        } else {
+            $domain->{dynamicRegexConstructors} += 1;
+        }
+    }
+
+    return $domain;
+}
+
+sub merge_regex_safety_domain {
+    my ($target, $source) = @_;
+    $target->{files} += $source->{files};
+    for my $field (qw(regexLiterals regexConstructors dynamicRegexConstructors statefulRegexps backreferenceRisks nestedQuantifierRisks quantifiedAlternationRisks wildcardChainRisks totalRegexps totalRedosRisks)) {
+        $target->{$field} += $source->{$field};
+    }
+    push @{$target->{findings}}, @{$source->{findings}};
+}
+
+sub split_regex_literal_token {
+    my ($value) = @_;
+    return (undef, undef) if !defined $value || substr($value, 0, 1) ne "/";
+    my $in_class = 0;
+    my $escaped = 0;
+    for (my $index = 1; $index < length($value); $index += 1) {
+        my $char = substr($value, $index, 1);
+        if ($escaped) {
+            $escaped = 0;
+            next;
+        }
+        if ($char eq "\\") {
+            $escaped = 1;
+            next;
+        }
+        if ($char eq "[") {
+            $in_class = 1;
+            next;
+        }
+        if ($char eq "]") {
+            $in_class = 0;
+            next;
+        }
+        if ($char eq "/" && !$in_class) {
+            return (substr($value, 1, $index - 1), substr($value, $index + 1));
+        }
+    }
+    return (undef, undef);
+}
+
+sub regexp_constructor_call_index {
+    my ($tokens, $index) = @_;
+    return $index + 2
+        if token_value($tokens, $index) eq "new" &&
+        token_value($tokens, $index + 1) eq "RegExp" &&
+        token_value($tokens, $index + 2) eq "(";
+    return $index + 1
+        if token_value($tokens, $index) eq "RegExp" &&
+        token_value($tokens, $index - 1) ne "new" &&
+        token_value($tokens, $index - 1) ne "." &&
+        token_value($tokens, $index + 1) eq "(";
+    return undef;
+}
+
+sub analyze_regex_pattern {
+    my ($domain, $path, $line, $source, $flags, $origin) = @_;
+    $domain->{totalRegexps} += 1;
+    $domain->{statefulRegexps} += 1 if defined $flags && $flags =~ /[gy]/;
+
+    my @risks = regex_redos_risks($source);
+    for my $risk (@risks) {
+        add_regex_risk_finding(
+            $domain,
+            $risk->{kind},
+            $path,
+            $line,
+            $origin,
+            $source,
+            $risk->{message}
+        );
+    }
+}
+
+sub regex_redos_risks {
+    my ($source) = @_;
+    my @risks;
+    my $normalized = normalize_regex_source_for_redos($source);
+
+    push @risks, {
+        kind => "backreference",
+        message => "backreference can couple matching state and should be reviewed for ReDoS behavior"
+    } if regex_has_backreference($source);
+
+    push @risks, {
+        kind => "nested_unbounded_quantifier",
+        message => "unbounded quantified group contains another unbounded quantifier"
+    } if regex_has_nested_unbounded_quantifier($normalized);
+
+    push @risks, {
+        kind => "quantified_alternation",
+        message => "unbounded quantified alternation can create overlapping backtracking paths"
+    } if regex_has_quantified_alternation($normalized);
+
+    push @risks, {
+        kind => "wildcard_chain",
+        message => "multiple unbounded wildcard runs can amplify backtracking on hostile strings"
+    } if regex_has_unbounded_wildcard_chain($normalized);
+
+    return @risks;
+}
+
+sub add_regex_risk_finding {
+    my ($domain, $kind, $path, $line, $origin, $source, $message) = @_;
+    my %field_by_kind = (
+        backreference => "backreferenceRisks",
+        nested_unbounded_quantifier => "nestedQuantifierRisks",
+        quantified_alternation => "quantifiedAlternationRisks",
+        wildcard_chain => "wildcardChainRisks"
+    );
+    my $field = $field_by_kind{$kind};
+    $domain->{$field} += 1 if defined $field;
+    $domain->{totalRedosRisks} += 1;
+    push @{$domain->{findings}}, {
+        kind => $kind,
+        path => $path,
+        line => $line,
+        where => "$path:$line",
+        origin => $origin,
+        source => $source,
+        message => $message
+    };
+}
+
+sub normalize_regex_source_for_redos {
+    my ($source) = @_;
+    my $out = "";
+    my $in_class = 0;
+    my $escaped = 0;
+    for (my $index = 0; $index < length($source); $index += 1) {
+        my $char = substr($source, $index, 1);
+        if ($escaped) {
+            $out .= "E";
+            $escaped = 0;
+            next;
+        }
+        if ($char eq "\\") {
+            $escaped = 1;
+            next;
+        }
+        if ($in_class) {
+            if ($char eq "]") {
+                $in_class = 0;
+            }
+            $out .= "C";
+            next;
+        }
+        if ($char eq "[") {
+            $in_class = 1;
+            $out .= "C";
+            next;
+        }
+        $out .= $char;
+    }
+    return $out;
+}
+
+sub regex_has_backreference {
+    my ($source) = @_;
+    my $escaped = 0;
+    for (my $index = 0; $index < length($source); $index += 1) {
+        my $char = substr($source, $index, 1);
+        if ($escaped) {
+            return 1 if $char =~ /[1-9]/;
+            $escaped = 0;
+            next;
+        }
+        $escaped = 1 if $char eq "\\";
+    }
+    return 0;
+}
+
+sub regex_has_nested_unbounded_quantifier {
+    my ($source) = @_;
+    for my $group (regex_quantified_groups($source)) {
+        next if !is_unbounded_regex_quantifier($group->{quantifier});
+        return 1 if regex_fragment_has_unbounded_quantifier($group->{content});
+    }
+    return 0;
+}
+
+sub regex_has_quantified_alternation {
+    my ($source) = @_;
+    for my $group (regex_quantified_groups($source)) {
+        next if !is_unbounded_regex_quantifier($group->{quantifier});
+        return 1 if index($group->{content}, "|") >= 0;
+    }
+    return 0;
+}
+
+sub regex_quantified_groups {
+    my ($source) = @_;
+    my @stack;
+    my @groups;
+    for (my $index = 0; $index < length($source); $index += 1) {
+        my $char = substr($source, $index, 1);
+        if ($char eq "(") {
+            push @stack, $index;
+            next;
+        }
+        next if $char ne ")" || @stack == 0;
+        my $start = pop @stack;
+        my $quantifier = regex_quantifier_after($source, $index + 1);
+        next if $quantifier eq "";
+        push @groups, {
+            content => substr($source, $start + 1, $index - $start - 1),
+            quantifier => $quantifier
+        };
+    }
+    return @groups;
+}
+
+sub regex_quantifier_after {
+    my ($source, $index) = @_;
+    return "" if $index >= length($source);
+    my $char = substr($source, $index, 1);
+    return $char if $char eq "*" || $char eq "+";
+    if ($char eq "{") {
+        my $end = index($source, "}", $index + 1);
+        return "" if $end < 0;
+        return substr($source, $index, $end - $index + 1);
+    }
+    return "";
+}
+
+sub is_unbounded_regex_quantifier {
+    my ($quantifier) = @_;
+    return 1 if $quantifier eq "*" || $quantifier eq "+";
+    return 1 if $quantifier =~ /\A\{\d+,\}\z/;
+    return 0;
+}
+
+sub regex_fragment_has_unbounded_quantifier {
+    my ($fragment) = @_;
+    return 1 if $fragment =~ /[*+]/;
+    return 1 if $fragment =~ /\{\d+,\}/;
+    return 0;
+}
+
+sub regex_has_unbounded_wildcard_chain {
+    my ($source) = @_;
+    my $runs = 0;
+    for (my $index = 0; $index + 1 < length($source); $index += 1) {
+        next if substr($source, $index, 1) ne ".";
+        my $next = substr($source, $index + 1, 1);
+        next if $next ne "*" && $next ne "+";
+        $runs += 1;
+        return 1 if $runs > 1;
+    }
+    return 0;
+}
+
+sub secret_leak_ir {
+    my @files = secret_scan_files();
+    my $domain = empty_secret_leak_domain();
+    $domain->{scannedFiles} = scalar(@files);
+    for my $path (@files) {
+        my $text = read_text($path);
+        my $file_domain = build_secret_leak_domain_summary($path, $text);
+        merge_secret_leak_domain($domain, $file_domain);
+    }
+    return $domain;
+}
+
+sub secret_scan_files {
+    my @files;
+    push @files, source_files("src", qr/\.(?:ts|tsx|js|mjs|cjs|json|md|yml|yaml)\z/);
+    push @files, source_files("scripts", qr/\.(?:ts|js|mjs|cjs|pl|json|md|yml|yaml)\z/);
+    push @files, source_files("test", qr/\.(?:ts|tsx|js|mjs|cjs|json|md)\z/);
+    push @files, source_files("bench", qr/\.(?:ts|js|mjs|cjs|json|md)\z/);
+    push @files, source_files(".github", qr/\.(?:yml|yaml|json|md)\z/);
+    for my $path (qw(package.json README.md CONTRIBUTING.md CHANGELOG.md SECURITY.md)) {
+        push @files, $path if -f $path;
+    }
+    my %seen;
+    return sort grep {
+        !$seen{$_}++ &&
+            $_ !~ m{\A(?:node_modules|dist|docs|coverage|scratch|examples)/} &&
+            $_ !~ m{(?:^|/)\.env(?:\.|$)}
+    } @files;
+}
+
+sub empty_secret_leak_domain {
+    return {
+        schemaVersion => 1,
+        model => "TypeSea secret leak domain",
+        scannedFiles => 0,
+        awsAccessKeys => 0,
+        githubTokens => 0,
+        npmTokens => 0,
+        privateKeys => 0,
+        openAiKeys => 0,
+        genericCredentials => 0,
+        totalLeaks => 0,
+        findings => []
+    };
+}
+
+sub build_secret_leak_domain_summary {
+    my ($path, $text) = @_;
+    my $domain = empty_secret_leak_domain();
+    my @lines = split /\n/, $text // "";
+    for (my $index = 0; $index < @lines; $index += 1) {
+        my $line = $lines[$index];
+        add_secret_matches_from_line($domain, $path, $index + 1, $line);
+    }
+    return $domain;
+}
+
+sub merge_secret_leak_domain {
+    my ($target, $source) = @_;
+    for my $field (qw(awsAccessKeys githubTokens npmTokens privateKeys openAiKeys genericCredentials totalLeaks)) {
+        $target->{$field} += $source->{$field};
+    }
+    push @{$target->{findings}}, @{$source->{findings}};
+}
+
+sub add_secret_matches_from_line {
+    my ($domain, $path, $line_number, $line) = @_;
+    my @patterns = (
+        ["aws_access_key", "awsAccessKeys", qr/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/],
+        ["github_token", "githubTokens", qr/\bgh[pousr]_[A-Za-z0-9_]{36,}\b/],
+        ["npm_token", "npmTokens", qr/\bnpm_[A-Za-z0-9]{36,}\b/],
+        ["openai_key", "openAiKeys", qr/\bsk-[A-Za-z0-9]{32,}\b/],
+        ["private_key", "privateKeys", qr/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/]
+    );
+    for my $entry (@patterns) {
+        my ($kind, $field, $regex) = @{$entry};
+        while ($line =~ /($regex)/g) {
+            my $value = $1;
+            next if looks_like_secret_placeholder($value);
+            add_secret_leak_finding($domain, $kind, $field, $path, $line_number, $value);
+        }
+    }
+
+    while ($line =~ /(?:\b(?:const|let|var)\s+|[,{]\s*)([A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|private[_-]?key)[A-Za-z0-9_.-]*)\s*[:=]\s*["']([^"']{16,})["']/ig) {
+        my ($name, $value) = ($1, $2);
+        next if looks_like_secret_placeholder($value);
+        next if looks_like_specific_secret_value($value);
+        next if !looks_like_high_entropy_secret($value);
+        add_secret_leak_finding($domain, "generic_credential", "genericCredentials", $path, $line_number, $value, $name);
+    }
+}
+
+sub add_secret_leak_finding {
+    my ($domain, $kind, $field, $path, $line, $value, $name) = @_;
+    $domain->{$field} += 1 if defined $field;
+    $domain->{totalLeaks} += 1;
+    push @{$domain->{findings}}, {
+        kind => $kind,
+        name => $name,
+        path => $path,
+        line => $line,
+        where => "$path:$line",
+        fingerprint => "SEC-" . stable_hex_hash(join("\0", $kind, $value)),
+        preview => redact_secret_value($value),
+        message => secret_leak_message($kind, $name)
+    };
+}
+
+sub secret_leak_message {
+    my ($kind, $name) = @_;
+    return "hardcoded AWS access key id" if $kind eq "aws_access_key";
+    return "hardcoded GitHub token" if $kind eq "github_token";
+    return "hardcoded npm token" if $kind eq "npm_token";
+    return "hardcoded OpenAI API key" if $kind eq "openai_key";
+    return "embedded private key block" if $kind eq "private_key";
+    return "hardcoded credential-like value in '$name'" if defined $name && $name ne "";
+    return "hardcoded credential-like value";
+}
+
+sub redact_secret_value {
+    my ($value) = @_;
+    return "<redacted>" if !defined $value || length($value) <= 8;
+    return substr($value, 0, 4) . "..." . substr($value, -4);
+}
+
+sub looks_like_secret_placeholder {
+    my ($value) = @_;
+    my $lower = lc($value // "");
+    return 1 if $lower =~ /(?:example|sample|placeholder|dummy|fake|changeme|replace|your[_-]?|test[_-]?|xxx|redacted)/;
+    return 1 if $value =~ /\A[<{\[]/;
+    return 0;
+}
+
+sub looks_like_specific_secret_value {
+    my ($value) = @_;
+    return 1 if ($value // "") =~ /\A(?:AKIA|ASIA)[A-Z0-9]{16}\z/;
+    return 1 if ($value // "") =~ /\Agh[pousr]_[A-Za-z0-9_]{36,}\z/;
+    return 1 if ($value // "") =~ /\Anpm_[A-Za-z0-9]{36,}\z/;
+    return 1 if ($value // "") =~ /\Ask-[A-Za-z0-9]{32,}\z/;
+    return 1 if ($value // "") =~ /\A-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----\z/;
+    return 0;
+}
+
+sub looks_like_high_entropy_secret {
+    my ($value) = @_;
+    return 0 if length($value // "") < 24;
+    my %classes;
+    $classes{lower} = 1 if $value =~ /[a-z]/;
+    $classes{upper} = 1 if $value =~ /[A-Z]/;
+    $classes{digit} = 1 if $value =~ /\d/;
+    $classes{symbol} = 1 if $value =~ /[^A-Za-z0-9]/;
+    return scalar(keys %classes) >= 3 ? 1 : 0;
+}
+
+sub workflow_security_ir {
+    my @files = source_files(".github/workflows", qr/\.(?:yml|yaml)\z/);
+    my $domain = empty_workflow_security_domain();
+    for my $path (@files) {
+        my $text = read_text($path);
+        my $file_domain = build_workflow_security_domain_summary($path, $text);
+        merge_workflow_security_domain($domain, $file_domain);
+    }
+    $domain->{workflowFiles} = scalar(@files);
+    return $domain;
+}
+
+sub empty_workflow_security_domain {
+    return {
+        schemaVersion => 1,
+        model => "TypeSea GitHub Actions supply-chain domain",
+        workflowFiles => 0,
+        actionRefs => 0,
+        mutableActionRefs => 0,
+        shaPinnedActionRefs => 0,
+        highRiskFindings => 0,
+        writePermissions => 0,
+        secretUses => 0,
+        pullRequestTargets => 0,
+        releasePublishGaps => 0,
+        findings => []
+    };
+}
+
+sub build_workflow_security_domain_summary {
+    my ($path, $text) = @_;
+    my $domain = empty_workflow_security_domain();
+    my @lines = split /\n/, $text // "";
+    my $has_permissions = 0;
+    my $has_pull_request = 0;
+    my $has_pull_request_target = 0;
+    my $has_release_environment = 0;
+    my $has_release_publish = 0;
+    my $has_tag_validation = 0;
+    my $has_id_token_write = 0;
+    my $has_contents_write = 0;
+
+    for (my $index = 0; $index < @lines; $index += 1) {
+        my $line_number = $index + 1;
+        my $line = $lines[$index];
+
+        if ($line =~ /\A\s*pull_request\s*:/) {
+            $has_pull_request = 1;
+        }
+        if ($line =~ /\A\s*pull_request_target\s*:/) {
+            $has_pull_request_target = 1;
+            $domain->{pullRequestTargets} += 1;
+            add_workflow_security_finding($domain, "pull_request_target", $path, $line_number, "pull_request_target trigger can expose write tokens to untrusted code", "high");
+        }
+        if ($line =~ /\A\s*permissions\s*:\s*(write-all)?\s*(?:#.*)?\z/) {
+            $has_permissions = 1;
+            if (defined $1 && $1 eq "write-all") {
+                add_workflow_security_finding($domain, "write_all_permissions", $path, $line_number, "workflow uses permissions: write-all", "high");
+            }
+        }
+        if ($line =~ /\A\s*([A-Za-z-]+)\s*:\s*write\b/) {
+            my $permission = $1;
+            $domain->{writePermissions} += 1;
+            $has_id_token_write = 1 if $permission eq "id-token";
+            $has_contents_write = 1 if $permission eq "contents";
+            my $allowed = workflow_write_permission_is_expected($path, $permission);
+            add_workflow_security_finding($domain, "unexpected_write_permission", $path, $line_number, "unexpected workflow write permission '$permission'", "high")
+                if !$allowed;
+        }
+        if ($line =~ /\A\s*(?:-\s*)?uses\s*:\s*([^#\s]+)/) {
+            my $ref = $1;
+            $domain->{actionRefs} += 1;
+            if (workflow_action_ref_is_sha_pinned($ref)) {
+                $domain->{shaPinnedActionRefs} += 1;
+            } else {
+                $domain->{mutableActionRefs} += 1;
+                add_workflow_security_finding($domain, "mutable_action_ref", $path, $line_number, "workflow action '$ref' is not pinned to a full commit SHA", "review");
+            }
+        }
+        if (index($line, '${{ secrets.') >= 0) {
+            $domain->{secretUses} += 1;
+        }
+        if ($line =~ /\A\s*environment\s*:\s*npm-publish\s*(?:#.*)?\z/ ||
+            $line =~ /\A\s*name\s*:\s*npm-publish\s*(?:#.*)?\z/) {
+            $has_release_environment = 1;
+        }
+        if (index($line, "npm run release:publish") >= 0) {
+            $has_release_publish = 1;
+        }
+        if (index($line, "grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+") >= 0 ||
+            index($line, "release tag must look like") >= 0) {
+            $has_tag_validation = 1;
+        }
+    }
+
+    add_workflow_security_finding($domain, "missing_permissions", $path, 1, "workflow does not declare top-level permissions", "high")
+        if !$has_permissions;
+    add_workflow_security_finding($domain, "secret_on_pull_request", $path, 1, "pull_request workflow references repository secrets", "high")
+        if $has_pull_request && $domain->{secretUses} > 0;
+
+    if ($path =~ m{/release\.ya?ml\z}) {
+        my @gaps;
+        push @gaps, "release environment" if !$has_release_environment;
+        push @gaps, "npm release:publish command" if !$has_release_publish;
+        push @gaps, "semver tag validation" if !$has_tag_validation;
+        push @gaps, "id-token: write" if !$has_id_token_write;
+        push @gaps, "contents: write" if !$has_contents_write;
+        if (@gaps != 0) {
+            $domain->{releasePublishGaps} += scalar(@gaps);
+            add_workflow_security_finding($domain, "release_publish_gap", $path, 1, "release workflow is missing " . join(", ", @gaps), "high");
+        }
+    }
+
+    return $domain;
+}
+
+sub merge_workflow_security_domain {
+    my ($target, $source) = @_;
+    for my $field (qw(actionRefs mutableActionRefs shaPinnedActionRefs highRiskFindings writePermissions secretUses pullRequestTargets releasePublishGaps)) {
+        $target->{$field} += $source->{$field};
+    }
+    push @{$target->{findings}}, @{$source->{findings}};
+}
+
+sub add_workflow_security_finding {
+    my ($domain, $kind, $path, $line, $message, $risk) = @_;
+    $risk //= "review";
+    $domain->{highRiskFindings} += 1 if $risk eq "high";
+    push @{$domain->{findings}}, {
+        kind => $kind,
+        risk => $risk,
+        path => $path,
+        line => $line,
+        where => "$path:$line",
+        fingerprint => "WF-" . stable_hex_hash(join("\0", $kind, $path, $line, $message)),
+        message => $message
+    };
+}
+
+sub workflow_action_ref_is_sha_pinned {
+    my ($ref) = @_;
+    return 1 if ($ref // "") !~ /\@/;
+    my ($version) = $ref =~ /\@([^\/\s]+)\z/;
+    return defined $version && $version =~ /\A[0-9a-f]{40}\z/i ? 1 : 0;
+}
+
+sub workflow_write_permission_is_expected {
+    my ($path, $permission) = @_;
+    return 1 if $permission eq "id-token" && $path =~ m{/(?:release|pages)\.ya?ml\z};
+    return 1 if $permission eq "contents" && $path =~ m{/release\.ya?ml\z};
+    return 1 if $permission eq "pages" && $path =~ m{/pages\.ya?ml\z};
+    return 0;
+}
+
+sub package_lock_security_ir {
+    my ($package, $lock) = @_;
+    my $domain = empty_package_lock_security_domain();
+    my $packages = object_or_empty($lock->{packages});
+    my $root = object_or_empty($packages->{""});
+    my $root_dependencies = object_or_empty($root->{dependencies});
+    my $manifest_dependencies = object_or_empty($package->{dependencies});
+
+    $domain->{lockfileVersion} = int($lock->{lockfileVersion} // 0);
+    $domain->{packageCount} = scalar(keys %{$packages});
+    $domain->{runtimeDependencyCount} = scalar(keys %{$manifest_dependencies}) + scalar(keys %{$root_dependencies});
+    $domain->{devPackageCount} = scalar(grep {
+        $_ ne "" && object_or_empty($packages->{$_})->{dev}
+    } keys %{$packages});
+    add_package_lock_finding($domain, "lockfile_version", "package-lock.json", 1, "package-lock.json must use lockfileVersion 3", "high")
+        if $domain->{lockfileVersion} != 3;
+    add_package_lock_finding($domain, "runtime_dependency", "package-lock.json", 1, "package-lock root or manifest contains runtime dependencies", "high")
+        if $domain->{runtimeDependencyCount} != 0;
+
+    for my $path (sort keys %{$packages}) {
+        next if $path eq "";
+        my $meta = object_or_empty($packages->{$path});
+        my $line = package_lock_line_for_path($path);
+        my $resolved = $meta->{resolved} // "";
+        my $integrity = $meta->{integrity} // "";
+
+        if ($resolved ne "" && $integrity eq "") {
+            $domain->{missingIntegrity} += 1;
+            add_package_lock_finding($domain, "missing_integrity", "package-lock.json", $line, "lock entry '$path' has resolved tarball without integrity", "high");
+        }
+        if ($resolved =~ /\Ahttp:/) {
+            $domain->{httpResolved} += 1;
+            add_package_lock_finding($domain, "http_resolved", "package-lock.json", $line, "lock entry '$path' resolves over plain HTTP", "high");
+        }
+        if ($resolved =~ /\A(?:git\+|git:)/) {
+            $domain->{gitResolved} += 1;
+            add_package_lock_finding($domain, "git_resolved", "package-lock.json", $line, "lock entry '$path' resolves from Git instead of npm registry", "high");
+        }
+        if ($resolved =~ /\A(?:file:|link:)/) {
+            $domain->{fileResolved} += 1;
+            add_package_lock_finding($domain, "file_resolved", "package-lock.json", $line, "lock entry '$path' resolves from local file/link", "high");
+        }
+        if ($resolved ne "" &&
+            $resolved !~ /\Ahttps:\/\/registry\.npmjs\.org\// &&
+            $resolved !~ /\A(?:git\+|git:|file:|link:|http:)/) {
+            $domain->{nonRegistryResolved} += 1;
+            add_package_lock_finding($domain, "non_registry_resolved", "package-lock.json", $line, "lock entry '$path' resolves outside registry.npmjs.org", "high");
+        }
+        my $scripts = object_or_empty($meta->{scripts});
+        for my $script_name (sort keys %{$scripts}) {
+            next if $script_name !~ /\A(?:preinstall|install|postinstall|prepare|prepublish|prepack|postpack)\z/;
+            $domain->{lifecycleScriptPackages} += 1;
+            add_package_lock_finding($domain, "lifecycle_script", "package-lock.json", $line, "lock entry '$path' declares lifecycle script '$script_name'", "high");
+            last;
+        }
+    }
+
+    return $domain;
+}
+
+sub empty_package_lock_security_domain {
+    return {
+        schemaVersion => 1,
+        model => "TypeSea npm lockfile supply-chain domain",
+        lockfileVersion => 0,
+        packageCount => 0,
+        devPackageCount => 0,
+        runtimeDependencyCount => 0,
+        lockRiskFindings => 0,
+        missingIntegrity => 0,
+        nonRegistryResolved => 0,
+        gitResolved => 0,
+        fileResolved => 0,
+        httpResolved => 0,
+        lifecycleScriptPackages => 0,
+        findings => []
+    };
+}
+
+sub add_package_lock_finding {
+    my ($domain, $kind, $path, $line, $message, $risk) = @_;
+    $risk //= "high";
+    $domain->{lockRiskFindings} += 1 if $risk eq "high";
+    push @{$domain->{findings}}, {
+        kind => $kind,
+        risk => $risk,
+        path => $path,
+        line => $line,
+        where => "$path:$line",
+        fingerprint => "PKG-" . stable_hex_hash(join("\0", $kind, $path, $line, $message)),
+        message => $message
+    };
+}
+
+sub package_lock_line_for_path {
+    my ($package_path) = @_;
+    return 1 if !defined $package_path || $package_path eq "";
+    return 1 if !-f "package-lock.json";
+    open my $handle, "<:encoding(UTF-8)", "package-lock.json" or return 1;
+    my $line = 0;
+    my $quoted = quotemeta("\"$package_path\"");
+    while (my $text = <$handle>) {
+        $line += 1;
+        if ($text =~ /$quoted\s*:/) {
+            close $handle;
+            return $line;
+        }
+    }
+    close $handle;
+    return 1;
+}
+
+sub package_license_ir {
+    my ($package, $lock) = @_;
+    my $domain = empty_package_license_domain();
+    my $packages = object_or_empty($lock->{packages});
+    my $root_license = $package->{license} // object_or_empty($packages->{""})->{license} // "";
+    $domain->{rootLicense} = $root_license;
+    if ($root_license eq "") {
+        add_package_license_finding($domain, "missing_root_license", "package.json", 1, "", "package manifest is missing a license", "high");
+    } elsif ($root_license ne "MIT") {
+        add_package_license_finding($domain, "unexpected_root_license", "package.json", 1, $root_license, "package root license is '$root_license', expected MIT", "review");
+    }
+
+    for my $path (sort keys %{$packages}) {
+        next if $path eq "";
+        my $meta = object_or_empty($packages->{$path});
+        my $license = $meta->{license} // "";
+        my $line = package_lock_line_for_path($path);
+        $domain->{packageLicenses} += 1;
+        if ($license ne "") {
+            $domain->{licenseBuckets}{$license} += 1;
+        }
+        if ($license eq "") {
+            $domain->{missingLicenses} += 1;
+            add_package_license_finding($domain, "missing_license", "package-lock.json", $line, $license, "lock entry '$path' is missing license metadata", "high");
+            next;
+        }
+        if (license_is_denied($license)) {
+            $domain->{deniedLicenses} += 1;
+            add_package_license_finding($domain, "denied_license", "package-lock.json", $line, $license, "lock entry '$path' uses denied license '$license'", "high");
+            next;
+        }
+        if (license_requires_review($license)) {
+            $domain->{reviewLicenses} += 1;
+            add_package_license_finding($domain, "review_license", "package-lock.json", $line, $license, "lock entry '$path' uses review-required license '$license'", "review");
+        }
+    }
+    return $domain;
+}
+
+sub empty_package_license_domain {
+    return {
+        schemaVersion => 1,
+        model => "TypeSea package license compliance domain",
+        rootLicense => "",
+        packageLicenses => 0,
+        missingLicenses => 0,
+        deniedLicenses => 0,
+        reviewLicenses => 0,
+        licenseRiskFindings => 0,
+        licenseReviewFindings => 0,
+        licenseBuckets => {},
+        findings => []
+    };
+}
+
+sub add_package_license_finding {
+    my ($domain, $kind, $path, $line, $license, $message, $risk) = @_;
+    $risk //= "high";
+    $domain->{licenseRiskFindings} += 1 if $risk eq "high";
+    $domain->{licenseReviewFindings} += 1 if $risk eq "review";
+    push @{$domain->{findings}}, {
+        kind => $kind,
+        risk => $risk,
+        license => $license,
+        path => $path,
+        line => $line,
+        where => "$path:$line",
+        fingerprint => "LIC-" . stable_hex_hash(join("\0", $kind, $path, $line, $license, $message)),
+        message => $message
+    };
+}
+
+sub license_is_denied {
+    my ($license) = @_;
+    my $value = uc($license // "");
+    return 1 if $value =~ /\b(?:AGPL|GPL|LGPL|SSPL|BUSL|BUSL-1\.1|COMMONS[- ]CLAUSE|UNLICENSED)\b/;
+    return 0;
+}
+
+sub license_requires_review {
+    my ($license) = @_;
+    my $value = uc($license // "");
+    return 1 if $value =~ /\b(?:MPL|MPL-2\.0|EPL|CDDL)\b/;
+    return 0;
+}
+
+sub api_surface_ir {
+    my ($package) = @_;
+    my $domain = empty_api_surface_domain();
+    my $exports = object_or_empty($package->{exports});
+    my @doc_files = api_surface_document_files();
+    my %documented = api_surface_documented_specifiers(@doc_files);
+    my %exported;
+    my @wildcard_prefixes;
+
+    for my $subpath (sort keys %{$exports}) {
+        $domain->{packageExportEntries} += 1;
+        if ($subpath eq "./package.json") {
+            $domain->{packageJsonExportPresent} = 1;
+            next;
+        }
+
+        my $specifier = api_surface_specifier_for_export($subpath);
+        my $line = package_json_line_for_export($subpath);
+        $exported{$specifier} = 1;
+        if ($specifier =~ /\/\*\z/) {
+            my $prefix = $specifier;
+            $prefix =~ s!/\*\z!/!;
+            push @wildcard_prefixes, $prefix;
+        }
+
+        my $entry = $exports->{$subpath};
+        if (ref($entry) ne "HASH") {
+            $domain->{exportShapeGaps} += 1;
+            add_api_surface_finding($domain, "export_shape", "package.json", $line, $specifier, "package export '$subpath' must be a condition object", "high");
+            next;
+        }
+        for my $condition ("types", "import", "default") {
+            if (!exists $entry->{$condition}) {
+                $domain->{exportShapeGaps} += 1;
+                add_api_surface_finding($domain, "export_condition", "package.json", $line, $specifier, "package export '$subpath' is missing '$condition'", "high");
+            }
+        }
+        if (exists $entry->{import} && exists $entry->{default} && ($entry->{import} // "") ne ($entry->{default} // "")) {
+            $domain->{exportShapeGaps} += 1;
+            add_api_surface_finding($domain, "export_default_drift", "package.json", $line, $specifier, "package export '$subpath' default condition must match import", "high");
+        }
+
+        my $base_specifier = $specifier;
+        $base_specifier =~ s!/\*\z!!;
+        if ($documented{$specifier} || $documented{$base_specifier}) {
+            $domain->{documentedExportEntries} += 1;
+        } else {
+            $domain->{documentationGaps} += 1;
+            add_api_surface_finding($domain, "missing_documentation", "README.md", 1, $specifier, "public package export '$specifier' is missing README/docs coverage", "documentation");
+        }
+    }
+
+    for my $specifier (sort keys %documented) {
+        next if $specifier eq "typesea";
+        next if api_surface_specifier_is_exported($specifier, \%exported, \@wildcard_prefixes);
+        $domain->{staleDocumentationReferences} += 1;
+        my ($path, $line) = api_surface_doc_location($specifier, @doc_files);
+        add_api_surface_finding($domain, "stale_documentation", $path, $line, $specifier, "documentation references '$specifier' but package.json does not export it", "high");
+    }
+
+    return $domain;
+}
+
+sub empty_api_surface_domain {
+    return {
+        schemaVersion => 1,
+        model => "TypeSea public API surface drift domain",
+        packageExportEntries => 0,
+        packageJsonExportPresent => 0,
+        documentedExportEntries => 0,
+        exportShapeGaps => 0,
+        documentationGaps => 0,
+        staleDocumentationReferences => 0,
+        surfaceDriftFindings => 0,
+        apiDocumentationFindings => 0,
+        findings => []
+    };
+}
+
+sub add_api_surface_finding {
+    my ($domain, $kind, $path, $line, $specifier, $message, $risk) = @_;
+    $risk //= "high";
+    $domain->{surfaceDriftFindings} += 1 if $risk eq "high";
+    $domain->{apiDocumentationFindings} += 1 if $kind eq "missing_documentation";
+    push @{$domain->{findings}}, {
+        kind => $kind,
+        risk => $risk,
+        specifier => $specifier,
+        path => $path,
+        line => $line,
+        where => "$path:$line",
+        fingerprint => "API-" . stable_hex_hash(join("\0", $kind, $path, $line, $specifier, $message)),
+        message => $message
+    };
+}
+
+sub api_surface_document_files {
+    return grep { -f $_ } (
+        "README.md",
+        "docs/api.md",
+        "docs/engine-notes.md",
+        "docs/ko/readme.md",
+        "docs/ko/api.md",
+        "docs/ko/engine-notes.md"
+    );
+}
+
+sub api_surface_documented_specifiers {
+    my (@paths) = @_;
+    my %seen;
+    for my $path (@paths) {
+        my $source = read_text($path);
+        $seen{typesea} = 1 if index($source, "typesea") >= 0;
+        while ($source =~ /\btypesea(?:\/[A-Za-z0-9_.*-]+)+/g) {
+            my $specifier = $&;
+            $specifier =~ s/[.,;:)\]`'"]+\z//;
+            next if $specifier =~ /\Atypesea\/(?:[0-9]+(?:\.[0-9]+)*|package)\z/;
+            $seen{$specifier} = 1;
+        }
+    }
+    return %seen;
+}
+
+sub api_surface_specifier_for_export {
+    my ($subpath) = @_;
+    return "typesea" if $subpath eq ".";
+    my $specifier = $subpath;
+    $specifier =~ s!\A\./!typesea/!;
+    return $specifier;
+}
+
+sub api_surface_specifier_is_exported {
+    my ($specifier, $exported, $wildcard_prefixes) = @_;
+    return 1 if $exported->{$specifier};
+    for my $prefix (@{$wildcard_prefixes}) {
+        return 1 if index($specifier, $prefix) == 0;
+    }
+    return 0;
+}
+
+sub api_surface_doc_location {
+    my ($specifier, @paths) = @_;
+    for my $path (@paths) {
+        my $line = line_number_for_literal($path, $specifier);
+        return ($path, $line) if $line != 1 || index(read_text($path), $specifier) >= 0;
+    }
+    return ("README.md", 1);
+}
+
+sub package_json_line_for_export {
+    my ($subpath) = @_;
+    return line_number_for_literal("package.json", "\"$subpath\"");
+}
+
+sub line_number_for_literal {
+    my ($path, $literal) = @_;
+    return 1 if !-f $path;
+    open my $handle, "<:encoding(UTF-8)", $path or return 1;
+    my $line = 0;
+    while (my $text = <$handle>) {
+        $line += 1;
+        if (index($text, $literal) >= 0) {
+            close $handle;
+            return $line;
+        }
+    }
+    close $handle;
+    return 1;
+}
+
+sub test_ir {
+    my @files = source_files("test", qr/\.ts\z/);
+    my %files = map { $_ => 1 } @files;
+    my $public_type_expectations = 0;
+    if (-f "test/public-types.test.ts") {
+        my $source = read_text("test/public-types.test.ts");
+        $public_type_expectations = $source =~ /\bexpectTypeOf\b/ ? 1 : 0;
+    }
+    return {
+        files => \%files,
+        public_type_expectations => $public_type_expectations
+    };
+}
+
+sub test_evidence_ir {
+    my ($tests) = @_;
+    my $domain = empty_test_evidence_domain();
+    my $files = object_or_empty($tests->{files});
+    $domain->{testFiles} = scalar(keys %{$files});
+
+    for my $suite (required_test_evidence_suites()) {
+        $domain->{requiredSuites} += 1;
+        my $present_in_suite = 0;
+        for my $path (@{$suite->{files}}) {
+            $domain->{requiredFiles} += 1;
+            if ($files->{$path}) {
+                $domain->{presentRequiredFiles} += 1;
+                $present_in_suite += 1;
+            } else {
+                add_test_evidence_finding($domain, "missing_test_file", $path, 1, $suite->{id}, "required " . $suite->{label} . " test file '$path' is missing");
+            }
+        }
+        if ($present_in_suite == scalar(@{$suite->{files}})) {
+            $domain->{coveredSuites} += 1;
+        } else {
+            $domain->{missingSuites} += 1;
+        }
+    }
+
+    return $domain;
+}
+
+sub empty_test_evidence_domain {
+    return {
+        schemaVersion => 1,
+        model => "TypeSea test evidence domain",
+        testFiles => 0,
+        requiredSuites => 0,
+        coveredSuites => 0,
+        missingSuites => 0,
+        requiredFiles => 0,
+        presentRequiredFiles => 0,
+        testEvidenceGaps => 0,
+        findings => []
+    };
+}
+
+sub required_test_evidence_suites {
+    return (
+        {
+            id => "core-semantics",
+            label => "core semantics",
+            files => ["test/core.test.ts", "test/edge-semantics.test.ts"]
+        },
+        {
+            id => "jit-parity",
+            label => "interpreter/JIT parity",
+            files => ["test/compile-parity.test.ts", "test/compile-source-audit.test.ts"]
+        },
+        {
+            id => "aot-semantics",
+            label => "AOT semantics",
+            files => ["test/aot-semantics.test.ts"]
+        },
+        {
+            id => "async-semantics",
+            label => "async validation semantics",
+            files => ["test/async-semantics.test.ts"]
+        },
+        {
+            id => "json-schema",
+            label => "JSON Schema semantics",
+            files => ["test/json-schema.test.ts", "test/json-schema-semantics.test.ts"]
+        },
+        {
+            id => "decoder-semantics",
+            label => "decoder semantics",
+            files => ["test/decoder-semantics.test.ts"]
+        },
+        {
+            id => "adapters-standard-schema",
+            label => "adapter and Standard Schema semantics",
+            files => ["test/adapter-semantics.test.ts", "test/standard-schema.test.ts"]
+        },
+        {
+            id => "security-regression",
+            label => "hostile-input and fuzz regression",
+            files => ["test/security-regression.test.ts", "test/fuzz-parity.test.ts"]
+        },
+        {
+            id => "public-types",
+            label => "public type inference",
+            files => ["test/public-types.test.ts"]
+        },
+        {
+            id => "zod-compatibility",
+            label => "Zod compatibility",
+            files => ["test/zod-entrypoint.test.ts", "test/zod-like-features.test.ts"]
+        },
+        {
+            id => "seaflow",
+            label => "SeaFlow fuzzer",
+            files => ["test/seaflow-semantics.test.ts"]
+        },
+        {
+            id => "seabreeze",
+            label => "SeaBreeze inference",
+            files => ["test/sea-breeze.test.ts"]
+        },
+        {
+            id => "ir-recursion",
+            label => "IR and recursion semantics",
+            files => ["test/ir-semantics.test.ts", "test/lazy-recursion.test.ts"]
+        },
+        {
+            id => "entrypoints-messages",
+            label => "entrypoint and message surfaces",
+            files => ["test/mini-entrypoint.test.ts", "test/message-semantics.test.ts", "test/metadata-keyed-analyzer.test.ts"]
+        }
+    );
+}
+
+sub add_test_evidence_finding {
+    my ($domain, $kind, $path, $line, $suite, $message) = @_;
+    $domain->{testEvidenceGaps} += 1;
+    push @{$domain->{findings}}, {
+        kind => $kind,
+        risk => "high",
+        suite => $suite,
+        path => $path,
+        line => $line,
+        where => "$path:$line",
+        fingerprint => "TST-" . stable_hex_hash(join("\0", $kind, $suite, $path, $line, $message)),
+        message => $message
+    };
+}
+
+sub benchmark_ir {
+    my ($benchmark) = @_;
+    my %rows_by_id;
+    my $suites = array_or_empty($benchmark->{suites});
+    for my $suite (@{$suites}) {
+        next if ref($suite) ne "HASH";
+        my $suite_id = $suite->{id};
+        next if !defined $suite_id;
+        my $rows = array_or_empty($suite->{rows});
+        for my $row (@{$rows}) {
+            next if ref($row) ne "HASH";
+            my $row_id = $row->{id};
+            next if !defined $row_id;
+            $rows_by_id{"$suite_id/$row_id"} = $row;
+        }
+    }
+    return {
+        json => $benchmark,
+        rows_by_id => \%rows_by_id
+    };
+}
+
+sub benchmark_evidence_ir {
+    my ($benchmark) = @_;
+    my $domain = empty_benchmark_evidence_domain();
+    my $suites = array_or_empty($benchmark->{suites});
+    my %rows_by_id;
+    my %suites_by_id;
+
+    $domain->{packageName} = $benchmark->{package} // "";
+    $domain->{packageVersion} = $benchmark->{version} // "";
+    $domain->{recordedAt} = $benchmark->{recordedAt} // "";
+    $domain->{command} = $benchmark->{command} // "";
+    $domain->{schemaVersionValue} = $benchmark->{schemaVersion};
+    $domain->{aggregationStrategy} = object_or_empty($benchmark->{aggregation})->{strategy} // "";
+    $domain->{runCount} = int(object_or_empty($benchmark->{aggregation})->{runCount} // 0);
+
+    my $environment = object_or_empty($benchmark->{environment});
+    $domain->{nodeVersion} = $environment->{node} // "";
+    $domain->{v8Version} = $environment->{v8} // "";
+    $domain->{platform} = $environment->{platform} // "";
+    $domain->{arch} = $environment->{arch} // "";
+    $domain->{cpu} = $environment->{cpu} // "";
+    $domain->{logicalCpus} = int($environment->{logicalCpus} // 0);
+
+    for my $suite (@{$suites}) {
+        next if ref($suite) ne "HASH";
+        my $suite_id = $suite->{id};
+        next if !defined $suite_id || $suite_id eq "";
+        $domain->{suites} += 1;
+        $suites_by_id{$suite_id} = $suite;
+        for my $row (@{array_or_empty($suite->{rows})}) {
+            next if ref($row) ne "HASH";
+            my $row_id = $row->{id};
+            next if !defined $row_id || $row_id eq "";
+            $domain->{rows} += 1;
+            $rows_by_id{"$suite_id/$row_id"} = $row;
+        }
+    }
+
+    add_benchmark_metadata_finding($domain, "schema_version", "schemaVersion", "benchmark schemaVersion must be numeric version 1")
+        if !defined $benchmark->{schemaVersion} || $benchmark->{schemaVersion} != 1;
+    add_benchmark_metadata_finding($domain, "package", "package", "benchmark package must be 'typesea'")
+        if ($domain->{packageName} // "") ne "typesea";
+    add_benchmark_metadata_finding($domain, "version", "version", "benchmark version must be release-ready semver")
+        if ($domain->{packageVersion} // "") !~ /\A\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\z/;
+    add_benchmark_metadata_finding($domain, "recorded_at", "recordedAt", "benchmark recordedAt must be an ISO UTC timestamp")
+        if ($domain->{recordedAt} // "") !~ /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\z/;
+    add_benchmark_metadata_finding($domain, "command", "command", "benchmark command must record the bench invocation")
+        if index(($domain->{command} // ""), "bench") < 0;
+    add_benchmark_metadata_finding($domain, "environment_node", "node", "benchmark environment must record the Node.js version")
+        if ($domain->{nodeVersion} // "") eq "";
+    add_benchmark_metadata_finding($domain, "environment_v8", "v8", "benchmark environment must record the V8 version")
+        if ($domain->{v8Version} // "") eq "";
+    add_benchmark_metadata_finding($domain, "environment_cpu", "cpu", "benchmark environment must record the CPU model")
+        if ($domain->{cpu} // "") eq "";
+    add_benchmark_metadata_finding($domain, "aggregation", "aggregation", "benchmark aggregation must use at least three recorded runs")
+        if ($domain->{aggregationStrategy} // "") eq "" || $domain->{runCount} < 3;
+
+    for my $suite (required_benchmark_evidence_suites()) {
+        my $suite_id = $suite->{id};
+        if (!exists $suites_by_id{$suite_id}) {
+            add_benchmark_row_finding($domain, "missing_benchmark_suite", $suite_id, "", "required benchmark suite '$suite_id' is missing");
+        }
+        for my $row_id (@{$suite->{rows}}) {
+            $domain->{requiredRows} += 1;
+            my $full_id = "$suite_id/$row_id";
+            my $row = $rows_by_id{$full_id};
+            if (ref($row) ne "HASH") {
+                add_benchmark_row_finding($domain, "missing_benchmark_row", $suite_id, $row_id, "required benchmark row '$full_id' is missing");
+                next;
+            }
+            $domain->{presentRequiredRows} += 1;
+            if (!benchmark_positive_number($row->{hz})) {
+                add_benchmark_row_finding($domain, "invalid_benchmark_hz", $suite_id, $row_id, "benchmark row '$full_id' must include a positive hz value");
+            }
+            if (!benchmark_positive_number($row->{sampleCount})) {
+                add_benchmark_row_finding($domain, "invalid_benchmark_samples", $suite_id, $row_id, "benchmark row '$full_id' must include positive sampleCount evidence");
+            }
+            my $row_aggregation = object_or_empty($row->{aggregation});
+            if (($row_aggregation->{strategy} // "") eq "" || int($row_aggregation->{runCount} // 0) < 3) {
+                add_benchmark_row_finding($domain, "invalid_benchmark_aggregation", $suite_id, $row_id, "benchmark row '$full_id' must include median aggregation across at least three runs");
+            }
+        }
+    }
+
+    return $domain;
+}
+
+sub empty_benchmark_evidence_domain {
+    return {
+        schemaVersion => 1,
+        model => "TypeSea benchmark evidence domain",
+        packageName => "",
+        packageVersion => "",
+        recordedAt => "",
+        command => "",
+        schemaVersionValue => undef,
+        nodeVersion => "",
+        v8Version => "",
+        platform => "",
+        arch => "",
+        cpu => "",
+        logicalCpus => 0,
+        aggregationStrategy => "",
+        runCount => 0,
+        suites => 0,
+        rows => 0,
+        requiredRows => 0,
+        presentRequiredRows => 0,
+        metadataGaps => 0,
+        benchmarkEvidenceGaps => 0,
+        findings => []
+    };
+}
+
+sub required_benchmark_evidence_suites {
+    my @ecosystem_rows = qw(typesea-interpreted typesea-safe typesea-unsafe typesea-unchecked zod valibot ajv);
+    return (
+        {
+            id => "valid-is",
+            label => "valid boolean hot path",
+            rows => [@ecosystem_rows]
+        },
+        {
+            id => "valid-check",
+            label => "valid diagnostic path",
+            rows => [@ecosystem_rows]
+        },
+        {
+            id => "invalid-is",
+            label => "invalid boolean fast-fail path",
+            rows => [@ecosystem_rows]
+        },
+        {
+            id => "invalid-check",
+            label => "invalid diagnostic path",
+            rows => [@ecosystem_rows]
+        },
+        {
+            id => "union-presence",
+            label => "union dispatch evidence",
+            rows => [qw(
+                typesea-interpreted-logical
+                typesea-safe-logical
+                typesea-unsafe-logical
+                typesea-interpreted-fallback
+                typesea-safe-fallback
+                typesea-unsafe-fallback
+                typesea-interpreted-invalid
+                typesea-safe-invalid
+                typesea-unsafe-invalid
+            )]
+        },
+        {
+            id => "runtime-features",
+            label => "runtime feature evidence",
+            rows => [qw(
+                compiled-valid
+                compiled-boolean-valid
+                compiled-invalid
+                compiled-boolean-invalid
+                compile-cached-global
+                compile-cache-local
+                prebuilt-cache
+                prebuilt-global-cache
+                compile-async-valid
+                compile-async-invalid-check
+                rollup-macro
+                esbuild-macro
+                rollup-aot-load
+            )]
+        }
+    );
+}
+
+sub add_benchmark_metadata_finding {
+    my ($domain, $kind, $literal, $message) = @_;
+    $domain->{metadataGaps} += 1;
+    add_benchmark_evidence_finding(
+        $domain,
+        $kind,
+        "metadata",
+        "",
+        "bench/results/latest.json",
+        line_number_for_literal("bench/results/latest.json", '"' . $literal . '"'),
+        $message
+    );
+}
+
+sub add_benchmark_row_finding {
+    my ($domain, $kind, $suite, $row, $message) = @_;
+    my $literal = $row ne "" ? $row : $suite;
+    add_benchmark_evidence_finding(
+        $domain,
+        $kind,
+        $suite,
+        $row,
+        "bench/results/latest.json",
+        line_number_for_literal("bench/results/latest.json", '"' . $literal . '"'),
+        $message
+    );
+}
+
+sub add_benchmark_evidence_finding {
+    my ($domain, $kind, $suite, $row, $path, $line, $message) = @_;
+    $domain->{benchmarkEvidenceGaps} += 1;
+    push @{$domain->{findings}}, {
+        kind => $kind,
+        risk => "high",
+        suite => $suite,
+        row => $row,
+        path => $path,
+        line => $line,
+        where => "$path:$line",
+        fingerprint => "BEN-" . stable_hex_hash(join("\0", $kind, $suite // "", $row // "", $path, $line, $message)),
+        message => $message
+    };
+}
+
+sub benchmark_positive_number {
+    my ($value) = @_;
+    return 0 if !defined $value || ref($value);
+    return 0 if "$value" !~ /\A-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?\z/i;
+    return $value > 0 ? 1 : 0;
+}
+
+sub rule_metadata_integrity_model {
+    my ($diagnostics) = @_;
+    return rule_metadata_integrity_model_from_catalog(rule_catalog_for_diagnostics($diagnostics));
+}
+
+sub rule_metadata_integrity_model_from_catalog {
+    my ($catalog) = @_;
+    my $model = empty_rule_metadata_integrity_model();
+    my %seen;
+    for my $rule (@{array_or_empty($catalog)}) {
+        next if ref($rule) ne "HASH";
+        my $id = $rule->{id} // "";
+        next if $id eq "" || $seen{$id}++;
+        $model->{rules} += 1;
+        my $rule_gaps_before = $model->{ruleMetadataGaps};
+
+        for my $field (required_rule_metadata_fields()) {
+            if (!defined $rule->{$field} || ref($rule->{$field}) || $rule->{$field} eq "") {
+                add_rule_metadata_finding($model, "missing_rule_metadata_field", $id, $field, "rule '$id' is missing required metadata field '$field'");
+            }
+        }
+        for my $field (keys %{allowed_rule_metadata_values()}) {
+            my $value = $rule->{$field};
+            next if !defined $value || ref($value);
+            if (!allowed_rule_metadata_value($field, $value)) {
+                add_rule_metadata_finding($model, "invalid_rule_metadata_field", $id, $field, "rule '$id' has invalid $field value '$value'");
+            }
+        }
+        if (ref($rule->{tags}) ne "ARRAY" || @{$rule->{tags}} == 0) {
+            add_rule_metadata_finding($model, "missing_rule_metadata_tags", $id, "tags", "rule '$id' must expose at least one SARIF tag");
+        }
+        if (($rule->{description} // "") eq "" || ($rule->{remediationText} // "") eq "") {
+            add_rule_metadata_finding($model, "missing_rule_sarif_text", $id, "sarif", "rule '$id' must expose SARIF description and remediation help text");
+        }
+
+        if (keys(%{specific_rule_metadata($id)}) == 0) {
+            $model->{genericRuleMetadataItems} += 1;
+            push @{$model->{genericSet}}, {
+                kind => "generic_rule_metadata",
+                rule => $id,
+                field => "specific_rule_metadata",
+                path => "scripts/contributing-policy.pl",
+                line => line_number_for_literal("scripts/contributing-policy.pl", "sub default_rule_metadata"),
+                where => "scripts/contributing-policy.pl:" . line_number_for_literal("scripts/contributing-policy.pl", "sub default_rule_metadata"),
+                message => "rule '$id' relies on prefix-derived generic metadata"
+            };
+        } else {
+            $model->{specificRules} += 1;
+        }
+
+        $model->{completeRules} += 1 if $model->{ruleMetadataGaps} == $rule_gaps_before;
+    }
+    $model->{genericSet} = [@{$model->{genericSet}}[0 .. min_index(49, scalar(@{$model->{genericSet}}) - 1)]];
+    return $model;
+}
+
+sub empty_rule_metadata_integrity_model {
+    return {
+        schemaVersion => 1,
+        model => "TypeSea rule metadata integrity domain",
+        rules => 0,
+        completeRules => 0,
+        specificRules => 0,
+        genericRuleMetadataItems => 0,
+        ruleMetadataGaps => 0,
+        findings => [],
+        genericSet => []
+    };
+}
+
+sub required_rule_metadata_fields {
+    return qw(id name category engine precision confidence remediation remediationText description severityClass);
+}
+
+sub allowed_rule_metadata_values {
+    return {
+        category => {
+            analyzer => 1,
+            architecture => 1,
+            correctness => 1,
+            documentation => 1,
+            legal => 1,
+            maintainability => 1,
+            performance => 1,
+            policy => 1,
+            release => 1,
+            reliability => 1,
+            security => 1,
+            "supply-chain" => 1,
+            "type-safety" => 1
+        },
+        precision => {
+            high => 1,
+            medium => 1,
+            low => 1
+        },
+        confidence => {
+            high => 1,
+            medium => 1,
+            low => 1
+        },
+        severityClass => {
+            audit => 1,
+            bug => 1,
+            vulnerability => 1,
+            "code-smell" => 1,
+            "security-hotspot" => 1
+        }
+    };
+}
+
+sub allowed_rule_metadata_value {
+    my ($field, $value) = @_;
+    my $allowed = allowed_rule_metadata_values()->{$field};
+    return 1 if ref($allowed) ne "HASH";
+    return $allowed->{$value} ? 1 : 0;
+}
+
+sub add_rule_metadata_finding {
+    my ($model, $kind, $rule, $field, $message) = @_;
+    $model->{ruleMetadataGaps} += 1;
+    my $line = line_number_for_literal("scripts/contributing-policy.pl", '"' . $rule . '"');
+    $line = line_number_for_literal("scripts/contributing-policy.pl", "sub default_rule_metadata") if $line == 1;
+    push @{$model->{findings}}, {
+        kind => $kind,
+        rule => $rule,
+        field => $field,
+        path => "scripts/contributing-policy.pl",
+        line => $line,
+        where => "scripts/contributing-policy.pl:$line",
+        fingerprint => "RULE-" . stable_hex_hash(join("\0", $kind, $rule, $field, $message)),
+        message => $message
+    };
+}
+
+sub release_ir {
+    my $lex = lex_ts_source(read_text("scripts/release-gate.mjs"));
+    my %steps;
+    for my $script ("check", "check:consumer", "bench", "pack:dry") {
+        $steps{$script} = has_adjacent_string_values($lex, "run", $script);
+    }
+    return {
+        steps => \%steps
+    };
+}
+
+sub release_consistency_ir {
+    my ($package, $lock, $benchmark) = @_;
+    my $domain = empty_release_consistency_domain();
+    my $package_name = $package->{name} // "";
+    my $package_version = $package->{version} // "";
+    my $lock_root = object_or_empty(object_or_empty($lock->{packages})->{""});
+    $domain->{packageName} = $package_name;
+    $domain->{packageVersion} = $package_version;
+    $domain->{lockfileName} = $lock->{name} // "";
+    $domain->{lockfileVersion} = $lock->{version} // "";
+    $domain->{lockfileRootName} = $lock_root->{name} // "";
+    $domain->{lockfileRootVersion} = $lock_root->{version} // "";
+    $domain->{benchmarkPackage} = $benchmark->{package} // "";
+    $domain->{benchmarkVersion} = $benchmark->{version} // "";
+    $domain->{changelogVersion} = changelog_top_version();
+    $domain->{docsSiteVersionPresent} = docs_site_contains_version($package_version);
+    $domain->{socketBadgePinnedVersion} = readme_socket_badge_is_version_pinned();
+
+    if ($package_name ne "typesea") {
+        add_release_consistency_finding($domain, "package_name", "package.json", line_number_for_literal("package.json", '"name"'), "package name is '$package_name', expected 'typesea'");
+    }
+    if ($package_version !~ /\A\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\z/ || $package_version eq "0.0.0") {
+        add_release_consistency_finding($domain, "package_version", "package.json", line_number_for_literal("package.json", '"version"'), "package version '$package_version' is not release-ready semver");
+    }
+    if (($domain->{lockfileName} // "") ne $package_name) {
+        add_release_consistency_finding($domain, "lockfile_name", "package-lock.json", line_number_for_literal("package-lock.json", '"name"'), "package-lock name '" . ($domain->{lockfileName} // "") . "' does not match package name '$package_name'");
+    }
+    if (($domain->{lockfileVersion} // "") ne $package_version) {
+        add_release_consistency_finding($domain, "lockfile_version", "package-lock.json", line_number_for_literal("package-lock.json", '"version"'), "package-lock version '" . ($domain->{lockfileVersion} // "") . "' does not match package version '$package_version'");
+    }
+    if (($domain->{lockfileRootName} // "") ne $package_name) {
+        add_release_consistency_finding($domain, "lockfile_root_name", "package-lock.json", package_lock_line_for_path(""), "package-lock root package name '" . ($domain->{lockfileRootName} // "") . "' does not match package name '$package_name'");
+    }
+    if (($domain->{lockfileRootVersion} // "") ne $package_version) {
+        add_release_consistency_finding($domain, "lockfile_root_version", "package-lock.json", package_lock_line_for_path(""), "package-lock root package version '" . ($domain->{lockfileRootVersion} // "") . "' does not match package version '$package_version'");
+    }
+    if (($domain->{benchmarkPackage} // "") ne $package_name) {
+        add_release_consistency_finding($domain, "benchmark_package", "bench/results/latest.json", line_number_for_literal("bench/results/latest.json", '"package"'), "benchmark package '" . ($domain->{benchmarkPackage} // "") . "' does not match package name '$package_name'");
+    }
+    if (($domain->{benchmarkVersion} // "") ne $package_version) {
+        add_release_consistency_finding($domain, "benchmark_version", "bench/results/latest.json", line_number_for_literal("bench/results/latest.json", '"version"'), "benchmark version '" . ($domain->{benchmarkVersion} // "") . "' does not match package version '$package_version'");
+    }
+    if (($domain->{changelogVersion} // "") ne $package_version) {
+        add_release_consistency_finding($domain, "changelog_version", "CHANGELOG.md", changelog_top_version_line(), "CHANGELOG top version '" . ($domain->{changelogVersion} // "") . "' does not match package version '$package_version'");
+    }
+    if (-f "docs/index.html" && !$domain->{docsSiteVersionPresent}) {
+        add_release_consistency_finding($domain, "docs_site_version", "docs/index.html", 1, "generated docs site does not display package version '$package_version'");
+    }
+    if ($domain->{socketBadgePinnedVersion}) {
+        add_release_consistency_finding($domain, "socket_badge_version", "README.md", line_number_for_literal("README.md", "badge.socket.dev/npm/package/typesea/"), "README Socket badge must not pin a stale package version");
+    }
+
+    return $domain;
+}
+
+sub empty_release_consistency_domain {
+    return {
+        schemaVersion => 1,
+        model => "TypeSea release metadata consistency domain",
+        packageName => "",
+        packageVersion => "",
+        lockfileName => "",
+        lockfileVersion => "",
+        lockfileRootName => "",
+        lockfileRootVersion => "",
+        benchmarkPackage => "",
+        benchmarkVersion => "",
+        changelogVersion => "",
+        docsSiteVersionPresent => 0,
+        socketBadgePinnedVersion => 0,
+        releaseConsistencyFindings => 0,
+        findings => []
+    };
+}
+
+sub add_release_consistency_finding {
+    my ($domain, $kind, $path, $line, $message) = @_;
+    $domain->{releaseConsistencyFindings} += 1;
+    push @{$domain->{findings}}, {
+        kind => $kind,
+        risk => "high",
+        path => $path,
+        line => $line,
+        where => "$path:$line",
+        fingerprint => "REL-" . stable_hex_hash(join("\0", $kind, $path, $line, $message)),
+        message => $message
+    };
+}
+
+sub changelog_top_version {
+    return "" if !-f "CHANGELOG.md";
+    my $source = read_text("CHANGELOG.md");
+    return $1 if $source =~ /^##\s+([0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?)(?:\s+-|\s*\z)/m;
+    return "";
+}
+
+sub changelog_top_version_line {
+    return 1 if !-f "CHANGELOG.md";
+    open my $handle, "<:encoding(UTF-8)", "CHANGELOG.md" or return 1;
+    my $line = 0;
+    while (my $text = <$handle>) {
+        $line += 1;
+        if ($text =~ /^##\s+[0-9]+\.[0-9]+\.[0-9]+/) {
+            close $handle;
+            return $line;
+        }
+    }
+    close $handle;
+    return 1;
+}
+
+sub docs_site_contains_version {
+    my ($version) = @_;
+    return 0 if ($version // "") eq "";
+    return 0 if !-f "docs/index.html";
+    return index(read_text("docs/index.html"), "v$version") >= 0 ? 1 : 0;
+}
+
+sub readme_socket_badge_is_version_pinned {
+    return 0 if !-f "README.md";
+    my $source = read_text("README.md");
+    return $source =~ m{badge\.socket\.dev/npm/package/typesea/\d+\.\d+\.\d+} ? 1 : 0;
+}
+
+sub policy_script_ir {
+    my $policy_source = -f "scripts/contributing-policy.pl"
+        ? read_text("scripts/contributing-policy.pl")
+        : "";
+    return {
+        source_policy => -f "scripts/source-policy.mjs" ? read_text("scripts/source-policy.mjs") : "",
+        severity_levels => index($policy_source, '"error"') >= 0 &&
+            index($policy_source, '"warning"') >= 0 &&
+            index($policy_source, '"notice"') >= 0,
+        verbose_notices => index($policy_source, "--verbose") >= 0 &&
+            index($policy_source, "show_notices") >= 0,
+        template_lexer_self_tests => index($policy_source, "run_lexer_self_tests") >= 0 &&
+            index($policy_source, "nested template literal lexer self-tests") >= 0,
+        import_ast_self_tests => index($policy_source, "assert_runtime_imports") >= 0 &&
+            index($policy_source, "type-only import/export classification") >= 0,
+        type_named_value_self_tests => index($policy_source, "type named value import classification") >= 0 &&
+            index($policy_source, "runtime-type.js") >= 0,
+        lex_error_self_tests => index($policy_source, "assert_lexer_errors") >= 0 &&
+            index($policy_source, "unterminated template interpolation") >= 0,
+        dynamic_import_self_tests => index($policy_source, "dynamic import graph extraction") >= 0 &&
+            index($policy_source, "import(\"./runtime.js\")") >= 0,
+        semicolonless_import_self_tests => index($policy_source, "semicolonless import graph extraction") >= 0 &&
+            index($policy_source, "import(\"./c.js\")") >= 0,
+        function_ir_self_tests => index($policy_source, "run_function_ir_self_tests") >= 0 &&
+            index($policy_source, "build_function_graph") >= 0 &&
+            index($policy_source, "build_function_abstract_state") >= 0,
+        clone_analysis => index($policy_source, "clone_windows_for_file") >= 0 &&
+            index($policy_source, "build_clone_domain") >= 0 &&
+            index($policy_source, "duplicateBlockBudget") >= 0,
+        machine_reports => index($policy_source, "--json") >= 0 &&
+            index($policy_source, "--sarif") >= 0 &&
+            index($policy_source, "emit_sarif_report") >= 0,
+        dashboard_report => index($policy_source, "--html") >= 0 &&
+            index($policy_source, "--serve") >= 0 &&
+            index($policy_source, "html_dashboard") >= 0 &&
+            index($policy_source, "serve_analysis_dashboard") >= 0,
+        baseline_suppression => index($policy_source, "--baseline") >= 0 &&
+            index($policy_source, "--write-baseline") >= 0 &&
+            index($policy_source, "diagnostic_fingerprint") >= 0,
+        source_suppression => index($policy_source, "typesea-ignore-next-line") >= 0 &&
+            index($policy_source, "typesea-ignore-next-declaration") >= 0 &&
+            index($policy_source, "TINL") >= 0 &&
+            index($policy_source, "TIND") >= 0 &&
+            index($policy_source, "apply_source_suppressions") >= 0 &&
+            index($policy_source, "source_suppression_rule_diagnostics") >= 0 &&
+            index($policy_source, "source_suppression_wildcard_diagnostics") >= 0 &&
+            index($policy_source, "source.suppression-rule") >= 0 &&
+            index($policy_source, "source.suppression-wildcard") >= 0 &&
+            index($policy_source, "suppressionReason") >= 0 &&
+            index($policy_source, "source_declaration_span") >= 0 &&
+            index($policy_source, "variable declaration suppression") >= 0 &&
+            index($policy_source, "run_source_suppression_self_tests") >= 0,
+        type_escape_domain => index($policy_source, "build_type_escape_domain_summary") >= 0 &&
+            index($policy_source, "run_type_escape_domain_self_tests") >= 0 &&
+            index($policy_source, "types.escape-domain") >= 0 &&
+            index($policy_source, "types.unsafe-escape") >= 0 &&
+            index($policy_source, "typeEscapeBudget") >= 0 &&
+            index($policy_source, "Type escape") >= 0,
+        regex_safety_domain => index($policy_source, "build_regex_safety_domain_summary") >= 0 &&
+            index($policy_source, "run_regex_safety_domain_self_tests") >= 0 &&
+            index($policy_source, "security.regex-domain") >= 0 &&
+            index($policy_source, "security.redos-risk") >= 0 &&
+            index($policy_source, "redosRiskBudget") >= 0 &&
+            index($policy_source, "ReDoS risks") >= 0,
+        secret_leak_domain => index($policy_source, "secret_leak_ir") >= 0 &&
+            index($policy_source, "build_secret_leak_domain_summary") >= 0 &&
+            index($policy_source, "run_secret_leak_domain_self_tests") >= 0 &&
+            index($policy_source, "security.secret-domain") >= 0 &&
+            index($policy_source, "security.secret-leak") >= 0 &&
+            index($policy_source, "secretLeakBudget") >= 0 &&
+            index($policy_source, "Secret leaks") >= 0,
+        workflow_security_domain => index($policy_source, "workflow_security_ir") >= 0 &&
+            index($policy_source, "build_workflow_security_domain_summary") >= 0 &&
+            index($policy_source, "run_workflow_security_domain_self_tests") >= 0 &&
+            index($policy_source, "supply.workflow-domain") >= 0 &&
+            index($policy_source, "supply.workflow-permission") >= 0 &&
+            index($policy_source, "workflowHighRiskBudget") >= 0 &&
+            index($policy_source, "Workflow high risk") >= 0,
+        package_lock_security_domain => index($policy_source, "package_lock_security_ir") >= 0 &&
+            index($policy_source, "run_package_lock_security_domain_self_tests") >= 0 &&
+            index($policy_source, "supply.lockfile-domain") >= 0 &&
+            index($policy_source, "supply.lockfile-integrity") >= 0 &&
+            index($policy_source, "packageLockRiskBudget") >= 0 &&
+            index($policy_source, "Lockfile risks") >= 0,
+        package_license_domain => index($policy_source, "package_license_ir") >= 0 &&
+            index($policy_source, "run_package_license_domain_self_tests") >= 0 &&
+            index($policy_source, "legal.license-domain") >= 0 &&
+            index($policy_source, "legal.license-risk") >= 0 &&
+            index($policy_source, "licenseRiskBudget") >= 0 &&
+            index($policy_source, "License risks") >= 0,
+        api_surface_domain => index($policy_source, "api_surface_ir") >= 0 &&
+            index($policy_source, "run_api_surface_domain_self_tests") >= 0 &&
+            index($policy_source, "api.surface-domain") >= 0 &&
+            index($policy_source, "api.surface-drift") >= 0 &&
+            index($policy_source, "apiSurfaceDriftBudget") >= 0 &&
+            index($policy_source, "API drift") >= 0,
+        release_consistency_domain => index($policy_source, "release_consistency_ir") >= 0 &&
+            index($policy_source, "run_release_consistency_domain_self_tests") >= 0 &&
+            index($policy_source, "release.consistency-domain") >= 0 &&
+            index($policy_source, "release.version-drift") >= 0 &&
+            index($policy_source, "releaseConsistencyRiskBudget") >= 0 &&
+            index($policy_source, "Release drift") >= 0,
+        test_evidence_domain => index($policy_source, "test_evidence_ir") >= 0 &&
+            index($policy_source, "run_test_evidence_domain_self_tests") >= 0 &&
+            index($policy_source, "test.evidence-domain") >= 0 &&
+            index($policy_source, "test.evidence-gap") >= 0 &&
+            index($policy_source, "testEvidenceGapBudget") >= 0 &&
+            index($policy_source, "Test evidence") >= 0,
+        benchmark_evidence_domain => index($policy_source, "benchmark_evidence_ir") >= 0 &&
+            index($policy_source, "run_benchmark_evidence_domain_self_tests") >= 0 &&
+            index($policy_source, "bench.evidence-domain") >= 0 &&
+            index($policy_source, "bench.evidence-gap") >= 0 &&
+            index($policy_source, "benchmarkEvidenceGapBudget") >= 0 &&
+            index($policy_source, "Benchmark evidence") >= 0,
+        rule_metadata_domain => index($policy_source, "rule_metadata_integrity_model") >= 0 &&
+            index($policy_source, "run_rule_metadata_domain_self_tests") >= 0 &&
+            index($policy_source, "rule.metadata-domain") >= 0 &&
+            index($policy_source, "rule.metadata-gap") >= 0 &&
+            index($policy_source, "ruleMetadataGapBudget") >= 0 &&
+            index($policy_source, "Rule metadata") >= 0,
+        triage_ledger => index($policy_source, "--triage") >= 0 &&
+            index($policy_source, "--write-triage-template") >= 0 &&
+            index($policy_source, "read_triage_ledger") >= 0 &&
+            index($policy_source, "apply_triage_ledger") >= 0 &&
+            index($policy_source, "expiredTriageBudget") >= 0 &&
+            index($policy_source, "triageModel") >= 0,
+        waiver_model => index($policy_source, "waiver_model") >= 0 &&
+            index($policy_source, "apply_waiver_quality_gate") >= 0 &&
+            index($policy_source, "run_waiver_model_self_tests") >= 0 &&
+            index($policy_source, "staleWaiverBudget") >= 0 &&
+            index($policy_source, "expiredWaiverBudget") >= 0 &&
+            index($policy_source, "wildcardSuppressionBudget") >= 0 &&
+            index($policy_source, "Waiver Audit") >= 0,
+        review_governance_model => index($policy_source, "review_governance_model") >= 0 &&
+            index($policy_source, "run_review_governance_model_self_tests") >= 0 &&
+            index($policy_source, "apply_review_governance_quality_gate") >= 0 &&
+            index($policy_source, "reviewDecisionRiskBudget") >= 0 &&
+            index($policy_source, "Review Governance") >= 0,
+        analysis_coverage_model => index($policy_source, "analysis_coverage_model") >= 0 &&
+            index($policy_source, "apply_analysis_coverage_quality_gate") >= 0 &&
+            index($policy_source, "run_analysis_coverage_model_self_tests") >= 0 &&
+            index($policy_source, "analysisCoverageGapBudget") >= 0 &&
+            index($policy_source, "analysisCoverageModel") >= 0 &&
+            index($policy_source, "Analysis Coverage") >= 0,
+        quality_gate => index($policy_source, "--profile") >= 0 &&
+            index($policy_source, "read_policy_profile") >= 0 &&
+            index($policy_source, "compute_policy_quality_gate") >= 0,
+        quality_profile_governance => index($policy_source, "quality_profile_model") >= 0 &&
+            index($policy_source, "run_quality_profile_model_self_tests") >= 0 &&
+            index($policy_source, "apply_quality_profile_quality_gate") >= 0 &&
+            index($policy_source, "profileOverrideRiskBudget") >= 0 &&
+            index($policy_source, "Quality Profile Governance") >= 0,
+        rule_catalog => index($policy_source, "rule_metadata") >= 0 &&
+            index($policy_source, "diagnostic_taxonomy_summary") >= 0 &&
+            index($policy_source, "sarif_rule_for_diagnostic") >= 0,
+        quality_model => index($policy_source, "quality_model") >= 0 &&
+            index($policy_source, "technicalDebtBudget") >= 0 &&
+            index($policy_source, "technical-debt-budget") >= 0,
+        component_model => index($policy_source, "component_model") >= 0 &&
+            index($policy_source, "componentOpenBudget") >= 0 &&
+            index($policy_source, "component-open-budget") >= 0 &&
+            index($policy_source, "Component Risk") >= 0,
+        root_cause_model => index($policy_source, "root_cause_model") >= 0 &&
+            index($policy_source, "apply_root_cause_quality_gate") >= 0 &&
+            index($policy_source, "run_root_cause_model_self_tests") >= 0 &&
+            index($policy_source, "rootCauseOpenBudget") >= 0 &&
+            index($policy_source, "rootCauseModel") >= 0 &&
+            index($policy_source, "Root Cause Correlation") >= 0,
+        rule_health_model => index($policy_source, "rule_health_model") >= 0 &&
+            index($policy_source, "apply_rule_health_quality_gate") >= 0 &&
+            index($policy_source, "run_rule_health_model_self_tests") >= 0 &&
+            index($policy_source, "noisyRuleBudget") >= 0 &&
+            index($policy_source, "ruleHealthModel") >= 0 &&
+            index($policy_source, "Rule Health") >= 0,
+        finding_provenance_model => index($policy_source, "finding_provenance_model") >= 0 &&
+            index($policy_source, "apply_finding_provenance_quality_gate") >= 0 &&
+            index($policy_source, "run_finding_provenance_model_self_tests") >= 0 &&
+            index($policy_source, "findingProvenanceGapBudget") >= 0 &&
+            index($policy_source, "findingProvenanceModel") >= 0 &&
+            index($policy_source, "Finding Provenance") >= 0,
+        finding_witness_model => index($policy_source, "finding_witness_model") >= 0 &&
+            index($policy_source, "apply_finding_witness_quality_gate") >= 0 &&
+            index($policy_source, "run_finding_witness_model_self_tests") >= 0 &&
+            index($policy_source, "findingWitnessGapBudget") >= 0 &&
+            index($policy_source, "findingWitnessModel") >= 0 &&
+            index($policy_source, "Finding Witnesses") >= 0,
+        finding_confidence_model => index($policy_source, "finding_confidence_model") >= 0 &&
+            index($policy_source, "apply_finding_confidence_quality_gate") >= 0 &&
+            index($policy_source, "run_finding_confidence_model_self_tests") >= 0 &&
+            index($policy_source, "lowConfidenceFindingBudget") >= 0 &&
+            index($policy_source, "findingConfidenceModel") >= 0 &&
+            index($policy_source, "Confidence Calibration") >= 0,
+        analysis_run_manifest => index($policy_source, "analysis_run_manifest") >= 0 &&
+            index($policy_source, "apply_analysis_run_manifest_quality_gate") >= 0 &&
+            index($policy_source, "run_analysis_run_manifest_self_tests") >= 0 &&
+            index($policy_source, "runManifestGapBudget") >= 0 &&
+            index($policy_source, "analysisRunManifest") >= 0 &&
+            index($policy_source, "Run Manifest") >= 0,
+        ownership_model => index($policy_source, "ownership_model") >= 0 &&
+            index($policy_source, "ownership_index") >= 0 &&
+            index($policy_source, "CODEOWNERS") >= 0 &&
+            index($policy_source, "unownedOpenBudget") >= 0 &&
+            index($policy_source, "unowned-open-budget") >= 0 &&
+            index($policy_source, "Ownership") >= 0,
+        defect_routing_model => index($policy_source, "defect_routing_model") >= 0 &&
+            index($policy_source, "run_defect_routing_model_self_tests") >= 0 &&
+            index($policy_source, "apply_defect_routing_quality_gate") >= 0 &&
+            index($policy_source, "unroutedDefectBudget") >= 0 &&
+            index($policy_source, "Defect Routing") >= 0,
+        remediation_plan => index($policy_source, "remediation_plan") >= 0 &&
+            index($policy_source, "remediation_effort_minutes") >= 0 &&
+            index($policy_source, "quickWinItems") >= 0 &&
+            index($policy_source, "mustFixItems") >= 0 &&
+            index($policy_source, "Remediation Plan") >= 0,
+        issue_aging => index($policy_source, "issue_aging_model") >= 0 &&
+            index($policy_source, "apply_issue_aging_quality_gate") >= 0 &&
+            index($policy_source, "overdueIssueBudget") >= 0 &&
+            index($policy_source, "maxIssueAgeDays") >= 0 &&
+            index($policy_source, "Issue Aging") >= 0,
+        assurance_case => index($policy_source, "assurance_case") >= 0 &&
+            index($policy_source, "assurance_claim_specs") >= 0 &&
+            index($policy_source, "apply_assurance_quality_gate") >= 0 &&
+            index($policy_source, "assuranceGapBudget") >= 0 &&
+            index($policy_source, "Assurance Case") >= 0,
+        compliance_model => index($policy_source, "compliance_model") >= 0 &&
+            index($policy_source, "compliance_control_specs") >= 0 &&
+            index($policy_source, "apply_compliance_quality_gate") >= 0 &&
+            index($policy_source, "complianceFailureBudget") >= 0 &&
+            index($policy_source, "Compliance Controls") >= 0,
+        security_hotspot_model => index($policy_source, "security_hotspot_model") >= 0 &&
+            index($policy_source, "is_security_hotspot_diagnostic") >= 0 &&
+            index($policy_source, "apply_security_hotspot_quality_gate") >= 0 &&
+            index($policy_source, "securityHotspotReviewBudget") >= 0 &&
+            index($policy_source, "Security Hotspots") >= 0,
+        security_exploitability_model => index($policy_source, "security_exploitability_model") >= 0 &&
+            index($policy_source, "run_security_exploitability_model_self_tests") >= 0 &&
+            index($policy_source, "apply_security_exploitability_quality_gate") >= 0 &&
+            index($policy_source, "exploitableSecurityBudget") >= 0 &&
+            index($policy_source, "Security Exploitability") >= 0,
+        security_dataflow_model => index($policy_source, "security_dataflow_model") >= 0 &&
+            index($policy_source, "run_security_dataflow_model_self_tests") >= 0 &&
+            index($policy_source, "apply_security_dataflow_quality_gate") >= 0 &&
+            index($policy_source, "securityDataflowCriticalBudget") >= 0 &&
+            index($policy_source, "Security Dataflow") >= 0,
+        path_feasibility_model => index($policy_source, "path_feasibility_model") >= 0 &&
+            index($policy_source, "run_path_feasibility_model_self_tests") >= 0 &&
+            index($policy_source, "apply_path_feasibility_quality_gate") >= 0 &&
+            index($policy_source, "pathFeasibilityUnknownBudget") >= 0 &&
+            index($policy_source, "pathPolarity") >= 0 &&
+            index($policy_source, "polarizedConditions") >= 0 &&
+            index($policy_source, "pathFeasibilityModel") >= 0 &&
+            index($policy_source, "Path Feasibility") >= 0,
+        context_sensitivity_model => index($policy_source, "context_sensitivity_model") >= 0 &&
+            index($policy_source, "run_context_sensitivity_model_self_tests") >= 0 &&
+            index($policy_source, "apply_context_sensitivity_quality_gate") >= 0 &&
+            index($policy_source, "contextSensitivityRiskBudget") >= 0 &&
+            index($policy_source, "contextSensitivityModel") >= 0 &&
+            index($policy_source, "Context Sensitivity") >= 0,
+        soundness_model => index($policy_source, "soundness_model") >= 0 &&
+            index($policy_source, "soundness_assumption_specs") >= 0 &&
+            index($policy_source, "apply_soundness_quality_gate") >= 0 &&
+            index($policy_source, "soundnessAssumptionBudget") >= 0 &&
+            index($policy_source, "Soundness Envelope") >= 0,
+        proof_obligation_model => index($policy_source, "proof_obligation_model") >= 0 &&
+            index($policy_source, "run_proof_obligation_model_self_tests") >= 0 &&
+            index($policy_source, "apply_proof_obligation_quality_gate") >= 0 &&
+            index($policy_source, "proofObligationBudget") >= 0 &&
+            index($policy_source, "Proof Obligations") >= 0,
+        defect_ledger => index($policy_source, "defect_ledger") >= 0 &&
+            index($policy_source, "triage_score") >= 0 &&
+            index($policy_source, "defectKey") >= 0,
+        defect_delta => index($policy_source, "--compare-report") >= 0 &&
+            index($policy_source, "defect_delta") >= 0 &&
+            index($policy_source, "defect_lineage_matches") >= 0 &&
+            index($policy_source, "run_defect_lineage_model_self_tests") >= 0 &&
+            index($policy_source, "identityChurnAvoided") >= 0 &&
+            index($policy_source, "resolvedRecords") >= 0 &&
+            index($policy_source, "apply_defect_delta_quality_gate") >= 0 &&
+            index($policy_source, "new-defect-budget") >= 0,
+        history_trend => index($policy_source, "--history") >= 0 &&
+            index($policy_source, "--write-history") >= 0 &&
+            index($policy_source, "history_trend") >= 0 &&
+            index($policy_source, "history_lifecycle_model") >= 0 &&
+            index($policy_source, "apply_history_quality_gate") >= 0 &&
+            index($policy_source, "reopenedIssueBudget") >= 0 &&
+            index($policy_source, "history-debt-regression-budget") >= 0,
+        new_code_gate => index($policy_source, "--new-code-base") >= 0 &&
+            index($policy_source, "--new-code-file") >= 0 &&
+            index($policy_source, "new_code_scope") >= 0 &&
+            index($policy_source, "apply_new_code_quality_gate") >= 0 &&
+            index($policy_source, "new-code-open-budget") >= 0,
+        change_impact_model => index($policy_source, "change_impact_model") >= 0 &&
+            index($policy_source, "reverse_import_graph") >= 0 &&
+            index($policy_source, "apply_change_impact_quality_gate") >= 0 &&
+            index($policy_source, "changeImpactCriticalBudget") >= 0 &&
+            index($policy_source, "changeImpactModel") >= 0 &&
+            index($policy_source, "Change Impact") >= 0
+    };
+}
+
+sub read_const_object_keys {
+    my ($path, $name) = @_;
+    return () if !-f $path;
+    my $lex = lex_ts_source(read_text($path));
+    my $tokens = $lex->{tokens};
+    my @keys;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        next if token_value($tokens, $index) ne $name;
+        my $cursor = next_non_trivia_token($tokens, $index + 1);
+        next if token_value($tokens, $cursor) ne "=";
+        $cursor = next_non_trivia_token($tokens, $cursor + 1);
+        next if token_value($tokens, $cursor) ne "{";
+
+        my $depth = 1;
+        for ($cursor += 1; $cursor < @{$tokens} && $depth != 0; $cursor += 1) {
+            my $value = token_value($tokens, $cursor);
+            if ($value eq "{") {
+                $depth += 1;
+                next;
+            }
+            if ($value eq "}") {
+                $depth -= 1;
+                next;
+            }
+            next if $depth != 1;
+            next if token_type($tokens, $cursor) ne "id" && token_type($tokens, $cursor) ne "string";
+            my $after_key = next_non_trivia_token($tokens, $cursor + 1);
+            next if token_value($tokens, $after_key) ne ":";
+            push @keys, $value;
+        }
+        last;
+    }
+
+    return @keys;
+}
+
+sub lex_ts_source {
+    my ($source) = @_;
+    my @tokens;
+    my @strings;
+    my @jsdocs;
+    my @errors;
+    my $length = length($source);
+    my $index = 0;
+    my $line = 1;
+
+    while ($index < $length) {
+        my $char = substr($source, $index, 1);
+
+        if ($char =~ /\s/) {
+            $line += 1 if $char eq "\n";
+            $index += 1;
+            next;
+        }
+
+        if ($char eq "/" && $index + 1 < $length) {
+            my $next = substr($source, $index + 1, 1);
+            if ($next eq "/") {
+                $index += 2;
+                while ($index < $length && substr($source, $index, 1) ne "\n") {
+                    $index += 1;
+                }
+                next;
+            }
+            if ($next eq "*") {
+                my $start_line = $line;
+                my $is_jsdoc = $index + 2 < $length && substr($source, $index + 2, 1) eq "*";
+                $index += 2;
+                while ($index + 1 < $length) {
+                    my $part = substr($source, $index, 2);
+                    if (substr($source, $index, 1) eq "\n") {
+                        $line += 1;
+                    }
+                    if ($part eq "*/") {
+                        $index += 2;
+                        last;
+                    }
+                    $index += 1;
+                }
+                push @jsdocs, {
+                    start_line => $start_line,
+                    end_line => $line
+                } if $is_jsdoc;
+                next;
+            }
+        }
+
+        if ($char eq "/" && looks_like_regex_start(\@tokens)) {
+            my ($value, $next_index, $next_line) = read_regex_token($source, $index, $line, \@errors);
+            push @tokens, token("regex", $value, $line);
+            $index = $next_index;
+            $line = $next_line;
+            next;
+        }
+
+        if ($char eq "\"" || $char eq "'") {
+            my ($value, $next_index, $next_line) = read_quoted_token($source, $index, $line, $char, \@errors);
+            push @tokens, token("string", $value, $line);
+            push @strings, $value;
+            $index = $next_index;
+            $line = $next_line;
+            next;
+        }
+
+        if ($char eq "`") {
+            my ($value, $next_index, $next_line, $nested) = read_template_token($source, $index, $line, \@errors);
+            push @tokens, token("template", $value, $line);
+            push @strings, $value;
+            merge_lex_parts(\@tokens, \@strings, \@jsdocs, $nested);
+            $index = $next_index;
+            $line = $next_line;
+            next;
+        }
+
+        if (is_identifier_start_char($char)) {
+            my $start = $index;
+            $index += 1;
+            while ($index < $length && is_identifier_part_char(substr($source, $index, 1))) {
+                $index += 1;
+            }
+            push @tokens, token("id", substr($source, $start, $index - $start), $line);
+            next;
+        }
+
+        if ($char =~ /\d/) {
+            my $start = $index;
+            $index += 1;
+            while ($index < $length && substr($source, $index, 1) =~ /[A-Za-z0-9_.]/) {
+                $index += 1;
+            }
+            push @tokens, token("number", substr($source, $start, $index - $start), $line);
+            next;
+        }
+
+        my $operator = read_operator_token($source, $index);
+        if (defined $operator) {
+            push @tokens, token("operator", $operator, $line);
+            $index += length($operator);
+            next;
+        }
+
+        push @tokens, token("punct", $char, $line);
+        $index += 1;
+    }
+
+    return {
+        tokens => \@tokens,
+        strings => \@strings,
+        jsdocs => \@jsdocs,
+        errors => \@errors
+    };
+}
+
+sub read_quoted_token {
+    my ($source, $index, $line, $quote, $errors) = @_;
+    my $length = length($source);
+    my $value = "";
+    my $start_line = $line;
+    $index += 1;
+    while ($index < $length) {
+        my $char = substr($source, $index, 1);
+        if ($char eq "\n") {
+            $line += 1;
+        }
+        if ($char eq "\\") {
+            if ($index + 1 < $length) {
+                $value .= substr($source, $index + 1, 1);
+                $line += 1 if substr($source, $index + 1, 1) eq "\n";
+                $index += 2;
+                next;
+            }
+            $index += 1;
+            next;
+        }
+        if ($char eq $quote) {
+            return ($value, $index + 1, $line);
+        }
+        $value .= $char;
+        $index += 1;
+    }
+    push @{$errors}, {
+        line => $start_line,
+        message => "unterminated quoted string literal"
+    };
+    return ($value, $index, $line);
+}
+
+sub read_regex_token {
+    my ($source, $index, $line, $errors) = @_;
+    my $length = length($source);
+    my $value = "/";
+    my $in_class = 0;
+    my $start_line = $line;
+    $index += 1;
+    while ($index < $length) {
+        my $char = substr($source, $index, 1);
+        $line += 1 if $char eq "\n";
+        if ($char eq "\\") {
+            if ($index + 1 < $length) {
+                $value .= $char . substr($source, $index + 1, 1);
+                $line += 1 if substr($source, $index + 1, 1) eq "\n";
+                $index += 2;
+                next;
+            }
+            $value .= $char;
+            $index += 1;
+            next;
+        }
+        if ($char eq "[") {
+            $in_class = 1;
+            $value .= $char;
+            $index += 1;
+            next;
+        }
+        if ($char eq "]") {
+            $in_class = 0;
+            $value .= $char;
+            $index += 1;
+            next;
+        }
+        if ($char eq "/" && !$in_class) {
+            $value .= $char;
+            $index += 1;
+            while ($index < $length && is_identifier_part_char(substr($source, $index, 1))) {
+                $value .= substr($source, $index, 1);
+                $index += 1;
+            }
+            return ($value, $index, $line);
+        }
+        $value .= $char;
+        $index += 1;
+    }
+    push @{$errors}, {
+        line => $start_line,
+        message => "unterminated regular expression literal"
+    };
+    return ($value, $index, $line);
+}
+
+sub read_template_token {
+    my ($source, $index, $line, $errors) = @_;
+    my $length = length($source);
+    my $value = "";
+    my @tokens;
+    my @strings;
+    my @jsdocs;
+    my $start_line = $line;
+    $index += 1;
+    while ($index < $length) {
+        my $char = substr($source, $index, 1);
+        if ($char eq "\n") {
+            $line += 1;
+        }
+        if ($char eq "\\") {
+            if ($index + 1 < $length) {
+                $value .= $char . substr($source, $index + 1, 1);
+                $line += 1 if substr($source, $index + 1, 1) eq "\n";
+                $index += 2;
+                next;
+            }
+            $index += 1;
+            next;
+        }
+        if ($char eq "\$" && $index + 1 < $length && substr($source, $index + 1, 1) eq "{") {
+            my $expression_start = $index + 2;
+            my ($next_index, $next_line, $nested) = read_template_expression(
+                $source,
+                $expression_start,
+                $line,
+                $errors
+            );
+            $value .= substr($source, $index, $next_index - $index);
+            merge_lex_parts(\@tokens, \@strings, \@jsdocs, $nested);
+            $index = $next_index;
+            $line = $next_line;
+            next;
+        }
+        if ($char eq "`") {
+            return ($value, $index + 1, $line, lex_part(\@tokens, \@strings, \@jsdocs));
+        }
+        $value .= $char;
+        $index += 1;
+    }
+    push @{$errors}, {
+        line => $start_line,
+        message => "unterminated template literal"
+    };
+    return ($value, $index, $line, lex_part(\@tokens, \@strings, \@jsdocs));
+}
+
+sub read_template_expression {
+    my ($source, $index, $line, $errors) = @_;
+    my $length = length($source);
+    my @tokens;
+    my @strings;
+    my @jsdocs;
+    my $depth = 1;
+    my $start_line = $line;
+
+    while ($index < $length) {
+        my $char = substr($source, $index, 1);
+
+        if ($char =~ /\s/) {
+            $line += 1 if $char eq "\n";
+            $index += 1;
+            next;
+        }
+
+        if ($char eq "/" && $index + 1 < $length) {
+            my $next = substr($source, $index + 1, 1);
+            if ($next eq "/") {
+                $index += 2;
+                while ($index < $length && substr($source, $index, 1) ne "\n") {
+                    $index += 1;
+                }
+                next;
+            }
+            if ($next eq "*") {
+                my $start_line = $line;
+                my $is_jsdoc = $index + 2 < $length && substr($source, $index + 2, 1) eq "*";
+                $index += 2;
+                while ($index + 1 < $length) {
+                    my $part = substr($source, $index, 2);
+                    $line += 1 if substr($source, $index, 1) eq "\n";
+                    if ($part eq "*/") {
+                        $index += 2;
+                        last;
+                    }
+                    $index += 1;
+                }
+                push @jsdocs, {
+                    start_line => $start_line,
+                    end_line => $line
+                } if $is_jsdoc;
+                next;
+            }
+        }
+
+        if ($char eq "/" && looks_like_regex_start(\@tokens)) {
+            my ($value, $next_index, $next_line) = read_regex_token($source, $index, $line, $errors);
+            push @tokens, token("regex", $value, $line);
+            $index = $next_index;
+            $line = $next_line;
+            next;
+        }
+
+        if ($char eq "\"" || $char eq "'") {
+            my ($value, $next_index, $next_line) = read_quoted_token($source, $index, $line, $char, $errors);
+            push @tokens, token("string", $value, $line);
+            push @strings, $value;
+            $index = $next_index;
+            $line = $next_line;
+            next;
+        }
+
+        if ($char eq "`") {
+            my ($value, $next_index, $next_line, $nested) = read_template_token($source, $index, $line, $errors);
+            push @tokens, token("template", $value, $line);
+            push @strings, $value;
+            merge_lex_parts(\@tokens, \@strings, \@jsdocs, $nested);
+            $index = $next_index;
+            $line = $next_line;
+            next;
+        }
+
+        if (is_identifier_start_char($char)) {
+            my $start = $index;
+            $index += 1;
+            while ($index < $length && is_identifier_part_char(substr($source, $index, 1))) {
+                $index += 1;
+            }
+            push @tokens, token("id", substr($source, $start, $index - $start), $line);
+            next;
+        }
+
+        if ($char =~ /\d/) {
+            my $start = $index;
+            $index += 1;
+            while ($index < $length && substr($source, $index, 1) =~ /[A-Za-z0-9_.]/) {
+                $index += 1;
+            }
+            push @tokens, token("number", substr($source, $start, $index - $start), $line);
+            next;
+        }
+
+        my $operator = read_operator_token($source, $index);
+        if (defined $operator) {
+            push @tokens, token("operator", $operator, $line);
+            $index += length($operator);
+            next;
+        }
+
+        if ($char eq "{") {
+            $depth += 1;
+            push @tokens, token("punct", $char, $line);
+            $index += 1;
+            next;
+        }
+
+        if ($char eq "}") {
+            $depth -= 1;
+            if ($depth == 0) {
+                return ($index + 1, $line, lex_part(\@tokens, \@strings, \@jsdocs));
+            }
+            push @tokens, token("punct", $char, $line);
+            $index += 1;
+            next;
+        }
+
+        push @tokens, token("punct", $char, $line);
+        $index += 1;
+    }
+
+    push @{$errors}, {
+        line => $start_line,
+        message => "unterminated template interpolation"
+    };
+    return ($index, $line, lex_part(\@tokens, \@strings, \@jsdocs));
+}
+
+sub lex_part {
+    my ($tokens, $strings, $jsdocs) = @_;
+    return {
+        tokens => $tokens,
+        strings => $strings,
+        jsdocs => $jsdocs
+    };
+}
+
+sub merge_lex_parts {
+    my ($tokens, $strings, $jsdocs, $part) = @_;
+    push @{$tokens}, @{$part->{tokens}};
+    push @{$strings}, @{$part->{strings}};
+    push @{$jsdocs}, @{$part->{jsdocs}};
+}
+
+sub run_lexer_self_tests {
+    my $nested_call = q!const out = `a ${foo(`${bar}`)} b`; import { ok } from "./ok.js";!;
+    my $nested_lex = lex_ts_source($nested_call);
+    assert_no_lexer_errors($nested_lex, "nested template call");
+    assert_lexer_imports($nested_lex, ["./ok.js"], "nested template call");
+    assert_token_seen($nested_lex, "foo", "nested template call");
+    assert_token_seen($nested_lex, "bar", "nested template interpolation");
+
+    my $commented = q!const out = `a ${/* import bad from "./bad.js" */ foo} b`; export { ok } from "./after.js";!;
+    my $commented_lex = lex_ts_source($commented);
+    assert_no_lexer_errors($commented_lex, "template interpolation comments");
+    assert_lexer_imports($commented_lex, ["./after.js"], "template interpolation comments");
+
+    my $deep = q!const out = `a ${foo({ nested: `${bar ? `${baz}` : "q"}` })} b`; const after = 1;!;
+    my $deep_lex = lex_ts_source($deep);
+    assert_no_lexer_errors($deep_lex, "deep nested template");
+    assert_token_seen($deep_lex, "foo", "deep nested template");
+    assert_token_seen($deep_lex, "bar", "deep nested template");
+    assert_token_seen($deep_lex, "baz", "deep nested template");
+    assert_token_seen($deep_lex, "after", "template recovery after closing backtick");
+
+    my $regex = q!const out = `a ${foo(/}/, /`/, /[}]/)} b`; import { ok } from "./regex.js";!;
+    my $regex_lex = lex_ts_source($regex);
+    assert_no_lexer_errors($regex_lex, "regexp literal inside template interpolation");
+    assert_lexer_imports($regex_lex, ["./regex.js"], "regexp literal inside template interpolation");
+
+    my $arrow_regex = q!const fn = () => /}/; import { ok } from "./arrow-regex.js";!;
+    my $arrow_regex_lex = lex_ts_source($arrow_regex);
+    assert_no_lexer_errors($arrow_regex_lex, "arrow function regexp literal recovery");
+    assert_lexer_imports($arrow_regex_lex, ["./arrow-regex.js"], "arrow function regexp literal recovery");
+
+    my $type_only_edges = q!import { type Foo } from "./types.js"; export { type Bar } from "./more-types.js"; import { type Baz, qux } from "./mixed.js";!;
+    my $type_only_lex = lex_ts_source($type_only_edges);
+    assert_no_lexer_errors($type_only_lex, "type-only import/export classification");
+    assert_runtime_imports($type_only_lex, ["./mixed.js"], "type-only import/export classification");
+
+    my $type_named_value = q!import { type as runtimeType } from "./runtime-type.js"; import { type } from "./runtime-name.js"; import { type Foo } from "./types.js";!;
+    my $type_named_value_lex = lex_ts_source($type_named_value);
+    assert_no_lexer_errors($type_named_value_lex, "type named value import classification");
+    assert_runtime_imports($type_named_value_lex, ["./runtime-type.js", "./runtime-name.js"], "type named value import classification");
+
+    my $dynamic_import = q!export async function load() { return await import("./runtime.js"); } import type { Foo } from "./types.js";!;
+    my $dynamic_import_lex = lex_ts_source($dynamic_import);
+    assert_no_lexer_errors($dynamic_import_lex, "dynamic import graph extraction");
+    assert_runtime_imports($dynamic_import_lex, ["./runtime.js"], "dynamic import graph extraction");
+
+    my $semicolonless = qq!import { a } from "./a.js"\nimport { b } from "./b.js"\nconst c = await import("./c.js")!;
+    my $semicolonless_lex = lex_ts_source($semicolonless);
+    assert_no_lexer_errors($semicolonless_lex, "semicolonless import graph extraction");
+    assert_runtime_imports($semicolonless_lex, ["./a.js", "./b.js", "./c.js"], "semicolonless import graph extraction");
+
+    my $broken = q!const out = `a ${foo(`${bar}`) b`!;
+    my $broken_lex = lex_ts_source($broken);
+    assert_lexer_errors($broken_lex, "unterminated template interpolation", "broken template interpolation");
+}
+
+sub run_source_suppression_self_tests {
+    my $source = qq!/*\n * TINL flow.complexity: compiler table intentionally keeps this function flat\n * for V8 locality\n */\nexport function giantTable() { return true; }\n!;
+    my ($suppressions, $invalid) = read_source_suppressions("src/probe.ts", $source);
+    die "source suppression self-test failed: unexpected invalid suppression\n" if @{$invalid} != 0;
+
+    my %diag = (
+        code => "flow.complexity",
+        where => "src/probe.ts:5",
+        message => "synthetic complexity warning",
+        severity => "warning",
+        suppressed => 0
+    );
+    apply_source_suppressions([\%diag], $suppressions);
+    die "source suppression self-test failed: diagnostic was not suppressed\n"
+        if !$diag{suppressed};
+    die "source suppression self-test failed: reason was not preserved\n"
+        if ($diag{suppressionReason} // "") !~ /V8 locality/;
+
+    my ($legacy_suppressions, $legacy_invalid) = read_source_suppressions(
+        "src/legacy.ts",
+        qq!// typesea-ignore-next-line flow.complexity: legacy spelling remains accepted\nexport const value = true;\n!
+    );
+    die "source suppression self-test failed: legacy spelling was rejected\n"
+        if @{$legacy_invalid} != 0 || keys(%{$legacy_suppressions}) == 0;
+
+    my ($bad_suppressions, $bad_invalid) = read_source_suppressions(
+        "src/probe.ts",
+        qq!/* TINL flow.complexity */\nexport const value = 1;\n!
+    );
+    die "source suppression self-test failed: invalid suppression without reason was accepted\n"
+        if keys(%{$bad_suppressions}) != 0 || @{$bad_invalid} == 0;
+
+    my $range_source = qq!/*\n * TIND flow.complexity: table-driven validator is intentionally centralized\n */\nexport function ranged() {\n    const local = true;\n    return local;\n}\n!;
+    my ($range_suppressions, $range_invalid) = read_source_suppressions("src/ranged.ts", $range_source);
+    die "source suppression self-test failed: valid declaration suppression was rejected\n"
+        if @{$range_invalid} != 0;
+    my %range_diag = (
+        code => "flow.complexity",
+        where => "src/ranged.ts:6",
+        message => "synthetic body warning",
+        severity => "warning",
+        suppressed => 0
+    );
+    apply_source_suppressions([\%range_diag], $range_suppressions);
+    die "source suppression self-test failed: declaration range diagnostic was not suppressed\n"
+        if !$range_diag{suppressed};
+
+    my $variable_source = qq!/*\n * TIND flow.hot-loop-allocation: cached lookup table is intentionally allocated once at module load\n */\nexport const lookupTable = buildLookupTable({\n    size: 32,\n    hot: true\n});\n!;
+    my ($variable_suppressions, $variable_invalid) = read_source_suppressions("src/table.ts", $variable_source);
+    die "source suppression self-test failed: valid variable declaration suppression was rejected\n"
+        if @{$variable_invalid} != 0;
+    my %variable_diag = (
+        code => "flow.hot-loop-allocation",
+        where => "src/table.ts:6",
+        message => "synthetic variable initializer warning",
+        severity => "warning",
+        suppressed => 0
+    );
+    apply_source_suppressions([\%variable_diag], $variable_suppressions);
+    die "source suppression self-test failed: variable declaration range diagnostic was not suppressed\n"
+        if !$variable_diag{suppressed};
+
+    my @known_diagnostics = (
+        diagnostic("warning", "flow.complexity", "src/table.ts:2", "synthetic known warning")
+    );
+    my @unknown_rule = source_suppression_rule_diagnostics($variable_suppressions, \@known_diagnostics);
+    die "source suppression self-test failed: valid rule code was rejected\n"
+        if grep { ($_->{code} // "") eq "source.suppression-rule" && ($_->{severity} // "") eq "warning" } @unknown_rule;
+
+    my ($unknown_suppressions) = read_source_suppressions(
+        "src/unknown-rule.ts",
+        qq!/* TINL flow.complexty: misspelled rule must be rejected */\nexport const value = true;\n!
+    );
+    my @unknown_rule_diagnostics = source_suppression_rule_diagnostics($unknown_suppressions, \@known_diagnostics);
+    die "source suppression self-test failed: unknown rule code was not rejected\n"
+        if !grep { ($_->{code} // "") eq "source.suppression-rule" && ($_->{severity} // "") eq "warning" } @unknown_rule_diagnostics;
+
+    my ($wildcard_suppressions) = read_source_suppressions(
+        "src/wildcard-rule.ts",
+        qq!/* TINL *: broad generated-source waiver must remain visible */\nexport const value = true;\n!
+    );
+    my @wildcard_rule_diagnostics = source_suppression_wildcard_diagnostics($wildcard_suppressions);
+    die "source suppression self-test failed: wildcard rule was not audited\n"
+        if !grep { ($_->{code} // "") eq "source.suppression-wildcard" && ($_->{severity} // "") eq "warning" } @wildcard_rule_diagnostics;
+
+    my @specific_rule_diagnostics = source_suppression_wildcard_diagnostics($variable_suppressions);
+    die "source suppression self-test failed: specific rule was reported as wildcard\n"
+        if grep { ($_->{code} // "") eq "source.suppression-wildcard" && ($_->{severity} // "") eq "warning" } @specific_rule_diagnostics;
+}
+
+sub run_type_escape_domain_self_tests {
+    my $source = qq~// \@ts-expect-error legacy type bridge kept for the analyzer self-test\nconst parsed = JSON.parse(raw);\nlet value: any = parsed;\nconst narrowed = parsed as any;\nconst bridged = parsed as unknown as Readonly<{ id: string }>;\nconst user = maybe!.name;\nPromise.any([one]);\n~;
+    my $lex = lex_ts_source($source);
+    my $domain = build_type_escape_domain_summary("src/type-escape-probe.ts", $lex->{tokens}, $source);
+    die "type escape domain self-test failed: explicit any count\n"
+        if $domain->{explicitAny} != 1;
+    die "type escape domain self-test failed: as any count\n"
+        if $domain->{asAny} != 1;
+    die "type escape domain self-test failed: double assertion count\n"
+        if $domain->{doubleAssertions} != 1;
+    die "type escape domain self-test failed: non-null assertion count\n"
+        if $domain->{nonNullAssertions} != 1;
+    die "type escape domain self-test failed: JSON.parse count\n"
+        if $domain->{uncheckedJsonParse} != 1;
+    die "type escape domain self-test failed: ts suppression count\n"
+        if $domain->{tsSuppressionComments} != 1;
+    die "type escape domain self-test failed: total escape count\n"
+        if $domain->{totalEscapes} != 6;
+}
+
+sub run_regex_safety_domain_self_tests {
+    my $source = q~const risky = /^(a+)+$/u;
+const alternation = /(foo|fo)+$/u;
+const wildcard = /.*x.*/u;
+const backref = /(a)\1/u;
+const safe = /^(?:[A-Z0-9-]{0,61}[A-Z0-9])$/u;
+const dynamic = new RegExp(pattern.source, pattern.flags);
+const ctor = new RegExp("^(b+)+$", "u");
+~;
+    my $lex = lex_ts_source($source);
+    my $domain = build_regex_safety_domain_summary("src/regex-probe.ts", $lex->{tokens});
+    die "regex safety domain self-test failed: regex inventory\n"
+        if $domain->{totalRegexps} != 6 || $domain->{regexConstructors} != 2 || $domain->{dynamicRegexConstructors} != 1;
+    die "regex safety domain self-test failed: nested quantifier risk\n"
+        if $domain->{nestedQuantifierRisks} != 2;
+    die "regex safety domain self-test failed: quantified alternation risk\n"
+        if $domain->{quantifiedAlternationRisks} != 1;
+    die "regex safety domain self-test failed: wildcard chain risk\n"
+        if $domain->{wildcardChainRisks} != 1;
+    die "regex safety domain self-test failed: backreference risk\n"
+        if $domain->{backreferenceRisks} != 1;
+    die "regex safety domain self-test failed: total risk count\n"
+        if $domain->{totalRedosRisks} != 5;
+}
+
+sub run_secret_leak_domain_self_tests {
+    my $aws = "AKIA" . "ABCDEFGHIJKLMNOP";
+    my $github = "ghp_" . "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN";
+    my $npm = "npm_" . "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN";
+    my $private_key = "-----BEGIN " . "PRIVATE KEY-----";
+    my $generic = "AbCdEf1234567890+/AbCdEf123456";
+    my $source = join("\n",
+        "const aws = \"$aws\";",
+        "const github = \"$github\";",
+        "const npmToken = \"$npm\";",
+        "const marker = \"$private_key\";",
+        "const serviceSecret = \"$generic\";",
+        "const exampleToken = \"example-token-placeholder-value\";"
+    );
+    my $domain = build_secret_leak_domain_summary("src/secret-probe.ts", $source);
+    die "secret leak domain self-test failed: AWS key count\n"
+        if $domain->{awsAccessKeys} != 1;
+    die "secret leak domain self-test failed: GitHub token count\n"
+        if $domain->{githubTokens} != 1;
+    die "secret leak domain self-test failed: npm token count\n"
+        if $domain->{npmTokens} != 1;
+    die "secret leak domain self-test failed: private key count\n"
+        if $domain->{privateKeys} != 1;
+    die "secret leak domain self-test failed: generic credential count\n"
+        if $domain->{genericCredentials} != 1;
+    die "secret leak domain self-test failed: placeholder was not ignored\n"
+        if $domain->{totalLeaks} != 5;
+    for my $finding (@{$domain->{findings}}) {
+        die "secret leak domain self-test failed: unredacted preview\n"
+            if ($finding->{preview} // "") !~ /\.\.\./;
+    }
+}
+
+sub run_workflow_security_domain_self_tests {
+    my $unsafe = q~name: unsafe
+on:
+    pull_request:
+    pull_request_target:
+permissions: write-all
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - run: echo "${{ secrets.NPM_TOKEN }}"
+~;
+    my $unsafe_domain = build_workflow_security_domain_summary(".github/workflows/unsafe.yml", $unsafe);
+    die "workflow security self-test failed: mutable action ref was not counted\n"
+        if ($unsafe_domain->{mutableActionRefs} != 1);
+    die "workflow security self-test failed: high-risk findings were not counted\n"
+        if ($unsafe_domain->{highRiskFindings} < 3);
+
+    my $release = q~name: Release
+on:
+    push:
+        tags:
+            - "v*"
+permissions:
+    contents: write
+    id-token: write
+jobs:
+    create-release:
+        environment: npm-publish
+        steps:
+            - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
+            - run: |
+                  if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+                      exit 1
+                  fi
+            - run: npm run release:publish
+~;
+    my $release_domain = build_workflow_security_domain_summary(".github/workflows/release.yml", $release);
+    die "workflow security self-test failed: SHA-pinned action was not recognized\n"
+        if $release_domain->{shaPinnedActionRefs} != 1 || $release_domain->{mutableActionRefs} != 0;
+    die "workflow security self-test failed: release workflow evidence reported a gap\n"
+        if $release_domain->{releasePublishGaps} != 0 || $release_domain->{highRiskFindings} != 0;
+}
+
+sub run_package_lock_security_domain_self_tests {
+    my $package = {
+        dependencies => {}
+    };
+    my $safe_lock = {
+        lockfileVersion => 3,
+        packages => {
+            "" => {
+                name => "typesea",
+                version => "1.1.1"
+            },
+            "node_modules/safe" => {
+                version => "1.0.0",
+                resolved => "https://registry.npmjs.org/safe/-/safe-1.0.0.tgz",
+                integrity => "sha512-safe"
+            }
+        }
+    };
+    my $safe = package_lock_security_ir($package, $safe_lock);
+    die "package lock security self-test failed: safe lockfile reported risk\n"
+        if ($safe->{lockRiskFindings} // 0) != 0 || ($safe->{runtimeDependencyCount} // 0) != 0;
+
+    my $unsafe_package = {
+        dependencies => {
+            bad => "1.0.0"
+        }
+    };
+    my $unsafe_lock = {
+        lockfileVersion => 2,
+        packages => {
+            "" => {
+                dependencies => {
+                    bad => "1.0.0"
+                }
+            },
+            "node_modules/no-integrity" => {
+                resolved => "https://registry.npmjs.org/no-integrity/-/no-integrity-1.0.0.tgz"
+            },
+            "node_modules/http" => {
+                resolved => "http://registry.npmjs.org/http/-/http-1.0.0.tgz",
+                integrity => "sha512-http"
+            },
+            "node_modules/git" => {
+                resolved => "git+https://example.invalid/repo.git",
+                integrity => "sha512-git"
+            },
+            "node_modules/file" => {
+                resolved => "file:../local.tgz",
+                integrity => "sha512-file"
+            }
+        }
+    };
+    my $unsafe = package_lock_security_ir($unsafe_package, $unsafe_lock);
+    die "package lock security self-test failed: unsafe lockfile risk count\n"
+        if ($unsafe->{lockRiskFindings} // 0) < 5;
+    die "package lock security self-test failed: runtime dependency count\n"
+        if ($unsafe->{runtimeDependencyCount} // 0) != 2;
+}
+
+sub run_package_license_domain_self_tests {
+    my $safe_package = {
+        license => "MIT"
+    };
+    my $safe_lock = {
+        packages => {
+            "" => {
+                license => "MIT"
+            },
+            "node_modules/a" => {
+                license => "MIT"
+            },
+            "node_modules/b" => {
+                license => "Apache-2.0"
+            }
+        }
+    };
+    my $safe = package_license_ir($safe_package, $safe_lock);
+    die "package license self-test failed: safe licenses reported risk\n"
+        if ($safe->{licenseRiskFindings} // 0) != 0 || ($safe->{licenseReviewFindings} // 0) != 0;
+
+    my $unsafe_package = {
+        license => "Apache-2.0"
+    };
+    my $unsafe_lock = {
+        packages => {
+            "" => {
+                license => "Apache-2.0"
+            },
+            "node_modules/missing" => {},
+            "node_modules/gpl" => {
+                license => "GPL-3.0"
+            },
+            "node_modules/mpl" => {
+                license => "MPL-2.0"
+            }
+        }
+    };
+    my $unsafe = package_license_ir($unsafe_package, $unsafe_lock);
+    die "package license self-test failed: high-risk licenses were not counted\n"
+        if ($unsafe->{licenseRiskFindings} // 0) < 2;
+    die "package license self-test failed: review licenses were not counted\n"
+        if ($unsafe->{licenseReviewFindings} // 0) < 2;
+}
+
+sub run_api_surface_domain_self_tests {
+    my $safe = api_surface_ir(read_json("package.json"));
+    die "api surface self-test failed: documented exports reported drift\n"
+        if ($safe->{surfaceDriftFindings} // 0) != 0 || ($safe->{documentationGaps} // 0) != 0;
+
+    my $unsafe_package = {
+        exports => {
+            "./not-documented-self-test" => {
+                types => "./dist/not-documented-self-test.d.ts",
+                import => "./dist/not-documented-self-test.js",
+                default => "./dist/not-documented-self-test.js"
+            },
+            "./bad-self-test" => {
+                import => "./dist/bad-self-test.js",
+                default => "./dist/other-self-test.js"
+            }
+        }
+    };
+    my $unsafe = api_surface_ir($unsafe_package);
+    die "api surface self-test failed: export shape drift was not counted\n"
+        if ($unsafe->{surfaceDriftFindings} // 0) < 2;
+    die "api surface self-test failed: missing documentation was not counted\n"
+        if ($unsafe->{apiDocumentationFindings} // 0) < 2;
+
+    my %exported = (
+        "typesea/v4/locales/*" => 1
+    );
+    my @wildcards = ("typesea/v4/locales/");
+    die "api surface self-test failed: wildcard package export did not cover locale leaf import\n"
+        if !api_surface_specifier_is_exported("typesea/v4/locales/en.js", \%exported, \@wildcards);
+}
+
+sub run_release_consistency_domain_self_tests {
+    my $safe_package = {
+        name => "typesea",
+        version => changelog_top_version()
+    };
+    my $safe_lock = {
+        name => $safe_package->{name},
+        version => $safe_package->{version},
+        packages => {
+            "" => {
+                name => $safe_package->{name},
+                version => $safe_package->{version}
+            }
+        }
+    };
+    my $safe_benchmark = {
+        package => $safe_package->{name},
+        version => $safe_package->{version}
+    };
+    my $safe = release_consistency_ir($safe_package, $safe_lock, $safe_benchmark);
+    die "release consistency self-test failed: current release metadata reported drift\n"
+        if ($safe->{releaseConsistencyFindings} // 0) != 0;
+
+    my $unsafe_package = {
+        name => "typesea",
+        version => "9.9.9"
+    };
+    my $unsafe_lock = {
+        name => "typesea",
+        version => "1.0.0",
+        packages => {
+            "" => {
+                name => "typesea",
+                version => "1.0.0"
+            }
+        }
+    };
+    my $unsafe_benchmark = {
+        package => "other",
+        version => "1.0.0"
+    };
+    my $unsafe = release_consistency_ir($unsafe_package, $unsafe_lock, $unsafe_benchmark);
+    die "release consistency self-test failed: version drift was not counted\n"
+        if ($unsafe->{releaseConsistencyFindings} // 0) < 4;
+}
+
+sub run_test_evidence_domain_self_tests {
+    my %complete_files;
+    for my $suite (required_test_evidence_suites()) {
+        for my $path (@{$suite->{files}}) {
+            $complete_files{$path} = 1;
+        }
+    }
+    my $complete = test_evidence_ir({
+        files => \%complete_files
+    });
+    die "test evidence self-test failed: complete suite reported gaps\n"
+        if ($complete->{testEvidenceGaps} // 0) != 0 ||
+            ($complete->{coveredSuites} // 0) != ($complete->{requiredSuites} // -1);
+
+    my $gapped = test_evidence_ir({
+        files => {
+            "test/core.test.ts" => 1
+        }
+    });
+    die "test evidence self-test failed: missing tests were not counted\n"
+        if ($gapped->{testEvidenceGaps} // 0) < 5 ||
+            ($gapped->{coveredSuites} // 0) >= ($gapped->{requiredSuites} // 0);
+}
+
+sub run_benchmark_evidence_domain_self_tests {
+    my $complete = benchmark_evidence_ir(benchmark_evidence_self_test_snapshot(1));
+    die "benchmark evidence self-test failed: complete benchmark reported gaps\n"
+        if ($complete->{benchmarkEvidenceGaps} // 0) != 0 ||
+            ($complete->{presentRequiredRows} // 0) != ($complete->{requiredRows} // -1);
+
+    my $gapped = benchmark_evidence_ir({
+        package => "typesea",
+        version => "1.0.0",
+        suites => [{
+            id => "valid-is",
+            rows => [{
+                id => "typesea-safe",
+                hz => 1
+            }]
+        }]
+    });
+    die "benchmark evidence self-test failed: missing metadata and rows were not counted\n"
+        if ($gapped->{benchmarkEvidenceGaps} // 0) < 10 ||
+            ($gapped->{metadataGaps} // 0) < 4 ||
+            ($gapped->{presentRequiredRows} // 0) >= ($gapped->{requiredRows} // 0);
+}
+
+sub run_rule_metadata_domain_self_tests {
+    my $complete = rule_metadata_integrity_model_from_catalog([
+        {
+            id => "rule.synthetic-domain",
+            name => "rule.synthetic-domain",
+            category => "analyzer",
+            engine => "policy-analyzer",
+            precision => "high",
+            confidence => "high",
+            remediation => "maintain-analyzer-capability",
+            remediationText => "Keep synthetic rule metadata complete.",
+            description => "Synthetic rule metadata self-test.",
+            severityClass => "audit",
+            tags => ["analyzer", "policy-analyzer", "maintain-analyzer-capability"]
+        }
+    ]);
+    die "rule metadata self-test failed: complete rule metadata reported gaps\n"
+        if ($complete->{ruleMetadataGaps} // 0) != 0 ||
+            ($complete->{completeRules} // 0) != 1;
+
+    my $gapped = rule_metadata_integrity_model_from_catalog([
+        {
+            id => "rule.incomplete",
+            name => "rule.incomplete",
+            category => "unknown-category",
+            precision => "guess",
+            tags => []
+        }
+    ]);
+    die "rule metadata self-test failed: incomplete rule metadata was not counted\n"
+        if ($gapped->{ruleMetadataGaps} // 0) < 5 ||
+            ($gapped->{completeRules} // 0) != 0;
+}
+
+sub benchmark_evidence_self_test_snapshot {
+    my ($complete) = @_;
+    my @suites;
+    for my $suite (required_benchmark_evidence_suites()) {
+        my @rows;
+        for my $row_id (@{$suite->{rows}}) {
+            push @rows, {
+                id => $row_id,
+                label => $row_id,
+                hz => 1_000_000,
+                sampleCount => 128,
+                aggregation => {
+                    strategy => "median-hz",
+                    runCount => 3,
+                    selectedRun => 2,
+                    worstHz => 900_000,
+                    medianHz => 1_000_000,
+                    bestHz => 1_100_000
+                }
+            };
+        }
+        push @suites, {
+            id => $suite->{id},
+            rows => \@rows
+        };
+    }
+    return {
+        schemaVersion => 1,
+        package => "typesea",
+        version => "1.0.0",
+        recordedAt => "2026-07-09T00:00:00.000Z",
+        command => "npm run bench:record",
+        environment => {
+            node => "v24.13.0",
+            v8 => "13.6.233.17-node.37",
+            platform => "darwin",
+            arch => "arm64",
+            cpu => "Apple M4",
+            logicalCpus => 10
+        },
+        aggregation => {
+            strategy => "median-of-runs",
+            runCount => 3
+        },
+        suites => \@suites
+    };
+}
+
+sub run_waiver_model_self_tests {
+    my $source = qq!/* TINL flow.complexity: reviewed table exception */\nexport function table() { return true; }\n!;
+    my ($suppressions, $invalid) = read_source_suppressions("src/waiver.ts", $source);
+    die "waiver model self-test failed: valid source suppression was rejected\n"
+        if @{$invalid} != 0;
+    my %diag = (
+        code => "flow.complexity",
+        where => "src/waiver.ts:2",
+        message => "synthetic waived diagnostic",
+        severity => "warning",
+        suppressed => 0
+    );
+    apply_source_suppressions([\%diag], $suppressions);
+    my $waiver = waiver_model([\%diag], $suppressions);
+    die "waiver model self-test failed: source waiver was not counted\n"
+        if ($waiver->{sourceSuppressions} // 0) != 1 || ($waiver->{staleWaivers} // 0) != 0;
+
+    my ($wildcard_suppressions) = read_source_suppressions(
+        "src/wildcard-waiver.ts",
+        qq!/* TINL *: generated dispatch table accepts a reviewed broad local waiver */\nexport const wildcard = true;\n!
+    );
+    my $wildcard_model = waiver_model([], $wildcard_suppressions);
+    die "waiver model self-test failed: wildcard source suppression was not counted\n"
+        if ($wildcard_model->{wildcardSourceSuppressions} // 0) != 1;
+    my $wildcard_gate = apply_waiver_quality_gate(
+        { status => "passed", failed => [], metrics => {}, budgets => {} },
+        $wildcard_model,
+        default_policy_profile()
+    );
+    die "waiver model self-test failed: wildcard suppression did not fail the default gate\n"
+        if !grep { $_ eq "wildcard-suppression-budget" } @{$wildcard_gate->{failed} // []};
+
+    my ($stale_suppressions) = read_source_suppressions(
+        "src/stale.ts",
+        qq!/* TINL flow.complexity: obsolete exception should be removed */\nexport const value = true;\n!
+    );
+    my $stale = waiver_model([], $stale_suppressions);
+    die "waiver model self-test failed: stale source suppression was not detected\n"
+        if ($stale->{staleWaivers} // 0) != 1;
+
+    my %accepted = (
+        code => "flow.symbolic-path",
+        where => "src/accepted.ts:7",
+        message => "synthetic accepted risk",
+        severity => "warning",
+        triageState => "accepted-risk",
+        triageReason => "bounded false positive in synthetic fixture",
+        triageExpires => "2099-01-01",
+        triageExpired => 0,
+        suppressed => 0
+    );
+    my $accepted_model = waiver_model([\%accepted], {});
+    die "waiver model self-test failed: accepted risk was not counted\n"
+        if ($accepted_model->{acceptedRisks} // 0) != 1 || ($accepted_model->{expiredWaivers} // 0) != 0;
+}
+
+
+sub run_review_governance_model_self_tests {
+    my %diag = (
+        code => "flow.symbolic-path",
+        where => "src/review.ts:10",
+        message => "synthetic high-confidence finding",
+        severity => "warning",
+        owner => "compiler",
+        owners => ["compiler"],
+        triageState => "false-positive",
+        triageOwner => "compiler",
+        triageReason => "synthetic fixture for review governance",
+        fingerprint => "review-governance-fingerprint",
+        suppressed => 0,
+        flow => [
+            { where => "src/review.ts:1", note => "source" },
+            { where => "src/review.ts:10", note => "sink" }
+        ]
+    );
+    my $ledger = defect_ledger([\%diag]);
+    my $model = review_governance_model([\%diag], $ledger);
+    die "review governance self-test failed: review decision was not counted\n"
+        if ($model->{reviewDecisions} // 0) != 1;
+    die "review governance self-test failed: high-confidence false-positive risk was not detected\n"
+        if ($model->{decisionRisks} // 0) != 1 ||
+            !grep { ($_ // "") eq "high-confidence-false-positive" } @{$model->{riskSet}[0]{risks} // []};
+
+    my $gate = apply_review_governance_quality_gate(
+        { status => "passed", failed => [], metrics => {}, budgets => {} },
+        $model,
+        default_policy_profile()
+    );
+    die "review governance self-test failed: risky decision did not fail the default gate\n"
+        if !grep { $_ eq "review-decision-risk-budget" } @{$gate->{failed} // []};
+}
+
+
+sub run_analysis_coverage_model_self_tests {
+    my $ir = {
+        source => {
+            files => [{ path => "src/probe.ts" }],
+            modules_by_path => { "src/probe.ts" => { layer => "core" } },
+            import_edges => [{ from => "src/probe.ts", to => "src/runtime.ts" }],
+            import_cycles => [],
+            lex_errors => [],
+            unresolved_imports => [],
+            source_suppressions => {},
+            invalid_source_suppressions => [],
+            schema_tags => ["String"],
+            node_tags => ["SchemaCheck"],
+            function_analysis => {
+                functions => [{ name => "probe", path => "src/probe.ts", line => 1 }],
+                graph => {
+                    edges => [{ from => "probe", to => "helper" }],
+                    cycles => []
+                },
+                abstract => {
+                    cfg => {
+                        blocks => 2,
+                        edges => 1,
+                        decisions => 1,
+                        loops => 0,
+                        unreachableStatements => 0
+                    }
+                }
+            }
+        }
+    };
+    my $complete = analysis_coverage_model($ir, []);
+    die "analysis coverage self-test failed: complete model reported gaps\n"
+        if ($complete->{coverageGaps} != 0 || ($complete->{status} // "") ne "complete");
+
+    my @diagnostics = (
+        diagnostic("error", "lex.parse", "src/broken.ts:1", "unterminated token"),
+        diagnostic("error", "policy.machine-report", "scripts/contributing-policy.pl", "machine reports missing")
+    );
+    my $gapped = analysis_coverage_model($ir, \@diagnostics);
+    die "analysis coverage self-test failed: gap model did not count coverage gaps\n"
+        if $gapped->{coverageGaps} < 2 || ($gapped->{status} // "") ne "gaps-present";
+}
+
+sub run_root_cause_model_self_tests {
+    my %left = (
+        code => "flow.range-gap",
+        where => "src/evaluate/check.ts:10",
+        message => "range proof missing",
+        severity => "warning",
+        owner => "compiler",
+        owners => ["compiler"],
+        suppressed => 0
+    );
+    my %right = (
+        code => "flow.range-gap",
+        where => "src/evaluate/check.ts:20",
+        message => "range proof missing in sibling branch",
+        severity => "warning",
+        owner => "compiler",
+        owners => ["compiler"],
+        suppressed => 0
+    );
+    my %different = (
+        code => "bench.hot-path",
+        where => "bench/results/latest.json:1",
+        message => "hot path below target",
+        severity => "warning",
+        owner => "release",
+        owners => ["release"],
+        suppressed => 0
+    );
+    ensure_diagnostic_fingerprints([\%left, \%right, \%different]);
+    my $ledger = defect_ledger([\%left, \%right, \%different]);
+    my $model = root_cause_model($ledger);
+
+    die "root-cause model self-test failed: open root causes were not counted\n"
+        if ($model->{openRootCauses} // 0) < 2;
+    die "root-cause model self-test failed: related diagnostics were not correlated\n"
+        if !grep { ($_->{open} // 0) == 2 && ($_->{primaryRule} // "") eq "flow.range-gap" } @{$model->{clusterSet}};
+    die "root-cause model self-test failed: top open clusters were not exported\n"
+        if scalar(@{$model->{topOpen} // []}) == 0;
+}
+
+sub run_rule_health_model_self_tests {
+    my %open = (
+        code => "flow.complexity",
+        where => "src/schema/validate.ts:10",
+        message => "complex function",
+        severity => "warning",
+        owner => "compiler",
+        owners => ["compiler"],
+        suppressed => 0
+    );
+    my %false_positive_left = (
+        code => "flow.symbolic-path",
+        where => "src/runtime.ts:20",
+        message => "synthetic symbolic path",
+        severity => "warning",
+        owner => "compiler",
+        owners => ["compiler"],
+        triageState => "false-positive",
+        triageReason => "synthetic calibration fixture",
+        suppressed => 0
+    );
+    my %false_positive_right = (
+        code => "flow.symbolic-path",
+        where => "src/runtime.ts:30",
+        message => "synthetic symbolic path sibling",
+        severity => "warning",
+        owner => "compiler",
+        owners => ["compiler"],
+        triageState => "false-positive",
+        triageReason => "synthetic calibration fixture",
+        suppressed => 0
+    );
+    ensure_diagnostic_fingerprints([\%open, \%false_positive_left, \%false_positive_right]);
+    my $ledger = defect_ledger([\%open, \%false_positive_left, \%false_positive_right]);
+    my $model = rule_health_model($ledger);
+
+    die "rule health self-test failed: noisy rule was not detected\n"
+        if ($model->{noisyRules} // 0) != 1;
+    die "rule health self-test failed: watch rule was not detected\n"
+        if ($model->{watchRules} // 0) < 1;
+    die "rule health self-test failed: noisy set does not include symbolic rule\n"
+        if !grep { ($_->{code} // "") eq "flow.symbolic-path" && ($_->{classification} // "") eq "noisy" } @{$model->{noisySet}};
+}
+
+sub run_finding_provenance_model_self_tests {
+    my %good = (
+        code => "flow.range-gap",
+        where => "src/evaluate/check.ts:10",
+        message => "range proof missing",
+        severity => "warning",
+        owner => "compiler",
+        owners => ["compiler"],
+        ownerSource => "test",
+        suppressed => 0
+    );
+    ensure_diagnostic_fingerprints([\%good]);
+    my $good_ledger = defect_ledger([\%good]);
+    my $good_model = finding_provenance_model([\%good], $good_ledger);
+
+    die "finding provenance self-test failed: complete finding reported gaps\n"
+        if ($good_model->{provenanceGaps} // 0) != 0 || ($good_model->{completeFindings} // 0) != 1;
+
+    my %bad = (
+        code => "flow.range-gap",
+        where => "",
+        message => "",
+        severity => "warning",
+        suppressed => 0
+    );
+    my $bad_model = finding_provenance_model([\%bad], { records => [] });
+    die "finding provenance self-test failed: incomplete finding did not report gaps\n"
+        if ($bad_model->{provenanceGaps} // 0) == 0 || ($bad_model->{status} // "") ne "gaps-present";
+}
+
+sub run_finding_witness_model_self_tests {
+    my %flow = (
+        code => "flow.symbolic-path",
+        where => "src/runtime.ts:20",
+        message => "open hostile-input sink remains reachable",
+        severity => "warning",
+        owner => "compiler",
+        owners => ["compiler"],
+        ownerSource => "test",
+        flow => [
+            { path => "src/runtime.ts", line => 10, message => "hostile input enters" },
+            { path => "src/runtime.ts", line => 20, message => "sink remains open" }
+        ],
+        suppressed => 0
+    );
+    my %metric = (
+        code => "bench.hot-path",
+        where => "bench/results/latest.json:1",
+        message => "unchecked valid hot path is 39.65M hz, below CONTRIBUTING target 40M+",
+        severity => "warning",
+        owner => "release",
+        owners => ["release"],
+        ownerSource => "test",
+        suppressed => 0
+    );
+    ensure_diagnostic_fingerprints([\%flow, \%metric]);
+    my $good_ledger = defect_ledger([\%flow, \%metric]);
+    my $good_model = finding_witness_model([\%flow, \%metric], $good_ledger);
+
+    die "finding witness self-test failed: flow and metric witnesses were not accepted\n"
+        if ($good_model->{witnessGaps} // 0) != 0 ||
+            ($good_model->{flowWitnesses} // 0) != 1 ||
+            ($good_model->{metricWitnesses} // 0) != 1;
+
+    my %bad = (
+        code => "flow.complexity",
+        where => "src/schema/validate.ts:113",
+        message => "complex function",
+        severity => "warning",
+        owner => "compiler",
+        owners => ["compiler"],
+        ownerSource => "test",
+        suppressed => 0
+    );
+    ensure_diagnostic_fingerprints([\%bad]);
+    my $bad_ledger = defect_ledger([\%bad]);
+    my $bad_model = finding_witness_model([\%bad], $bad_ledger);
+    die "finding witness self-test failed: unquantified warning did not report a gap\n"
+        if ($bad_model->{witnessGaps} // 0) == 0 || ($bad_model->{status} // "") ne "gaps-present";
+}
+
+sub run_finding_confidence_model_self_tests {
+    my %high = (
+        code => "flow.symbolic-path",
+        where => "src/runtime.ts:20",
+        message => "open hostile-input sink remains reachable",
+        severity => "warning",
+        owner => "compiler",
+        owners => ["compiler"],
+        ownerSource => "test",
+        flow => [
+            { path => "src/runtime.ts", line => 10, message => "hostile input enters" },
+            { path => "src/runtime.ts", line => 20, message => "sink remains open" }
+        ],
+        suppressed => 0
+    );
+    my %low = (
+        code => "flow.complexity",
+        where => "src/schema/validate.ts:113",
+        message => "complex function",
+        severity => "warning",
+        owner => "runtime",
+        owners => ["runtime"],
+        ownerSource => "test",
+        suppressed => 0
+    );
+    ensure_diagnostic_fingerprints([\%high, \%low]);
+    my $ledger = defect_ledger([\%high, \%low]);
+    my $model = finding_confidence_model([\%high, \%low], $ledger);
+
+    die "finding confidence self-test failed: high-confidence flow finding was not classified\n"
+        if ($model->{highConfidenceFindings} // 0) == 0;
+    die "finding confidence self-test failed: low-confidence open finding was not counted\n"
+        if ($model->{lowConfidenceOpenFindings} // 0) == 0;
+    die "finding confidence self-test failed: low-confidence set was not exported\n"
+        if !grep { ($_->{code} // "") eq "flow.complexity" && ($_->{band} // "") eq "low" } @{$model->{lowConfidenceSet} // []};
+}
+
+
+sub run_security_exploitability_model_self_tests {
+    my %diag = (
+        code => "security.secret-leak",
+        where => "src/secret.ts:12",
+        message => "synthetic committed token",
+        severity => "error",
+        owner => "security",
+        owners => ["security"],
+        ownerSource => "test",
+        flow => [
+            { path => "src/secret.ts", line => 1, message => "credential source" },
+            { path => "src/secret.ts", line => 12, message => "release sink" }
+        ],
+        suppressed => 0
+    );
+    ensure_diagnostic_fingerprints([\%diag]);
+    my $ledger = defect_ledger([\%diag]);
+    my $hotspots = security_hotspot_model([\%diag]);
+    my $model = security_exploitability_model([\%diag], $ledger, $hotspots);
+    die "security exploitability self-test failed: exploitable finding was not counted\n"
+        if ($model->{exploitableSecurityFindings} // 0) != 1;
+    die "security exploitability self-test failed: CWE-backed vector was not preserved\n"
+        if (($model->{findingSet}[0]{cwe} // "") ne "CWE-798" || ($model->{findingSet}[0]{vector} // "") ne "credential-exposure");
+
+    my $gate = apply_security_exploitability_quality_gate(
+        { status => "passed", failed => [], metrics => {}, budgets => {} },
+        $model,
+        default_policy_profile()
+    );
+    die "security exploitability self-test failed: exploitable finding did not fail the default gate\n"
+        if !grep { $_ eq "exploitable-security-budget" } @{$gate->{failed} // []};
+}
+
+
+sub run_security_dataflow_model_self_tests {
+    my $path = [
+        { function => "entry", path => "src/runtime.ts", line => 10 },
+        { function => "sink", path => "src/runtime.ts", line => 20, via_call => "sink" }
+    ];
+    my $ir = {
+        source => {
+            function_analysis => {
+                abstract => {
+                    taint => {
+                        paths => [$path],
+                        interprocedural_paths => [$path],
+                        local_paths => []
+                    },
+                    unapproved_dynamic_sinks => [],
+                    contracts => {
+                        contractless_sinks => []
+                    },
+                    source_taint_gaps => [],
+                    symbolic_dataflow => {
+                        paths => [],
+                        propagatedOpenFunctions => 0,
+                        localOpenFunctions => 0
+                    }
+                }
+            }
+        }
+    };
+    my $model = security_dataflow_model($ir);
+    die "security dataflow self-test failed: critical taint path was not counted\n"
+        if ($model->{criticalDataflows} // 0) != 1 ||
+            ($model->{interproceduralTaintedPaths} // 0) != 1;
+    die "security dataflow self-test failed: taint item was not exported\n"
+        if (($model->{criticalSet}[0]{kind} // "") ne "tainted-sink-path");
+
+    my $gate = apply_security_dataflow_quality_gate(
+        { status => "passed", failed => [], metrics => {}, budgets => {} },
+        $model,
+        default_policy_profile()
+    );
+    die "security dataflow self-test failed: critical path did not fail the default gate\n"
+        if !grep { $_ eq "security-dataflow-critical-budget" } @{$gate->{failed} // []};
+}
+
+
+sub run_path_feasibility_model_self_tests {
+    my $witness = {
+        path => "src/runtime.ts",
+        name => "probe",
+        line => 12,
+        sink => "input.name",
+        kind => "hostile-property-read",
+        conditions => [
+            { line => 3, kind => "type", text => "typeof input === \"string\"" },
+            { line => 4, kind => "type", text => "typeof input !== \"string\"" }
+        ]
+    };
+    my $polarized_witness = {
+        path => "src/runtime.ts",
+        name => "polarizedProbe",
+        line => 18,
+        sink => "input.name",
+        kind => "hostile-property-read",
+        conditions => [
+            {
+                line => 5,
+                kind => "type",
+                text => "typeof input === \"string\"",
+                pathPolarity => "false-branch",
+                failFastCut => 1
+            },
+            {
+                line => 8,
+                kind => "type",
+                text => "typeof input === \"string\"",
+                pathPolarity => "unknown",
+                failFastCut => 0
+            }
+        ]
+    };
+    my $unknown_witness = {
+        path => "src/runtime.ts",
+        name => "unknownProbe",
+        line => 22,
+        sink => "value.payload",
+        kind => "hostile-property-read",
+        conditions => [
+            { line => 21, kind => "branch", text => "opaqueGuard(value)" }
+        ]
+    };
+    my $unconditional_witness = {
+        path => "src/runtime.ts",
+        name => "unconditionalProbe",
+        line => 30,
+        sink => "value.payload",
+        kind => "hostile-property-read",
+        conditions => []
+    };
+    my $instanceof_witness = {
+        path => "src/runtime.ts",
+        name => "instanceofProbe",
+        line => 40,
+        sink => "value.size",
+        kind => "hostile-property-read",
+        conditions => [
+            { line => 39, kind => "branch", text => "value instanceof Set || value instanceof Map" }
+        ]
+    };
+    my $ir = {
+        source => {
+            function_analysis => {
+                abstract => {
+                    symbolic_dataflow => {
+                        local => [
+                            {
+                                id => "src/runtime.ts:probe",
+                                path => "src/runtime.ts",
+                                line => 10,
+                                name => "probe",
+                                witness => $witness
+                            },
+                            {
+                                id => "src/runtime.ts:polarizedProbe",
+                                path => "src/runtime.ts",
+                                line => 16,
+                                name => "polarizedProbe",
+                                witness => $polarized_witness
+                            },
+                            {
+                                id => "src/runtime.ts:unknownProbe",
+                                path => "src/runtime.ts",
+                                line => 20,
+                                name => "unknownProbe",
+                                witness => $unknown_witness
+                            },
+                            {
+                                id => "src/runtime.ts:unconditionalProbe",
+                                path => "src/runtime.ts",
+                                line => 30,
+                                name => "unconditionalProbe",
+                                witness => $unconditional_witness
+                            },
+                            {
+                                id => "src/runtime.ts:instanceofProbe",
+                                path => "src/runtime.ts",
+                                line => 40,
+                                name => "instanceofProbe",
+                                witness => $instanceof_witness
+                            }
+                        ],
+                        paths => [],
+                        propagatedOpenFunctions => 0,
+                        localOpenFunctions => 5
+                    }
+                }
+            }
+        }
+    };
+    my $model = path_feasibility_model($ir);
+    die "path feasibility self-test failed: infeasible contradiction was not counted\n"
+        if ($model->{infeasiblePaths} // 0) != 2;
+    die "path feasibility self-test failed: unknown witness was not counted\n"
+        if ($model->{unknownPaths} // 0) != 1;
+    die "path feasibility self-test failed: unconditional and instanceof witnesses were not plausible\n"
+        if ($model->{plausiblePaths} // 0) < 2;
+    my $predicate_facts = path_feasibility_facts(
+        'value instanceof Set || Array.isArray(value) || Object.prototype.hasOwnProperty.call(record, "key")'
+    );
+    die "path feasibility self-test failed: predicate facts were not extracted\n"
+        if @{$predicate_facts} < 3;
+    my $negated_facts = path_feasibility_facts('!Array.isArray(value)');
+    die "path feasibility self-test failed: negated predicate fact was not extracted\n"
+        if @{$negated_facts} != 1 || ($negated_facts->[0]{polarity} // "") ne "negative";
+    my @sliced = symbolic_witness_conditions(
+        [
+            { line => 2, kind => "type", text => "typeof input === \"object\"" },
+            { line => 99, kind => "type", text => "typeof input === \"string\"" }
+        ],
+        12
+    );
+    die "path feasibility self-test failed: witness conditions were not sliced before the sink\n"
+        if @sliced != 1 || ($sliced[0]{line} // 0) != 2;
+
+    my $profile = default_policy_profile();
+    $profile->{pathFeasibilityUnknownBudget} = 0;
+    my $gate = apply_path_feasibility_quality_gate(
+        { status => "passed", failed => [], metrics => {}, budgets => {} },
+        $model,
+        $profile
+    );
+    die "path feasibility self-test failed: unknown path did not fail the configured gate\n"
+        if !grep { $_ eq "path-feasibility-unknown-budget" } @{$gate->{failed} // []};
+}
+
+
+sub run_context_sensitivity_model_self_tests {
+    my @functions = (
+        {
+            id => "src/a.ts#entryA:1",
+            path => "src/a.ts",
+            line => 1,
+            name => "entryA",
+            symbolic_domain => { sourcePathOpenSinks => 0, openSinkSites => 0 },
+            source_taint_domain => { sourceTaintGaps => 0 },
+            contract => { sink => 0 },
+            dynamic_code_sinks => 0,
+            direct_hostile_reads => 0,
+            descriptor_value_unproved_reads => 0
+        },
+        {
+            id => "src/b.ts#entryB:1",
+            path => "src/b.ts",
+            line => 1,
+            name => "entryB",
+            symbolic_domain => { sourcePathOpenSinks => 0, openSinkSites => 0 },
+            source_taint_domain => { sourceTaintGaps => 0 },
+            contract => { sink => 0 },
+            dynamic_code_sinks => 0,
+            direct_hostile_reads => 0,
+            descriptor_value_unproved_reads => 0
+        },
+        {
+            id => "src/shared.ts#sink:10",
+            path => "src/shared.ts",
+            line => 10,
+            name => "sink",
+            symbolic_domain => { sourcePathOpenSinks => 1, openSinkSites => 1 },
+            source_taint_domain => { sourceTaintGaps => 1 },
+            contract => { sink => 1 },
+            dynamic_code_sinks => 0,
+            direct_hostile_reads => 1,
+            descriptor_value_unproved_reads => 0
+        }
+    );
+    my $ir = {
+        source => {
+            function_analysis => {
+                functions => \@functions,
+                graph => {
+                    edges => [
+                        { from => "src/a.ts#entryA:1", to => "src/shared.ts#sink:10", line => 3, name => "sink", cross_file => 1 },
+                        { from => "src/b.ts#entryB:1", to => "src/shared.ts#sink:10", line => 4, name => "sink", cross_file => 1 }
+                    ],
+                    cycles => []
+                },
+                abstract => {
+                    recursive_cycle_count => 0
+                }
+            }
+        }
+    };
+    my $model = context_sensitivity_model($ir);
+    die "context sensitivity self-test failed: fan-in risk was not counted\n"
+        if ($model->{contextRisks} // 0) != 1;
+    die "context sensitivity self-test failed: target context was not preserved\n"
+        if (($model->{riskSet}[0]{target} // "") ne "sink" ||
+            ($model->{riskSet}[0]{distinctCallsites} // 0) != 2);
+
+    my $profile = default_policy_profile();
+    $profile->{contextSensitivityRiskBudget} = 0;
+    my $gate = apply_context_sensitivity_quality_gate(
+        { status => "passed", failed => [], metrics => {}, budgets => {} },
+        $model,
+        $profile
+    );
+    die "context sensitivity self-test failed: risk did not fail the configured gate\n"
+        if !grep { $_ eq "context-sensitivity-risk-budget" } @{$gate->{failed} // []};
+}
+
+
+sub run_quality_profile_model_self_tests {
+    my @diagnostics = (
+        diagnostic("warning", "flow.symbolic-path", "src/runtime.ts:10", "synthetic symbolic warning"),
+        diagnostic("error", "flow.tainted-path", "src/runtime.ts:20", "synthetic taint error")
+    );
+    my $profile = default_policy_profile();
+    my $unknown_rule = join(".", "flow", "not-declared-selftest");
+    $profile->{sourcePath} = "quality-profile.test.json";
+    $profile->{rules} = {
+        "flow.symbolic-path" => { severity => "notice" },
+        "flow.tainted-path" => { enabled => 0, reason => "temporary mitigation under review", expires => "2000-01-01" },
+        $unknown_rule => { enabled => 1, reason => "misspelled rule should be rejected" },
+        "bench.hot-path" => { severity => "info", reason => "invalid severity must be rejected" }
+    };
+
+    my $model = quality_profile_model($profile, \@diagnostics);
+    die "quality profile self-test failed: risky overrides were not counted\n"
+        if ($model->{riskyOverrides} // 0) < 4;
+    die "quality profile self-test failed: severity downgrade was not detected\n"
+        if ($model->{severityDowngrades} // 0) != 1;
+    die "quality profile self-test failed: unknown rule was not detected\n"
+        if ($model->{unknownRules} // 0) != 1;
+    die "quality profile self-test failed: invalid severity was not detected\n"
+        if ($model->{invalidSeverities} // 0) != 1;
+    die "quality profile self-test failed: expired override was not detected\n"
+        if ($model->{expiredOverrides} // 0) != 1;
+    die "quality profile self-test failed: missing reason was not detected\n"
+        if ($model->{missingReasons} // 0) != 1;
+
+    my @profile_diagnostics = quality_profile_diagnostics($model);
+    die "quality profile self-test failed: governance diagnostics were not emitted\n"
+        if !grep { ($_->{code} // "") eq "profile.rule-unknown" } @profile_diagnostics;
+
+    my $gate = apply_quality_profile_quality_gate(
+        { status => "passed", failed => [], metrics => {}, budgets => {} },
+        $model,
+        default_policy_profile()
+    );
+    die "quality profile self-test failed: risky overrides did not fail the default gate\n"
+        if !grep { $_ eq "quality-profile-override-budget" } @{$gate->{failed} // []};
+}
+
+
+sub run_history_lifecycle_model_self_tests {
+    my $snapshots = [
+        {
+            timestamp => "2026-07-01T00:00:00Z",
+            openDefectKeys => ["A", "B"],
+            openDefects => [
+                { key => "A", code => "flow.range-gap", where => "src/a.ts:1", owner => "compiler", priority => "P2" },
+                { key => "B", code => "bench.hot-path", where => "bench/latest.json:1", owner => "release", priority => "P3" }
+            ]
+        },
+        {
+            timestamp => "2026-07-02T00:00:00Z",
+            openDefectKeys => ["B"],
+            openDefects => [
+                { key => "B", code => "bench.hot-path", where => "bench/latest.json:1", owner => "release", priority => "P3" }
+            ]
+        },
+        {
+            timestamp => "2026-07-03T00:00:00Z",
+            openDefectKeys => ["A", "B", "C"],
+            openDefects => [
+                { key => "A", code => "flow.range-gap", where => "src/a.ts:1", owner => "compiler", priority => "P2" },
+                { key => "B", code => "bench.hot-path", where => "bench/latest.json:1", owner => "release", priority => "P3" },
+                { key => "C", code => "security.redos-risk", where => "src/c.ts:3", owner => "security", priority => "P1" }
+            ]
+        }
+    ];
+    my $index = history_issue_index($snapshots);
+    die "history lifecycle self-test failed: reopened issue was not indexed\n"
+        if !($index->{A}{reopened} // 0) || ($index->{A}{reopenCount} // 0) != 1;
+
+    my $model = history_lifecycle_model($index, $snapshots);
+    die "history lifecycle self-test failed: lifecycle summary is wrong\n"
+        if ($model->{newlyOpenedIssues} // 0) != 1 ||
+            ($model->{persistingOpenIssues} // 0) != 2 ||
+            ($model->{reopenedIssues} // 0) != 1 ||
+            ($model->{resolvedIssues} // 0) != 0;
+
+    my $gate = apply_history_quality_gate(
+        { status => "passed", failed => [], metrics => {}, budgets => {} },
+        {
+            enabled => 1,
+            samples => 2,
+            delta => { hasPrevious => 1, openDelta => 0, debtDelta => 0 },
+            issueLifecycle => $model
+        },
+        default_policy_profile()
+    );
+    die "history lifecycle self-test failed: reopened issue did not fail the default gate\n"
+        if !grep { $_ eq "reopened-issue-budget" } @{$gate->{failed} // []};
+}
+
+
+sub run_defect_lineage_model_self_tests {
+    my %previous = (
+        code => "flow.complexity",
+        where => "src/schema/validate.ts:10",
+        message => "complexity is 42",
+        severity => "warning",
+        owner => "compiler",
+        owners => ["compiler"],
+        suppressed => 0
+    );
+    my %current = (
+        code => "flow.complexity",
+        where => "src/schema/validate.ts:24",
+        message => "complexity is 43 after one local edit",
+        severity => "warning",
+        owner => "runtime",
+        owners => ["runtime"],
+        suppressed => 0
+    );
+    ensure_diagnostic_fingerprints([\%previous, \%current]);
+    my $previous_ledger = defect_ledger([\%previous]);
+    my $current_ledger = defect_ledger([\%current]);
+    my $delta = compute_defect_delta($previous_ledger, $current_ledger, "synthetic-previous.json");
+
+    die "defect lineage self-test failed: moved issue was counted as new\n"
+        if ($delta->{new} // 0) != 0;
+    die "defect lineage self-test failed: moved issue was counted as resolved\n"
+        if ($delta->{resolved} // 0) != 0;
+    die "defect lineage self-test failed: lineage match was not reported\n"
+        if ($delta->{lineageMatched} // 0) != 1 ||
+            ($delta->{identityChurnAvoided} // 0) != 1 ||
+            scalar(@{$delta->{lineageMatches} // []}) != 1;
+}
+
+
+sub run_proof_obligation_model_self_tests {
+    my $assurance = {
+        claimSet => [
+            { id => "claim-open", status => "open", safetyLevel => "security-critical", claim => "open claim" },
+            { id => "claim-budgeted", status => "budgeted", safetyLevel => "performance-critical", claim => "budgeted claim" },
+            { id => "claim-proven", status => "proven", safetyLevel => "correctness-critical", claim => "proven claim" }
+        ]
+    };
+    my $compliance = {
+        controlSet => [
+            { id => "control-failed", status => "failed", standard => "security", title => "failed control" },
+            { id => "control-budgeted", status => "passed-with-budgeted-risk", standard => "release", title => "budgeted control" },
+            { id => "control-passed", status => "passed", standard => "correctness", title => "passed control" }
+        ]
+    };
+    my $soundness = {
+        assumptionSet => [
+            { id => "assumption-open", status => "open", domain => "front-end", title => "open assumption" },
+            { id => "assumption-budgeted", status => "budgeted", domain => "fixpoint", title => "budgeted assumption" },
+            { id => "assumption-proven", status => "proven", domain => "cfg", title => "proven assumption" }
+        ]
+    };
+
+    my $model = proof_obligation_model($assurance, $compliance, $soundness);
+    die "proof obligation self-test failed: open obligations were not counted\n"
+        if ($model->{openProofObligations} // 0) != 3;
+    die "proof obligation self-test failed: budgeted obligations were not counted\n"
+        if ($model->{budgetedProofObligations} // 0) != 3;
+    die "proof obligation self-test failed: discharged obligations were not counted\n"
+        if ($model->{dischargedProofObligations} // 0) != 3;
+
+    my $gate = apply_proof_obligation_quality_gate(
+        { status => "passed", failed => [], metrics => {}, budgets => {} },
+        $model,
+        default_policy_profile()
+    );
+    die "proof obligation self-test failed: open obligation did not fail the default gate\n"
+        if !grep { $_ eq "open-proof-obligation-budget" } @{$gate->{failed} // []};
+}
+
+
+sub run_defect_routing_model_self_tests {
+    my $ledger = {
+        records => [
+            {
+                key => "bench.hot-path:bench/results/latest.json:1",
+                status => "open",
+                owner => "performance",
+                owners => ["performance"],
+                ownerSource => "layer-fallback",
+                ownerLayer => "bench",
+                priority => "P3",
+                code => "bench.hot-path",
+                where => "bench/results/latest.json:1",
+                category => "performance",
+                remediation => "restore-hot-path-performance",
+                triageScore => 60,
+                message => "synthetic benchmark route"
+            },
+            {
+                key => "flow.gap:src/example.ts:10",
+                status => "open",
+                owner => "unowned",
+                owners => ["unowned"],
+                ownerSource => "unknown",
+                ownerLayer => "src",
+                priority => "P2",
+                code => "flow.gap",
+                where => "src/example.ts:10",
+                category => "correctness",
+                remediation => "add-proof",
+                triageScore => 80,
+                message => "synthetic unrouted route"
+            }
+        ]
+    };
+    my $model = defect_routing_model($ledger, { owners => 2 }, default_policy_profile());
+    die "defect routing self-test failed: route counts are wrong\n"
+        if ($model->{routes} // 0) != 2 || ($model->{routedDefects} // 0) != 1 || ($model->{unroutedDefects} // 0) != 1;
+    die "defect routing self-test failed: SLA was not assigned\n"
+        if (($model->{routeSet}[0]{slaDays} // -1) < 0);
+    die "defect routing self-test failed: unrouted blocker was not retained\n"
+        if !grep { ($_ // "") eq "missing-owner" } @{$model->{unroutedSet}[0]{blockers} // []};
+
+    my $gate = apply_defect_routing_quality_gate(
+        { status => "passed", failed => [], metrics => {}, budgets => {} },
+        $model,
+        default_policy_profile()
+    );
+    die "defect routing self-test failed: unrouted defect did not fail the default gate\n"
+        if !grep { $_ eq "unrouted-defect-budget" } @{$gate->{failed} // []};
+}
+
+
+sub run_analysis_run_manifest_self_tests {
+    my $ir = {
+        package => {
+            json => {
+                name => "typesea",
+                version => "1.1.1"
+            }
+        },
+        source => {
+            files => ["src/index.ts"]
+        },
+        benchmarks => {
+            rows => []
+        }
+    };
+    my $profile = default_policy_profile();
+    my $manifest = analysis_run_manifest($ir, $profile, []);
+
+    die "analysis run manifest self-test failed: complete manifest reported gaps\n"
+        if ($manifest->{manifestGaps} // 0) != 0 ||
+            ($manifest->{digests}{profile} // "") eq "" ||
+            ($manifest->{digests}{source} // "") eq "";
+
+    my $bad = analysis_run_manifest({ package => { json => {} }, source => { files => [] }, benchmarks => { rows => [] } }, $profile, []);
+    die "analysis run manifest self-test failed: incomplete manifest did not report gaps\n"
+        if ($bad->{manifestGaps} // 0) == 0 || ($bad->{status} // "") ne "gaps-present";
+}
+
+sub run_change_impact_model_self_tests {
+    my $ir = {
+        source => {
+            files => [
+                { path => "src/compile/source.ts" },
+                { path => "src/compile/guard.ts" },
+                { path => "src/index.ts" }
+            ],
+            import_edges => [
+                { from => "src/compile/guard.ts", to => "src/compile/source.ts" },
+                { from => "src/index.ts", to => "src/compile/guard.ts" }
+            ]
+        }
+    };
+    my $scope = {
+        enabled => 1,
+        files => ["src/compile/source.ts"]
+    };
+    my $model = change_impact_model($ir, $scope);
+
+    die "change impact self-test failed: changed source file was not counted\n"
+        if ($model->{changedSourceFiles} // 0) != 1;
+    die "change impact self-test failed: reverse dependency impact was not reconstructed\n"
+        if ($model->{impactedSourceFiles} // 0) < 3;
+    die "change impact self-test failed: compiler core risk was not classified\n"
+        if ($model->{criticalImpactedFiles} // 0) == 0 ||
+            ($model->{topImpacts}[0]{risk} // "") ne "high";
+}
+
+sub run_function_ir_self_tests {
+    my $source = q~
+        export function alpha(value) {
+            const descriptor = readOwnDataProperty(value, "x");
+            if (descriptor === undefined) return false;
+            return beta(descriptor.value);
+        }
+        function beta(input) {
+            if (input) return alpha(input);
+            return true;
+        }
+        export function gamma(data) {
+            if (data.ok) return beta(data.ok);
+            return false;
+        }
+        function delta(raw) {
+            return sink(raw);
+        }
+        function sink(candidate) {
+            return eval(candidate);
+        }
+        function wrapper(value) {
+            const itemValue = readOwnDataProperty(value, "y");
+            if (itemValue.found) {
+                return itemValue.value;
+            }
+            return undefined;
+        }
+        function dead() {
+            throw new Error("stop");
+            const never = false;
+        }
+        function allocateLoop(items) {
+            for (const item of items) {
+                Object.keys(item);
+            }
+            return true;
+        }
+        function isReady(candidate) {
+            return candidate === true;
+        }
+        function parseClean(raw) {
+            if (typeof raw !== "string") return undefined;
+            return raw;
+        }
+        function boundedIndex(value) {
+            for (let index = 0; index < value.length; index += 1) {
+                const item = value[index];
+            }
+            return true;
+        }
+        function unsafeIndex(value, index) {
+            return value[index];
+        }
+        function mutateInput(value) {
+            value.changed = true;
+            delete value.old;
+            return value;
+        }
+        function throwingValidator(value) {
+            if (!value) throw new Error("missing");
+            return true;
+        }
+        function catchesFailure(value) {
+            try {
+                return throwingValidator(value);
+            } catch (error) {
+                return Promise.reject(error);
+            } finally {
+                value;
+            }
+        }
+        function guardedPresence(value) {
+            if (value === undefined) return false;
+            return value.ready;
+        }
+        function unsafePresence(value) {
+            return value.ready;
+        }
+        function boundedCycle(schema, value, state) {
+            const entered = enterValidation(schema, value, state);
+            if (entered === "cycle") return true;
+            return boundedCycle(schema, value, state);
+        }
+        function safeKeyBridge(value) {
+            const output = Object.create(null);
+            Object.defineProperty(output, "__proto__", { value: 1 });
+            return Reflect.ownKeys(value);
+        }
+        function unsafeKeyBridge(value) {
+            return Object.assign({}, value, { key: "__proto__" });
+        }
+        function boundedLoop(value) {
+            for (let i = 0; i < value.length; i += 1) {
+                value[i];
+            }
+        }
+        function unboundedLoop(value) {
+            while (value) {
+                value;
+            }
+        }
+        function safeSourceBridge(key, chunks) {
+            chunks.push(`case ${unsafeStringLiteralExpression(key)}:{return true;}`);
+            return chunks.join("");
+        }
+        function sourceEscapeHelper(key) {
+            return unsafeStringLiteralExpression(key);
+        }
+        function delegatedSourceBridge(key) {
+            return `case ${sourceEscapeHelper(key)}:return true;`;
+        }
+        function unsafeSourceBridge(key) {
+            return `case ${key}:return true;`;
+        }
+        function guardedResult(result) {
+            if (!result.ok) {
+                return result.error;
+            }
+            return result.value;
+        }
+        function unguardedResult(result) {
+            result.ok;
+            return result.error;
+        }
+        function safeFrozenObject() {
+            const output = Object.freeze({ ready: true });
+            return output;
+        }
+        function unsafeFrozenObject() {
+            const output = Object.freeze({ ready: true });
+            output.ready = false;
+            return output;
+        }
+        function safeVariantSwitch(schema) {
+            switch (schema.tag) {
+                case SchemaTag.String:
+                    return schema.checks;
+                default:
+                    return undefined;
+            }
+        }
+        function unsafeVariantSwitch(schema) {
+            switch (schema.tag) {
+                case SchemaTag.String:
+                    schema.checks;
+                case SchemaTag.Number:
+                    return schema.checks;
+            }
+        }
+        function boundedRange(value) {
+            for (let index = 0; index < value.length; index += 1) {
+                value[index];
+            }
+        }
+        function unboundedRange(value, index) {
+            return value[index];
+        }
+        function guardedValidation(schema, value, state) {
+            const entered = enterValidation(schema, value, state);
+            if (entered === "cycle") {
+                return true;
+            }
+            if (entered === "budget") {
+                return false;
+            }
+            leaveValidation(schema, value, state);
+            return true;
+        }
+        function safePathLifecycle(path) {
+            path.push("field");
+            path.pop();
+            return path;
+        }
+        function unsafePathLifecycle(path) {
+            path.push("field");
+            return path;
+        }
+        function safeFrameLifecycle(state) {
+            const frame = acquireGraphFrame(state, 1);
+            releaseGraphFrame(state);
+            return frame;
+        }
+        function unsafeFrameLifecycle(state) {
+            const frame = acquireGraphFrame(state, 1);
+            return frame;
+        }
+        function wrapperLifecycle(path) {
+            return unsafePathLifecycle(path);
+        }
+        function symbolicFastFail(value) {
+            if (typeof value !== "object") return false;
+            return value.ready;
+        }
+        function symbolicOpenSink(value) {
+            return value.ready;
+        }
+        function symbolicWrapper(value) {
+            return symbolicOpenSink(value);
+        }
+        function aliasMutation(value) {
+            const alias = value;
+            alias.changed = true;
+            return value;
+        }
+        function freezeAliasMutation(value) {
+            const alias = Object.freeze(value);
+            value.changed = true;
+            return alias;
+        }
+        function cloneMutation(value) {
+            const clone = Object.assign({}, value);
+            clone.changed = true;
+            return clone;
+        }
+    ~;
+    my $lex = lex_ts_source($source);
+    assert_no_lexer_errors($lex, "function IR source");
+    my @functions = read_function_summaries("src/plan/function-ir-self-test.ts", $lex->{tokens});
+    if (@functions != 46) {
+        die "function IR self-test failed: expected 46 functions, got " . scalar(@functions) . "\n";
+    }
+    my $graph = build_function_graph(\@functions);
+    if (@{$graph->{edges}} < 3) {
+        die "function IR self-test failed: expected at least 3 call edges, got " . scalar(@{$graph->{edges}}) . "\n";
+    }
+    if (@{$graph->{cycles}} == 0) {
+        die "function IR self-test failed: expected recursive SCC evidence\n";
+    }
+    my $abstract = build_function_abstract_state(\@functions, $graph);
+    if (@{$abstract->{descriptor_without_proof}} != 0) {
+        die "function IR self-test failed: descriptor proof was not recognized\n";
+    }
+    my $factory_proofs = 0;
+    for my $fn (@functions) {
+        $factory_proofs += $fn->{descriptor_value_factory_proofs};
+    }
+    if ($factory_proofs == 0) {
+        die "function IR self-test failed: trusted descriptor factory proof was not recognized\n";
+    }
+    if (@{$abstract->{taint}{paths}} == 0) {
+        my $details = join(", ", map {
+            $_->{name} . ":params=" . join("/", @{$_->{params}}) .
+                ":direct=" . $_->{direct_hostile_reads} .
+                ":sink=" . is_taint_sink_function($_)
+        } @functions);
+        die "function IR self-test failed: taint path was not reconstructed [$details]\n";
+    }
+    if (@{$abstract->{taint}{interprocedural_paths}} == 0) {
+        die "function IR self-test failed: interprocedural taint path was not reconstructed\n";
+    }
+    for my $path (@{$abstract->{taint}{paths}}) {
+        my $sink = $path->[-1];
+        if ($sink->{function} eq "alpha" || $sink->{function} eq "wrapper") {
+            die "function IR self-test failed: proofed descriptor read was classified as taint sink\n";
+        }
+    }
+    if ($abstract->{max_complexity_function}{name} eq "none") {
+        die "function IR self-test failed: max complexity summary missing\n";
+    }
+    if ($abstract->{cfg}{blocks} == 0 || $abstract->{cfg}{edges} == 0) {
+        die "function IR self-test failed: CFG summary was not built\n";
+    }
+    if ($abstract->{cfg}{unreachableStatements} == 0) {
+        die "function IR self-test failed: unreachable statement summary was not built\n";
+    }
+    if ($abstract->{branch_state}{factsCreated} == 0 || $abstract->{branch_state}{guardedReads} == 0) {
+        die "function IR self-test failed: branch-state guard facts were not summarized\n";
+    }
+    if ($abstract->{branch_state}{unguardedReads} != 0) {
+        die "function IR self-test failed: branch-state guard facts leaked unguarded descriptor reads\n";
+    }
+    if (@{$abstract->{effect}{loop_allocation_functions}} == 0 || @{$abstract->{effect}{reflection_array_functions}} == 0) {
+        die "function IR self-test failed: allocation effect domain was not summarized\n";
+    }
+    if ($abstract->{contracts}{totals}{validators} == 0 ||
+        $abstract->{contracts}{totals}{sanitizers} == 0 ||
+        $abstract->{contracts}{totals}{sinks} == 0 ||
+        @{$abstract->{contracts}{contractless_sinks}} == 0) {
+        die "function IR self-test failed: function contract domain was not summarized\n";
+    }
+    if ($abstract->{index_domain}{indexedReads} == 0 ||
+        $abstract->{index_domain}{guardedReads} == 0 ||
+        @{$abstract->{index_gaps}} == 0) {
+        die "function IR self-test failed: index abstract domain was not summarized\n";
+    }
+    if ($abstract->{mutation_domain}{hostileMutations} == 0 ||
+        @{$abstract->{mutation_gaps}} == 0) {
+        die "function IR self-test failed: mutation abstract domain was not summarized\n";
+    }
+    if ($abstract->{memory_alias_domain}{aliasFacts} == 0 ||
+        $abstract->{memory_alias_domain}{cloneFacts} == 0 ||
+        $abstract->{memory_alias_domain}{postFreezeAliasMutations} == 0 ||
+        @{$abstract->{memory_alias_gaps}} == 0) {
+        die "function IR self-test failed: memory alias abstract domain was not summarized\n";
+    }
+    if ($abstract->{exception_domain}{throws} == 0 ||
+        $abstract->{exception_domain}{catchBlocks} == 0 ||
+        $abstract->{exception_domain}{promiseRejects} == 0 ||
+        @{$abstract->{exception_gaps}} == 0) {
+        die "function IR self-test failed: exception abstract domain was not summarized\n";
+    }
+    if ($abstract->{lifecycle_domain}{enterCalls} == 0 ||
+        $abstract->{lifecycle_domain}{enterGuardChecks} == 0 ||
+        $abstract->{lifecycle_domain}{pathPushSlots} == 0 ||
+        $abstract->{lifecycle_domain}{frameAcquires} == 0 ||
+        @{$abstract->{lifecycle_gaps}} == 0 ||
+        $abstract->{lifecycle}{propagatedGapFunctions} == 0) {
+        die "function IR self-test failed: lifecycle abstract domain was not summarized\n";
+    }
+    if ($abstract->{symbolic_domain}{pathConditions} == 0 ||
+        $abstract->{symbolic_domain}{failFastCuts} == 0 ||
+        $abstract->{symbolic_domain}{closedSinkSites} == 0 ||
+        @{$abstract->{symbolic_gaps}} == 0 ||
+        $abstract->{symbolic_dataflow}{propagatedOpenFunctions} == 0) {
+        die "function IR self-test failed: symbolic execution domain was not summarized\n";
+    }
+    if ($abstract->{nullish_domain}{dereferences} == 0 ||
+        $abstract->{nullish_domain}{guardedDereferences} == 0 ||
+        @{$abstract->{nullish_gaps}} == 0) {
+        die "function IR self-test failed: nullish abstract domain was not summarized\n";
+    }
+    if ($abstract->{recursion}{cycles} == 0 ||
+        $abstract->{recursion}{boundedCycles} == 0 ||
+        $abstract->{recursion}{unboundedCycles} == 0) {
+        die "function IR self-test failed: recursion proof domain was not summarized\n";
+    }
+    if ($abstract->{key_safety_domain}{dangerousKeyLiterals} == 0 ||
+        $abstract->{key_safety_domain}{nullPrototypeAllocations} == 0 ||
+        @{$abstract->{key_safety_gaps}} == 0) {
+        die "function IR self-test failed: key-safety abstract domain was not summarized\n";
+    }
+    if ($abstract->{loop_bound_domain}{loops} == 0 ||
+        $abstract->{loop_bound_domain}{lengthBoundedLoops} == 0 ||
+        @{$abstract->{loop_bound_gaps}} == 0) {
+        die "function IR self-test failed: loop-bound abstract domain was not summarized\n";
+    }
+    if ($abstract->{range_domain}{lowerBounds} == 0 ||
+        $abstract->{range_domain}{lengthUpperBounds} == 0 ||
+        $abstract->{range_domain}{boundedIndexReads} == 0 ||
+        @{$abstract->{range_gaps}} == 0) {
+        die "function IR self-test failed: range abstract domain was not summarized\n";
+    }
+    if ($abstract->{source_taint_domain}{sourceBuilders} == 0 ||
+        $abstract->{source_taint_domain}{escapeProofs} == 0 ||
+        $abstract->{source_provenance}{propagatedProofFunctions} == 0 ||
+        @{$abstract->{source_taint_gaps}} == 0) {
+        die "function IR self-test failed: generated-source taint domain was not summarized\n";
+    }
+    if ($abstract->{result_state_domain}{okFacts} == 0 ||
+        $abstract->{result_state_domain}{guardedPayloadReads} == 0 ||
+        $abstract->{result_state_domain}{unguardedPayloadReads} == 0) {
+        die "function IR self-test failed: Result state abstract domain was not summarized\n";
+    }
+    if ($abstract->{freeze_state_domain}{freezeCalls} == 0 ||
+        $abstract->{freeze_state_domain}{postFreezeMutations} == 0 ||
+        @{$abstract->{freeze_state_gaps}} == 0) {
+        die "function IR self-test failed: freeze-state abstract domain was not summarized\n";
+    }
+    if ($abstract->{variant_state_domain}{discriminantSwitches} == 0 ||
+        $abstract->{variant_state_domain}{defaultlessSwitches} == 0 ||
+        $abstract->{variant_state_domain}{nonemptyFallthroughs} == 0 ||
+        @{$abstract->{variant_state_gaps}} == 0) {
+        die "function IR self-test failed: variant-state abstract domain was not summarized\n";
+    }
+
+    my $async_source = q~
+        async function sequentialLoop(values, state) {
+            for (const value of values) {
+                await run(value);
+            }
+            return true;
+        }
+        async function yieldedLoop(values, state) {
+            for (const value of values) {
+                await maybeYield(state);
+                await run(value);
+            }
+            return true;
+        }
+        function detachedPromise(value) {
+            Promise.resolve(value);
+            return true;
+        }
+    ~;
+    my $async_lex = lex_ts_source($async_source);
+    assert_no_lexer_errors($async_lex, "async function IR source");
+    my @async_functions = read_function_summaries("src/async/function-ir-self-test.ts", $async_lex->{tokens});
+    my $async_graph = build_function_graph(\@async_functions);
+    my $async_abstract = build_function_abstract_state(\@async_functions, $async_graph);
+    if ($async_abstract->{async_domain}{awaitsInLoops} == 0 ||
+        $async_abstract->{async_domain}{loopYields} == 0 ||
+        @{$async_abstract->{async_scheduling_gaps}} == 0) {
+        die "function IR self-test failed: async scheduling domain was not summarized\n";
+    }
+}
+
+sub assert_lexer_imports {
+    my ($lex, $expected, $label) = @_;
+    my @imports = read_imports("lexer-self-test.ts", $lex->{tokens});
+    my @actual = map { $_->{specifier} // "" } @imports;
+    my $actual_text = join(",", @actual);
+    my $expected_text = join(",", @{$expected});
+    if ($actual_text ne $expected_text) {
+        die "lexer self-test failed ($label): expected imports [$expected_text], got [$actual_text]\n";
+    }
+}
+
+sub assert_token_seen {
+    my ($lex, $value, $label) = @_;
+    return if count_token_value($lex->{tokens}, $value) != 0;
+    die "lexer self-test failed ($label): missing token '$value'\n";
+}
+
+sub assert_no_lexer_errors {
+    my ($lex, $label) = @_;
+    return if @{$lex->{errors}} == 0;
+    my $messages = join(", ", map { $_->{message} } @{$lex->{errors}});
+    die "lexer self-test failed ($label): unexpected errors [$messages]\n";
+}
+
+sub assert_lexer_errors {
+    my ($lex, $needle, $label) = @_;
+    for my $error (@{$lex->{errors}}) {
+        return if index($error->{message}, $needle) >= 0;
+    }
+    my $messages = join(", ", map { $_->{message} } @{$lex->{errors}});
+    die "lexer self-test failed ($label): expected error containing '$needle', got [$messages]\n";
+}
+
+sub assert_runtime_imports {
+    my ($lex, $expected, $label) = @_;
+    my @imports = grep { !$_->{type_only} } read_imports("lexer-self-test.ts", $lex->{tokens});
+    my @actual = map { $_->{specifier} // "" } @imports;
+    my $actual_text = join(",", @actual);
+    my $expected_text = join(",", @{$expected});
+    if ($actual_text ne $expected_text) {
+        die "lexer self-test failed ($label): expected runtime imports [$expected_text], got [$actual_text]\n";
+    }
+}
+
+sub token {
+    my ($type, $value, $line) = @_;
+    return {
+        type => $type,
+        value => $value,
+        line => $line
+    };
+}
+
+sub token_value {
+    my ($tokens, $index) = @_;
+    return "" if !defined $index || $index < 0 || $index >= @{$tokens};
+    return $tokens->[$index]{value};
+}
+
+sub token_type {
+    my ($tokens, $index) = @_;
+    return "" if !defined $index || $index < 0 || $index >= @{$tokens};
+    return $tokens->[$index]{type};
+}
+
+sub token_value_from_record {
+    my ($token) = @_;
+    return "" if ref($token) ne "HASH";
+    return $token->{value} // "";
+}
+
+sub token_type_from_record {
+    my ($token) = @_;
+    return "" if ref($token) ne "HASH";
+    return $token->{type} // "";
+}
+
+sub next_non_trivia_token {
+    my ($tokens, $index) = @_;
+    return $index;
+}
+
+sub is_identifier_start_char {
+    my ($char) = @_;
+    return $char =~ /[A-Za-z_\$]/ ? 1 : 0;
+}
+
+sub is_identifier_part_char {
+    my ($char) = @_;
+    return $char =~ /[A-Za-z0-9_\$]/ ? 1 : 0;
+}
+
+sub read_operator_token {
+    my ($source, $index) = @_;
+    for my $size (4, 3, 2) {
+        my $candidate = substr($source, $index, $size);
+        return $candidate if is_operator_token($candidate);
+    }
+    return undef;
+}
+
+sub is_operator_token {
+    my ($value) = @_;
+    return 1 if $value eq ">>>=" ||
+        $value eq "===" ||
+        $value eq "!==" ||
+        $value eq ">>>" ||
+        $value eq "<<=" ||
+        $value eq ">>=" ||
+        $value eq "**=" ||
+        $value eq "&&=" ||
+        $value eq "||=" ||
+        $value eq "??=" ||
+        $value eq "=>" ||
+        $value eq "==" ||
+        $value eq "!=" ||
+        $value eq "<=" ||
+        $value eq ">=" ||
+        $value eq "++" ||
+        $value eq "--" ||
+        $value eq "&&" ||
+        $value eq "||" ||
+        $value eq "??" ||
+        $value eq "?." ||
+        $value eq "**" ||
+        $value eq "<<" ||
+        $value eq ">>" ||
+        $value eq "+=" ||
+        $value eq "-=" ||
+        $value eq "*=" ||
+        $value eq "/=" ||
+        $value eq "%=" ||
+        $value eq "&=" ||
+        $value eq "|=" ||
+        $value eq "^=" ||
+        $value eq "..." ||
+        $value eq "?.";
+    return 0;
+}
+
+sub looks_like_regex_start {
+    my ($tokens) = @_;
+    return 1 if @{$tokens} == 0;
+    my $previous = $tokens->[-1]{value};
+    return 1 if $previous eq "(" ||
+        $previous eq "[" ||
+        $previous eq "{" ||
+        $previous eq "," ||
+        $previous eq ":" ||
+        $previous eq ";" ||
+        $previous eq "=" ||
+        $previous eq "=>" ||
+        $previous eq "!" ||
+        $previous eq "?" ||
+        $previous eq "??" ||
+        $previous eq "||" ||
+        $previous eq "&&" ||
+        $previous eq ":" ||
+        $previous eq "return" ||
+        $previous eq "case" ||
+        $previous eq "throw";
+    return 0;
+}
+
+sub path_in_roots {
+    my ($path, $roots) = @_;
+    for my $root (@{$roots}) {
+        return 1 if index($path, $root) == 0;
+    }
+    return 0;
+}
+
+sub source_layer {
+    my ($path) = @_;
+    return "root" if $path =~ m{\Asrc/(?:index|core|mini|v3|v4|v4-mini|zod|zod-compat|locales)\.ts\z};
+    return $1 if $path =~ m{\Asrc/(adapters|analyze|aot|async|async-validation|builders|compile|config|decoder|evaluate|guard|internal|ir|issue|json-schema|kind|lower|message|optimize|parse|plan|plugin|regexes|registry|result|schema|seabreeze|seaflow|standard)(?:/|\z)};
+    return "unknown";
+}
+
+sub resolve_import_path {
+    my ($from, $specifier) = @_;
+    my $base = normalize_path(dirname_path($from) . "/" . $specifier);
+    my @candidates;
+    if ($base =~ /\.js\z/) {
+        my $ts = $base;
+        $ts =~ s/\.js\z/.ts/;
+        push @candidates, $ts;
+    }
+    push @candidates, "$base.ts";
+    push @candidates, "$base/index.ts";
+    for my $candidate (@candidates) {
+        return $candidate if -f $candidate;
+    }
+    return undef;
+}
+
+sub dirname_path {
+    my ($path) = @_;
+    $path =~ s{/[^/]+\z}{};
+    return $path eq "" ? "." : $path;
+}
+
+sub normalize_path {
+    my ($path) = @_;
+    my @parts;
+    for my $part (split m{/+}, $path) {
+        next if $part eq "" || $part eq ".";
+        if ($part eq "..") {
+            pop @parts if @parts != 0;
+            next;
+        }
+        push @parts, $part;
+    }
+    return join("/", @parts);
+}
+
+sub find_import_cycles {
+    my ($edges) = @_;
+    my %adjacency;
+    my %nodes;
+    for my $edge (@{$edges}) {
+        next if $edge->{type_only};
+        push @{$adjacency{$edge->{from}}}, $edge->{to};
+        $nodes{$edge->{from}} = 1;
+        $nodes{$edge->{to}} = 1;
+    }
+    for my $node (keys %nodes) {
+        $adjacency{$node} = [] if !exists $adjacency{$node};
+    }
+    for my $node (keys %adjacency) {
+        my %seen;
+        my @deduped;
+        for my $next (sort @{$adjacency{$node}}) {
+            next if $seen{$next};
+            $seen{$next} = 1;
+            push @deduped, $next;
+        }
+        $adjacency{$node} = \@deduped;
+    }
+
+    my $next_index = 0;
+    my %index_of;
+    my %lowlink;
+    my %on_stack;
+    my @component_stack;
+    my @cycles;
+
+    for my $root (sort keys %nodes) {
+        next if exists $index_of{$root};
+        my @frames = ({
+            node => $root,
+            edge_index => 0,
+            entered => 0
+        });
+
+        while (@frames != 0) {
+            my $frame = $frames[-1];
+            my $node = $frame->{node};
+
+            if (!$frame->{entered}) {
+                $index_of{$node} = $next_index;
+                $lowlink{$node} = $next_index;
+                $next_index += 1;
+                push @component_stack, $node;
+                $on_stack{$node} = 1;
+                $frame->{entered} = 1;
+            }
+
+            my $neighbors = $adjacency{$node} // [];
+            if ($frame->{edge_index} < @{$neighbors}) {
+                my $next = $neighbors->[$frame->{edge_index}];
+                $frame->{edge_index} += 1;
+                if (!exists $index_of{$next}) {
+                    push @frames, {
+                        node => $next,
+                        edge_index => 0,
+                        entered => 0
+                    };
+                    next;
+                }
+                if ($on_stack{$next} && $index_of{$next} < $lowlink{$node}) {
+                    $lowlink{$node} = $index_of{$next};
+                }
+                next;
+            }
+
+            pop @frames;
+            if (@frames != 0) {
+                my $parent = $frames[-1]{node};
+                if ($lowlink{$node} < $lowlink{$parent}) {
+                    $lowlink{$parent} = $lowlink{$node};
+                }
+            }
+
+            next if $lowlink{$node} != $index_of{$node};
+
+            my @component;
+            while (@component_stack != 0) {
+                my $member = pop @component_stack;
+                delete $on_stack{$member};
+                push @component, $member;
+                last if $member eq $node;
+            }
+            if (@component > 1 || component_has_self_edge($node, \%adjacency)) {
+                push @cycles, [sort @component];
+            }
+        }
+    }
+
+    return \@cycles;
+}
+
+sub component_has_self_edge {
+    my ($node, $adjacency) = @_;
+    for my $next (@{$adjacency->{$node} // []}) {
+        return 1 if $next eq $node;
+    }
+    return 0;
+}
+
+sub is_forbidden_runtime_layer_edge {
+    my ($from, $to) = @_;
+    return 0 if $from eq $to;
+    return 1 if $from eq "schema" && ($to eq "compile" || $to eq "evaluate" || $to eq "aot");
+    return 1 if $from eq "kind" && $to ne "kind";
+    return 1 if $from eq "result" && $to ne "result";
+    return 1 if $from eq "regexes" && $to ne "regexes";
+    return 0;
+}
+
+sub read_imports {
+    my ($path, $tokens) = @_;
+    my @imports;
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+        next if $value ne "import" && $value ne "export";
+
+        my $start = $tokens->[$index]{line};
+        my $cursor = $index + 1;
+        my $end = find_import_export_statement_end($tokens, $index);
+        my $type_only = import_export_is_type_only($tokens, $index, $end);
+
+        my $specifier = undef;
+        if ($value eq "import" && token_value($tokens, $cursor) eq "(") {
+            my $maybe = $cursor + 1;
+            if (token_type($tokens, $maybe) eq "string") {
+                $specifier = token_value($tokens, $maybe);
+                $type_only = 0;
+            } else {
+                next;
+            }
+        } elsif ($value eq "import" && token_type($tokens, $cursor) eq "string") {
+            $specifier = token_value($tokens, $cursor);
+        } else {
+            for (my $scan = $cursor; $scan < $end; $scan += 1) {
+                next if token_value($tokens, $scan) ne "from";
+                my $maybe = $scan + 1;
+                if (token_type($tokens, $maybe) eq "string") {
+                    $specifier = token_value($tokens, $maybe);
+                    last;
+                }
+            }
+        }
+        next if $value eq "export" && !defined $specifier;
+
+        push @imports, {
+            path => $path,
+            line => $start,
+            statement => "",
+            specifier => $specifier,
+            type_only => $type_only
+        };
+        if ($end < @{$tokens} && token_value($tokens, $end) eq ";") {
+            $index = $end;
+        } elsif ($end > $index) {
+            $index = $end - 1;
+        }
+    }
+    return @imports;
+}
+
+sub find_import_export_statement_end {
+    my ($tokens, $start) = @_;
+    my $start_line = $tokens->[$start]{line};
+    my $module_string_line = undef;
+    my $depth = 0;
+    for (my $index = $start + 1; $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+        my $line = $tokens->[$index]{line};
+        if ($depth == 0) {
+            return $index if $value eq ";";
+            return $index if $index > $start + 1 &&
+                ($value eq "import" || $value eq "export");
+            return $index if defined $module_string_line &&
+                $line > $module_string_line &&
+                !is_import_attribute_continuation($value);
+        }
+        if ($value eq "(" || $value eq "{" || $value eq "[") {
+            $depth += 1;
+        } elsif ($value eq ")" || $value eq "}" || $value eq "]") {
+            $depth -= 1 if $depth > 0;
+        } elsif ($depth == 0 && token_type($tokens, $index) eq "string") {
+            $module_string_line = $line;
+        }
+    }
+    return scalar(@{$tokens});
+}
+
+sub is_import_attribute_continuation {
+    my ($value) = @_;
+    return 1 if $value eq "with" || $value eq "assert";
+    return 0;
+}
+
+sub import_export_is_type_only {
+    my ($tokens, $start, $end) = @_;
+    my $keyword = token_value($tokens, $start);
+    my $cursor = $start + 1;
+    return 1 if token_value($tokens, $cursor) eq "type";
+    return 0 if $keyword eq "import" && token_type($tokens, $cursor) eq "string";
+
+    my $from = find_token_value($tokens, "from", $cursor, $end);
+    return 0 if !defined $from;
+
+    my $brace = find_token_value($tokens, "{", $cursor, $from);
+    return 0 if !defined $brace;
+    my $close = find_matching_brace_token($tokens, $brace, $from);
+    return 0 if !defined $close;
+    return named_specifier_list_is_type_only($tokens, $brace + 1, $close);
+}
+
+sub named_specifier_list_is_type_only {
+    my ($tokens, $start, $end) = @_;
+    my $saw_specifier = 0;
+    my $cursor = $start;
+    while ($cursor < $end) {
+        while ($cursor < $end && token_value($tokens, $cursor) eq ",") {
+            $cursor += 1;
+        }
+        last if $cursor >= $end;
+        $saw_specifier = 1;
+        return 0 if token_value($tokens, $cursor) ne "type";
+        my $specifier_end = $cursor + 1;
+        while ($specifier_end < $end && token_value($tokens, $specifier_end) ne ",") {
+            $specifier_end += 1;
+        }
+        my $after_type = $cursor + 1;
+        return 0 if $after_type >= $specifier_end;
+        return 0 if token_value($tokens, $after_type) eq "as";
+        $cursor = $specifier_end;
+    }
+    return $saw_specifier ? 1 : 0;
+}
+
+sub find_token_value {
+    my ($tokens, $value, $start, $end) = @_;
+    for (my $index = $start; $index < $end; $index += 1) {
+        return $index if token_value($tokens, $index) eq $value;
+    }
+    return undef;
+}
+
+sub find_matching_brace_token {
+    my ($tokens, $start, $limit) = @_;
+    my $depth = 0;
+    for (my $index = $start; $index < $limit; $index += 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq "{") {
+            $depth += 1;
+            next;
+        }
+        if ($value eq "}") {
+            $depth -= 1;
+            return $index if $depth == 0;
+        }
+    }
+    return undef;
+}
+
+sub find_matching_open_brace_token {
+    my ($tokens, $close) = @_;
+    my $depth = 0;
+    for (my $index = $close; $index >= 0; $index -= 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq "}") {
+            $depth += 1;
+            next;
+        }
+        if ($value eq "{") {
+            $depth -= 1;
+            return $index if $depth == 0;
+        }
+    }
+    return undef;
+}
+
+sub find_matching_paren_token {
+    my ($tokens, $start, $limit) = @_;
+    my $depth = 0;
+    for (my $index = $start; $index < $limit; $index += 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq "(") {
+            $depth += 1;
+            next;
+        }
+        if ($value eq ")") {
+            $depth -= 1;
+            return $index if $depth == 0;
+        }
+    }
+    return undef;
+}
+
+sub find_matching_open_paren_token {
+    my ($tokens, $close) = @_;
+    my $depth = 0;
+    for (my $index = $close; $index >= 0; $index -= 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq ")") {
+            $depth += 1;
+            next;
+        }
+        if ($value eq "(") {
+            $depth -= 1;
+            return $index if $depth == 0;
+        }
+    }
+    return undef;
+}
+
+sub read_function_summaries {
+    my ($path, $tokens) = @_;
+    my @functions;
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq "function") {
+            my ($summary, $end) = read_function_declaration_summary($path, $tokens, $index);
+            if (defined $summary) {
+                push @functions, $summary;
+                $index = $end;
+            }
+            next;
+        }
+        if ($value eq "=>") {
+            my ($summary, $end) = read_arrow_function_summary($path, $tokens, $index);
+            if (defined $summary) {
+                push @functions, $summary;
+                $index = $end if $end > $index;
+            }
+        }
+    }
+    return @functions;
+}
+
+sub read_function_declaration_summary {
+    my ($path, $tokens, $index) = @_;
+    my $name_index = token_type($tokens, $index + 1) eq "id" ? $index + 1 : undef;
+    my $name = defined $name_index ? token_value($tokens, $name_index) : "anonymous";
+    my $params_open = find_token_value($tokens, "(", $index + 1, min_number($index + 16, scalar(@{$tokens})));
+    return (undef, $index) if !defined $params_open;
+    my $params_close = find_matching_paren_token($tokens, $params_open, scalar(@{$tokens}));
+    return (undef, $index) if !defined $params_close;
+    my $body_open = find_token_value($tokens, "{", $params_close + 1, min_number($params_close + 24, scalar(@{$tokens})));
+    return (undef, $index) if !defined $body_open;
+    my $body_close = find_matching_brace_token($tokens, $body_open, scalar(@{$tokens}));
+    return (undef, $index) if !defined $body_close;
+    return (
+        summarize_function_tokens(
+            $path,
+            $name,
+            token_value($tokens, $index - 1) eq "export" || token_value($tokens, $index - 2) eq "export",
+            $tokens,
+            $index,
+            $params_open,
+            $params_close,
+            $body_open,
+            $body_close
+        ),
+        $body_close
+    );
+}
+
+sub read_arrow_function_summary {
+    my ($path, $tokens, $arrow_index) = @_;
+    my $body_open = token_value($tokens, $arrow_index + 1) eq "{"
+        ? $arrow_index + 1
+        : undef;
+    return (undef, $arrow_index) if !defined $body_open;
+    my $body_close = find_matching_brace_token($tokens, $body_open, scalar(@{$tokens}));
+    return (undef, $arrow_index) if !defined $body_close;
+
+    my $assign_index = undef;
+    for (my $cursor = $arrow_index - 1; $cursor >= 0 && $cursor >= $arrow_index - 80; $cursor -= 1) {
+        if (token_value($tokens, $cursor) eq "=") {
+            $assign_index = $cursor;
+            last;
+        }
+        last if token_value($tokens, $cursor) eq ";" || token_value($tokens, $cursor) eq "{";
+    }
+    return (undef, $arrow_index) if !defined $assign_index;
+
+    my $name = "anonymous";
+    for (my $cursor = $assign_index - 1; $cursor >= 0 && $cursor >= $assign_index - 8; $cursor -= 1) {
+        if (token_type($tokens, $cursor) eq "id" && token_value($tokens, $cursor) ne "const" && token_value($tokens, $cursor) ne "let" && token_value($tokens, $cursor) ne "var") {
+            $name = token_value($tokens, $cursor);
+            last;
+        }
+    }
+
+    my $params_open = undef;
+    my $params_close = undef;
+    if (token_value($tokens, $arrow_index - 1) eq ")") {
+        $params_close = $arrow_index - 1;
+        for (my $cursor = $params_close; $cursor >= 0 && $cursor >= $arrow_index - 120; $cursor -= 1) {
+            next if token_value($tokens, $cursor) ne "(";
+            my $matched = find_matching_paren_token($tokens, $cursor, $params_close + 1);
+            if (defined $matched && $matched == $params_close) {
+                $params_open = $cursor;
+                last;
+            }
+        }
+    }
+
+    if (!defined $params_open || !defined $params_close) {
+        $params_open = $arrow_index - 2;
+        $params_close = $arrow_index;
+    }
+
+    return (
+        summarize_function_tokens(
+            $path,
+            $name,
+            token_value($tokens, $assign_index - 2) eq "export" || token_value($tokens, $assign_index - 3) eq "export",
+            $tokens,
+            $assign_index,
+            $params_open,
+            $params_close,
+            $body_open,
+            $body_close
+        ),
+        $body_close
+    );
+}
+
+sub summarize_function_tokens {
+    my ($path, $name, $exported, $tokens, $start, $params_open, $params_close, $body_open, $body_close) = @_;
+    my @body = token_slice($tokens, $body_open + 1, $body_close);
+    my @param_meta = read_parameter_summaries($tokens, $params_open + 1, $params_close);
+    my @params = map { $_->{name} } @param_meta;
+    my @calls = read_function_calls(\@body);
+    my $metrics = function_metrics($path, $name, \@params, \@param_meta, \@body);
+    my $line = token_line($tokens, $start);
+    my $end_line = token_line($tokens, $body_close);
+    return {
+        id => function_id($path, $name, $line),
+        path => $path,
+        name => $name,
+        line => $line,
+        end_line => $end_line,
+        exported => $exported ? 1 : 0,
+        params => \@params,
+        paramTypes => \@param_meta,
+        calls => \@calls,
+        complexity => $metrics->{complexity},
+        descriptor_reads => $metrics->{descriptor_reads},
+        descriptor_value_reads => $metrics->{descriptor_value_reads},
+        value_proofs => $metrics->{value_proofs},
+        descriptor_value_before_proof => $metrics->{descriptor_value_before_proof},
+        descriptor_value_factory_proofs => $metrics->{descriptor_value_factory_proofs},
+        descriptor_value_unproved_reads => $metrics->{descriptor_value_unproved_reads},
+        cfg => $metrics->{cfg},
+        loop_bound_domain => $metrics->{loop_bound_domain},
+        range_domain => $metrics->{range_domain},
+        branch_state => $metrics->{branch_state},
+        result_state_domain => $metrics->{result_state_domain},
+        freeze_state_domain => $metrics->{freeze_state_domain},
+        variant_state_domain => $metrics->{variant_state_domain},
+        index_domain => $metrics->{index_domain},
+        mutation_domain => $metrics->{mutation_domain},
+        memory_alias_domain => $metrics->{memory_alias_domain},
+        exception_domain => $metrics->{exception_domain},
+        lifecycle_domain => $metrics->{lifecycle_domain},
+        async_domain => $metrics->{async_domain},
+        symbolic_domain => $metrics->{symbolic_domain},
+        nullish_domain => $metrics->{nullish_domain},
+        recursion_proof => $metrics->{recursion_proof},
+        key_safety_domain => $metrics->{key_safety_domain},
+        source_taint_domain => $metrics->{source_taint_domain},
+        effect => $metrics->{effect},
+        contract => $metrics->{contract},
+        dynamic_code_sinks => $metrics->{dynamic_code_sinks},
+        direct_hostile_reads => $metrics->{direct_hostile_reads},
+        throws => $metrics->{throws}
+    };
+}
+
+sub read_parameter_names {
+    my ($tokens, $start, $end) = @_;
+    return map { $_->{name} } read_parameter_summaries($tokens, $start, $end);
+}
+
+sub read_parameter_summaries {
+    my ($tokens, $start, $end) = @_;
+    my @params;
+    my $segment_start = $start;
+    my $depth = 0;
+    for (my $index = $start; $index <= $end; $index += 1) {
+        if ($index == $end) {
+            my $summary = read_parameter_segment_summary($tokens, $segment_start, $index);
+            push @params, $summary if defined $summary;
+            last;
+        }
+        my $value = token_value($tokens, $index);
+        if ($value eq "(" || $value eq "{" || $value eq "[") {
+            $depth += 1;
+            next;
+        }
+        if ($value eq ")" || $value eq "}" || $value eq "]") {
+            $depth -= 1 if $depth > 0;
+            next;
+        }
+        if (($value eq "," && $depth == 0) || $index == $end) {
+            my $summary = read_parameter_segment_summary($tokens, $segment_start, $index);
+            push @params, $summary if defined $summary;
+            $segment_start = $index + 1;
+        }
+    }
+    return @params;
+}
+
+sub read_parameter_segment_name {
+    my ($tokens, $start, $end) = @_;
+    my $summary = read_parameter_segment_summary($tokens, $start, $end);
+    return defined $summary ? $summary->{name} : undef;
+}
+
+sub read_parameter_segment_summary {
+    my ($tokens, $start, $end) = @_;
+    my $name = undef;
+    my $type_start = undef;
+    my $type_end = $end;
+    for (my $index = $start; $index < $end; $index += 1) {
+        my $value = token_value($tokens, $index);
+        last if $value eq "=";
+        if ($value eq ":" && defined $name) {
+            $type_start = $index + 1;
+            $type_end = parameter_type_end($tokens, $type_start, $end);
+            last;
+        }
+        next if defined $name;
+        next if token_type($tokens, $index) ne "id";
+        next if $value eq "readonly" || $value eq "public" || $value eq "private" || $value eq "protected";
+        $name = $value;
+    }
+    return undef if !defined $name;
+    my $type = defined $type_start ? compact_token_text($tokens, $type_start, $type_end, 160) : "";
+    return {
+        name => $name,
+        type => $type,
+        hostilePayload => is_symbolic_hostile_parameter_type($name, $type)
+    };
+}
+
+sub parameter_type_end {
+    my ($tokens, $start, $end) = @_;
+    my $depth = 0;
+    for (my $index = $start; $index < $end; $index += 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq "<" || $value eq "(" || $value eq "[" || $value eq "{") {
+            $depth += 1;
+            next;
+        }
+        if ($value eq ">" || $value eq ")" || $value eq "]" || $value eq "}") {
+            $depth -= 1 if $depth > 0;
+            next;
+        }
+        return $index if $value eq "=" && $depth == 0;
+    }
+    return $end;
+}
+
+sub read_function_calls {
+    my ($tokens) = @_;
+    my @calls;
+    for (my $index = 0; $index + 1 < @{$tokens}; $index += 1) {
+        next if token_type($tokens, $index) ne "id";
+        next if token_value($tokens, $index + 1) ne "(";
+        my $name = token_value($tokens, $index);
+        next if is_non_call_keyword($name);
+        next if token_value($tokens, $index - 1) eq "." || token_value($tokens, $index - 1) eq "new";
+        my $close = find_matching_paren_token($tokens, $index + 1, scalar(@{$tokens}));
+        push @calls, {
+            name => $name,
+            line => token_line($tokens, $index),
+            arguments => defined $close
+                ? read_call_argument_identifiers($tokens, $index + 2, $close)
+                : []
+        };
+    }
+    return @calls;
+}
+
+sub read_call_argument_identifiers {
+    my ($tokens, $start, $end) = @_;
+    my %seen;
+    my @arguments;
+    my $depth = 0;
+    for (my $index = $start; $index < $end; $index += 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq "(" || $value eq "{" || $value eq "[") {
+            $depth += 1;
+            next;
+        }
+        if ($value eq ")" || $value eq "}" || $value eq "]") {
+            $depth -= 1 if $depth > 0;
+            next;
+        }
+        next if token_type($tokens, $index) ne "id";
+        next if $depth > 1;
+        next if is_non_value_identifier($value);
+        next if $seen{$value};
+        $seen{$value} = 1;
+        push @arguments, $value;
+    }
+    return \@arguments;
+}
+
+sub is_non_value_identifier {
+    my ($value) = @_;
+    return 1 if $value eq "true" ||
+        $value eq "false" ||
+        $value eq "null" ||
+        $value eq "undefined" ||
+        $value eq "typeof" ||
+        $value eq "new" ||
+        $value eq "return";
+    return 0;
+}
+
+sub is_non_call_keyword {
+    my ($name) = @_;
+    return 1 if $name eq "if" ||
+        $name eq "for" ||
+        $name eq "while" ||
+        $name eq "switch" ||
+        $name eq "catch" ||
+        $name eq "function" ||
+        $name eq "return";
+    return 0;
+}
+
+sub function_metrics {
+    my ($path, $name, $params, $param_meta, $tokens) = @_;
+    my $descriptor_model = descriptor_value_model($path, $tokens);
+    my $cfg = build_cfg_summary($tokens);
+    my $loop_bound_domain = build_loop_bound_domain_summary($path, $name, $tokens);
+    my $range_domain = build_range_domain_summary($path, $tokens);
+    my $branch_state = build_branch_state_summary($path, $tokens);
+    my $result_state_domain = build_result_state_domain_summary($path, $tokens);
+    my $freeze_state_domain = build_freeze_state_domain_summary($path, $tokens);
+    my $variant_state_domain = build_variant_state_domain_summary($path, $tokens);
+    my $index_domain = build_index_domain_summary($path, $tokens);
+    my $mutation_domain = build_mutation_domain_summary($path, $params, $tokens);
+    my $memory_alias_domain = build_memory_alias_domain_summary($path, $name, $param_meta, $tokens);
+    my $exception_domain = build_exception_domain_summary($path, $name, $tokens);
+    my $lifecycle_domain = build_lifecycle_domain_summary($path, $tokens);
+    my $async_domain = build_async_domain_summary($path, $name, $tokens);
+    my $source_taint_domain = build_source_taint_domain_summary($path, $name, $tokens);
+    my $symbolic_domain = build_symbolic_execution_summary($path, $name, $param_meta, $tokens, $descriptor_model, $source_taint_domain);
+    my $nullish_domain = build_nullish_domain_summary($path, $params, $tokens);
+    my $recursion_proof = build_recursion_proof_summary($path, $name, $tokens);
+    my $key_safety_domain = build_key_safety_domain_summary($path, $tokens);
+    my $effect = build_effect_summary($path, $name, $tokens);
+    my $contract = build_contract_summary($path, $name, $tokens, $descriptor_model, $effect);
+    return {
+        complexity => compute_function_complexity($tokens),
+        cfg => $cfg,
+        loop_bound_domain => $loop_bound_domain,
+        range_domain => $range_domain,
+        branch_state => $branch_state,
+        result_state_domain => $result_state_domain,
+        freeze_state_domain => $freeze_state_domain,
+        variant_state_domain => $variant_state_domain,
+        index_domain => $index_domain,
+        mutation_domain => $mutation_domain,
+        memory_alias_domain => $memory_alias_domain,
+        exception_domain => $exception_domain,
+        lifecycle_domain => $lifecycle_domain,
+        async_domain => $async_domain,
+        symbolic_domain => $symbolic_domain,
+        nullish_domain => $nullish_domain,
+        recursion_proof => $recursion_proof,
+        key_safety_domain => $key_safety_domain,
+        source_taint_domain => $source_taint_domain,
+        effect => $effect,
+        contract => $contract,
+        descriptor_reads => count_token_sequence($tokens, "Object", ".", "getOwnPropertyDescriptor") + count_call_name($tokens, "gp"),
+        descriptor_value_reads => count_token_sequence($tokens, "descriptor", ".", "value") + count_token_sequence($tokens, "desc", ".", "value") + count_token_sequence($tokens, "d", ".", "value"),
+        value_proofs => count_token_sequence($tokens, "hasOwnProperty", ".", "call") + count_token_sequence($tokens, "h", ".", "call") + count_call_name($tokens, "isDataPropertyDescriptor"),
+        descriptor_value_before_proof => $descriptor_model->{before_proof},
+        descriptor_value_factory_proofs => $descriptor_model->{factory_proofs},
+        descriptor_value_unproved_reads => $descriptor_model->{unproved_reads},
+        dynamic_code_sinks => count_token_sequence($tokens, "new", "Function") + count_call_name($tokens, "eval"),
+        direct_hostile_reads => count_direct_hostile_property_reads($tokens),
+        throws => count_token_value($tokens, "throw")
+    };
+}
+
+sub compute_function_complexity {
+    my ($tokens) = @_;
+    my $score = 1;
+    my $depth = 0;
+    for my $token (@{$tokens}) {
+        my $value = $token->{value};
+        if ($value eq "{") {
+            $depth += 1;
+            next;
+        }
+        if ($value eq "}") {
+            $depth -= 1 if $depth > 0;
+            next;
+        }
+        if (is_decision_token($value)) {
+            $score += 1 + ($depth > 6 ? 6 : $depth);
+        }
+    }
+    return $score;
+}
+
+sub build_cfg_summary {
+    my ($tokens) = @_;
+    my $decisions = 0;
+    my $loops = 0;
+    my $exits = 0;
+    my $throws = 0;
+    my $unreachable = 0;
+    my $max_depth = 0;
+    my $depth = 0;
+    my %block_dead_after_exit;
+    my %pending_throw_exit;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq "{") {
+            $depth += 1;
+            $max_depth = $depth if $depth > $max_depth;
+            next;
+        }
+        if ($value eq "}") {
+            delete $block_dead_after_exit{$depth};
+            delete $pending_throw_exit{$depth};
+            $depth -= 1 if $depth > 0;
+            next;
+        }
+        if ($value eq ";" && $pending_throw_exit{$depth}) {
+            $block_dead_after_exit{$depth} = 1;
+            delete $pending_throw_exit{$depth};
+            next;
+        }
+        if ($value eq "case" || $value eq "default") {
+            delete $block_dead_after_exit{$depth};
+            delete $pending_throw_exit{$depth};
+        }
+        if ($block_dead_after_exit{$depth} && token_starts_reachable_statement($tokens, $index)) {
+            $unreachable += 1;
+            $block_dead_after_exit{$depth} = 0;
+        }
+        if (is_decision_token($value)) {
+            $decisions += 1;
+        }
+        if ($value eq "for" || $value eq "while") {
+            $loops += 1;
+        }
+        if ($value eq "throw" && token_type($tokens, $index) eq "id") {
+            $throws += 1;
+        }
+        if ($value eq "throw" && token_type($tokens, $index) eq "id") {
+            $exits += 1;
+            $pending_throw_exit{$depth} = 1;
+            next;
+        }
+        if ($value eq "return" || $value eq "continue" || $value eq "break") {
+            $exits += 1;
+        }
+    }
+
+    my $blocks = 1 + $decisions + $loops + $exits;
+    my $edges = $blocks == 0 ? 0 : $blocks - 1 + ($decisions * 2) + $loops;
+    return {
+        blocks => $blocks,
+        edges => $edges,
+        decisions => $decisions,
+        loops => $loops,
+        exits => $exits,
+        throws => $throws,
+        maxDepth => $max_depth,
+        unreachableStatements => $unreachable
+    };
+}
+
+sub build_loop_bound_domain_summary {
+    my ($path, $name, $tokens) = @_;
+    my %counts = (
+        loops => 0,
+        forLoops => 0,
+        whileLoops => 0,
+        lengthBoundedLoops => 0,
+        fixedBoundedLoops => 0,
+        keyBoundedLoops => 0,
+        budgetBoundedLoops => 0,
+        updateProgressLoops => 0,
+        escapeGuardedLoops => 0,
+        unboundedLoops => 0,
+        hotPathUnboundedLoops => 0
+    );
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $kind = token_value($tokens, $index);
+        next if $kind ne "for" && $kind ne "while";
+        $counts{loops} += 1;
+        $counts{forLoops} += 1 if $kind eq "for";
+        $counts{whileLoops} += 1 if $kind eq "while";
+
+        my $open = token_value($tokens, $index + 1) eq "(" ? $index + 1 : find_token_value($tokens, "(", $index + 1, min_number($index + 6, scalar(@{$tokens})));
+        my $close = defined $open ? find_matching_paren_token($tokens, $open, scalar(@{$tokens})) : undef;
+        my $body_open = defined $close ? find_token_value($tokens, "{", $close + 1, min_number($close + 8, scalar(@{$tokens}))) : undef;
+        my $body_close = defined $body_open ? find_matching_brace_token($tokens, $body_open, scalar(@{$tokens})) : undef;
+
+        my $length_bounded = defined $close && loop_header_has_length_bound($tokens, $open + 1, $close);
+        my $fixed_bounded = defined $close && loop_header_has_fixed_bound($tokens, $open + 1, $close);
+        my $key_bounded = defined $close && loop_header_has_key_bound($tokens, $open + 1, $close);
+        my $budget_bounded = loop_context_has_budget_bound($tokens, defined $open ? $open + 1 : $index, defined $body_close ? $body_close : (defined $close ? $close : $index));
+        my $progress = defined $close && loop_header_has_progress_update($tokens, $open + 1, $close);
+        my $escape_guarded = defined $body_open && defined $body_close && loop_body_has_escape($tokens, $body_open + 1, $body_close);
+
+        $counts{lengthBoundedLoops} += 1 if $length_bounded;
+        $counts{fixedBoundedLoops} += 1 if $fixed_bounded;
+        $counts{keyBoundedLoops} += 1 if $key_bounded;
+        $counts{budgetBoundedLoops} += 1 if $budget_bounded;
+        $counts{updateProgressLoops} += 1 if $progress;
+        $counts{escapeGuardedLoops} += 1 if $escape_guarded;
+
+        my $bounded = $length_bounded || $fixed_bounded || $key_bounded || $budget_bounded;
+        if (!$bounded) {
+            $counts{unboundedLoops} += 1;
+            $counts{hotPathUnboundedLoops} += 1 if is_hot_path_validation_function($path, $name);
+        }
+    }
+
+    return \%counts;
+}
+
+sub loop_header_has_length_bound {
+    my ($tokens, $start, $end) = @_;
+    my $has_length = 0;
+    my $has_comparator = 0;
+    for (my $index = $start; $index < $end; $index += 1) {
+        $has_length = 1 if token_value($tokens, $index) eq "." && token_value($tokens, $index + 1) eq "length";
+        $has_comparator = 1 if is_loop_bound_comparator(token_value($tokens, $index));
+    }
+    return $has_length && $has_comparator ? 1 : 0;
+}
+
+sub loop_header_has_fixed_bound {
+    my ($tokens, $start, $end) = @_;
+    my $has_number = 0;
+    my $has_comparator = 0;
+    for (my $index = $start; $index < $end; $index += 1) {
+        $has_number = 1 if token_type($tokens, $index) eq "number";
+        $has_comparator = 1 if is_loop_bound_comparator(token_value($tokens, $index));
+    }
+    return $has_number && $has_comparator ? 1 : 0;
+}
+
+sub loop_header_has_key_bound {
+    my ($tokens, $start, $end) = @_;
+    for (my $index = $start; $index < $end; $index += 1) {
+        return 1 if token_value($tokens, $index) eq "of";
+        return 1 if token_value($tokens, $index) eq "in";
+        return 1 if token_value($tokens, $index) eq "." && token_value($tokens, $index + 1) eq "keys";
+    }
+    return 0;
+}
+
+sub loop_context_has_budget_bound {
+    my ($tokens, $start, $end) = @_;
+    for (my $index = $start; $index <= $end && $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+        return 1 if $value eq "budget" ||
+            $value eq "maxDepth" ||
+            $value eq "remainingDepth" ||
+            $value eq "maxYields" ||
+            $value eq "yieldEvery" ||
+            $value eq "deadline" ||
+            $value eq "maybeYield";
+    }
+    return 0;
+}
+
+sub loop_header_has_progress_update {
+    my ($tokens, $start, $end) = @_;
+    for (my $index = $start; $index < $end; $index += 1) {
+        my $value = token_value($tokens, $index);
+        return 1 if $value eq "++" || $value eq "--" || $value eq "+=" || $value eq "-=";
+    }
+    return 0;
+}
+
+sub loop_body_has_escape {
+    my ($tokens, $start, $end) = @_;
+    for (my $index = $start; $index < $end; $index += 1) {
+        my $value = token_value($tokens, $index);
+        return 1 if $value eq "break" || $value eq "return" || $value eq "throw";
+    }
+    return 0;
+}
+
+sub is_loop_bound_comparator {
+    my ($value) = @_;
+    return 1 if $value eq "<" || $value eq "<=" || $value eq ">" || $value eq ">=";
+    return 0;
+}
+
+sub build_range_domain_summary {
+    my ($path, $tokens) = @_;
+    my %facts;
+    my $numeric_literals = 0;
+    my $lower_bounds = 0;
+    my $upper_bounds = 0;
+    my $length_upper_bounds = 0;
+    my $fixed_upper_bounds = 0;
+    my $progress_updates = 0;
+    my $bounded_index_reads = 0;
+    my $unbounded_index_reads = 0;
+    my $safe_path_range_gaps = 0;
+    my $max_known_span = 0;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $assignment = numeric_literal_assignment_at($tokens, $index);
+        if (defined $assignment) {
+            $facts{$assignment->{var}} = {
+                lower => $assignment->{value},
+                upper => $assignment->{value},
+                hasLower => 1,
+                hasUpper => 1,
+                source => "literal"
+            };
+            $numeric_literals += 1;
+            $lower_bounds += 1;
+            $upper_bounds += 1;
+            $fixed_upper_bounds += 1;
+            next;
+        }
+
+        my $bound = range_bound_fact_at($tokens, $index);
+        if (defined $bound) {
+            my $slot = $facts{$bound->{var}} // {
+                hasLower => 0,
+                hasUpper => 0,
+                source => "guard"
+            };
+            if ($bound->{kind} eq "lower") {
+                $slot->{lower} = $bound->{value};
+                $slot->{hasLower} = 1;
+                $lower_bounds += 1;
+            } else {
+                $slot->{upper} = $bound->{value};
+                $slot->{hasUpper} = 1;
+                $upper_bounds += 1;
+                $length_upper_bounds += 1 if $bound->{valueKind} eq "length";
+                $fixed_upper_bounds += 1 if $bound->{valueKind} eq "number";
+            }
+            $facts{$bound->{var}} = $slot;
+            my $span = known_range_span($slot);
+            $max_known_span = $span if defined $span && $span > $max_known_span;
+            next;
+        }
+
+        my $progress = range_progress_update_at($tokens, $index);
+        if (defined $progress) {
+            $progress_updates += 1;
+            my $slot = $facts{$progress} // {
+                hasLower => 0,
+                hasUpper => 0,
+                source => "progress"
+            };
+            $slot->{progress} = 1;
+            $facts{$progress} = $slot;
+            next;
+        }
+
+        my $access = bracket_index_access_at($tokens, $index);
+        next if !defined $access;
+        next if index_access_is_type_or_destructure($tokens, $index);
+        next if $access->{indexType} ne "id";
+        my $slot = $facts{$access->{index}};
+        if (defined $slot && ($slot->{hasLower} || 0) && ($slot->{hasUpper} || 0)) {
+            $bounded_index_reads += 1;
+        } else {
+            $unbounded_index_reads += 1;
+            $safe_path_range_gaps += 1 if is_safe_validation_path($path) && is_hostile_name($access->{subject});
+        }
+    }
+
+    return {
+        numericLiteralFacts => $numeric_literals,
+        lowerBounds => $lower_bounds,
+        upperBounds => $upper_bounds,
+        lengthUpperBounds => $length_upper_bounds,
+        fixedUpperBounds => $fixed_upper_bounds,
+        progressUpdates => $progress_updates,
+        boundedIndexReads => $bounded_index_reads,
+        unboundedIndexReads => $unbounded_index_reads,
+        trackedVariables => scalar(keys %facts),
+        maxKnownSpan => $max_known_span,
+        safePathRangeGaps => $safe_path_range_gaps
+    };
+}
+
+sub numeric_literal_assignment_at {
+    my ($tokens, $index) = @_;
+    return undef if token_value($tokens, $index) ne "=";
+    return undef if token_type($tokens, $index - 1) ne "id";
+    return undef if token_type($tokens, $index + 1) ne "number";
+    return undef if !is_decimal_integer_literal(token_value($tokens, $index + 1));
+    return {
+        var => token_value($tokens, $index - 1),
+        value => int(token_value($tokens, $index + 1))
+    };
+}
+
+sub range_bound_fact_at {
+    my ($tokens, $index) = @_;
+    return range_simple_comparison_bound_at($tokens, $index) //
+        range_length_comparison_bound_at($tokens, $index);
+}
+
+sub range_simple_comparison_bound_at {
+    my ($tokens, $index) = @_;
+    return undef if token_type($tokens, $index) ne "id";
+    return undef if !is_loop_bound_comparator(token_value($tokens, $index + 1));
+    return undef if token_type($tokens, $index + 2) ne "number";
+    return undef if !is_decimal_integer_literal(token_value($tokens, $index + 2));
+    my $operator = token_value($tokens, $index + 1);
+    my $value = int(token_value($tokens, $index + 2));
+    return {
+        var => token_value($tokens, $index),
+        kind => ($operator eq "<" || $operator eq "<=") ? "upper" : "lower",
+        value => $value,
+        valueKind => "number"
+    };
+}
+
+sub is_decimal_integer_literal {
+    my ($value) = @_;
+    return defined $value && $value =~ /\A\d+\z/ ? 1 : 0;
+}
+
+sub range_length_comparison_bound_at {
+    my ($tokens, $index) = @_;
+    return undef if token_type($tokens, $index) ne "id";
+    return undef if !is_loop_bound_comparator(token_value($tokens, $index + 1));
+    return undef if token_type($tokens, $index + 2) ne "id";
+    return undef if token_value($tokens, $index + 3) ne ".";
+    return undef if token_value($tokens, $index + 4) ne "length";
+    my $operator = token_value($tokens, $index + 1);
+    return {
+        var => token_value($tokens, $index),
+        kind => ($operator eq "<" || $operator eq "<=") ? "upper" : "lower",
+        value => 0,
+        valueKind => "length"
+    };
+}
+
+sub range_progress_update_at {
+    my ($tokens, $index) = @_;
+    return token_value($tokens, $index - 1)
+        if (token_value($tokens, $index) eq "++" && token_type($tokens, $index - 1) eq "id");
+    return token_value($tokens, $index - 1)
+        if (token_value($tokens, $index) eq "--" && token_type($tokens, $index - 1) eq "id");
+    return token_value($tokens, $index)
+        if token_type($tokens, $index) eq "id" &&
+            (token_value($tokens, $index + 1) eq "+=" || token_value($tokens, $index + 1) eq "-=") &&
+            token_type($tokens, $index + 2) eq "number";
+    return undef;
+}
+
+sub known_range_span {
+    my ($slot) = @_;
+    return undef if !($slot->{hasLower} || 0) || !($slot->{hasUpper} || 0);
+    return undef if !defined $slot->{lower} || !defined $slot->{upper};
+    return abs($slot->{upper} - $slot->{lower});
+}
+
+sub build_branch_state_summary {
+    my ($path, $tokens) = @_;
+    my %factory_vars = trusted_descriptor_factory_vars($path, $tokens);
+    my %live_facts;
+    my %postdominator_facts;
+    my $facts_created = 0;
+    my $guarded_reads = 0;
+    my $unguarded_reads = 0;
+    my $branch_merges = 0;
+    my $max_live_facts = 0;
+    my $generic_value_slot_proof = 0;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+
+        if (token_sequence_at($tokens, $index, "hasOwnProperty", ".", "call") ||
+            token_sequence_at($tokens, $index, "h", ".", "call") ||
+            $value eq "isDataPropertyDescriptor") {
+            $generic_value_slot_proof = 1;
+            $live_facts{"<value-slot>"} = 1;
+            $facts_created += 1;
+            $max_live_facts = scalar(keys %live_facts) if scalar(keys %live_facts) > $max_live_facts;
+            next;
+        }
+
+        if ($value eq "else" || $value eq "?" || $value eq "||" || $value eq "&&") {
+            $branch_merges += 1;
+        }
+
+        if ($value eq "}" || $value eq "case" || $value eq "default") {
+            %live_facts = %postdominator_facts;
+            $generic_value_slot_proof = $postdominator_facts{"<value-slot>"} ? 1 : 0;
+        }
+
+        my $guarded = read_undefined_guarded_variable($tokens, $index);
+        if (defined $guarded && ($factory_vars{$guarded} || is_descriptor_like_variable($guarded))) {
+            $live_facts{$guarded} = 1;
+            $postdominator_facts{$guarded} = 1;
+            $facts_created += 1;
+            $max_live_facts = scalar(keys %live_facts) if scalar(keys %live_facts) > $max_live_facts;
+            next;
+        }
+
+        $guarded = read_found_guarded_variable($tokens, $index);
+        if (defined $guarded && ($factory_vars{$guarded} || is_descriptor_like_variable($guarded))) {
+            $live_facts{$guarded} = 1;
+            $facts_created += 1;
+            $max_live_facts = scalar(keys %live_facts) if scalar(keys %live_facts) > $max_live_facts;
+            next;
+        }
+
+        my $slot_guard = read_value_slot_guard_fact($tokens, $index);
+        if (defined $slot_guard && ($factory_vars{$slot_guard->{var}} || is_descriptor_like_variable($slot_guard->{var}))) {
+            $live_facts{$slot_guard->{var}} = 1;
+            if ($slot_guard->{persists}) {
+                $postdominator_facts{$slot_guard->{var}} = 1;
+            }
+            $facts_created += 1;
+            $max_live_facts = scalar(keys %live_facts) if scalar(keys %live_facts) > $max_live_facts;
+            next;
+        }
+
+        my $value_var = descriptor_value_variable_at($tokens, $index);
+        next if !defined $value_var;
+        next if !$factory_vars{$value_var} && !is_descriptor_like_variable($value_var);
+
+        if ($live_facts{$value_var} ||
+            $generic_value_slot_proof ||
+            descriptor_read_is_inline_guarded($tokens, $index, $value_var)) {
+            $guarded_reads += 1;
+        } else {
+            $unguarded_reads += 1;
+        }
+    }
+
+    return {
+        factsCreated => $facts_created,
+        factoryFacts => scalar(keys %factory_vars),
+        guardedReads => $guarded_reads,
+        unguardedReads => $unguarded_reads,
+        branchMerges => $branch_merges,
+        maxLiveFacts => $max_live_facts
+    };
+}
+
+sub build_result_state_domain_summary {
+    my ($path, $tokens) = @_;
+    my %result_vars = result_like_variables($tokens);
+    my %facts;
+    my %postdominator_facts;
+    my $ok_facts = 0;
+    my $payload_reads = 0;
+    my $guarded_payload_reads = 0;
+    my $unguarded_payload_reads = 0;
+    my $error_reads = 0;
+    my $value_reads = 0;
+    my $postdominator_facts_created = 0;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq "}" || $value eq "case" || $value eq "default") {
+            %facts = %postdominator_facts;
+        }
+
+        if ($value eq "else") {
+            my @guards = read_else_result_ok_guards($tokens, $index);
+            for my $guard (@guards) {
+                $facts{$guard->{var}} = $guard->{polarity};
+                $result_vars{$guard->{var}} = 1;
+                $ok_facts += 1;
+            }
+        }
+
+        if ($value eq "if") {
+            my @guards = read_result_ok_guards($tokens, $index);
+            for my $guard (@guards) {
+                $facts{$guard->{var}} = $guard->{polarity};
+                $result_vars{$guard->{var}} = 1;
+                $ok_facts += 1;
+                if (if_body_has_terminating_edge($tokens, $index)) {
+                    $postdominator_facts{$guard->{var}} = $guard->{polarity} eq "true" ? "false" : "true";
+                    $postdominator_facts_created += 1;
+                }
+            }
+        }
+
+        my $access = result_payload_access_at($tokens, $index);
+        next if !defined $access;
+        next if !$result_vars{$access->{subject}};
+
+        $payload_reads += 1;
+        $error_reads += 1 if $access->{field} eq "error";
+        $value_reads += 1 if $access->{field} eq "value";
+        my $needed = $access->{field} eq "error" ? "false" : "true";
+        if (($facts{$access->{subject}} // "") eq $needed ||
+            inline_result_payload_guarded($tokens, $index, $access->{subject}, $needed)) {
+            $guarded_payload_reads += 1;
+        } else {
+            $unguarded_payload_reads += 1;
+        }
+    }
+
+    return {
+        okFacts => $ok_facts,
+        postdominatorFacts => $postdominator_facts_created,
+        payloadReads => $payload_reads,
+        guardedPayloadReads => $guarded_payload_reads,
+        unguardedPayloadReads => $unguarded_payload_reads,
+        errorReads => $error_reads,
+        valueReads => $value_reads,
+        resultLikeVariables => scalar(keys %result_vars),
+        sourcePathResultGaps => is_result_sensitive_path($path) ? $unguarded_payload_reads : 0
+    };
+}
+
+sub result_like_variables {
+    my ($tokens) = @_;
+    my %vars;
+    for (my $index = 0; $index + 2 < @{$tokens}; $index += 1) {
+        next if token_type($tokens, $index) ne "id";
+        next if token_value($tokens, $index + 1) ne ".";
+        next if token_value($tokens, $index + 2) ne "ok";
+        $vars{token_value($tokens, $index)} = 1;
+    }
+    return %vars;
+}
+
+sub read_result_ok_guards {
+    my ($tokens, $if_index) = @_;
+    my @guards;
+    return @guards if token_value($tokens, $if_index) ne "if";
+    my $open = token_value($tokens, $if_index + 1) eq "(" ? $if_index + 1 : undef;
+    return @guards if !defined $open;
+    my $close = find_matching_paren_token($tokens, $open, scalar(@{$tokens}));
+    return @guards if !defined $close;
+    for (my $index = $open + 1; $index + 2 < $close; $index += 1) {
+        next if token_type($tokens, $index) ne "id";
+        next if token_value($tokens, $index + 1) ne ".";
+        next if token_value($tokens, $index + 2) ne "ok";
+        my $negated = token_value($tokens, $index - 1) eq "!";
+        push @guards, {
+            var => token_value($tokens, $index),
+            polarity => $negated ? "false" : "true"
+        };
+    }
+    return @guards;
+}
+
+sub read_else_result_ok_guards {
+    my ($tokens, $else_index) = @_;
+    my @guards;
+    return @guards if token_value($tokens, $else_index) ne "else";
+    return @guards if token_value($tokens, $else_index - 1) ne "}";
+    my $body_open = find_matching_open_brace_token($tokens, $else_index - 1);
+    return @guards if !defined $body_open;
+    my $condition_close = $body_open - 1;
+    return @guards if token_value($tokens, $condition_close) ne ")";
+    my $condition_open = find_matching_open_paren_token($tokens, $condition_close);
+    return @guards if !defined $condition_open;
+    my $if_index = $condition_open - 1;
+    return @guards if token_value($tokens, $if_index) ne "if";
+    for my $guard (read_result_ok_guards($tokens, $if_index)) {
+        push @guards, {
+            var => $guard->{var},
+            polarity => $guard->{polarity} eq "true" ? "false" : "true"
+        };
+    }
+    return @guards;
+}
+
+sub result_payload_access_at {
+    my ($tokens, $index) = @_;
+    return undef if token_type($tokens, $index) ne "id";
+    return undef if token_value($tokens, $index + 1) ne ".";
+    my $field = token_value($tokens, $index + 2);
+    return undef if $field ne "value" && $field ne "error";
+    return {
+        subject => token_value($tokens, $index),
+        field => $field
+    };
+}
+
+sub inline_result_payload_guarded {
+    my ($tokens, $index, $subject, $needed) = @_;
+    for (my $cursor = $index - 1; $cursor >= 0 && $cursor >= $index - 14; $cursor -= 1) {
+        last if token_value($tokens, $cursor) eq ";" || token_value($tokens, $cursor) eq "}";
+        next if token_value($tokens, $cursor) ne $subject;
+        next if token_value($tokens, $cursor + 1) ne "." || token_value($tokens, $cursor + 2) ne "ok";
+        my $negated = token_value($tokens, $cursor - 1) eq "!";
+        my $polarity = $negated ? "false" : "true";
+        my $connector = result_guard_connector_between($tokens, $cursor + 3, $index);
+        if (defined $connector) {
+            return 1 if $connector eq "&&" && $polarity eq $needed;
+            return 1 if $connector eq "||" && $polarity ne $needed;
+            next;
+        }
+        return 1 if $polarity eq $needed;
+    }
+    return 0;
+}
+
+sub result_guard_connector_between {
+    my ($tokens, $start, $end) = @_;
+    for (my $index = $start; $index < $end; $index += 1) {
+        my $value = token_value($tokens, $index);
+        return $value if $value eq "&&" || $value eq "||";
+    }
+    return undef;
+}
+
+sub if_body_has_terminating_edge {
+    my ($tokens, $if_index) = @_;
+    my $open = token_value($tokens, $if_index + 1) eq "(" ? $if_index + 1 : undef;
+    return 0 if !defined $open;
+    my $close = find_matching_paren_token($tokens, $open, scalar(@{$tokens}));
+    return 0 if !defined $close;
+    my $body_open = find_token_value($tokens, "{", $close + 1, min_number($close + 6, scalar(@{$tokens})));
+    if (defined $body_open) {
+        my $body_close = find_matching_brace_token($tokens, $body_open, scalar(@{$tokens}));
+        return 0 if !defined $body_close;
+        for (my $index = $body_open + 1; $index < $body_close; $index += 1) {
+            my $value = token_value($tokens, $index);
+            return 1 if $value eq "return" || $value eq "throw" || $value eq "continue" || $value eq "break";
+        }
+        return 0;
+    }
+    for (my $index = $close + 1; $index < @{$tokens} && $index <= $close + 8; $index += 1) {
+        my $value = token_value($tokens, $index);
+        return 1 if $value eq "return" || $value eq "throw" || $value eq "continue" || $value eq "break";
+        return 0 if $value eq ";";
+    }
+    return 0;
+}
+
+sub is_resultish_name {
+    my ($name) = @_;
+    my %names = map { $_ => 1 } qw(result decoded checked emitted imported exported parsed resolved validation decodeResult parseResult checkResult);
+    return $names{$name} ? 1 : 0;
+}
+
+sub is_result_sensitive_path {
+    my ($path) = @_;
+    return 1 if $path =~ m{\Asrc/(?:guard|compile|decoder|async|parse|adapters|aot|json-schema|plugin|message|builders)/};
+    return 0;
+}
+
+sub build_freeze_state_domain_summary {
+    my ($path, $tokens) = @_;
+    my %frozen;
+    my $freeze_calls = 0;
+    my $freeze_facts = 0;
+    my $mutation_sites = 0;
+    my $post_freeze_mutations = 0;
+    my $property_writes = 0;
+    my $method_mutations = 0;
+    my $delete_mutations = 0;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        if (token_sequence_at($tokens, $index, "Object", ".", "freeze")) {
+            $freeze_calls += 1;
+            my $target = freeze_assignment_target_at($tokens, $index);
+            if (defined $target) {
+                $frozen{$target} = 1;
+                $freeze_facts += 1;
+                next;
+            }
+            my $argument = freeze_argument_variable_at($tokens, $index);
+            if (defined $argument) {
+                $frozen{$argument} = 1;
+                $freeze_facts += 1;
+            }
+            next;
+        }
+
+        my $mutation = frozen_mutation_at($tokens, $index);
+        next if !defined $mutation;
+        $mutation_sites += 1;
+        $property_writes += 1 if $mutation->{kind} eq "property_write";
+        $method_mutations += 1 if $mutation->{kind} eq "method_call";
+        $delete_mutations += 1 if $mutation->{kind} eq "delete";
+        if ($frozen{$mutation->{subject}}) {
+            $post_freeze_mutations += 1;
+        }
+    }
+
+    return {
+        freezeCalls => $freeze_calls,
+        freezeFacts => $freeze_facts,
+        mutationSites => $mutation_sites,
+        propertyWrites => $property_writes,
+        methodMutations => $method_mutations,
+        deleteMutations => $delete_mutations,
+        postFreezeMutations => $post_freeze_mutations,
+        sourcePathFreezeGaps => is_freeze_sensitive_path($path) ? $post_freeze_mutations : 0
+    };
+}
+
+sub freeze_assignment_target_at {
+    my ($tokens, $freeze_index) = @_;
+    return undef if token_value($tokens, $freeze_index - 1) ne "=";
+    return undef if token_type($tokens, $freeze_index - 2) ne "id";
+    return token_value($tokens, $freeze_index - 2);
+}
+
+sub freeze_argument_variable_at {
+    my ($tokens, $freeze_index) = @_;
+    return undef if token_value($tokens, $freeze_index - 1) eq "return";
+    my $open = token_value($tokens, $freeze_index + 3) eq "(" ? $freeze_index + 3 : undef;
+    return undef if !defined $open;
+    return undef if token_type($tokens, $open + 1) ne "id";
+    return undef if is_non_value_identifier(token_value($tokens, $open + 1));
+    return token_value($tokens, $open + 1);
+}
+
+sub frozen_mutation_at {
+    my ($tokens, $index) = @_;
+    if (token_value($tokens, $index) eq "delete" &&
+        token_type($tokens, $index + 1) eq "id" &&
+        (token_value($tokens, $index + 2) eq "." || token_value($tokens, $index + 2) eq "[")) {
+        return {
+            subject => token_value($tokens, $index + 1),
+            kind => "delete"
+        };
+    }
+
+    return undef if token_type($tokens, $index) ne "id";
+    my $subject = token_value($tokens, $index);
+    return undef if is_non_value_identifier($subject);
+
+    if (token_value($tokens, $index + 1) eq "." && token_type($tokens, $index + 2) eq "id") {
+        my $after = token_value($tokens, $index + 3);
+        if (is_assignment_operator($after) || $after eq "++" || $after eq "--") {
+            return {
+                subject => $subject,
+                kind => "property_write"
+            };
+        }
+        if ($after eq "(" && is_mutating_method_name(token_value($tokens, $index + 2))) {
+            return {
+                subject => $subject,
+                kind => "method_call"
+            };
+        }
+    }
+
+    if (token_value($tokens, $index + 1) eq "[") {
+        my $close = find_matching_bracket_token($tokens, $index + 1, scalar(@{$tokens}));
+        if (defined $close) {
+            my $after = token_value($tokens, $close + 1);
+            if (is_assignment_operator($after) || $after eq "++" || $after eq "--") {
+                return {
+                    subject => $subject,
+                    kind => "property_write"
+                };
+            }
+        }
+    }
+
+    return undef;
+}
+
+sub is_mutating_method_name {
+    my ($value) = @_;
+    my %methods = map { $_ => 1 } qw(push pop shift unshift splice sort reverse fill copyWithin set add delete clear);
+    return $methods{$value} ? 1 : 0;
+}
+
+sub is_freeze_sensitive_path {
+    my ($path) = @_;
+    return 1 if $path =~ m{\Asrc/};
+    return 0;
+}
+
+sub build_variant_state_domain_summary {
+    my ($path, $tokens) = @_;
+    my $discriminant_switches = 0;
+    my $schema_switches = 0;
+    my $node_switches = 0;
+    my $check_switches = 0;
+    my $case_labels = 0;
+    my $schema_cases = 0;
+    my $node_cases = 0;
+    my $default_labels = 0;
+    my $defaultless_switches = 0;
+    my $nonempty_fallthroughs = 0;
+    my $terminating_cases = 0;
+    my $max_cases_per_switch = 0;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $switch = read_discriminant_switch_at($tokens, $index);
+        next if !defined $switch;
+        $discriminant_switches += 1;
+        $schema_switches += 1 if is_schema_discriminant_subject($switch->{subject});
+        $node_switches += 1 if is_node_discriminant_subject($switch->{subject});
+        $check_switches += 1 if is_check_discriminant_subject($switch->{subject});
+
+        my $summary = summarize_discriminant_switch($tokens, $switch->{bodyOpen}, $switch->{bodyClose});
+        $case_labels += $summary->{caseLabels};
+        $schema_cases += $summary->{schemaCases};
+        $node_cases += $summary->{nodeCases};
+        $default_labels += $summary->{defaultLabels};
+        $defaultless_switches += 1 if $summary->{defaultLabels} == 0;
+        $nonempty_fallthroughs += $summary->{nonemptyFallthroughs};
+        $terminating_cases += $summary->{terminatingCases};
+        $max_cases_per_switch = $summary->{caseLabels} if $summary->{caseLabels} > $max_cases_per_switch;
+        $index = $switch->{bodyClose};
+    }
+
+    my $gaps = $defaultless_switches + $nonempty_fallthroughs;
+    return {
+        discriminantSwitches => $discriminant_switches,
+        schemaSwitches => $schema_switches,
+        nodeSwitches => $node_switches,
+        checkSwitches => $check_switches,
+        caseLabels => $case_labels,
+        schemaCases => $schema_cases,
+        nodeCases => $node_cases,
+        defaultLabels => $default_labels,
+        defaultlessSwitches => $defaultless_switches,
+        nonemptyFallthroughs => $nonempty_fallthroughs,
+        terminatingCases => $terminating_cases,
+        maxCasesPerSwitch => $max_cases_per_switch,
+        sourcePathVariantGaps => is_variant_sensitive_path($path) ? $gaps : 0
+    };
+}
+
+sub read_discriminant_switch_at {
+    my ($tokens, $index) = @_;
+    return undef if token_value($tokens, $index) ne "switch";
+    return undef if token_value($tokens, $index + 1) ne "(";
+    return undef if token_type($tokens, $index + 2) ne "id";
+    return undef if token_value($tokens, $index + 3) ne ".";
+    return undef if token_value($tokens, $index + 4) ne "tag";
+    my $condition_close = find_matching_paren_token($tokens, $index + 1, scalar(@{$tokens}));
+    return undef if !defined $condition_close;
+    my $body_open = token_value($tokens, $condition_close + 1) eq "{" ? $condition_close + 1 : undef;
+    return undef if !defined $body_open;
+    my $body_close = find_matching_brace_token($tokens, $body_open, scalar(@{$tokens}));
+    return undef if !defined $body_close;
+    return {
+        subject => token_value($tokens, $index + 2),
+        bodyOpen => $body_open,
+        bodyClose => $body_close
+    };
+}
+
+sub summarize_discriminant_switch {
+    my ($tokens, $body_open, $body_close) = @_;
+    my @labels = read_switch_labels($tokens, $body_open, $body_close);
+    my $case_labels = 0;
+    my $schema_cases = 0;
+    my $node_cases = 0;
+    my $default_labels = 0;
+    my $nonempty_fallthroughs = 0;
+    my $terminating_cases = 0;
+
+    for (my $index = 0; $index < @labels; $index += 1) {
+        my $label = $labels[$index];
+        if ($label->{kind} eq "default") {
+            $default_labels += 1;
+            next;
+        }
+        $case_labels += 1;
+        $schema_cases += 1 if $label->{enum} eq "SchemaTag";
+        $node_cases += 1 if $label->{enum} eq "NodeTag";
+        my $end = $index + 1 < @labels ? $labels[$index + 1]{index} : $body_close;
+        my $segment = summarize_switch_case_segment($tokens, $label->{end}, $end);
+        $terminating_cases += 1 if $segment->{terminates};
+        $nonempty_fallthroughs += 1 if $segment->{nonempty} && !$segment->{terminates};
+    }
+
+    return {
+        caseLabels => $case_labels,
+        schemaCases => $schema_cases,
+        nodeCases => $node_cases,
+        defaultLabels => $default_labels,
+        nonemptyFallthroughs => $nonempty_fallthroughs,
+        terminatingCases => $terminating_cases
+    };
+}
+
+sub read_switch_labels {
+    my ($tokens, $body_open, $body_close) = @_;
+    my @labels;
+    for (my $index = $body_open + 1; $index < $body_close; $index += 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq "case") {
+            my $label = read_case_label($tokens, $index, $body_close);
+            push @labels, $label if defined $label;
+            next;
+        }
+        if ($value eq "default") {
+            my $colon = find_token_value($tokens, ":", $index + 1, min_number($index + 4, $body_close));
+            push @labels, {
+                kind => "default",
+                index => $index,
+                end => defined $colon ? $colon + 1 : $index + 1,
+                enum => "",
+                member => ""
+            };
+        }
+    }
+    return @labels;
+}
+
+sub read_case_label {
+    my ($tokens, $index, $limit) = @_;
+    my $colon = find_token_value($tokens, ":", $index + 1, min_number($index + 8, $limit));
+    return undef if !defined $colon;
+    my $enum = "";
+    my $member = "";
+    if (token_type($tokens, $index + 1) eq "id" &&
+        token_value($tokens, $index + 2) eq "." &&
+        token_type($tokens, $index + 3) eq "id") {
+        $enum = token_value($tokens, $index + 1);
+        $member = token_value($tokens, $index + 3);
+    }
+    return {
+        kind => "case",
+        index => $index,
+        end => $colon + 1,
+        enum => $enum,
+        member => $member
+    };
+}
+
+sub summarize_switch_case_segment {
+    my ($tokens, $start, $end) = @_;
+    my $nonempty = 0;
+    my $terminates = 0;
+    for (my $index = $start; $index < $end; $index += 1) {
+        my $value = token_value($tokens, $index);
+        next if $value eq "{" || $value eq "}" || $value eq ";" || $value eq ",";
+        $nonempty = 1 if token_type($tokens, $index) ne "comment";
+        if ($value eq "return" ||
+            $value eq "throw" ||
+            $value eq "break" ||
+            $value eq "continue") {
+            $terminates = 1;
+        }
+    }
+    return {
+        nonempty => $nonempty,
+        terminates => $terminates
+    };
+}
+
+sub is_schema_discriminant_subject {
+    my ($subject) = @_;
+    return 1 if $subject =~ /\A(?:schema|child|inner|option|entry|concrete|resolved|element|item)\z/;
+    return 0;
+}
+
+sub is_node_discriminant_subject {
+    my ($subject) = @_;
+    return 1 if $subject =~ /\A(?:node|graphNode|left|right)\z/;
+    return 0;
+}
+
+sub is_check_discriminant_subject {
+    my ($subject) = @_;
+    return 1 if $subject =~ /\A(?:check|rule|constraint)\z/;
+    return 0;
+}
+
+sub is_variant_sensitive_path {
+    my ($path) = @_;
+    return 1 if $path =~ m{\Asrc/(?:lower|compile|evaluate|plan|optimize|json-schema|async-validation|aot)/};
+    return 0;
+}
+
+sub build_effect_summary {
+    my ($path, $name, $tokens) = @_;
+    my $allocations = 0;
+    my $loop_allocations = 0;
+    my $closures = 0;
+    my $reflection_arrays = 0;
+    my $dynamic_code = 0;
+    my $loop_depth = 0;
+    my $pending_loop = 0;
+    my @block_stack;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+
+        if ($value eq "for" || $value eq "while") {
+            $pending_loop = 1;
+        }
+
+        if ($value eq "{") {
+            if ($pending_loop) {
+                push @block_stack, "loop";
+                $loop_depth += 1;
+            } else {
+                push @block_stack, "block";
+            }
+            $pending_loop = 0;
+            next;
+        }
+
+        if ($value eq "}") {
+            my $kind = @block_stack != 0 ? pop @block_stack : "block";
+            $loop_depth -= 1 if $kind eq "loop" && $loop_depth > 0;
+            next;
+        }
+
+        if (token_sequence_at($tokens, $index, "new", "Function") || token_value($tokens, $index) eq "eval") {
+            $dynamic_code += 1;
+        }
+
+        if (token_value($tokens, $index) eq "=>" ||
+            nested_function_token_at($tokens, $index)) {
+            $closures += 1;
+        }
+
+        if (reflection_array_allocation_at($tokens, $index)) {
+            $reflection_arrays += 1;
+        }
+
+        if (allocation_site_at($tokens, $index)) {
+            $allocations += 1;
+            $loop_allocations += 1 if $loop_depth != 0;
+        }
+    }
+
+    return {
+        allocations => $allocations,
+        loopAllocations => $loop_allocations,
+        closures => $closures,
+        reflectionArrays => $reflection_arrays,
+        dynamicCode => $dynamic_code,
+        hotPathLoopAllocations => is_hot_path_validation_function($path, $name) ? $loop_allocations : 0
+    };
+}
+
+sub build_async_domain_summary {
+    my ($path, $name, $tokens) = @_;
+    my $awaits = 0;
+    my $awaits_in_loops = 0;
+    my $loop_yields = 0;
+    my $yield_calls = 0;
+    my $promise_creations = 0;
+    my $promise_combinators = 0;
+    my $floating_promises = 0;
+    my $loop_depth = 0;
+    my $pending_loop = 0;
+    my @block_stack;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+
+        if ($value eq "for" || $value eq "while") {
+            $pending_loop = 1;
+        }
+
+        if ($value eq "{") {
+            if ($pending_loop) {
+                push @block_stack, "loop";
+                $loop_depth += 1;
+            } else {
+                push @block_stack, "block";
+            }
+            $pending_loop = 0;
+            next;
+        }
+
+        if ($value eq "}") {
+            my $kind = @block_stack != 0 ? pop @block_stack : "block";
+            $loop_depth -= 1 if $kind eq "loop" && $loop_depth > 0;
+            next;
+        }
+
+        if ($value eq "await") {
+            $awaits += 1;
+            $awaits_in_loops += 1 if $loop_depth != 0;
+        }
+
+        if (async_yield_call_at($tokens, $index)) {
+            $yield_calls += 1;
+            $loop_yields += 1 if $loop_depth != 0;
+        }
+
+        if (promise_creation_at($tokens, $index)) {
+            $promise_creations += 1;
+            $floating_promises += 1 if promise_expression_is_floating($tokens, $index);
+        }
+
+        if (promise_combinator_at($tokens, $index)) {
+            $promise_combinators += 1;
+        }
+    }
+
+    my $sequential_loop_gap = ($awaits_in_loops != 0 &&
+        $loop_yields == 0 &&
+        $promise_combinators == 0 &&
+        is_async_sensitive_path($path)) ? 1 : 0;
+    my $floating_gap = ($floating_promises != 0 && is_async_sensitive_path($path)) ? 1 : 0;
+
+    return {
+        awaits => $awaits,
+        awaitsInLoops => $awaits_in_loops,
+        loopYields => $loop_yields,
+        yieldCalls => $yield_calls,
+        promiseCreations => $promise_creations,
+        promiseCombinators => $promise_combinators,
+        floatingPromises => $floating_promises,
+        sequentialLoopGaps => $sequential_loop_gap,
+        floatingPromiseGaps => $floating_gap,
+        asyncSchedulingGaps => $sequential_loop_gap + $floating_gap
+    };
+}
+
+sub async_yield_call_at {
+    my ($tokens, $index) = @_;
+    return 1 if call_name_at($tokens, $index) eq "maybeYield";
+    return 1 if call_name_at($tokens, $index) eq "yieldToEventLoop";
+    return 1 if call_name_at($tokens, $index) eq "warmupAsync";
+    return 1 if token_sequence_at($tokens, $index, "setImmediate", "(");
+    return 1 if token_sequence_at($tokens, $index, "setTimeout", "(");
+    return 1 if token_sequence_at($tokens, $index, "queueMicrotask", "(");
+    return 1 if token_sequence_at($tokens, $index, "host", ".", "setImmediate", "(");
+    return 1 if token_sequence_at($tokens, $index, "host", ".", "setTimeout", "(");
+    return 0;
+}
+
+sub promise_creation_at {
+    my ($tokens, $index) = @_;
+    return 1 if token_sequence_at($tokens, $index, "new", "Promise");
+    return 1 if token_sequence_at($tokens, $index, "Promise", ".", "resolve", "(");
+    return 1 if token_sequence_at($tokens, $index, "Promise", ".", "reject", "(");
+    return 0;
+}
+
+sub promise_combinator_at {
+    my ($tokens, $index) = @_;
+    return 1 if token_sequence_at($tokens, $index, "Promise", ".", "all", "(");
+    return 1 if token_sequence_at($tokens, $index, "Promise", ".", "allSettled", "(");
+    return 1 if token_sequence_at($tokens, $index, "Promise", ".", "race", "(");
+    return 1 if token_sequence_at($tokens, $index, "Promise", ".", "any", "(");
+    return 0;
+}
+
+sub promise_expression_is_floating {
+    my ($tokens, $index) = @_;
+    my $start = $index - 4;
+    $start = 0 if $start < 0;
+    for (my $cursor = $start; $cursor < $index; $cursor += 1) {
+        my $value = token_value($tokens, $cursor);
+        return 0 if $value eq "await" || $value eq "return" || $value eq "=>" || $value eq "=";
+    }
+    return 0 if token_value($tokens, $index - 1) eq ".";
+    return 1;
+}
+
+sub is_async_sensitive_path {
+    my ($path) = @_;
+    return $path =~ m{\Asrc/(?:async|async-validation|adapters|standard|core|index)(?:/|\.ts\z)} ? 1 : 0;
+}
+
+sub build_index_domain_summary {
+    my ($path, $tokens) = @_;
+    my %guarded_indices = index_guard_facts($tokens);
+    my $indexed_reads = 0;
+    my $guarded_reads = 0;
+    my $unguarded_reads = 0;
+    my $hostile_reads = 0;
+    my $unguarded_hostile_reads = 0;
+    my $indexed_writes = 0;
+    my $descriptor_index_reads =
+        count_call_name($tokens, "readArrayIndexDataProperty") +
+        count_call_name($tokens, "readArrayKeyDataProperty");
+    my $length_facts = scalar(keys %guarded_indices);
+
+    for (my $index = 0; $index + 3 < @{$tokens}; $index += 1) {
+        my $access = bracket_index_access_at($tokens, $index);
+        next if !defined $access;
+        next if index_access_is_type_or_destructure($tokens, $index);
+        $indexed_reads += 1;
+        my $guarded = index_access_is_guarded($access, \%guarded_indices);
+        if ($guarded) {
+            $guarded_reads += 1;
+        } else {
+            $unguarded_reads += 1;
+        }
+        if (is_hostile_name($access->{subject})) {
+            $hostile_reads += 1;
+            $unguarded_hostile_reads += 1 if !$guarded && is_safe_validation_path($path);
+        }
+        if (token_value($tokens, $access->{end} + 1) eq "=") {
+            $indexed_writes += 1;
+        }
+    }
+
+    return {
+        indexedReads => $indexed_reads,
+        guardedReads => $guarded_reads,
+        unguardedReads => $unguarded_reads,
+        hostileReads => $hostile_reads,
+        unguardedHostileReads => $unguarded_hostile_reads,
+        indexedWrites => $indexed_writes,
+        descriptorIndexReads => $descriptor_index_reads,
+        lengthFacts => $length_facts
+    };
+}
+
+sub index_guard_facts {
+    my ($tokens) = @_;
+    my %facts;
+    for (my $index = 0; $index + 4 < @{$tokens}; $index += 1) {
+        if (token_type($tokens, $index) eq "id" &&
+            (token_value($tokens, $index + 1) eq "<" || token_value($tokens, $index + 1) eq "<=") &&
+            token_type($tokens, $index + 2) eq "id" &&
+            token_value($tokens, $index + 3) eq "." &&
+            token_value($tokens, $index + 4) eq "length") {
+            $facts{token_value($tokens, $index)} = 1;
+        }
+        if (token_value($tokens, $index) eq "Array" &&
+            token_value($tokens, $index + 1) eq "." &&
+            token_value($tokens, $index + 2) eq "isArray" &&
+            token_value($tokens, $index + 3) eq "(" &&
+            token_type($tokens, $index + 4) eq "id") {
+            $facts{"<array:" . token_value($tokens, $index + 4) . ">"} = 1;
+        }
+    }
+    return %facts;
+}
+
+sub bracket_index_access_at {
+    my ($tokens, $index) = @_;
+    return undef if token_type($tokens, $index) ne "id";
+    return undef if token_value($tokens, $index + 1) ne "[";
+    return undef if token_value($tokens, $index - 1) eq ".";
+    my $close = find_matching_bracket_token($tokens, $index + 1, scalar(@{$tokens}));
+    return undef if !defined $close;
+    return undef if $close - $index > 4;
+    my $index_token = token_value($tokens, $index + 2);
+    return undef if $index_token eq "";
+    return {
+        subject => token_value($tokens, $index),
+        index => $index_token,
+        indexType => token_type($tokens, $index + 2),
+        end => $close
+    };
+}
+
+sub find_matching_bracket_token {
+    my ($tokens, $open, $limit) = @_;
+    return undef if token_value($tokens, $open) ne "[";
+    my $depth = 0;
+    for (my $index = $open; $index < $limit; $index += 1) {
+        my $value = token_value($tokens, $index);
+        $depth += 1 if $value eq "[";
+        if ($value eq "]") {
+            $depth -= 1;
+            return $index if $depth == 0;
+        }
+    }
+    return undef;
+}
+
+sub index_access_is_type_or_destructure {
+    my ($tokens, $index) = @_;
+    return 1 if token_value($tokens, $index - 1) eq "type";
+    return 1 if token_value($tokens, $index - 1) eq "interface";
+    return 1 if token_value($tokens, $index - 1) eq "readonly";
+    return 1 if token_value($tokens, $index + 4) eq "=>";
+    return 0;
+}
+
+sub index_access_is_guarded {
+    my ($access, $guarded_indices) = @_;
+    return 1 if $access->{indexType} eq "number";
+    return 1 if $access->{indexType} eq "string";
+    return 1 if $guarded_indices->{$access->{index}};
+    return 1 if $guarded_indices->{"<array:" . $access->{subject} . ">"};
+    return 0;
+}
+
+sub build_mutation_domain_summary {
+    my ($path, $params, $tokens) = @_;
+    my %hostile_params = map { $_ => 1 } grep { is_hostile_name($_) } @{$params};
+    my $assignments = 0;
+    my $deletes = 0;
+    my $mutating_calls = 0;
+    my $updates = 0;
+    my $hostile_mutations = 0;
+    my $safe_path_hostile_mutations = 0;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $target = mutation_target_at($tokens, $index);
+        if (defined $target) {
+            $assignments += 1 if $target->{kind} eq "assignment";
+            $deletes += 1 if $target->{kind} eq "delete";
+            $mutating_calls += 1 if $target->{kind} eq "mutating_call";
+            $updates += 1 if $target->{kind} eq "update";
+            if ($hostile_params{$target->{subject}}) {
+                $hostile_mutations += 1;
+                $safe_path_hostile_mutations += 1 if is_safe_validation_path($path);
+            }
+        }
+    }
+
+    return {
+        assignments => $assignments,
+        deletes => $deletes,
+        mutatingCalls => $mutating_calls,
+        updates => $updates,
+        hostileMutations => $hostile_mutations,
+        safePathHostileMutations => $safe_path_hostile_mutations
+    };
+}
+
+sub build_memory_alias_domain_summary {
+    my ($path, $name, $param_meta, $tokens) = @_;
+    my %region_of;
+    my %frozen_region;
+    my $regions = 0;
+    my $alias_facts = 0;
+    my $clone_facts = 0;
+    my $freeze_facts = 0;
+    my $alias_mutations = 0;
+    my $post_freeze_alias_mutations = 0;
+    my $escaped_aliases = 0;
+    my $source_path_alias_gaps = 0;
+
+    for my $param (@{$param_meta}) {
+        next if !$param->{hostilePayload};
+        $region_of{$param->{name}} = $param->{name};
+        $regions += 1;
+    }
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $alias = memory_alias_fact_at($tokens, $index, \%region_of);
+        if (defined $alias) {
+            $region_of{$alias->{target}} = $alias->{region};
+            $alias_facts += 1;
+            next;
+        }
+
+        my $clone = memory_clone_fact_at($tokens, $index, \%region_of);
+        if (defined $clone) {
+            delete $region_of{$clone->{target}};
+            $clone_facts += 1;
+            next;
+        }
+
+        my $freeze = memory_freeze_fact_at($tokens, $index, \%region_of);
+        if (defined $freeze) {
+            $frozen_region{$freeze->{region}} = 1;
+            $freeze_facts += 1;
+            if (defined $freeze->{target}) {
+                $region_of{$freeze->{target}} = $freeze->{region};
+                $alias_facts += 1;
+            }
+            next;
+        }
+
+        my $escape = memory_escape_at($tokens, $index, \%region_of);
+        if (defined $escape) {
+            $escaped_aliases += 1;
+            next;
+        }
+
+        my $mutation = mutation_target_at($tokens, $index);
+        next if !defined $mutation;
+        my $region = $region_of{$mutation->{subject}};
+        next if !defined $region;
+        $alias_mutations += 1;
+        my $post_freeze = $frozen_region{$region} ? 1 : 0;
+        $post_freeze_alias_mutations += 1 if $post_freeze;
+        if (symbolic_sensitive_path($path, $name)) {
+            $source_path_alias_gaps += 1;
+            $source_path_alias_gaps += 1 if $post_freeze;
+        }
+    }
+
+    return {
+        trackedRegions => $regions,
+        aliasFacts => $alias_facts,
+        cloneFacts => $clone_facts,
+        freezeFacts => $freeze_facts,
+        aliasMutations => $alias_mutations,
+        postFreezeAliasMutations => $post_freeze_alias_mutations,
+        escapedAliases => $escaped_aliases,
+        sourcePathAliasGaps => $source_path_alias_gaps
+    };
+}
+
+sub memory_alias_fact_at {
+    my ($tokens, $index, $region_of) = @_;
+    return undef if token_value($tokens, $index) ne "const" && token_value($tokens, $index) ne "let" && token_value($tokens, $index) ne "var";
+    return undef if token_type($tokens, $index + 1) ne "id";
+    return undef if token_value($tokens, $index + 2) ne "=";
+    return undef if token_type($tokens, $index + 3) ne "id";
+    my $source = token_value($tokens, $index + 3);
+    return undef if !defined $region_of->{$source};
+    return {
+        target => token_value($tokens, $index + 1),
+        region => $region_of->{$source}
+    };
+}
+
+sub memory_clone_fact_at {
+    my ($tokens, $index, $region_of) = @_;
+    return undef if token_value($tokens, $index) ne "const" && token_value($tokens, $index) ne "let" && token_value($tokens, $index) ne "var";
+    return undef if token_type($tokens, $index + 1) ne "id";
+    return undef if token_value($tokens, $index + 2) ne "=";
+    my $target = token_value($tokens, $index + 1);
+    if (token_sequence_at($tokens, $index + 3, "Object", ".", "assign", "(")) {
+        my $close = find_matching_paren_token($tokens, $index + 6, scalar(@{$tokens}));
+        return undef if !defined $close;
+        for (my $cursor = $index + 7; $cursor < $close; $cursor += 1) {
+            next if token_type($tokens, $cursor) ne "id";
+            return { target => $target } if defined $region_of->{token_value($tokens, $cursor)};
+        }
+    }
+    if (token_value($tokens, $index + 3) eq "{" && token_value($tokens, $index + 4) eq "..." && token_type($tokens, $index + 5) eq "id") {
+        return { target => $target } if defined $region_of->{token_value($tokens, $index + 5)};
+    }
+    if (token_value($tokens, $index + 3) eq "structuredClone" && token_value($tokens, $index + 4) eq "(" && token_type($tokens, $index + 5) eq "id") {
+        return { target => $target } if defined $region_of->{token_value($tokens, $index + 5)};
+    }
+    return undef;
+}
+
+sub memory_freeze_fact_at {
+    my ($tokens, $index, $region_of) = @_;
+    if (token_sequence_at($tokens, $index, "Object", ".", "freeze", "(") && token_type($tokens, $index + 4) eq "id") {
+        my $source = token_value($tokens, $index + 4);
+        return undef if !defined $region_of->{$source};
+        return {
+            region => $region_of->{$source},
+            target => undef
+        };
+    }
+    return undef if token_value($tokens, $index) ne "const" && token_value($tokens, $index) ne "let" && token_value($tokens, $index) ne "var";
+    return undef if token_type($tokens, $index + 1) ne "id";
+    return undef if token_value($tokens, $index + 2) ne "=";
+    return undef if !token_sequence_at($tokens, $index + 3, "Object", ".", "freeze", "(");
+    return undef if token_type($tokens, $index + 7) ne "id";
+    my $source = token_value($tokens, $index + 7);
+    return undef if !defined $region_of->{$source};
+    return {
+        region => $region_of->{$source},
+        target => token_value($tokens, $index + 1)
+    };
+}
+
+sub memory_escape_at {
+    my ($tokens, $index, $region_of) = @_;
+    return undef if token_value($tokens, $index) ne "return";
+    return undef if token_type($tokens, $index + 1) ne "id";
+    my $value = token_value($tokens, $index + 1);
+    return undef if !defined $region_of->{$value};
+    return {
+        subject => $value,
+        region => $region_of->{$value}
+    };
+}
+
+sub build_exception_domain_summary {
+    my ($path, $name, $tokens) = @_;
+    my $throws = count_token_value($tokens, "throw");
+    my $try_blocks = count_token_value($tokens, "try");
+    my $catch_blocks = count_token_value($tokens, "catch");
+    my $finally_blocks = count_token_value($tokens, "finally");
+    my $promise_rejects = count_token_sequence($tokens, "Promise", ".", "reject");
+    my $validator_throw = ($throws != 0 && function_has_validator_contract($name, $tokens)) ? 1 : 0;
+    my $hot_validation_throw = ($throws != 0 && is_hot_path_validation_function($path, $name)) ? 1 : 0;
+    my $unhandled_throw = ($throws != 0 && $catch_blocks == 0 && $promise_rejects == 0) ? 1 : 0;
+
+    return {
+        throws => $throws,
+        tryBlocks => $try_blocks,
+        catchBlocks => $catch_blocks,
+        finallyBlocks => $finally_blocks,
+        promiseRejects => $promise_rejects,
+        validatorThrow => $validator_throw,
+        hotValidationThrow => $hot_validation_throw,
+        unhandledThrow => $unhandled_throw
+    };
+}
+
+sub build_lifecycle_domain_summary {
+    my ($path, $tokens) = @_;
+    my $enter_calls = 0;
+    my $leave_calls = 0;
+    my $enter_guard_checks = 0;
+    my $frame_acquires = 0;
+    my $frame_releases = 0;
+    my $path_push_slots = 0;
+    my $path_pops = 0;
+    my $max_path_depth = 0;
+    my $max_frame_depth = 0;
+    my $path_depth = 0;
+    my $frame_depth = 0;
+    my $early_exit_gaps = 0;
+    my $unmatched_frame_releases = 0;
+    my $unmatched_path_pops = 0;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+
+        if ($value eq "return" || $value eq "throw") {
+            $early_exit_gaps += 1 if $path_depth > 0 || $frame_depth > 0;
+        }
+
+        if (call_name_at($tokens, $index) eq "enterValidation") {
+            $enter_calls += 1;
+            next;
+        }
+        if (call_name_at($tokens, $index) eq "leaveValidation") {
+            $leave_calls += 1;
+            next;
+        }
+        $enter_guard_checks += 1 if enter_result_guard_at($tokens, $index);
+
+        if (call_name_at($tokens, $index) eq "acquireGraphFrame") {
+            $frame_acquires += 1;
+            $frame_depth += 1;
+            $max_frame_depth = $frame_depth if $frame_depth > $max_frame_depth;
+            next;
+        }
+        if (call_name_at($tokens, $index) eq "releaseGraphFrame") {
+            $frame_releases += 1;
+            if ($frame_depth == 0) {
+                $unmatched_frame_releases += 1;
+            } else {
+                $frame_depth -= 1;
+            }
+            next;
+        }
+
+        my $push_width = path_push_width_at($tokens, $index);
+        if ($push_width != 0) {
+            $path_push_slots += $push_width;
+            $path_depth += $push_width;
+            $max_path_depth = $path_depth if $path_depth > $max_path_depth;
+            next;
+        }
+        if (path_pop_at($tokens, $index)) {
+            $path_pops += 1;
+            if ($path_depth == 0) {
+                $unmatched_path_pops += 1;
+            } else {
+                $path_depth -= 1;
+            }
+            next;
+        }
+    }
+
+    my $enter_leave_imbalance = abs($enter_calls - $leave_calls);
+    my $frame_imbalance = $frame_depth;
+    my $path_imbalance = $path_depth;
+    my $lifecycle_gaps = $frame_imbalance + $path_imbalance + $early_exit_gaps + $unmatched_frame_releases;
+
+    return {
+        enterCalls => $enter_calls,
+        leaveCalls => $leave_calls,
+        enterGuardChecks => $enter_guard_checks,
+        enterLeaveImbalance => $enter_leave_imbalance,
+        frameAcquires => $frame_acquires,
+        frameReleases => $frame_releases,
+        frameImbalance => $frame_imbalance,
+        pathPushSlots => $path_push_slots,
+        pathPops => $path_pops,
+        pathImbalance => $path_imbalance,
+        maxPathDepth => $max_path_depth,
+        maxFrameDepth => $max_frame_depth,
+        earlyExitGaps => $early_exit_gaps,
+        unmatchedFrameReleases => $unmatched_frame_releases,
+        unmatchedPathPops => $unmatched_path_pops,
+        lifecycleGaps => $lifecycle_gaps,
+        sourcePathLifecycleGaps => is_lifecycle_sensitive_path($path) ? $lifecycle_gaps : 0
+    };
+}
+
+sub path_push_width_at {
+    my ($tokens, $index) = @_;
+    return 0 if token_value($tokens, $index) ne "path";
+    return 0 if token_value($tokens, $index + 1) ne ".";
+    return 0 if token_value($tokens, $index + 2) ne "push";
+    return 0 if token_value($tokens, $index + 3) ne "(";
+    my $close = find_matching_paren_token($tokens, $index + 3, scalar(@{$tokens}));
+    return 0 if !defined $close;
+    return count_top_level_arguments($tokens, $index + 4, $close);
+}
+
+sub call_name_at {
+    my ($tokens, $index) = @_;
+    return "" if token_type($tokens, $index) ne "id";
+    return "" if token_value($tokens, $index + 1) ne "(";
+    return "" if token_value($tokens, $index - 1) eq "." || token_value($tokens, $index - 1) eq "new";
+    return token_value($tokens, $index);
+}
+
+sub path_pop_at {
+    my ($tokens, $index) = @_;
+    return token_sequence_at($tokens, $index, "path", ".", "pop", "(") ? 1 : 0;
+}
+
+sub enter_result_guard_at {
+    my ($tokens, $index) = @_;
+    return 0 if token_type($tokens, $index) ne "id";
+    return 0 if token_value($tokens, $index) ne "entered";
+    return 0 if token_value($tokens, $index + 1) ne "===" && token_value($tokens, $index + 1) ne "!==";
+    return 0 if token_type($tokens, $index + 2) ne "string";
+    return 1 if token_value($tokens, $index + 2) eq "cycle" || token_value($tokens, $index + 2) eq "budget";
+    return 0;
+}
+
+sub count_top_level_arguments {
+    my ($tokens, $start, $end) = @_;
+    return 0 if $start >= $end;
+    my $count = 1;
+    my $depth = 0;
+    my $saw_value = 0;
+    for (my $index = $start; $index < $end; $index += 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq "(" || $value eq "[" || $value eq "{") {
+            $depth += 1;
+            $saw_value = 1;
+            next;
+        }
+        if ($value eq ")" || $value eq "]" || $value eq "}") {
+            $depth -= 1 if $depth > 0;
+            next;
+        }
+        if ($value eq "," && $depth == 0) {
+            $count += 1;
+            next;
+        }
+        $saw_value = 1 if $value ne "";
+    }
+    return $saw_value ? $count : 0;
+}
+
+sub is_lifecycle_sensitive_path {
+    my ($path) = @_;
+    return 1 if $path =~ m{\Asrc/(?:evaluate|async-validation|plan|json-schema)/};
+    return 0;
+}
+
+sub build_symbolic_execution_summary {
+    my ($path, $name, $param_meta, $tokens, $descriptor_model, $source_taint_domain) = @_;
+    my @conditions;
+    my $path_splits = 0;
+    my $type_guards = 0;
+    my $presence_guards = 0;
+    my $descriptor_guards = 0;
+    my $range_guards = 0;
+    my $fail_fast_cuts = 0;
+    my $max_condition_width = 0;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq "if") {
+            my $condition = symbolic_if_condition_at($tokens, $index);
+            next if !defined $condition;
+            my $fail_fast = if_body_has_symbolic_cut($tokens, $index);
+            $condition->{failFastCut} = $fail_fast ? 1 : 0;
+            $condition->{pathPolarity} = $fail_fast ? "false-branch" : "unknown";
+            $condition->{pathText} = $fail_fast ? "!(" . $condition->{text} . ")" : $condition->{text};
+            push @conditions, $condition;
+            $path_splits += 1;
+            $type_guards += 1 if $condition->{kind} eq "type";
+            $presence_guards += 1 if $condition->{kind} eq "presence";
+            $descriptor_guards += 1 if $condition->{kind} eq "descriptor";
+            $range_guards += 1 if $condition->{kind} eq "range";
+            $fail_fast_cuts += 1 if $fail_fast;
+            $max_condition_width = $condition->{width} if $condition->{width} > $max_condition_width;
+            next;
+        }
+        if ($value eq "switch" || $value eq "?" || $value eq "&&" || $value eq "||") {
+            $path_splits += 1;
+        }
+    }
+
+    my @sinks = symbolic_sink_sites($path, $name, $param_meta, $tokens, $descriptor_model, $source_taint_domain);
+    my $sink_count = scalar(@sinks);
+    my $proof_sites =
+        $fail_fast_cuts +
+        $type_guards +
+        $presence_guards +
+        $descriptor_guards +
+        ($descriptor_model->{factory_proofs} // 0) +
+        ($source_taint_domain->{escapeProofs} // 0) +
+        ($source_taint_domain->{sideTableProofs} // 0) +
+        ($source_taint_domain->{abiProofs} // 0);
+    my $closed_sinks = $sink_count < $proof_sites ? $sink_count : $proof_sites;
+    my $open_sinks = $sink_count - $closed_sinks;
+    my $approved_bridge = symbolic_approved_bridge($path, $name) ? 1 : 0;
+    my $source_path_open_sinks = (
+        $open_sinks != 0 &&
+        !$approved_bridge &&
+        symbolic_sensitive_path($path, $name)
+    ) ? $open_sinks : 0;
+
+    return {
+        pathSplits => $path_splits,
+        pathConditions => scalar(@conditions),
+        typeGuards => $type_guards,
+        presenceGuards => $presence_guards,
+        descriptorGuards => $descriptor_guards,
+        rangeGuards => $range_guards,
+        failFastCuts => $fail_fast_cuts,
+        hostileSinkSites => $sink_count,
+        closedSinkSites => $closed_sinks,
+        openSinkSites => $open_sinks,
+        sourcePathOpenSinks => $source_path_open_sinks,
+        maxConditionWidth => $max_condition_width,
+        approvedBridge => $approved_bridge,
+        witness => symbolic_witness($path, $name, \@conditions, \@sinks, $source_path_open_sinks)
+    };
+}
+
+sub symbolic_if_condition_at {
+    my ($tokens, $if_index) = @_;
+    return undef if token_value($tokens, $if_index) ne "if";
+    my $open = token_value($tokens, $if_index + 1) eq "(" ? $if_index + 1 : undef;
+    return undef if !defined $open;
+    my $close = find_matching_paren_token($tokens, $open, scalar(@{$tokens}));
+    return undef if !defined $close;
+    my $kind = symbolic_condition_kind($tokens, $open + 1, $close);
+    return {
+        line => token_line($tokens, $if_index),
+        kind => $kind,
+        width => $close - $open - 1,
+        text => compact_token_text($tokens, $open + 1, $close, 96)
+    };
+}
+
+sub symbolic_condition_kind {
+    my ($tokens, $start, $end) = @_;
+    my $text = compact_token_text($tokens, $start, $end, 160);
+    return "descriptor" if $text =~ /hasOwnProperty|isDataPropertyDescriptor|\.found/;
+    return "type" if $text =~ /typeof|Array\.isArray|isObjectLike|isRecordCandidate|isPlainObject/;
+    return "presence" if $text =~ /undefined|null/;
+    return "range" if $text =~ /(?:<|>|<=|>=)|\.length/;
+    return "result" if $text =~ /\.ok/;
+    return "lifecycle" if $text =~ /entered|cycle|budget/;
+    return "branch";
+}
+
+sub if_body_has_symbolic_cut {
+    my ($tokens, $if_index) = @_;
+    my $open = token_value($tokens, $if_index + 1) eq "(" ? $if_index + 1 : undef;
+    return 0 if !defined $open;
+    my $close = find_matching_paren_token($tokens, $open, scalar(@{$tokens}));
+    return 0 if !defined $close;
+    my $body_open = token_value($tokens, $close + 1) eq "{" ? $close + 1 : undef;
+    if (defined $body_open) {
+        my $body_close = find_matching_brace_token($tokens, $body_open, scalar(@{$tokens}));
+        return 0 if !defined $body_close;
+        return symbolic_segment_has_fail_fast_return($tokens, $body_open + 1, $body_close);
+    }
+    my $end = find_token_value($tokens, ";", $close + 1, min_number($close + 24, scalar(@{$tokens})));
+    return 0 if !defined $end;
+    return symbolic_segment_has_fail_fast_return($tokens, $close + 1, $end + 1);
+}
+
+sub symbolic_segment_has_fail_fast_return {
+    my ($tokens, $start, $end) = @_;
+    for (my $index = $start; $index < $end && $index < @{$tokens}; $index += 1) {
+        next if token_value($tokens, $index) ne "return" && token_value($tokens, $index) ne "throw";
+        return 1 if token_value($tokens, $index) eq "throw";
+        my $next = token_value($tokens, $index + 1);
+        return 1 if $next eq "false" || $next eq "undefined" || $next eq "null";
+        return 1 if $next eq "failure" || $next eq "fail" || $next eq "invalid";
+    }
+    return 0;
+}
+
+sub symbolic_sink_sites {
+    my ($path, $name, $param_meta, $tokens, $descriptor_model, $source_taint_domain) = @_;
+    my %hostile = map {
+        $_->{name} => 1
+    } grep {
+        $_->{hostilePayload}
+    } @{$param_meta};
+    my @sinks;
+    for (my $index = 0; $index + 2 < @{$tokens}; $index += 1) {
+        if (token_sequence_at($tokens, $index, "new", "Function") || call_name_at($tokens, $index) eq "eval") {
+            push @sinks, {
+                line => token_line($tokens, $index),
+                kind => "dynamic-code",
+                detail => "dynamic code sink"
+            };
+        next;
+        }
+        next if token_type($tokens, $index) ne "id";
+        next if token_value($tokens, $index - 1) eq ".";
+        my $subject = token_value($tokens, $index);
+        next if !$hostile{$subject};
+        next if token_value($tokens, $index + 1) ne ".";
+        next if token_type($tokens, $index + 2) ne "id";
+        my $field = token_value($tokens, $index + 2);
+        next if $field eq "length" || $field eq "byteLength";
+        push @sinks, {
+            line => token_line($tokens, $index),
+            kind => "hostile-property-read",
+            detail => "$subject.$field"
+        };
+    }
+    if (($descriptor_model->{unproved_reads} // 0) != 0) {
+        push @sinks, {
+            line => first_descriptor_value_line($tokens),
+            kind => "descriptor-value-read",
+            detail => "descriptor.value without a dominating value-slot proof"
+        };
+    }
+    if (($source_taint_domain->{sourceTaintGaps} // 0) != 0) {
+        push @sinks, {
+            line => first_source_fragment_line($tokens),
+            kind => "generated-source",
+            detail => "dynamic generated source fragment"
+        };
+    }
+    return @sinks;
+}
+
+sub is_hostile_payload_name {
+    my ($name) = @_;
+    my %names = map { $_ => 1 } qw(input value data record payload unknown raw candidate);
+    return $names{$name} ? 1 : 0;
+}
+
+sub is_symbolic_hostile_parameter_type {
+    my ($name, $type) = @_;
+    return 0 if !is_hostile_payload_name($name);
+    return 1 if !defined $type || $type eq "";
+    return 0 if $type =~ /\A(?:string|number|boolean|bigint|symbol)\z/;
+    return 0 if $type =~ /\A(?:Date|RegExp|URL|Uint8Array|ArrayBuffer)\z/;
+    return 1 if $type =~ /unknown|object|Record|readonly|Array|Map|Set|Schema|Guard|Decode|Codec|Json|unknown\[\]/;
+    return 1;
+}
+
+sub symbolic_approved_bridge {
+    my ($path, $name) = @_;
+    return 1 if is_approved_dynamic_sink_name_path($path, $name);
+    return 1 if $path =~ m{\Asrc/(?:compile|aot|seabreeze)/} && $name =~ /(?:emit|compile|build|source|bridge)/i;
+    return 0;
+}
+
+sub symbolic_sensitive_path {
+    my ($path, $name) = @_;
+    return 1 if is_safe_validation_path($path);
+    return 1 if is_hot_path_validation_function($path, $name);
+    return 1 if $path =~ m{\Asrc/(?:json-schema|seaflow|decoder|adapters)/};
+    return 0;
+}
+
+sub symbolic_witness {
+    my ($path, $name, $conditions, $sinks, $open_sinks) = @_;
+    return undef if $open_sinks == 0 || @{$sinks} == 0;
+    my @witness_conditions = symbolic_witness_conditions($conditions, $sinks->[0]{line});
+    return {
+        path => $path,
+        name => $name,
+        line => $sinks->[0]{line},
+        sink => $sinks->[0]{detail},
+        kind => $sinks->[0]{kind},
+        conditions => \@witness_conditions
+    };
+}
+
+
+sub symbolic_witness_conditions {
+    my ($conditions, $sink_line) = @_;
+    my @before_sink = grep {
+        !defined($sink_line) || int($_->{line} // 0) <= int($sink_line)
+    } @{$conditions};
+    @before_sink = @{$conditions} if @before_sink == 0;
+    return () if @before_sink == 0;
+    my $start = @before_sink > 4 ? scalar(@before_sink) - 4 : 0;
+    return @before_sink[$start .. $#before_sink];
+}
+
+
+sub first_descriptor_value_line {
+    my ($tokens) = @_;
+    for (my $index = 0; $index + 2 < @{$tokens}; $index += 1) {
+        next if token_value($tokens, $index + 1) ne ".";
+        next if token_value($tokens, $index + 2) ne "value";
+        return token_line($tokens, $index);
+    }
+    return 1;
+}
+
+sub first_source_fragment_line {
+    my ($tokens) = @_;
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+        return token_line($tokens, $index)
+            if $value eq "`" || $value eq "join" || $value eq "push" || $value eq "new";
+    }
+    return 1;
+}
+
+sub compact_token_text {
+    my ($tokens, $start, $end, $limit) = @_;
+    my $text = "";
+    for (my $index = $start; $index < $end && $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+        next if !defined $value || $value eq "";
+        $text .= " " if $text ne "" && $value !~ /\A[.,;:)\]}]\z/;
+        $text .= $value;
+        if (length($text) > $limit) {
+            return substr($text, 0, $limit) . "...";
+        }
+    }
+    return $text;
+}
+
+sub build_nullish_domain_summary {
+    my ($path, $params, $tokens) = @_;
+    my %hostile_params = map { $_ => 1 } grep { is_hostile_dereference_name($_) } @{$params};
+    my %facts;
+    my $facts_created = 0;
+    my $dereferences = 0;
+    my $guarded_dereferences = 0;
+    my $unguarded_dereferences = 0;
+    my $hostile_dereferences = 0;
+    my $unguarded_hostile_dereferences = 0;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        if (token_value($tokens, $index) eq "}" ||
+            token_value($tokens, $index) eq "case" ||
+            token_value($tokens, $index) eq "default") {
+            %facts = ();
+        }
+
+        my $guarded = read_nullish_guarded_variable($tokens, $index);
+        if (defined $guarded) {
+            $facts{$guarded} = 1;
+            $facts_created += 1;
+            next;
+        }
+
+        my $subject = dereference_subject_at($tokens, $index);
+        next if !defined $subject;
+        $dereferences += 1;
+        my $guarded_read = $facts{$subject} || inline_nullish_guarded($tokens, $index, $subject);
+        if ($guarded_read) {
+            $guarded_dereferences += 1;
+        } else {
+            $unguarded_dereferences += 1;
+        }
+        if ($hostile_params{$subject}) {
+            $hostile_dereferences += 1;
+            $unguarded_hostile_dereferences += 1 if !$guarded_read && is_safe_validation_path($path);
+        }
+    }
+
+    return {
+        factsCreated => $facts_created,
+        dereferences => $dereferences,
+        guardedDereferences => $guarded_dereferences,
+        unguardedDereferences => $unguarded_dereferences,
+        hostileDereferences => $hostile_dereferences,
+        unguardedHostileDereferences => $unguarded_hostile_dereferences
+    };
+}
+
+sub build_recursion_proof_summary {
+    my ($path, $name, $tokens) = @_;
+    my $admission_guards =
+        count_call_name($tokens, "enterValidation") +
+        count_call_name($tokens, "maybeYield") +
+        count_call_name($tokens, "readLazySchema");
+    my $cycle_guards =
+        count_token_value($tokens, "cycle") +
+        count_token_value($tokens, "budget") +
+        count_token_value($tokens, "seen") +
+        count_token_value($tokens, "visited");
+    my $depth_guards =
+        count_token_value($tokens, "depth") +
+        count_token_value($tokens, "maxDepth") +
+        count_token_value($tokens, "remainingDepth");
+    my $weak_guards =
+        count_token_value($tokens, "WeakSet") +
+        count_token_value($tokens, "WeakMap");
+
+    return {
+        admissionGuards => $admission_guards,
+        cycleGuards => $cycle_guards,
+        depthGuards => $depth_guards,
+        weakGuards => $weak_guards,
+        hasProof => ($admission_guards != 0 || $cycle_guards != 0 || $depth_guards != 0 || $weak_guards != 0) ? 1 : 0
+    };
+}
+
+sub build_recursion_domain {
+    my ($functions, $graph) = @_;
+    my %by_id = map { $_->{id} => $_ } @{$functions};
+    my %totals = (
+        admissionGuards => 0,
+        cycleGuards => 0,
+        depthGuards => 0,
+        weakGuards => 0,
+        proofedMembers => 0,
+        unprovedMembers => 0
+    );
+    my @bounded;
+    my @unbounded;
+
+    for my $cycle (@{$graph->{cycles}}) {
+        my @members = grep { defined $_ } map { $by_id{$_} } @{$cycle};
+        my @summaries;
+        my $proofed_members = 0;
+        my %cycle_proofs = (
+            admissionGuards => 0,
+            cycleGuards => 0,
+            depthGuards => 0,
+            weakGuards => 0
+        );
+
+        for my $fn (@members) {
+            my $proof = $fn->{recursion_proof};
+            my $has_proof = defined $proof && $proof->{hasProof} ? 1 : 0;
+            $proofed_members += 1 if $has_proof;
+            for my $key (qw(admissionGuards cycleGuards depthGuards weakGuards)) {
+                my $value = defined $proof ? ($proof->{$key} // 0) : 0;
+                $cycle_proofs{$key} += $value;
+                $totals{$key} += $value;
+            }
+            push @summaries, recursion_member_summary($fn, $proof, $has_proof);
+        }
+
+        my $unproved_members = scalar(@members) - $proofed_members;
+        $totals{proofedMembers} += $proofed_members;
+        $totals{unprovedMembers} += $unproved_members;
+
+        my $entry = {
+            size => scalar(@members),
+            where => @summaries != 0 ? $summaries[0]{where} : "src",
+            proofedMembers => $proofed_members,
+            unprovedMembers => $unproved_members,
+            proofs => \%cycle_proofs,
+            members => \@summaries
+        };
+
+        if ($proofed_members != 0) {
+            push @bounded, $entry;
+        } else {
+            push @unbounded, $entry;
+        }
+    }
+
+    return {
+        cycles => scalar(@{$graph->{cycles}}),
+        boundedCycles => scalar(@bounded),
+        unboundedCycles => scalar(@unbounded),
+        proofTotals => \%totals,
+        bounded => \@bounded,
+        unbounded => \@unbounded
+    };
+}
+
+sub recursion_member_summary {
+    my ($fn, $proof, $has_proof) = @_;
+    return {
+        id => $fn->{id},
+        path => $fn->{path},
+        line => $fn->{line},
+        where => $fn->{path} . ":" . $fn->{line},
+        name => $fn->{name},
+        hasProof => $has_proof,
+        proofs => {
+            admissionGuards => defined $proof ? ($proof->{admissionGuards} // 0) : 0,
+            cycleGuards => defined $proof ? ($proof->{cycleGuards} // 0) : 0,
+            depthGuards => defined $proof ? ($proof->{depthGuards} // 0) : 0,
+            weakGuards => defined $proof ? ($proof->{weakGuards} // 0) : 0
+        }
+    };
+}
+
+sub build_key_safety_domain_summary {
+    my ($path, $tokens) = @_;
+    my $dangerous_key_literals = 0;
+    my $unsafe_bulk_transfers = 0;
+    my %dangerous_keys;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        if (dangerous_key_literal_at($tokens, $index)) {
+            $dangerous_key_literals += 1;
+            $dangerous_keys{token_value($tokens, $index)} += 1;
+        }
+        $unsafe_bulk_transfers += 1 if unsafe_key_transfer_at($tokens, $index);
+    }
+
+    my $own_key_enumerations =
+        count_token_sequence($tokens, "Reflect", ".", "ownKeys") +
+        count_token_sequence($tokens, "Object", ".", "keys") +
+        count_token_sequence($tokens, "Object", ".", "getOwnPropertyNames") +
+        count_token_sequence($tokens, "Object", ".", "getOwnPropertySymbols");
+    my $null_prototype_allocations =
+        count_token_sequence($tokens, "Object", ".", "create", "(", "null", ")") +
+        count_call_name($tokens, "createNullPrototypeLookup") +
+        count_call_name($tokens, "createNullPrototypeRecord") +
+        count_call_name($tokens, "createDefinitionTable");
+    my $define_property_writes = count_token_sequence($tokens, "Object", ".", "defineProperty");
+    my $has_own_proofs =
+        count_token_sequence($tokens, "Object", ".", "prototype", ".", "hasOwnProperty", ".", "call") +
+        count_token_sequence($tokens, "hasOwnProperty", ".", "call") +
+        count_token_sequence($tokens, "h", ".", "call");
+    my $descriptor_proofs =
+        count_token_sequence($tokens, "Object", ".", "getOwnPropertyDescriptor") +
+        count_call_name($tokens, "readOwnDataProperty") +
+        count_call_name($tokens, "readArrayKeyDataProperty") +
+        count_call_name($tokens, "isDataPropertyDescriptor");
+    my $membership_proofs =
+        count_call_name($tokens, "safeKeyMembershipExpression") +
+        count_call_name($tokens, "unsafeKeyMembershipExpression") +
+        count_call_name($tokens, "defineLookupValue") +
+        count_call_name($tokens, "hasOwn");
+    my $proof_sites =
+        $own_key_enumerations +
+        $null_prototype_allocations +
+        $define_property_writes +
+        $has_own_proofs +
+        $descriptor_proofs +
+        $membership_proofs;
+    my $pollution_gaps = ($dangerous_key_literals != 0 &&
+        $unsafe_bulk_transfers != 0 &&
+        $proof_sites == 0) ? 1 : 0;
+
+    return {
+        dangerousKeyLiterals => $dangerous_key_literals,
+        dangerousKeys => [
+            map {
+                {
+                    key => $_,
+                    count => $dangerous_keys{$_}
+                }
+            } sort keys %dangerous_keys
+        ],
+        ownKeyEnumerations => $own_key_enumerations,
+        nullPrototypeAllocations => $null_prototype_allocations,
+        definePropertyWrites => $define_property_writes,
+        hasOwnProofs => $has_own_proofs,
+        descriptorProofs => $descriptor_proofs,
+        membershipProofs => $membership_proofs,
+        proofSites => $proof_sites,
+        unsafeBulkTransfers => $unsafe_bulk_transfers,
+        pollutionGaps => $pollution_gaps
+    };
+}
+
+sub dangerous_key_literal_at {
+    my ($tokens, $index) = @_;
+    return 0 if token_type($tokens, $index) ne "string";
+    return is_dangerous_object_key(token_value($tokens, $index));
+}
+
+sub is_dangerous_object_key {
+    my ($key) = @_;
+    return 1 if $key eq "__proto__" || $key eq "constructor" || $key eq "prototype";
+    return 0;
+}
+
+sub unsafe_key_transfer_at {
+    my ($tokens, $index) = @_;
+    return 1 if token_sequence_at($tokens, $index, "Object", ".", "assign");
+    return 1 if token_sequence_at($tokens, $index, "Object", ".", "fromEntries");
+    return 0;
+}
+
+sub build_source_taint_domain_summary {
+    my ($path, $name, $tokens) = @_;
+    my $template_fragments = count_token_type($tokens, "template");
+    my $string_pushes = count_token_sequence($tokens, "push", "(");
+    my $joins = count_token_sequence($tokens, "join", "(");
+    my $dynamic_code = count_token_sequence($tokens, "new", "Function") + count_call_name($tokens, "eval");
+    my $source_builders = is_generated_source_builder($path, $name, $tokens) ? 1 : 0;
+    my $source_fragments = $template_fragments + $string_pushes + $joins + $dynamic_code;
+    my $escape_proofs =
+        count_call_name($tokens, "unsafeStringLiteralExpression") +
+        count_call_name($tokens, "finiteNumberLiteralExpression") +
+        count_call_name($tokens, "JSON.stringify") +
+        count_token_sequence($tokens, "JSON", ".", "stringify") +
+        count_call_name($tokens, "serializeLiteral") +
+        count_call_name($tokens, "serializeRegExpArray");
+    my $side_table_proofs =
+        count_call_name($tokens, "stringRef") +
+        count_call_name($tokens, "regexExpression") +
+        count_call_name($tokens, "pushLiteral") +
+        count_call_name($tokens, "pushString") +
+        count_call_name($tokens, "pushRegexp") +
+        count_call_name($tokens, "pushKeyset") +
+        count_call_name($tokens, "pushHelper") +
+        count_token_value($tokens, "literals") +
+        count_token_value($tokens, "regexps") +
+        count_token_value($tokens, "keysets") +
+        count_token_value($tokens, "strings");
+    my $abi_proofs =
+        count_token_value($tokens, "GeneratedSourceBundle") +
+        count_token_value($tokens, "CompiledSourceFactory") +
+        count_token_value($tokens, "PredicateFactory") +
+        count_token_value($tokens, "EmitContext");
+    my $taint_markers = count_source_taint_marker_tokens($tokens);
+    my $proofs = $escape_proofs + $side_table_proofs + $abi_proofs;
+    my $raw_template_gaps = ($source_builders != 0 &&
+        $template_fragments != 0 &&
+        $taint_markers != 0 &&
+        $proofs == 0) ? 1 : 0;
+    my $dynamic_sink_gaps = ($dynamic_code != 0 &&
+        $side_table_proofs == 0 &&
+        !is_approved_dynamic_sink_name_path($path, $name)) ? 1 : 0;
+    my $source_taint_gaps = $raw_template_gaps + $dynamic_sink_gaps;
+
+    return {
+        sourceBuilders => $source_builders,
+        sourceFragments => $source_fragments,
+        templateFragments => $template_fragments,
+        stringPushes => $string_pushes,
+        joins => $joins,
+        dynamicCodeSinks => $dynamic_code,
+        taintMarkers => $taint_markers,
+        escapeProofs => $escape_proofs,
+        sideTableProofs => $side_table_proofs,
+        abiProofs => $abi_proofs,
+        rawTemplateGaps => $raw_template_gaps,
+        dynamicSinkGaps => $dynamic_sink_gaps,
+        sourceTaintGaps => $source_taint_gaps
+    };
+}
+
+sub is_generated_source_builder {
+    my ($path, $name, $tokens) = @_;
+    return 1 if $path =~ m{\Asrc/(?:compile|aot|seabreeze)/} &&
+        ($name =~ /(?:emit|source|compile|factory|serialize|expression|statement|body|function|module|bundle)/i ||
+            count_token_value($tokens, "chunks") != 0 ||
+            count_token_value($tokens, "source") != 0 ||
+            count_token_value($tokens, "parts") != 0);
+    return 1 if $path =~ /function-ir-self-test/ && $name =~ /Source/;
+    return 0;
+}
+
+sub count_source_taint_marker_tokens {
+    my ($tokens) = @_;
+    my $count = 0;
+    for my $token (@{$tokens}) {
+        next if $token->{type} ne "id";
+        $count += 1 if is_source_taint_marker($token->{value});
+    }
+    return $count;
+}
+
+sub is_source_taint_marker {
+    my ($value) = @_;
+    my %markers = map { $_ => 1 } qw(key literal message pattern regex regexp value schema source code fragment name text);
+    return $markers{$value} ? 1 : 0;
+}
+
+sub read_nullish_guarded_variable {
+    my ($tokens, $index) = @_;
+    return undef if token_value($tokens, $index) ne "if";
+    my $limit = find_matching_paren_token($tokens, $index + 1, scalar(@{$tokens}));
+    return undef if !defined $limit;
+    for (my $cursor = $index + 1; $cursor < $limit; $cursor += 1) {
+        next if token_type($tokens, $cursor) ne "id";
+        my $name = token_value($tokens, $cursor);
+        if (token_value($tokens, $cursor + 1) eq "===" ||
+            token_value($tokens, $cursor + 1) eq "==" ||
+            token_value($tokens, $cursor + 1) eq "!==" ||
+            token_value($tokens, $cursor + 1) eq "!=") {
+            my $rhs = token_value($tokens, $cursor + 2);
+            if ($rhs eq "undefined" || $rhs eq "null") {
+                return $name if guard_exits_after_condition($tokens, $limit) ||
+                    token_value($tokens, $cursor + 1) eq "!==" ||
+                    token_value($tokens, $cursor + 1) eq "!=";
+            }
+        }
+        return $name if $cursor + 1 == $limit && guard_exits_after_condition($tokens, $limit) == 0;
+    }
+    return undef;
+}
+
+sub dereference_subject_at {
+    my ($tokens, $index) = @_;
+    return undef if token_type($tokens, $index) ne "id";
+    return undef if token_value($tokens, $index + 1) ne ".";
+    return undef if token_value($tokens, $index - 1) eq ".";
+    my $property = token_value($tokens, $index + 2);
+    return undef if $property eq "";
+    return undef if $property eq "length";
+    return undef if is_known_nonnullable_global(token_value($tokens, $index));
+    return token_value($tokens, $index);
+}
+
+sub inline_nullish_guarded {
+    my ($tokens, $index, $subject) = @_;
+    my $start = $index - 32;
+    $start = 0 if $start < 0;
+    for (my $cursor = $start; $cursor < $index; $cursor += 1) {
+        next if token_value($tokens, $cursor) ne $subject;
+        my $operator = token_value($tokens, $cursor + 1);
+        next if $operator ne "!==" && $operator ne "!=" && $operator ne "&&";
+        return 1 if $operator eq "&&";
+        my $rhs = token_value($tokens, $cursor + 2);
+        return 1 if $rhs eq "undefined" || $rhs eq "null";
+    }
+    return 0;
+}
+
+sub is_known_nonnullable_global {
+    my ($name) = @_;
+    return 1 if $name eq "Object" ||
+        $name eq "Array" ||
+        $name eq "Reflect" ||
+        $name eq "Promise" ||
+        $name eq "Number" ||
+        $name eq "String" ||
+        $name eq "Math" ||
+        $name eq "JSON" ||
+        $name eq "RegExp" ||
+        $name eq "Date" ||
+        $name eq "Error";
+    return 0;
+}
+
+sub is_hostile_dereference_name {
+    my ($name) = @_;
+    my %names = map { $_ => 1 } qw(value input data record raw unknown payload candidate);
+    return $names{$name} ? 1 : 0;
+}
+
+sub mutation_target_at {
+    my ($tokens, $index) = @_;
+    my $value = token_value($tokens, $index);
+
+    if ($value eq "delete") {
+        my $subject = dotted_or_bracket_subject_at($tokens, $index + 1);
+        return defined $subject ? { kind => "delete", subject => $subject } : undef;
+    }
+
+    if (($value eq "++" || $value eq "--") && token_type($tokens, $index + 1) eq "id") {
+        my $subject = dotted_or_bracket_subject_at($tokens, $index + 1);
+        return defined $subject ? { kind => "update", subject => $subject } : undef;
+    }
+
+    if (token_type($tokens, $index) eq "id") {
+        my $subject = dotted_or_bracket_subject_at($tokens, $index);
+        if (defined $subject) {
+            my $end = mutation_target_end_at($tokens, $index);
+            my $operator = token_value($tokens, $end + 1);
+            return { kind => "assignment", subject => $subject }
+                if is_assignment_operator($operator);
+            return { kind => "update", subject => $subject }
+                if $operator eq "++" || $operator eq "--";
+        }
+        if (token_value($tokens, $index + 1) eq "." &&
+            is_mutating_method(token_value($tokens, $index + 2)) &&
+            token_value($tokens, $index + 3) eq "(") {
+            return { kind => "mutating_call", subject => token_value($tokens, $index) };
+        }
+    }
+
+    return undef;
+}
+
+sub dotted_or_bracket_subject_at {
+    my ($tokens, $index) = @_;
+    return undef if token_type($tokens, $index) ne "id";
+    return token_value($tokens, $index) if token_value($tokens, $index + 1) eq ".";
+    return token_value($tokens, $index) if token_value($tokens, $index + 1) eq "[";
+    return undef;
+}
+
+sub mutation_target_end_at {
+    my ($tokens, $index) = @_;
+    return $index + 2 if token_value($tokens, $index + 1) eq ".";
+    if (token_value($tokens, $index + 1) eq "[") {
+        my $close = find_matching_bracket_token($tokens, $index + 1, scalar(@{$tokens}));
+        return defined $close ? $close : $index + 1;
+    }
+    return $index;
+}
+
+sub is_assignment_operator {
+    my ($operator) = @_;
+    return 1 if $operator eq "=" ||
+        $operator eq "+=" ||
+        $operator eq "-=" ||
+        $operator eq "*=" ||
+        $operator eq "/=" ||
+        $operator eq "%=" ||
+        $operator eq "&&=" ||
+        $operator eq "||=" ||
+        $operator eq "??=";
+    return 0;
+}
+
+sub is_mutating_method {
+    my ($name) = @_;
+    return 1 if $name eq "push" ||
+        $name eq "pop" ||
+        $name eq "shift" ||
+        $name eq "unshift" ||
+        $name eq "splice" ||
+        $name eq "sort" ||
+        $name eq "reverse" ||
+        $name eq "copyWithin" ||
+        $name eq "fill" ||
+        $name eq "set" ||
+        $name eq "add" ||
+        $name eq "delete" ||
+        $name eq "clear";
+    return 0;
+}
+
+sub build_contract_summary {
+    my ($path, $name, $tokens, $descriptor_model, $effect) = @_;
+    my $dynamic_code = count_token_sequence($tokens, "new", "Function") + count_call_name($tokens, "eval");
+    my $direct_hostile_reads = count_direct_hostile_property_reads($tokens);
+    my $value_proofs = count_token_sequence($tokens, "hasOwnProperty", ".", "call") +
+        count_token_sequence($tokens, "h", ".", "call") +
+        count_call_name($tokens, "isDataPropertyDescriptor");
+
+    my $validator = function_has_validator_contract($name, $tokens);
+    my $sanitizer = function_has_sanitizer_contract($name, $tokens, $value_proofs, $descriptor_model);
+    my $factory = is_trusted_descriptor_factory($name) || function_has_descriptor_factory_contract($tokens);
+    my $dynamic_bridge = is_approved_dynamic_sink_name_path($path, $name);
+    my $sink = ($dynamic_code != 0 ||
+        ($direct_hostile_reads != 0 && is_safe_validation_path($path)) ||
+        ($descriptor_model->{unproved_reads} != 0 && is_safe_validation_path($path))) ? 1 : 0;
+    my $pure = ($effect->{allocations} == 0 &&
+        $effect->{closures} == 0 &&
+        $effect->{dynamicCode} == 0 &&
+        count_token_value($tokens, "throw") == 0 &&
+        $direct_hostile_reads == 0) ? 1 : 0;
+
+    return {
+        validator => $validator,
+        sanitizer => $sanitizer,
+        descriptorFactory => $factory ? 1 : 0,
+        dynamicBridge => $dynamic_bridge ? 1 : 0,
+        sink => $sink,
+        pureCandidate => $pure,
+        contractlessSink => ($sink && !$sanitizer && !$factory && !$dynamic_bridge && !$validator) ? 1 : 0,
+        throwingPredicate => ($validator && count_token_value($tokens, "throw") != 0) ? 1 : 0
+    };
+}
+
+sub function_has_validator_contract {
+    my ($name, $tokens) = @_;
+    return 1 if $name =~ /\A(?:is|has|can|should|needs|allows|accepts|matches|validate|check)[A-Z_]/;
+    return 1 if count_token_sequence($tokens, "return", "true") != 0 ||
+        count_token_sequence($tokens, "return", "false") != 0;
+    return 0;
+}
+
+sub function_has_sanitizer_contract {
+    my ($name, $tokens, $value_proofs, $descriptor_model) = @_;
+    return 1 if $name =~ /\A(?:read|parse|normalize|sanitize|coerce|assert)[A-Z_]/;
+    return 1 if $value_proofs != 0;
+    return 1 if $descriptor_model->{factory_proofs} != 0;
+    return 1 if count_token_sequence($tokens, "typeof") != 0 &&
+        (count_token_sequence($tokens, "return", "undefined") != 0 ||
+            count_token_sequence($tokens, "return", "false") != 0);
+    return 0;
+}
+
+sub function_has_descriptor_factory_contract {
+    my ($tokens) = @_;
+    return 1 if count_token_sequence($tokens, "Object", ".", "getOwnPropertyDescriptor") != 0 &&
+        count_token_sequence($tokens, "hasOwnProperty", ".", "call") != 0;
+    return 1 if count_call_name($tokens, "isDataPropertyDescriptor") != 0;
+    return 0;
+}
+
+sub allocation_site_at {
+    my ($tokens, $index) = @_;
+    return 1 if token_value($tokens, $index) eq "new";
+    return 1 if reflection_array_allocation_at($tokens, $index);
+    return 1 if array_copy_call_at($tokens, $index);
+    return 0;
+}
+
+sub reflection_array_allocation_at {
+    my ($tokens, $index) = @_;
+    return 1 if token_sequence_at($tokens, $index, "Object", ".", "keys");
+    return 1 if token_sequence_at($tokens, $index, "Object", ".", "getOwnPropertyNames");
+    return 1 if token_sequence_at($tokens, $index, "Object", ".", "getOwnPropertySymbols");
+    return 1 if token_sequence_at($tokens, $index, "Reflect", ".", "ownKeys");
+    return 0;
+}
+
+sub array_copy_call_at {
+    my ($tokens, $index) = @_;
+    return 1 if token_sequence_at($tokens, $index, "Array", ".", "from");
+    return 0 if token_value($tokens, $index - 1) ne ".";
+    my $name = token_value($tokens, $index);
+    return 1 if ($name eq "map" ||
+        $name eq "filter" ||
+        $name eq "flatMap" ||
+        $name eq "slice" ||
+        $name eq "concat") &&
+        token_value($tokens, $index + 1) eq "(";
+    return 0;
+}
+
+sub nested_function_token_at {
+    my ($tokens, $index) = @_;
+    return 0 if token_value($tokens, $index) ne "function";
+    return 0 if $index == 0;
+    return 1;
+}
+
+sub is_hot_path_validation_function {
+    my ($path, $name) = @_;
+    return 0 if $path =~ m{\Asrc/(compile|aot|json-schema|message|registry|plugin|adapters)/};
+    return 1 if $path =~ m{\Asrc/(evaluate|plan|async-validation|seabreeze)/};
+    return 1 if $name =~ /\A(is|check|validate|visit|read)[A-Z_]/;
+    return 0;
+}
+
+sub token_starts_reachable_statement {
+    my ($tokens, $index) = @_;
+    my $value = token_value($tokens, $index);
+    return 0 if $value eq ";" || $value eq "," || $value eq ")" || $value eq "}" || $value eq "else";
+    return 0 if token_type($tokens, $index) eq "operator";
+    return 1 if token_type($tokens, $index) eq "id" ||
+        token_type($tokens, $index) eq "string" ||
+        token_type($tokens, $index) eq "number";
+    return 1 if $value eq "{" || $value eq "if" || $value eq "for" || $value eq "while" || $value eq "switch";
+    return 0;
+}
+
+sub count_direct_hostile_property_reads {
+    my ($tokens) = @_;
+    my %subjects = map { $_ => 1 } qw(value input data record);
+    my $count = 0;
+    for (my $index = 0; $index + 2 < @{$tokens}; $index += 1) {
+        next if !$subjects{token_value($tokens, $index)};
+        next if token_value($tokens, $index + 1) ne ".";
+        next if token_type($tokens, $index + 2) ne "id";
+        my $property = token_value($tokens, $index + 2);
+        next if $property eq "length";
+        $count += 1;
+    }
+    return $count;
+}
+
+sub descriptor_value_model {
+    my ($path, $tokens) = @_;
+    my %factory_vars = trusted_descriptor_factory_vars($path, $tokens);
+    my %guarded_vars;
+    my $proof_seen = 0;
+    my $before_proof = 0;
+    my $factory_proofs = 0;
+    my $unproved_reads = 0;
+
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        if (token_sequence_at($tokens, $index, "hasOwnProperty", ".", "call") ||
+            token_sequence_at($tokens, $index, "h", ".", "call") ||
+            token_value($tokens, $index) eq "isDataPropertyDescriptor") {
+            $proof_seen = 1;
+            next;
+        }
+        my $guarded = read_undefined_guarded_variable($tokens, $index);
+        if (defined $guarded) {
+            $guarded_vars{$guarded} = 1;
+            next;
+        }
+        $guarded = read_found_guarded_variable($tokens, $index);
+        if (defined $guarded) {
+            $guarded_vars{$guarded} = 1;
+            next;
+        }
+        my $value_var = descriptor_value_variable_at($tokens, $index);
+        next if !defined $value_var;
+        next if !$factory_vars{$value_var} && !is_descriptor_like_variable($value_var);
+        if ($factory_vars{$value_var} && ($guarded_vars{$value_var} || descriptor_read_is_inline_guarded($tokens, $index, $value_var))) {
+            $factory_proofs += 1;
+            next;
+        }
+        if (!$proof_seen) {
+            $before_proof += 1;
+            $unproved_reads += 1;
+        }
+    }
+
+    return {
+        before_proof => $before_proof,
+        factory_proofs => $factory_proofs,
+        unproved_reads => $unproved_reads
+    };
+}
+
+sub trusted_descriptor_factory_vars {
+    my ($path, $tokens) = @_;
+    my %vars;
+    return %vars if !is_safe_validation_path($path);
+    for (my $index = 0; $index + 5 < @{$tokens}; $index += 1) {
+        next if token_value($tokens, $index) ne "const" && token_value($tokens, $index) ne "let";
+        next if token_type($tokens, $index + 1) ne "id";
+        next if token_value($tokens, $index + 2) ne "=";
+        next if !is_trusted_descriptor_factory(token_value($tokens, $index + 3));
+        next if token_value($tokens, $index + 4) ne "(";
+        $vars{token_value($tokens, $index + 1)} = 1;
+    }
+    return %vars;
+}
+
+sub is_trusted_descriptor_factory {
+    my ($name) = @_;
+    return 1 if $name eq "readOwnDataProperty" ||
+        $name eq "readArrayIndexDataProperty" ||
+        $name eq "readArrayKeyDataProperty";
+    return 0;
+}
+
+sub read_undefined_guarded_variable {
+    my ($tokens, $index) = @_;
+    return undef if token_value($tokens, $index) ne "if";
+    my $limit = find_matching_paren_token($tokens, $index + 1, scalar(@{$tokens}));
+    return undef if !defined $limit;
+    for (my $cursor = $index + 1; $cursor + 2 < $limit; $cursor += 1) {
+        next if token_type($tokens, $cursor) ne "id";
+        next if token_value($tokens, $cursor + 1) ne "===" && token_value($tokens, $cursor + 1) ne "==";
+        next if token_value($tokens, $cursor + 2) ne "undefined";
+        return token_value($tokens, $cursor) if guard_exits_after_condition($tokens, $limit);
+    }
+    return undef;
+}
+
+sub read_found_guarded_variable {
+    my ($tokens, $index) = @_;
+    return undef if token_value($tokens, $index) ne "if";
+    my $limit = find_matching_paren_token($tokens, $index + 1, scalar(@{$tokens}));
+    return undef if !defined $limit;
+    for (my $cursor = $index + 1; $cursor + 2 < $limit; $cursor += 1) {
+        next if token_type($tokens, $cursor) ne "id";
+        next if token_value($tokens, $cursor + 1) ne ".";
+        next if token_value($tokens, $cursor + 2) ne "found";
+        return token_value($tokens, $cursor);
+    }
+    return undef;
+}
+
+sub read_value_slot_guard_fact {
+    my ($tokens, $index) = @_;
+    return undef if token_value($tokens, $index) ne "if";
+    my $limit = find_matching_paren_token($tokens, $index + 1, scalar(@{$tokens}));
+    return undef if !defined $limit;
+    for (my $cursor = $index + 1; $cursor < $limit; $cursor += 1) {
+        my $var = value_slot_guard_variable_at($tokens, $cursor, $limit);
+        next if !defined $var;
+        my $negated = condition_call_is_negated($tokens, $index + 1, $cursor);
+        return {
+            var => $var,
+            persists => ($negated && guard_exits_after_condition($tokens, $limit)) ? 1 : 0
+        };
+    }
+    return undef;
+}
+
+sub value_slot_guard_variable_at {
+    my ($tokens, $index, $limit) = @_;
+    if (token_sequence_at($tokens, $index, "h", ".", "call") ||
+        token_sequence_at($tokens, $index, "hasOwnProperty", ".", "call")) {
+        return read_value_slot_call_subject($tokens, $index + 3, $limit);
+    }
+    if (token_value($tokens, $index) eq "isDataPropertyDescriptor" &&
+        token_value($tokens, $index + 1) eq "(" &&
+        token_type($tokens, $index + 2) eq "id") {
+        return token_value($tokens, $index + 2);
+    }
+    return undef;
+}
+
+sub read_value_slot_call_subject {
+    my ($tokens, $open_index, $limit) = @_;
+    return undef if token_value($tokens, $open_index) ne "(";
+    return undef if $open_index + 3 >= $limit;
+    return undef if token_type($tokens, $open_index + 1) ne "id";
+    return undef if token_value($tokens, $open_index + 2) ne ",";
+    return undef if token_value($tokens, $open_index + 3) ne "value";
+    return token_value($tokens, $open_index + 1);
+}
+
+sub condition_call_is_negated {
+    my ($tokens, $condition_start, $call_index) = @_;
+    my $scan_start = $call_index - 4;
+    $scan_start = $condition_start if $scan_start < $condition_start;
+    for (my $index = $scan_start; $index < $call_index; $index += 1) {
+        return 1 if token_value($tokens, $index) eq "!";
+    }
+    return 0;
+}
+
+sub guard_exits_after_condition {
+    my ($tokens, $condition_close) = @_;
+    if (token_value($tokens, $condition_close + 1) eq "{") {
+        my $block_close = find_matching_brace_token($tokens, $condition_close + 1, scalar(@{$tokens}));
+        return block_has_exit($tokens, $condition_close + 2, $block_close) if defined $block_close;
+    }
+    my $scan_end = min_number($condition_close + 10, scalar(@{$tokens}));
+    for (my $index = $condition_close + 1; $index < $scan_end; $index += 1) {
+        my $value = token_value($tokens, $index);
+        return 1 if $value eq "return" || $value eq "continue" || $value eq "break" || $value eq "throw";
+    }
+    return 0;
+}
+
+sub block_has_exit {
+    my ($tokens, $start, $end) = @_;
+    return 0 if !defined $end;
+    for (my $index = $start; $index < $end; $index += 1) {
+        my $value = token_value($tokens, $index);
+        return 1 if $value eq "return" || $value eq "continue" || $value eq "break" || $value eq "throw";
+    }
+    return 0;
+}
+
+sub descriptor_value_variable_at {
+    my ($tokens, $index) = @_;
+    return undef if token_type($tokens, $index) ne "id";
+    return undef if token_value($tokens, $index + 1) ne ".";
+    return undef if token_value($tokens, $index + 2) ne "value";
+    return token_value($tokens, $index);
+}
+
+sub is_descriptor_like_variable {
+    my ($name) = @_;
+    return 1 if $name eq "descriptor" ||
+        $name eq "desc" ||
+        $name eq "property" ||
+        $name eq "field" ||
+        $name eq "discriminantProperty";
+    return 0;
+}
+
+sub descriptor_read_is_inline_guarded {
+    my ($tokens, $index, $value_var) = @_;
+    my $start = $index - 48;
+    $start = 0 if $start < 0;
+    for (my $cursor = $start; $cursor + 3 < $index; $cursor += 1) {
+        next if token_value($tokens, $cursor) ne $value_var;
+        my $operator = token_value($tokens, $cursor + 1);
+        next if token_value($tokens, $cursor + 2) ne "undefined";
+        return 1 if $operator eq "!==";
+        return 1 if ($operator eq "===" || $operator eq "==") &&
+            inline_undefined_guard_reaches_read($tokens, $cursor + 3, $index);
+        return 1 if ($operator eq "===" || $operator eq "==") &&
+            inline_else_branch_reaches_read($tokens, $cursor + 3, $index);
+    }
+    for (my $cursor = $start; $cursor + 2 < $index; $cursor += 1) {
+        next if token_value($tokens, $cursor) ne $value_var;
+        next if token_value($tokens, $cursor + 1) ne ".";
+        next if token_value($tokens, $cursor + 2) ne "found";
+        return 1;
+    }
+    return 0;
+}
+
+sub inline_undefined_guard_reaches_read {
+    my ($tokens, $start, $read_index) = @_;
+    for (my $index = $start; $index < $read_index; $index += 1) {
+        my $value = token_value($tokens, $index);
+        return 1 if $value eq "?" || $value eq "||";
+    }
+    return 0;
+}
+
+sub inline_else_branch_reaches_read {
+    my ($tokens, $start, $read_index) = @_;
+    for (my $index = $start; $index < $read_index; $index += 1) {
+        return 1 if token_value($tokens, $index) eq "else";
+    }
+    return 0;
+}
+
+sub count_descriptor_value_before_proof {
+    my ($tokens) = @_;
+    my $proof_seen = 0;
+    my $violations = 0;
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        if (token_sequence_at($tokens, $index, "hasOwnProperty", ".", "call") ||
+            token_sequence_at($tokens, $index, "h", ".", "call") ||
+            token_value($tokens, $index) eq "isDataPropertyDescriptor") {
+            $proof_seen = 1;
+            next;
+        }
+        if (token_sequence_at($tokens, $index, "descriptor", ".", "value") ||
+            token_sequence_at($tokens, $index, "desc", ".", "value") ||
+            token_sequence_at($tokens, $index, "d", ".", "value")) {
+            $violations += 1 if !$proof_seen;
+        }
+    }
+    return $violations;
+}
+
+sub token_sequence_at {
+    my ($tokens, $index, @values) = @_;
+    return 0 if $index + @values > @{$tokens};
+    for (my $offset = 0; $offset < @values; $offset += 1) {
+        return 0 if token_value($tokens, $index + $offset) ne $values[$offset];
+    }
+    return 1;
+}
+
+sub build_function_graph {
+    my ($functions) = @_;
+    my %by_name;
+    my %by_file_name;
+    for my $fn (@{$functions}) {
+        push @{$by_name{$fn->{name}}}, $fn;
+        push @{$by_file_name{$fn->{path} . "\0" . $fn->{name}}}, $fn;
+    }
+
+    my @edges;
+    for my $fn (@{$functions}) {
+        my %seen;
+        for my $call (@{$fn->{calls}}) {
+            next if $seen{$call->{name}};
+            $seen{$call->{name}} = 1;
+            my $same_file = $by_file_name{$fn->{path} . "\0" . $call->{name}} // [];
+            my $global = $by_name{$call->{name}} // [];
+            my $targets = @{$same_file} != 0
+                ? $same_file
+                : @{$global} == 1
+                    ? $global
+                    : [];
+            for my $target (@{$targets}) {
+                push @edges, {
+                    from => $fn->{id},
+                    to => $target->{id},
+                    line => $call->{line},
+                    name => $call->{name},
+                    arguments => $call->{arguments},
+                    tainted_argument => call_carries_taint_candidate($fn, $call),
+                    cross_file => $fn->{path} ne $target->{path} ? 1 : 0
+                };
+            }
+        }
+    }
+
+    return {
+        edges => \@edges,
+        cycles => find_import_cycles(\@edges),
+        fan_in => function_fan_counts(\@edges, "to"),
+        fan_out => function_fan_counts(\@edges, "from")
+    };
+}
+
+sub function_fan_counts {
+    my ($edges, $field) = @_;
+    my %counts;
+    for my $edge (@{$edges}) {
+        $counts{$edge->{$field}} += 1;
+    }
+    my @out = map {
+        {
+            id => $_,
+            count => $counts{$_}
+        }
+    } sort { $counts{$b} <=> $counts{$a} || $a cmp $b } keys %counts;
+    return \@out;
+}
+
+sub build_function_abstract_state {
+    my ($functions, $graph) = @_;
+    my @high_complexity;
+    my @descriptor_without_proof;
+    my @descriptor_order_violations;
+    my @unapproved_dynamic_sinks;
+    my @tainted_sink_candidates;
+    my @unreachable_functions;
+    my @branch_state_leaks;
+    my @index_gaps;
+    my @mutation_gaps;
+    my @memory_alias_gaps;
+    my @range_gaps;
+    my @loop_bound_gaps;
+    my @source_taint_gaps;
+    my @exception_gaps;
+    my @lifecycle_gaps;
+    my @async_scheduling_gaps;
+    my @symbolic_gaps;
+    my @nullish_gaps;
+    my @key_safety_gaps;
+    my @result_state_gaps;
+    my @freeze_state_gaps;
+    my @variant_state_gaps;
+    my $taint = build_taint_dataflow($functions, $graph);
+    my $effect = build_effect_dataflow($functions, $graph);
+    my $contracts = build_contract_domain($functions, $graph);
+    my $lifecycle = build_lifecycle_dataflow($functions, $graph);
+    my $source_provenance = build_source_provenance_dataflow($functions, $graph);
+    my $symbolic_dataflow = build_symbolic_dataflow($functions, $graph);
+    my $domains = abstract_domain_counts($functions);
+    my $cfg_totals = cfg_totals($functions);
+    my $branch_state_totals = branch_state_totals($functions);
+    my $loop_bound_domain_totals = loop_bound_domain_totals($functions);
+    my $range_domain_totals = range_domain_totals($functions);
+    my $index_domain_totals = index_domain_totals($functions);
+    my $mutation_domain_totals = mutation_domain_totals($functions);
+    my $memory_alias_domain_totals = memory_alias_domain_totals($functions);
+    my $source_taint_domain_totals = source_taint_domain_totals($functions);
+    my $exception_domain_totals = exception_domain_totals($functions);
+    my $lifecycle_domain_totals = lifecycle_domain_totals($functions);
+    my $async_domain_totals = async_domain_totals($functions);
+    my $symbolic_domain_totals = symbolic_domain_totals($functions);
+    my $nullish_domain_totals = nullish_domain_totals($functions);
+    my $recursion_domain = build_recursion_domain($functions, $graph);
+    my $key_safety_domain_totals = key_safety_domain_totals($functions);
+    my $result_state_domain_totals = result_state_domain_totals($functions);
+    my $freeze_state_domain_totals = freeze_state_domain_totals($functions);
+    my $variant_state_domain_totals = variant_state_domain_totals($functions);
+    my $max_complexity_function = {
+        path => "src",
+        line => 1,
+        name => "none",
+        complexity => 0
+    };
+
+    for my $fn (@{$functions}) {
+        if ($fn->{complexity} > $max_complexity_function->{complexity}) {
+            $max_complexity_function = $fn;
+        }
+        push @high_complexity, $fn if $fn->{complexity} > 85;
+        if (is_safe_validation_path($fn->{path}) &&
+            $fn->{descriptor_reads} != 0 &&
+            $fn->{descriptor_value_reads} != 0 &&
+            $fn->{value_proofs} == 0) {
+            push @descriptor_without_proof, $fn;
+        }
+        if (is_safe_validation_path($fn->{path}) && $fn->{descriptor_value_before_proof} != 0) {
+            push @descriptor_order_violations, $fn;
+        }
+        if ($fn->{dynamic_code_sinks} != 0 && !is_approved_dynamic_sink_function($fn)) {
+            push @unapproved_dynamic_sinks, $fn;
+        }
+        if (has_hostile_named_parameter($fn) &&
+            ($fn->{dynamic_code_sinks} != 0 || $fn->{direct_hostile_reads} != 0 || $fn->{descriptor_value_unproved_reads} != 0)) {
+            push @tainted_sink_candidates, $fn;
+        }
+        if ($fn->{cfg}{unreachableStatements} != 0) {
+            push @unreachable_functions, $fn;
+        }
+        if ($fn->{branch_state}{unguardedReads} != 0) {
+            push @branch_state_leaks, $fn;
+        }
+        if ($fn->{index_domain}{unguardedHostileReads} != 0) {
+            push @index_gaps, $fn;
+        }
+        if ($fn->{mutation_domain}{safePathHostileMutations} != 0) {
+            push @mutation_gaps, $fn;
+        }
+        if ($fn->{memory_alias_domain}{sourcePathAliasGaps} != 0) {
+            push @memory_alias_gaps, $fn;
+        }
+        if ($fn->{range_domain}{safePathRangeGaps} != 0) {
+            push @range_gaps, $fn;
+        }
+        if ($fn->{loop_bound_domain}{hotPathUnboundedLoops} != 0) {
+            push @loop_bound_gaps, $fn;
+        }
+        if ($fn->{source_taint_domain}{sourceTaintGaps} != 0 &&
+            !$source_provenance->{proofed}{$fn->{id}}) {
+            push @source_taint_gaps, $fn;
+        }
+        if ($fn->{exception_domain}{hotValidationThrow} != 0) {
+            push @exception_gaps, $fn;
+        }
+        if ($fn->{lifecycle_domain}{sourcePathLifecycleGaps} != 0) {
+            push @lifecycle_gaps, $fn;
+        }
+        if ($fn->{async_domain}{asyncSchedulingGaps} != 0) {
+            push @async_scheduling_gaps, $fn;
+        }
+        if ($fn->{symbolic_domain}{sourcePathOpenSinks} != 0) {
+            push @symbolic_gaps, $fn;
+        }
+        if ($fn->{nullish_domain}{unguardedHostileDereferences} != 0) {
+            push @nullish_gaps, $fn;
+        }
+        if ($fn->{key_safety_domain}{pollutionGaps} != 0) {
+            push @key_safety_gaps, $fn;
+        }
+        if ($fn->{result_state_domain}{sourcePathResultGaps} != 0) {
+            push @result_state_gaps, $fn;
+        }
+        if ($fn->{freeze_state_domain}{sourcePathFreezeGaps} != 0) {
+            push @freeze_state_gaps, $fn;
+        }
+        if ($fn->{variant_state_domain}{sourcePathVariantGaps} != 0) {
+            push @variant_state_gaps, $fn;
+        }
+    }
+
+    return {
+        high_complexity_count => scalar(@high_complexity),
+        max_complexity_function => $max_complexity_function,
+        cfg => $cfg_totals,
+        branch_state => $branch_state_totals,
+        branch_state_leaks => \@branch_state_leaks,
+        loop_bound_domain => $loop_bound_domain_totals,
+        loop_bound_gaps => \@loop_bound_gaps,
+        range_domain => $range_domain_totals,
+        range_gaps => \@range_gaps,
+        index_domain => $index_domain_totals,
+        index_gaps => \@index_gaps,
+        mutation_domain => $mutation_domain_totals,
+        mutation_gaps => \@mutation_gaps,
+        memory_alias_domain => $memory_alias_domain_totals,
+        memory_alias_gaps => \@memory_alias_gaps,
+        source_taint_domain => $source_taint_domain_totals,
+        source_provenance => $source_provenance,
+        source_taint_gaps => \@source_taint_gaps,
+        exception_domain => $exception_domain_totals,
+        exception_gaps => \@exception_gaps,
+        lifecycle_domain => $lifecycle_domain_totals,
+        lifecycle_gaps => \@lifecycle_gaps,
+        async_domain => $async_domain_totals,
+        async_scheduling_gaps => \@async_scheduling_gaps,
+        symbolic_domain => $symbolic_domain_totals,
+        symbolic_dataflow => $symbolic_dataflow,
+        symbolic_gaps => \@symbolic_gaps,
+        nullish_domain => $nullish_domain_totals,
+        nullish_gaps => \@nullish_gaps,
+        recursion => $recursion_domain,
+        key_safety_domain => $key_safety_domain_totals,
+        key_safety_gaps => \@key_safety_gaps,
+        result_state_domain => $result_state_domain_totals,
+        result_state_gaps => \@result_state_gaps,
+        freeze_state_domain => $freeze_state_domain_totals,
+        freeze_state_gaps => \@freeze_state_gaps,
+        variant_state_domain => $variant_state_domain_totals,
+        variant_state_gaps => \@variant_state_gaps,
+        unreachable_functions => \@unreachable_functions,
+        effect => $effect,
+        contracts => $contracts,
+        lifecycle => $lifecycle,
+        domains => $domains,
+        descriptor_without_proof => \@descriptor_without_proof,
+        descriptor_order_violations => \@descriptor_order_violations,
+        unapproved_dynamic_sinks => \@unapproved_dynamic_sinks,
+        tainted_sink_candidates => \@tainted_sink_candidates,
+        taint => $taint,
+        recursive_cycle_count => scalar(@{$graph->{cycles}})
+    };
+}
+
+sub clone_windows_for_file {
+    my ($path, $tokens) = @_;
+    return [] if $path =~ m{\Asrc/generated/};
+    my @semantic = grep { token_has_clone_signal($_) } @{$tokens};
+    my $window = 24;
+    my $stride = 8;
+    return [] if @semantic < $window;
+
+    my @blocks;
+    for (my $index = 0; $index + $window <= @semantic; $index += $stride) {
+        my @slice = @semantic[$index .. $index + $window - 1];
+        my @normalized = map { normalize_clone_token($_) } @slice;
+        next if clone_window_low_information(\@normalized);
+        push @blocks, {
+            fingerprint => join("\x1f", @normalized),
+            path => $path,
+            line => $slice[0]{line},
+            endLine => $slice[-1]{line},
+            tokenCount => $window,
+            preview => join(" ", @normalized[0 .. min_index(11, $#normalized)])
+        };
+    }
+
+    return \@blocks;
+}
+
+sub token_has_clone_signal {
+    my ($token) = @_;
+    my $type = token_type_from_record($token);
+    return 0 if $type eq "comment";
+    return 0 if $type eq "jsdoc";
+    return 1;
+}
+
+sub normalize_clone_token {
+    my ($token) = @_;
+    my $type = token_type_from_record($token);
+    my $value = token_value_from_record($token);
+    if ($type eq "id") {
+        return $value if is_clone_keyword($value);
+        return "id";
+    }
+    return "str" if $type eq "string";
+    return "num" if $type eq "number";
+    return "regex" if $type eq "regex";
+    return "tpl" if $type eq "template";
+    return $value;
+}
+
+sub is_clone_keyword {
+    my ($value) = @_;
+    my %keywords = map { $_ => 1 } qw(
+        as async await break case catch class const continue default delete do else
+        export extends false finally for from function if import in instanceof interface
+        let new null of readonly return switch this throw true try type typeof undefined
+        while yield
+    );
+    return $keywords{$value} ? 1 : 0;
+}
+
+sub clone_window_low_information {
+    my ($normalized) = @_;
+    my %seen;
+    my $signal = 0;
+    for my $token (@{$normalized}) {
+        $seen{$token} += 1;
+        $signal += 1 if $token =~ /\A(?:if|for|while|switch|case|return|throw|const|let|function|=>|\.|\[|\]|\{|\})\z/;
+    }
+    return 1 if scalar(keys %seen) < 6;
+    return 1 if $signal < 4;
+    return 0;
+}
+
+sub build_clone_domain {
+    my ($blocks) = @_;
+    my %by_fingerprint;
+    for my $block (@{$blocks}) {
+        push @{$by_fingerprint{$block->{fingerprint}}}, $block;
+    }
+
+    my @groups;
+    for my $fingerprint (keys %by_fingerprint) {
+        my @occurrences = distinct_clone_occurrences(@{$by_fingerprint{$fingerprint}});
+        next if @occurrences < 2;
+        my %files = map { $_->{path} => 1 } @occurrences;
+        my $score = scalar(@occurrences) * ($occurrences[0]{tokenCount} // 0) * scalar(keys %files);
+        push @groups, {
+            fingerprint => stable_text_fingerprint($fingerprint),
+            occurrences => scalar(@occurrences),
+            files => scalar(keys %files),
+            score => $score,
+            tokenCount => $occurrences[0]{tokenCount} // 0,
+            first => clone_location($occurrences[0]),
+            examples => [map { clone_location($_) } @occurrences[0 .. min_index(5, $#occurrences)]]
+        };
+    }
+
+    @groups = sort {
+        $b->{score} <=> $a->{score} ||
+            $b->{occurrences} <=> $a->{occurrences} ||
+            $a->{first}{path} cmp $b->{first}{path}
+    } @groups;
+
+    my $cross_file_groups = 0;
+    my $duplicated_occurrences = 0;
+    for my $group (@groups) {
+        $cross_file_groups += 1 if $group->{files} > 1;
+        $duplicated_occurrences += $group->{occurrences};
+    }
+
+    return {
+        windowCount => scalar(@{$blocks}),
+        duplicateGroups => scalar(@groups),
+        crossFileGroups => $cross_file_groups,
+        duplicatedOccurrences => $duplicated_occurrences,
+        topGroups => [@groups[0 .. min_index(19, $#groups)]]
+    };
+}
+
+sub distinct_clone_occurrences {
+    my @blocks = @_;
+    @blocks = sort {
+        $a->{path} cmp $b->{path} ||
+            $a->{line} <=> $b->{line}
+    } @blocks;
+    my @distinct;
+    my %last_line_by_path;
+    for my $block (@blocks) {
+        my $last = $last_line_by_path{$block->{path}};
+        next if defined $last && abs($block->{line} - $last) < 4;
+        push @distinct, $block;
+        $last_line_by_path{$block->{path}} = $block->{line};
+    }
+    return @distinct;
+}
+
+sub clone_location {
+    my ($block) = @_;
+    return {
+        path => $block->{path},
+        line => $block->{line},
+        endLine => $block->{endLine},
+        preview => $block->{preview}
+    };
+}
+
+sub stable_text_fingerprint {
+    my ($text) = @_;
+    my $hash = 2166136261;
+    for my $index (0 .. length($text) - 1) {
+        $hash ^= ord(substr($text, $index, 1));
+        $hash = ($hash * 16777619) % 4294967296;
+    }
+    return sprintf("%08x", $hash);
+}
+
+sub branch_state_totals {
+    my ($functions) = @_;
+    my %totals = (
+        factsCreated => 0,
+        factoryFacts => 0,
+        guardedReads => 0,
+        unguardedReads => 0,
+        branchMerges => 0,
+        maxLiveFacts => 0
+    );
+    for my $fn (@{$functions}) {
+        for my $key (qw(factsCreated factoryFacts guardedReads unguardedReads branchMerges)) {
+            $totals{$key} += $fn->{branch_state}{$key};
+        }
+        if ($fn->{branch_state}{maxLiveFacts} > $totals{maxLiveFacts}) {
+            $totals{maxLiveFacts} = $fn->{branch_state}{maxLiveFacts};
+        }
+    }
+    return \%totals;
+}
+
+sub loop_bound_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        loops => 0,
+        forLoops => 0,
+        whileLoops => 0,
+        lengthBoundedLoops => 0,
+        fixedBoundedLoops => 0,
+        keyBoundedLoops => 0,
+        budgetBoundedLoops => 0,
+        updateProgressLoops => 0,
+        escapeGuardedLoops => 0,
+        unboundedLoops => 0,
+        hotPathUnboundedLoops => 0
+    );
+
+    for my $fn (@{$functions}) {
+        for my $key (keys %totals) {
+            $totals{$key} += $fn->{loop_bound_domain}{$key};
+        }
+    }
+
+    return \%totals;
+}
+
+sub range_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        numericLiteralFacts => 0,
+        lowerBounds => 0,
+        upperBounds => 0,
+        lengthUpperBounds => 0,
+        fixedUpperBounds => 0,
+        progressUpdates => 0,
+        boundedIndexReads => 0,
+        unboundedIndexReads => 0,
+        trackedVariables => 0,
+        maxKnownSpan => 0,
+        safePathRangeGaps => 0
+    );
+
+    for my $fn (@{$functions}) {
+        for my $key (keys %totals) {
+            next if $key eq "maxKnownSpan";
+            $totals{$key} += $fn->{range_domain}{$key};
+        }
+        if ($fn->{range_domain}{maxKnownSpan} > $totals{maxKnownSpan}) {
+            $totals{maxKnownSpan} = $fn->{range_domain}{maxKnownSpan};
+        }
+    }
+
+    return \%totals;
+}
+
+sub index_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        indexedReads => 0,
+        guardedReads => 0,
+        unguardedReads => 0,
+        hostileReads => 0,
+        unguardedHostileReads => 0,
+        indexedWrites => 0,
+        descriptorIndexReads => 0,
+        lengthFacts => 0
+    );
+    for my $fn (@{$functions}) {
+        for my $key (keys %totals) {
+            $totals{$key} += $fn->{index_domain}{$key};
+        }
+    }
+    return \%totals;
+}
+
+sub mutation_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        assignments => 0,
+        deletes => 0,
+        mutatingCalls => 0,
+        updates => 0,
+        hostileMutations => 0,
+        safePathHostileMutations => 0
+    );
+    for my $fn (@{$functions}) {
+        for my $key (keys %totals) {
+            $totals{$key} += $fn->{mutation_domain}{$key};
+        }
+    }
+    return \%totals;
+}
+
+sub memory_alias_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        trackedRegions => 0,
+        aliasFacts => 0,
+        cloneFacts => 0,
+        freezeFacts => 0,
+        aliasMutations => 0,
+        postFreezeAliasMutations => 0,
+        escapedAliases => 0,
+        sourcePathAliasGaps => 0
+    );
+    for my $fn (@{$functions}) {
+        my $domain = $fn->{memory_alias_domain} // {};
+        for my $key (keys %totals) {
+            $totals{$key} += $domain->{$key} // 0;
+        }
+    }
+    return \%totals;
+}
+
+sub exception_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        throws => 0,
+        tryBlocks => 0,
+        catchBlocks => 0,
+        finallyBlocks => 0,
+        promiseRejects => 0,
+        validatorThrows => 0,
+        hotValidationThrows => 0,
+        unhandledThrows => 0
+    );
+    for my $fn (@{$functions}) {
+        $totals{throws} += $fn->{exception_domain}{throws};
+        $totals{tryBlocks} += $fn->{exception_domain}{tryBlocks};
+        $totals{catchBlocks} += $fn->{exception_domain}{catchBlocks};
+        $totals{finallyBlocks} += $fn->{exception_domain}{finallyBlocks};
+        $totals{promiseRejects} += $fn->{exception_domain}{promiseRejects};
+        $totals{validatorThrows} += 1 if $fn->{exception_domain}{validatorThrow};
+        $totals{hotValidationThrows} += 1 if $fn->{exception_domain}{hotValidationThrow};
+        $totals{unhandledThrows} += 1 if $fn->{exception_domain}{unhandledThrow};
+    }
+    return \%totals;
+}
+
+sub lifecycle_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        enterCalls => 0,
+        leaveCalls => 0,
+        enterGuardChecks => 0,
+        enterLeaveImbalance => 0,
+        frameAcquires => 0,
+        frameReleases => 0,
+        frameImbalance => 0,
+        pathPushSlots => 0,
+        pathPops => 0,
+        pathImbalance => 0,
+        maxPathDepth => 0,
+        maxFrameDepth => 0,
+        earlyExitGaps => 0,
+        unmatchedFrameReleases => 0,
+        unmatchedPathPops => 0,
+        lifecycleGaps => 0,
+        sourcePathLifecycleGaps => 0
+    );
+
+    for my $fn (@{$functions}) {
+        for my $key (keys %totals) {
+            next if $key eq "maxPathDepth" || $key eq "maxFrameDepth";
+            $totals{$key} += $fn->{lifecycle_domain}{$key};
+        }
+        if ($fn->{lifecycle_domain}{maxPathDepth} > $totals{maxPathDepth}) {
+            $totals{maxPathDepth} = $fn->{lifecycle_domain}{maxPathDepth};
+        }
+        if ($fn->{lifecycle_domain}{maxFrameDepth} > $totals{maxFrameDepth}) {
+            $totals{maxFrameDepth} = $fn->{lifecycle_domain}{maxFrameDepth};
+        }
+    }
+
+    return \%totals;
+}
+
+sub async_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        awaits => 0,
+        awaitsInLoops => 0,
+        loopYields => 0,
+        yieldCalls => 0,
+        promiseCreations => 0,
+        promiseCombinators => 0,
+        floatingPromises => 0,
+        sequentialLoopGaps => 0,
+        floatingPromiseGaps => 0,
+        asyncSchedulingGaps => 0
+    );
+
+    for my $fn (@{$functions}) {
+        my $domain = $fn->{async_domain} // {};
+        for my $key (keys %totals) {
+            $totals{$key} += $domain->{$key} // 0;
+        }
+    }
+
+    return \%totals;
+}
+
+sub symbolic_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        pathSplits => 0,
+        pathConditions => 0,
+        typeGuards => 0,
+        presenceGuards => 0,
+        descriptorGuards => 0,
+        rangeGuards => 0,
+        failFastCuts => 0,
+        hostileSinkSites => 0,
+        closedSinkSites => 0,
+        openSinkSites => 0,
+        sourcePathOpenSinks => 0,
+        maxConditionWidth => 0,
+        approvedBridges => 0
+    );
+
+    for my $fn (@{$functions}) {
+        for my $key (qw(pathSplits pathConditions typeGuards presenceGuards descriptorGuards rangeGuards failFastCuts hostileSinkSites closedSinkSites openSinkSites sourcePathOpenSinks)) {
+            $totals{$key} += $fn->{symbolic_domain}{$key};
+        }
+        $totals{approvedBridges} += 1 if $fn->{symbolic_domain}{approvedBridge};
+        if ($fn->{symbolic_domain}{maxConditionWidth} > $totals{maxConditionWidth}) {
+            $totals{maxConditionWidth} = $fn->{symbolic_domain}{maxConditionWidth};
+        }
+    }
+
+    return \%totals;
+}
+
+sub build_symbolic_dataflow {
+    my ($functions, $graph) = @_;
+    my %by_id = map { $_->{id} => $_ } @{$functions};
+    my %reverse_edges;
+    for my $edge (@{$graph->{edges}}) {
+        push @{$reverse_edges{$edge->{to}}}, $edge;
+    }
+
+    my %reachable;
+    my %local_seed;
+    my %predecessor;
+    my @worklist;
+    my @local_open_functions;
+
+    for my $fn (@{$functions}) {
+        next if $fn->{symbolic_domain}{sourcePathOpenSinks} == 0;
+        $reachable{$fn->{id}} = 1;
+        $local_seed{$fn->{id}} = 1;
+        push @worklist, $fn->{id};
+        push @local_open_functions, symbolic_function_summary($fn);
+    }
+
+    while (@worklist != 0) {
+        my $current = shift @worklist;
+        for my $edge (@{$reverse_edges{$current} // []}) {
+            my $caller = $edge->{from};
+            next if $reachable{$caller};
+            my $caller_fn = $by_id{$caller};
+            next if !defined $caller_fn;
+            next if !function_accepts_symbolic_propagation($caller_fn, $edge);
+            $reachable{$caller} = 1;
+            $predecessor{$caller} = {
+                next => $current,
+                call => $edge->{name},
+                line => $edge->{line}
+            };
+            push @worklist, $caller;
+        }
+    }
+
+    my @propagated_open_functions;
+    for my $fn (@{$functions}) {
+        next if !$reachable{$fn->{id}};
+        next if $local_seed{$fn->{id}};
+        push @propagated_open_functions, symbolic_function_summary($fn);
+    }
+
+    my @paths;
+    for my $entry (@propagated_open_functions) {
+        push @paths, reconstruct_symbolic_path($entry->{id}, \%by_id, \%predecessor);
+    }
+
+    return {
+        localOpenFunctions => scalar(@local_open_functions),
+        propagatedOpenFunctions => scalar(@propagated_open_functions),
+        reachableOpenFunctions => scalar(keys %reachable),
+        local => \@local_open_functions,
+        propagated => \@propagated_open_functions,
+        paths => \@paths
+    };
+}
+
+sub function_accepts_symbolic_propagation {
+    my ($fn, $edge) = @_;
+    return 1 if $edge->{tainted_argument};
+    return 1 if symbolic_sensitive_path($fn->{path}, $fn->{name}) &&
+        has_symbolic_hostile_payload_parameter($fn);
+    return 0;
+}
+
+sub has_symbolic_hostile_payload_parameter {
+    my ($fn) = @_;
+    for my $param (@{$fn->{paramTypes} // []}) {
+        return 1 if $param->{hostilePayload};
+    }
+    return 0;
+}
+
+sub symbolic_function_summary {
+    my ($fn) = @_;
+    return {
+        id => $fn->{id},
+        path => $fn->{path},
+        line => $fn->{line},
+        name => $fn->{name},
+        sourcePathOpenSinks => $fn->{symbolic_domain}{sourcePathOpenSinks},
+        openSinkSites => $fn->{symbolic_domain}{openSinkSites},
+        pathConditions => $fn->{symbolic_domain}{pathConditions},
+        witness => $fn->{symbolic_domain}{witness}
+    };
+}
+
+sub reconstruct_symbolic_path {
+    my ($id, $by_id, $predecessor) = @_;
+    my @path;
+    my %seen;
+    my $current = $id;
+    while (defined $current && !$seen{$current}) {
+        $seen{$current} = 1;
+        my $fn = $by_id->{$current};
+        last if !defined $fn;
+        my $summary = symbolic_function_summary($fn);
+        if (defined $predecessor->{$current}) {
+            $summary->{via_call} = $predecessor->{$current}{call};
+            $summary->{call_line} = $predecessor->{$current}{line};
+        }
+        push @path, $summary;
+        last if !defined $predecessor->{$current};
+        $current = $predecessor->{$current}{next};
+    }
+    return \@path;
+}
+
+sub build_lifecycle_dataflow {
+    my ($functions, $graph) = @_;
+    my %by_id = map { $_->{id} => $_ } @{$functions};
+    my %reverse_edges;
+    for my $edge (@{$graph->{edges}}) {
+        push @{$reverse_edges{$edge->{to}}}, $edge->{from};
+    }
+
+    my %reachable;
+    my %predecessor;
+    my %local_seed;
+    my @worklist;
+    my @local_gap_functions;
+
+    for my $fn (@{$functions}) {
+        next if $fn->{lifecycle_domain}{sourcePathLifecycleGaps} == 0;
+        $local_seed{$fn->{id}} = 1;
+        $reachable{$fn->{id}} = 1;
+        push @worklist, $fn->{id};
+        push @local_gap_functions, lifecycle_function_summary($fn);
+    }
+
+    while (@worklist != 0) {
+        my $current = shift @worklist;
+        for my $caller (@{$reverse_edges{$current} // []}) {
+            next if $reachable{$caller};
+            my $caller_fn = $by_id{$caller};
+            next if !defined $caller_fn;
+            next if !function_accepts_lifecycle_propagation($caller_fn);
+            $reachable{$caller} = 1;
+            $predecessor{$caller} = $current;
+            push @worklist, $caller;
+        }
+    }
+
+    my @propagated_gap_functions;
+    for my $fn (@{$functions}) {
+        next if !$reachable{$fn->{id}};
+        next if $local_seed{$fn->{id}};
+        push @propagated_gap_functions, lifecycle_function_summary($fn);
+    }
+
+    my @paths;
+    for my $entry (@propagated_gap_functions[0 .. min_index(4, scalar(@propagated_gap_functions) - 1)]) {
+        push @paths, reconstruct_lifecycle_path($entry->{id}, \%by_id, \%predecessor);
+    }
+
+    return {
+        localGapFunctions => scalar(@local_gap_functions),
+        propagatedGapFunctions => scalar(@propagated_gap_functions),
+        reachableLifecycleGapFunctions => scalar(keys %reachable),
+        localGaps => \@local_gap_functions,
+        propagatedGaps => \@propagated_gap_functions,
+        paths => \@paths
+    };
+}
+
+sub function_accepts_lifecycle_propagation {
+    my ($fn) = @_;
+    return 1 if is_lifecycle_sensitive_path($fn->{path});
+    return 1 if $fn->{path} =~ /function-ir-self-test/;
+    return 0;
+}
+
+sub lifecycle_function_summary {
+    my ($fn) = @_;
+    return {
+        id => $fn->{id},
+        path => $fn->{path},
+        line => $fn->{line},
+        name => $fn->{name},
+        lifecycleGaps => $fn->{lifecycle_domain}{lifecycleGaps},
+        pathImbalance => $fn->{lifecycle_domain}{pathImbalance},
+        frameImbalance => $fn->{lifecycle_domain}{frameImbalance},
+        earlyExitGaps => $fn->{lifecycle_domain}{earlyExitGaps}
+    };
+}
+
+sub reconstruct_lifecycle_path {
+    my ($id, $by_id, $predecessor) = @_;
+    my @path;
+    my %seen;
+    my $current = $id;
+    while (defined $current && !$seen{$current}) {
+        $seen{$current} = 1;
+        my $fn = $by_id->{$current};
+        last if !defined $fn;
+        push @path, lifecycle_function_summary($fn);
+        $current = $predecessor->{$current};
+    }
+    return \@path;
+}
+
+sub nullish_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        factsCreated => 0,
+        dereferences => 0,
+        guardedDereferences => 0,
+        unguardedDereferences => 0,
+        hostileDereferences => 0,
+        unguardedHostileDereferences => 0
+    );
+    for my $fn (@{$functions}) {
+        for my $key (keys %totals) {
+            $totals{$key} += $fn->{nullish_domain}{$key};
+        }
+    }
+    return \%totals;
+}
+
+sub key_safety_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        dangerousKeyLiterals => 0,
+        ownKeyEnumerations => 0,
+        nullPrototypeAllocations => 0,
+        definePropertyWrites => 0,
+        hasOwnProofs => 0,
+        descriptorProofs => 0,
+        membershipProofs => 0,
+        proofSites => 0,
+        unsafeBulkTransfers => 0,
+        pollutionGaps => 0
+    );
+    my %dangerous_keys;
+
+    for my $fn (@{$functions}) {
+        for my $key (keys %totals) {
+            $totals{$key} += $fn->{key_safety_domain}{$key};
+        }
+        for my $entry (@{$fn->{key_safety_domain}{dangerousKeys}}) {
+            $dangerous_keys{$entry->{key}} += $entry->{count};
+        }
+    }
+
+    $totals{dangerousKeys} = [
+        map {
+            {
+                key => $_,
+                count => $dangerous_keys{$_}
+            }
+        } sort keys %dangerous_keys
+    ];
+    return \%totals;
+}
+
+sub result_state_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        okFacts => 0,
+        postdominatorFacts => 0,
+        payloadReads => 0,
+        guardedPayloadReads => 0,
+        unguardedPayloadReads => 0,
+        errorReads => 0,
+        valueReads => 0,
+        resultLikeVariables => 0,
+        sourcePathResultGaps => 0
+    );
+
+    for my $fn (@{$functions}) {
+        for my $key (keys %totals) {
+            $totals{$key} += $fn->{result_state_domain}{$key};
+        }
+    }
+
+    return \%totals;
+}
+
+sub freeze_state_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        freezeCalls => 0,
+        freezeFacts => 0,
+        mutationSites => 0,
+        propertyWrites => 0,
+        methodMutations => 0,
+        deleteMutations => 0,
+        postFreezeMutations => 0,
+        sourcePathFreezeGaps => 0
+    );
+
+    for my $fn (@{$functions}) {
+        for my $key (keys %totals) {
+            $totals{$key} += $fn->{freeze_state_domain}{$key};
+        }
+    }
+
+    return \%totals;
+}
+
+sub variant_state_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        discriminantSwitches => 0,
+        schemaSwitches => 0,
+        nodeSwitches => 0,
+        checkSwitches => 0,
+        caseLabels => 0,
+        schemaCases => 0,
+        nodeCases => 0,
+        defaultLabels => 0,
+        defaultlessSwitches => 0,
+        nonemptyFallthroughs => 0,
+        terminatingCases => 0,
+        maxCasesPerSwitch => 0,
+        sourcePathVariantGaps => 0
+    );
+
+    for my $fn (@{$functions}) {
+        for my $key (keys %totals) {
+            next if $key eq "maxCasesPerSwitch";
+            $totals{$key} += $fn->{variant_state_domain}{$key};
+        }
+        if ($fn->{variant_state_domain}{maxCasesPerSwitch} > $totals{maxCasesPerSwitch}) {
+            $totals{maxCasesPerSwitch} = $fn->{variant_state_domain}{maxCasesPerSwitch};
+        }
+    }
+
+    return \%totals;
+}
+
+sub source_taint_domain_totals {
+    my ($functions) = @_;
+    my %totals = (
+        sourceBuilders => 0,
+        sourceFragments => 0,
+        templateFragments => 0,
+        stringPushes => 0,
+        joins => 0,
+        dynamicCodeSinks => 0,
+        taintMarkers => 0,
+        escapeProofs => 0,
+        sideTableProofs => 0,
+        abiProofs => 0,
+        rawTemplateGaps => 0,
+        dynamicSinkGaps => 0,
+        sourceTaintGaps => 0
+    );
+
+    for my $fn (@{$functions}) {
+        for my $key (keys %totals) {
+            $totals{$key} += $fn->{source_taint_domain}{$key};
+        }
+    }
+
+    return \%totals;
+}
+
+sub build_source_provenance_dataflow {
+    my ($functions, $graph) = @_;
+    my %by_id = map { $_->{id} => $_ } @{$functions};
+    my %reverse_edges;
+    for my $edge (@{$graph->{edges}}) {
+        push @{$reverse_edges{$edge->{to}}}, $edge->{from};
+    }
+
+    my %proofed;
+    my %predecessor;
+    my @worklist;
+    my $local_proof_functions = 0;
+
+    for my $fn (@{$functions}) {
+        next if !function_has_source_provenance_seed($fn);
+        $proofed{$fn->{id}} = 1;
+        $local_proof_functions += 1;
+        push @worklist, $fn->{id};
+    }
+
+    while (@worklist != 0) {
+        my $current = shift @worklist;
+        for my $caller (@{$reverse_edges{$current} // []}) {
+            next if $proofed{$caller};
+            my $caller_fn = $by_id{$caller};
+            next if !defined $caller_fn;
+            next if !function_accepts_source_provenance($caller_fn);
+            $proofed{$caller} = 1;
+            $predecessor{$caller} = $current;
+            push @worklist, $caller;
+        }
+    }
+
+    my @gap_functions;
+    my @proofed_builders;
+    for my $fn (@{$functions}) {
+        if ($fn->{source_taint_domain}{sourceBuilders} != 0 && $proofed{$fn->{id}}) {
+            push @proofed_builders, source_provenance_function_summary($fn);
+        }
+        if ($fn->{source_taint_domain}{sourceTaintGaps} != 0 && !$proofed{$fn->{id}}) {
+            push @gap_functions, source_provenance_function_summary($fn);
+        }
+    }
+
+    return {
+        proofed => \%proofed,
+        localProofFunctions => $local_proof_functions,
+        propagatedProofFunctions => scalar(keys %proofed) - $local_proof_functions,
+        proofedSourceBuilders => scalar(@proofed_builders),
+        gapSourceBuilders => scalar(@gap_functions),
+        proofedBuilders => \@proofed_builders,
+        gaps => \@gap_functions
+    };
+}
+
+sub function_has_source_provenance_seed {
+    my ($fn) = @_;
+    return 1 if $fn->{source_taint_domain}{escapeProofs} != 0;
+    return 1 if $fn->{source_taint_domain}{sideTableProofs} != 0;
+    return 1 if $fn->{source_taint_domain}{abiProofs} != 0;
+    return 0;
+}
+
+sub function_accepts_source_provenance {
+    my ($fn) = @_;
+    return 1 if $fn->{source_taint_domain}{sourceBuilders} != 0;
+    return 1 if $fn->{source_taint_domain}{sourceFragments} != 0 &&
+        ($fn->{path} =~ m{\Asrc/(?:compile|aot|seabreeze)/} || $fn->{path} =~ /function-ir-self-test/);
+    return 0;
+}
+
+sub source_provenance_function_summary {
+    my ($fn) = @_;
+    return {
+        id => $fn->{id},
+        path => $fn->{path},
+        line => $fn->{line},
+        name => $fn->{name},
+        sourceFragments => $fn->{source_taint_domain}{sourceFragments},
+        taintMarkers => $fn->{source_taint_domain}{taintMarkers}
+    };
+}
+
+sub cfg_totals {
+    my ($functions) = @_;
+    my %totals = (
+        blocks => 0,
+        edges => 0,
+        decisions => 0,
+        loops => 0,
+        exits => 0,
+        throws => 0,
+        unreachableStatements => 0,
+        maxDepth => 0
+    );
+    for my $fn (@{$functions}) {
+        for my $key (qw(blocks edges decisions loops exits throws unreachableStatements)) {
+            $totals{$key} += $fn->{cfg}{$key};
+        }
+        $totals{maxDepth} = $fn->{cfg}{maxDepth} if $fn->{cfg}{maxDepth} > $totals{maxDepth};
+    }
+    return \%totals;
+}
+
+sub build_effect_dataflow {
+    my ($functions, $graph) = @_;
+    my %by_id = map { $_->{id} => $_ } @{$functions};
+    my %reverse_edges;
+    for my $edge (@{$graph->{edges}}) {
+        push @{$reverse_edges{$edge->{to}}}, $edge->{from};
+    }
+
+    my @allocation_functions;
+    my @loop_allocation_functions;
+    my @hot_loop_allocation_functions;
+    my @reflection_array_functions;
+    my @closure_functions;
+    my @dynamic_code_functions;
+    my %effect_reachable;
+    my @worklist;
+
+    for my $fn (@{$functions}) {
+        if ($fn->{effect}{allocations} != 0) {
+            push @allocation_functions, $fn;
+            $effect_reachable{$fn->{id}} = 1;
+            push @worklist, $fn->{id};
+        }
+        push @loop_allocation_functions, $fn if $fn->{effect}{loopAllocations} != 0;
+        push @hot_loop_allocation_functions, $fn if $fn->{effect}{hotPathLoopAllocations} != 0;
+        push @reflection_array_functions, $fn if $fn->{effect}{reflectionArrays} != 0;
+        push @closure_functions, $fn if $fn->{effect}{closures} != 0;
+        push @dynamic_code_functions, $fn if $fn->{effect}{dynamicCode} != 0;
+    }
+
+    while (@worklist != 0) {
+        my $current = shift @worklist;
+        for my $caller (@{$reverse_edges{$current} // []}) {
+            next if $effect_reachable{$caller};
+            $effect_reachable{$caller} = 1;
+            push @worklist, $caller;
+        }
+    }
+
+    return {
+        totals => effect_totals($functions),
+        allocation_functions => \@allocation_functions,
+        loop_allocation_functions => \@loop_allocation_functions,
+        hot_loop_allocation_functions => \@hot_loop_allocation_functions,
+        reflection_array_functions => \@reflection_array_functions,
+        closure_functions => \@closure_functions,
+        dynamic_code_functions => \@dynamic_code_functions,
+        propagated_allocation_functions => scalar(keys %effect_reachable),
+        top_functions => top_effect_functions($functions)
+    };
+}
+
+sub effect_totals {
+    my ($functions) = @_;
+    my %totals = (
+        allocations => 0,
+        loopAllocations => 0,
+        closures => 0,
+        reflectionArrays => 0,
+        dynamicCode => 0,
+        hotPathLoopAllocations => 0
+    );
+    for my $fn (@{$functions}) {
+        for my $key (keys %totals) {
+            $totals{$key} += $fn->{effect}{$key};
+        }
+    }
+    return \%totals;
+}
+
+sub top_effect_functions {
+    my ($functions) = @_;
+    my @ranked = sort {
+        effect_score($b) <=> effect_score($a) ||
+        $a->{path} cmp $b->{path} ||
+        $a->{line} <=> $b->{line}
+    } grep { effect_score($_) != 0 } @{$functions};
+    my @top;
+    for my $fn (@ranked) {
+        last if @top >= 5;
+        push @top, {
+            path => $fn->{path},
+            line => $fn->{line},
+            name => $fn->{name},
+            score => effect_score($fn),
+            allocations => $fn->{effect}{allocations},
+            loopAllocations => $fn->{effect}{loopAllocations},
+            closures => $fn->{effect}{closures},
+            reflectionArrays => $fn->{effect}{reflectionArrays}
+        };
+    }
+    return \@top;
+}
+
+sub effect_score {
+    my ($fn) = @_;
+    return $fn->{effect}{allocations} +
+        ($fn->{effect}{loopAllocations} * 4) +
+        ($fn->{effect}{reflectionArrays} * 3) +
+        ($fn->{effect}{closures} * 2) +
+        ($fn->{effect}{dynamicCode} * 5);
+}
+
+sub build_contract_domain {
+    my ($functions, $graph) = @_;
+    my %reverse_edges;
+    for my $edge (@{$graph->{edges}}) {
+        push @{$reverse_edges{$edge->{to}}}, $edge->{from};
+    }
+
+    my %totals = (
+        validators => 0,
+        sanitizers => 0,
+        descriptorFactories => 0,
+        dynamicBridges => 0,
+        sinks => 0,
+        pureCandidates => 0,
+        contractlessSinks => 0,
+        throwingPredicates => 0
+    );
+    my @contractless_sinks;
+    my @throwing_predicates;
+    my %sink_reachable;
+    my @worklist;
+
+    for my $fn (@{$functions}) {
+        $totals{validators} += 1 if $fn->{contract}{validator};
+        $totals{sanitizers} += 1 if $fn->{contract}{sanitizer};
+        $totals{descriptorFactories} += 1 if $fn->{contract}{descriptorFactory};
+        $totals{dynamicBridges} += 1 if $fn->{contract}{dynamicBridge};
+        $totals{sinks} += 1 if $fn->{contract}{sink};
+        $totals{pureCandidates} += 1 if $fn->{contract}{pureCandidate};
+        if ($fn->{contract}{contractlessSink}) {
+            $totals{contractlessSinks} += 1;
+            push @contractless_sinks, $fn;
+        }
+        if ($fn->{contract}{throwingPredicate}) {
+            $totals{throwingPredicates} += 1;
+            push @throwing_predicates, $fn;
+        }
+        if ($fn->{contract}{sink}) {
+            $sink_reachable{$fn->{id}} = 1;
+            push @worklist, $fn->{id};
+        }
+    }
+
+    while (@worklist != 0) {
+        my $current = shift @worklist;
+        for my $caller (@{$reverse_edges{$current} // []}) {
+            next if $sink_reachable{$caller};
+            $sink_reachable{$caller} = 1;
+            push @worklist, $caller;
+        }
+    }
+
+    return {
+        totals => \%totals,
+        contractless_sinks => \@contractless_sinks,
+        throwing_predicates => \@throwing_predicates,
+        sink_reachable_functions => scalar(keys %sink_reachable),
+        top_contractless_sinks => top_contractless_sinks(\@contractless_sinks)
+    };
+}
+
+sub top_contractless_sinks {
+    my ($functions) = @_;
+    my @ranked = sort {
+        $b->{complexity} <=> $a->{complexity} ||
+        $a->{path} cmp $b->{path} ||
+        $a->{line} <=> $b->{line}
+    } @{$functions};
+    my @top;
+    for my $fn (@ranked) {
+        last if @top >= 5;
+        push @top, {
+            path => $fn->{path},
+            line => $fn->{line},
+            name => $fn->{name},
+            complexity => $fn->{complexity},
+            dynamicCode => $fn->{dynamic_code_sinks},
+            directHostileReads => $fn->{direct_hostile_reads},
+            descriptorValueReads => $fn->{descriptor_value_reads}
+        };
+    }
+    return \@top;
+}
+
+sub build_taint_dataflow {
+    my ($functions, $graph) = @_;
+    my %by_id = map { $_->{id} => $_ } @{$functions};
+    my %tainted;
+    my %predecessor;
+    my @worklist;
+
+    for my $fn (@{$functions}) {
+        next if !has_hostile_named_parameter($fn);
+        $tainted{$fn->{id}} = 1;
+        push @worklist, $fn->{id};
+    }
+
+    while (@worklist != 0) {
+        my $current = shift @worklist;
+        for my $edge (@{$graph->{edges}}) {
+            next if $edge->{from} ne $current;
+            next if !$edge->{tainted_argument};
+            next if $tainted{$edge->{to}};
+            $tainted{$edge->{to}} = 1;
+            $predecessor{$edge->{to}} = $edge;
+            push @worklist, $edge->{to};
+        }
+    }
+
+    my @local_paths;
+    my @interprocedural_paths;
+    for my $fn (@{$functions}) {
+        next if !$tainted{$fn->{id}};
+        next if !is_taint_sink_function($fn);
+        my $path = reconstruct_taint_path($fn->{id}, \%by_id, \%predecessor);
+        if (@{$path} > 1) {
+            push @interprocedural_paths, $path;
+        } else {
+            push @local_paths, $path;
+        }
+    }
+
+    return {
+        tainted_functions => scalar(keys %tainted),
+        paths => [@interprocedural_paths, @local_paths],
+        interprocedural_paths => \@interprocedural_paths,
+        local_paths => \@local_paths
+    };
+}
+
+sub abstract_domain_counts {
+    my ($functions) = @_;
+    my %descriptor = (
+        none => 0,
+        read_only => 0,
+        proofed => 0,
+        factory_proofed => 0,
+        value_before_proof => 0,
+        missing_proof => 0
+    );
+    my %sink = (
+        none => 0,
+        dynamic_code => 0,
+        hostile_read => 0,
+        descriptor_value => 0
+    );
+    for my $fn (@{$functions}) {
+        if ($fn->{descriptor_value_before_proof} != 0) {
+            $descriptor{value_before_proof} += 1;
+        } elsif ($fn->{descriptor_reads} == 0 && $fn->{descriptor_value_reads} == 0 && $fn->{descriptor_value_factory_proofs} == 0) {
+            $descriptor{none} += 1;
+        } elsif ($fn->{descriptor_value_factory_proofs} != 0) {
+            $descriptor{factory_proofed} += 1;
+        } elsif ($fn->{descriptor_value_reads} != 0 && $fn->{value_proofs} == 0) {
+            $descriptor{missing_proof} += 1;
+        } elsif ($fn->{value_proofs} != 0) {
+            $descriptor{proofed} += 1;
+        } else {
+            $descriptor{read_only} += 1;
+        }
+
+        if ($fn->{dynamic_code_sinks} != 0) {
+            $sink{dynamic_code} += 1;
+        } elsif ($fn->{direct_hostile_reads} != 0) {
+            $sink{hostile_read} += 1;
+        } elsif ($fn->{descriptor_value_reads} != 0) {
+            $sink{descriptor_value} += 1;
+        } else {
+            $sink{none} += 1;
+        }
+    }
+    return {
+        descriptor => \%descriptor,
+        sink => \%sink
+    };
+}
+
+sub reconstruct_taint_path {
+    my ($sink_id, $by_id, $predecessor) = @_;
+    my @steps;
+    my %seen;
+    my $cursor = $sink_id;
+    while (defined $cursor && !$seen{$cursor}) {
+        $seen{$cursor} = 1;
+        my $fn = $by_id->{$cursor};
+        last if !defined $fn;
+        unshift @steps, {
+            path => $fn->{path},
+            line => $fn->{line},
+            function => $fn->{name},
+            id => $fn->{id}
+        };
+        my $edge = $predecessor->{$cursor};
+        last if !defined $edge;
+        $steps[0]{via_call_line} = $edge->{line};
+        $steps[0]{via_call} = $edge->{name};
+        $cursor = $edge->{from};
+    }
+    return \@steps;
+}
+
+sub is_taint_sink_function {
+    my ($fn) = @_;
+    return 1 if $fn->{dynamic_code_sinks} != 0 && !is_approved_dynamic_sink_function($fn);
+    return 1 if $fn->{direct_hostile_reads} != 0 && is_safe_validation_path($fn->{path});
+    return 1 if $fn->{descriptor_value_unproved_reads} != 0 && is_safe_validation_path($fn->{path});
+    return 0;
+}
+
+sub call_carries_taint_candidate {
+    my ($fn, $call) = @_;
+    my %params = map { $_ => 1 } @{$fn->{params}};
+    for my $argument (@{$call->{arguments}}) {
+        return 1 if $params{$argument};
+        return 1 if is_hostile_name($argument);
+    }
+    return 0;
+}
+
+sub is_safe_validation_path {
+    my ($path) = @_;
+    return 1 if $path =~ m{\Asrc/(?:plan|evaluate|async-validation)/};
+    return 0;
+}
+
+sub is_approved_dynamic_sink_function {
+    my ($fn) = @_;
+    return is_approved_dynamic_sink_name_path($fn->{path}, $fn->{name});
+}
+
+sub is_approved_dynamic_sink_name_path {
+    my ($path, $name) = @_;
+    return 1 if $path eq "src/compile/guard.ts";
+    return 1 if $path eq "src/seabreeze/builder.ts";
+    return 0;
+}
+
+sub has_hostile_named_parameter {
+    my ($fn) = @_;
+    for my $param (@{$fn->{params}}) {
+        return 1 if is_hostile_name($param);
+    }
+    return 0;
+}
+
+sub is_hostile_name {
+    my ($name) = @_;
+    my %names = map { $_ => 1 } qw(input value data record source code fragment schema payload unknown raw);
+    return $names{$name} ? 1 : 0;
+}
+
+sub token_slice {
+    my ($tokens, $start, $end) = @_;
+    my @out;
+    for (my $index = $start; $index < $end && $index < @{$tokens}; $index += 1) {
+        push @out, $tokens->[$index];
+    }
+    return @out;
+}
+
+sub function_id {
+    my ($path, $name, $line) = @_;
+    return "$path#$name:$line";
+}
+
+sub token_line {
+    my ($tokens, $index) = @_;
+    return 1 if !defined $index || $index < 0 || $index >= @{$tokens};
+    return $tokens->[$index]{line};
+}
+
+sub min_number {
+    my ($left, $right) = @_;
+    return $left < $right ? $left : $right;
+}
+
+sub is_decision_token {
+    my ($value) = @_;
+    return 1 if $value eq "if" ||
+        $value eq "for" ||
+        $value eq "while" ||
+        $value eq "case" ||
+        $value eq "catch" ||
+        $value eq "?" ||
+        $value eq "&&" ||
+        $value eq "||" ||
+        $value eq "??";
+    return 0;
+}
+
+sub read_public_declarations {
+    my ($lex) = @_;
+    my $tokens = $lex->{tokens};
+    my @declarations;
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        next if token_value($tokens, $index) ne "export";
+        my $cursor = $index + 1;
+        $cursor += 1 if token_value($tokens, $cursor) eq "default";
+        $cursor += 1 if token_value($tokens, $cursor) eq "declare";
+        $cursor += 1 if token_value($tokens, $cursor) eq "async";
+        my $kind = token_value($tokens, $cursor);
+        next if $kind ne "function" &&
+            $kind ne "class" &&
+            $kind ne "interface" &&
+            $kind ne "type" &&
+            $kind ne "const" &&
+            $kind ne "enum";
+        my $line = $tokens->[$index]{line};
+        push @declarations, {
+            line => $line,
+            kind => $kind,
+            documented => has_jsdoc_before($lex, $line)
+        };
+    }
+    return \@declarations;
+}
+
+sub has_jsdoc_before {
+    my ($lex, $line) = @_;
+    for my $block (@{$lex->{jsdocs}}) {
+        next if $block->{end_line} >= $line;
+        return 1 if $line - $block->{end_line} <= 8;
+    }
+    return 0;
+}
+
+sub token_ir_mentions_any {
+    my ($lex, @needles) = @_;
+    my %needles = map { lc($_) => 1 } @needles;
+    for my $token (@{$lex->{tokens}}) {
+        return 1 if $needles{lc($token->{value})};
+    }
+    for my $fragment (@{$lex->{strings}}) {
+        for my $needle (@needles) {
+            return 1 if index(lc($fragment), lc($needle)) >= 0;
+        }
+    }
+    return 0;
+}
+
+sub count_token_value {
+    my ($tokens, $value) = @_;
+    my $count = 0;
+    for my $token (@{$tokens}) {
+        $count += 1 if $token->{value} eq $value;
+    }
+    return $count;
+}
+
+sub count_token_after {
+    my ($tokens, $value, $type) = @_;
+    my $count = 0;
+    for (my $index = 0; $index + 1 < @{$tokens}; $index += 1) {
+        next if token_value($tokens, $index) ne $value;
+        $count += 1 if token_type($tokens, $index + 1) eq $type;
+    }
+    return $count;
+}
+
+sub count_token_sequence {
+    my ($tokens, @values) = @_;
+    my $count = 0;
+    return 0 if @values == 0;
+    for (my $index = 0; $index + @values <= @{$tokens}; $index += 1) {
+        my $matched = 1;
+        for (my $offset = 0; $offset < @values; $offset += 1) {
+            if (token_value($tokens, $index + $offset) ne $values[$offset]) {
+                $matched = 0;
+                last;
+            }
+        }
+        $count += 1 if $matched;
+    }
+    return $count;
+}
+
+sub count_token_type {
+    my ($tokens, $type) = @_;
+    my $count = 0;
+    for my $token (@{$tokens}) {
+        $count += 1 if $token->{type} eq $type;
+    }
+    return $count;
+}
+
+sub has_token_sequence {
+    my ($tokens, @values) = @_;
+    return count_token_sequence($tokens, @values) != 0 ? 1 : 0;
+}
+
+sub count_call_name {
+    my ($tokens, $name) = @_;
+    my $count = 0;
+    for (my $index = 0; $index + 1 < @{$tokens}; $index += 1) {
+        next if token_value($tokens, $index) ne $name;
+        $count += 1 if token_value($tokens, $index + 1) eq "(";
+    }
+    return $count;
+}
+
+sub count_call_string_argument {
+    my ($tokens, $name, $argument) = @_;
+    my $count = 0;
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        next if token_value($tokens, $index) ne $name;
+        next if token_value($tokens, $index + 1) ne "(";
+        my $depth = 1;
+        for (my $cursor = $index + 2; $cursor < @{$tokens} && $depth != 0; $cursor += 1) {
+            my $value = token_value($tokens, $cursor);
+            if ($value eq "(") {
+                $depth += 1;
+                next;
+            }
+            if ($value eq ")") {
+                $depth -= 1;
+                next;
+            }
+            if ($depth == 1 && token_type($tokens, $cursor) eq "string" && $value eq $argument) {
+                $count += 1;
+                last;
+            }
+        }
+    }
+    return $count;
+}
+
+sub count_case_string {
+    my ($tokens, $value) = @_;
+    my $count = 0;
+    for (my $index = 0; $index + 2 < @{$tokens}; $index += 1) {
+        next if token_value($tokens, $index) ne "case";
+        next if token_type($tokens, $index + 1) ne "string";
+        next if token_value($tokens, $index + 1) ne $value;
+        $count += 1 if token_value($tokens, $index + 2) eq ":";
+    }
+    return $count;
+}
+
+sub count_new_function_abi {
+    my ($tokens) = @_;
+    my @expected = qw(l r k u d m mf sk);
+    my $count = 0;
+    for (my $index = 0; $index + 2 < @{$tokens}; $index += 1) {
+        next if token_value($tokens, $index) ne "new";
+        next if token_value($tokens, $index + 1) ne "Function";
+        next if token_value($tokens, $index + 2) ne "(";
+        my @arguments;
+        my $depth = 1;
+        for (my $cursor = $index + 3; $cursor < @{$tokens} && $depth != 0; $cursor += 1) {
+            my $value = token_value($tokens, $cursor);
+            if ($value eq "(") {
+                $depth += 1;
+                next;
+            }
+            if ($value eq ")") {
+                $depth -= 1;
+                next;
+            }
+            push @arguments, $value if $depth == 1 && token_type($tokens, $cursor) eq "string";
+        }
+        next if @arguments < @expected;
+        my $matched = 1;
+        for (my $slot = 0; $slot < @expected; $slot += 1) {
+            if ($arguments[$slot] ne $expected[$slot]) {
+                $matched = 0;
+                last;
+            }
+        }
+        $count += 1 if $matched;
+    }
+    return $count;
+}
+
+sub count_fragment_matches {
+    my ($lex, $regex) = @_;
+    my $count = 0;
+    for my $fragment (@{$lex->{strings}}) {
+        while ($fragment =~ /$regex/g) {
+            $count += 1;
+        }
+    }
+    return $count;
+}
+
+sub has_adjacent_string_values {
+    my ($lex, $left, $right) = @_;
+    my $tokens = $lex->{tokens};
+    for (my $index = 0; $index + 1 < @{$tokens}; $index += 1) {
+        next if token_type($tokens, $index) ne "string";
+        next if token_value($tokens, $index) ne $left;
+        for (my $cursor = $index + 1; $cursor < @{$tokens}; $cursor += 1) {
+            last if token_value($tokens, $cursor) eq ";";
+            next if token_type($tokens, $cursor) ne "string";
+            return 1 if token_value($tokens, $cursor) eq $right;
+            last;
+        }
+    }
+    return 0;
+}
+
+sub source_files {
+    my ($root, $pattern) = @_;
+    my @files;
+    return @files if !-d $root;
+    find(
+        {
+            no_chdir => 1,
+            wanted => sub {
+                return if !-f $File::Find::name;
+                return if $File::Find::name !~ $pattern;
+                push @files, $File::Find::name;
+            }
+        },
+        $root
+    );
+    return sort @files;
+}
+
+sub source_policy_has_boilerplate_guards {
+    return 0 if !-f "scripts/source-policy.mjs";
+    my $source = read_text("scripts/source-policy.mjs");
+    return index($source, "Borrowed input slot ") >= 0 &&
+        index($source, "This helper keeps a local ") >= 0 &&
+        index($source, "Builder helpers normalize ") >= 0 &&
+        index($source, "Script helpers keep ") >= 0 &&
+        index($source, "\@brief Check ") >= 0;
+}
+
+sub read_json {
+    my ($path) = @_;
+    my $text = read_text($path);
+    my $value = eval { decode_json($text) };
+    if ($@) {
+        return {};
+    }
+    return ref($value) eq "HASH" ? $value : {};
+}
+
+sub read_arg_value {
+    my ($name) = @_;
+    for (my $index = 0; $index < @ARGV; $index += 1) {
+        next if $ARGV[$index] ne $name;
+        return $ARGV[$index + 1]
+            if $index + 1 < @ARGV && $ARGV[$index + 1] !~ /\A--/;
+        return undef;
+    }
+    return undef;
+}
+
+sub read_arg_values {
+    my ($name) = @_;
+    my @values;
+    for (my $index = 0; $index < @ARGV; $index += 1) {
+        next if $ARGV[$index] ne $name;
+        next if $index + 1 >= @ARGV;
+        next if $ARGV[$index + 1] =~ /\A--/;
+        push @values, $ARGV[$index + 1];
+    }
+    return @values;
+}
+
+sub has_arg {
+    my ($name) = @_;
+    for my $arg (@ARGV) {
+        return 1 if $arg eq $name;
+    }
+    return 0;
+}
+
+sub read_text {
+    my ($path) = @_;
+    open my $handle, "<:encoding(UTF-8)", $path or die "failed to read $path: $!";
+    local $/;
+    my $text = <$handle>;
+    close $handle or die "failed to close $path: $!";
+    return $text;
+}
+
+sub object_or_empty {
+    my ($value) = @_;
+    return ref($value) eq "HASH" ? $value : {};
+}
+
+sub array_or_empty {
+    my ($value) = @_;
+    return ref($value) eq "ARRAY" ? $value : [];
+}
+
+sub script_contains {
+    my ($scripts, $name, $needle) = @_;
+    return 0 if !exists $scripts->{$name};
+    return index($scripts->{$name}, $needle) >= 0 ? 1 : 0;
+}
+
+sub script_equals {
+    my ($scripts, $name, $expected) = @_;
+    return 0 if !exists $scripts->{$name};
+    return $scripts->{$name} eq $expected ? 1 : 0;
+}
+
+sub count_direct_value_property_reads {
+    my ($tokens) = @_;
+    my $count = 0;
+    for (my $index = 0; $index + 2 < @{$tokens}; $index += 1) {
+        next if token_value($tokens, $index) ne "value";
+        next if token_value($tokens, $index + 1) ne ".";
+        next if token_type($tokens, $index + 2) ne "id";
+        my $property = token_value($tokens, $index + 2);
+        next if $property eq "length";
+        $count += 1;
+    }
+    return $count;
+}
+
+sub diagnostic {
+    my ($severity, $code, $where, $message, $flow) = @_;
+    return {
+        severity => $severity,
+        code => $code,
+        where => $where,
+        message => $message,
+        flow => defined $flow ? $flow : []
+    };
+}
+
+sub budgeted_flow_severity {
+    my ($count, $budget) = @_;
+    return $count > $budget ? "warning" : "notice";
+}
+
+sub min_index {
+    my ($left, $right) = @_;
+    return $left < $right ? $left : $right;
+}
+
+sub flow_steps_from_taint_path {
+    my ($path) = @_;
+    my @steps;
+    for my $index (0 .. $#{$path}) {
+        my $step = $path->[$index];
+        my $message = $index == 0
+            ? "hostile-named parameter enters function '$step->{function}'"
+            : "taint reaches function '$step->{function}'";
+        if (defined $step->{via_call}) {
+            $message .= " through call '$step->{via_call}'";
+        }
+        push @steps, {
+            path => $step->{path},
+            line => $step->{line},
+            message => $message
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_type_escape_findings {
+    my ($findings) = @_;
+    my @steps;
+    for my $finding (@{$findings // []}) {
+        last if @steps >= 12;
+        push @steps, {
+            path => $finding->{path},
+            line => $finding->{line},
+            message => ($finding->{kind} // "type_escape") . ": " . ($finding->{message} // "type-safety escape hatch")
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_regex_findings {
+    my ($findings) = @_;
+    my @steps;
+    for my $finding (@{$findings // []}) {
+        last if @steps >= 12;
+        my $source = $finding->{source} // "";
+        $source = substr($source, 0, 80) . "..." if length($source) > 83;
+        push @steps, {
+            path => $finding->{path},
+            line => $finding->{line},
+            message => ($finding->{kind} // "regex_risk") . ": " .
+                ($finding->{message} // "regex risk") .
+                " /" . $source . "/"
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_secret_findings {
+    my ($findings) = @_;
+    my @steps;
+    for my $finding (@{$findings // []}) {
+        last if @steps >= 12;
+        push @steps, {
+            path => $finding->{path},
+            line => $finding->{line},
+            message => ($finding->{kind} // "secret") . ": " .
+                ($finding->{message} // "hardcoded secret-like value") .
+                " " . ($finding->{preview} // "<redacted>")
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_workflow_findings {
+    my ($findings) = @_;
+    my @steps;
+    for my $finding (@{$findings // []}) {
+        last if @steps >= 12;
+        push @steps, {
+            path => $finding->{path},
+            line => $finding->{line},
+            message => ($finding->{kind} // "workflow") . ": " .
+                ($finding->{message} // "workflow supply-chain finding")
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_package_lock_findings {
+    my ($findings) = @_;
+    my @steps;
+    for my $finding (@{$findings // []}) {
+        last if @steps >= 12;
+        push @steps, {
+            path => $finding->{path},
+            line => $finding->{line},
+            message => ($finding->{kind} // "lockfile") . ": " .
+                ($finding->{message} // "package-lock supply-chain finding")
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_license_findings {
+    my ($findings) = @_;
+    my @steps;
+    for my $finding (@{$findings // []}) {
+        last if @steps >= 12;
+        push @steps, {
+            path => $finding->{path},
+            line => $finding->{line},
+            message => ($finding->{kind} // "license") . ": " .
+                ($finding->{license} // "<missing>") . " " .
+                ($finding->{message} // "package license finding")
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_api_surface_findings {
+    my ($findings) = @_;
+    my @steps;
+    for my $finding (@{$findings // []}) {
+        last if @steps >= 12;
+        push @steps, {
+            path => $finding->{path},
+            line => $finding->{line},
+            message => ($finding->{kind} // "api_surface") . ": " .
+                ($finding->{specifier} // "<unknown>") . " " .
+                ($finding->{message} // "public API surface finding")
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_release_consistency_findings {
+    my ($findings) = @_;
+    my @steps;
+    for my $finding (@{$findings // []}) {
+        last if @steps >= 12;
+        push @steps, {
+            path => $finding->{path},
+            line => $finding->{line},
+            message => ($finding->{kind} // "release_consistency") . ": " .
+                ($finding->{message} // "release metadata consistency finding")
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_test_evidence_findings {
+    my ($findings) = @_;
+    my @steps;
+    for my $finding (@{$findings // []}) {
+        last if @steps >= 12;
+        push @steps, {
+            path => $finding->{path},
+            line => $finding->{line},
+            message => ($finding->{suite} // "test-suite") . ": " .
+                ($finding->{message} // "required test evidence is missing")
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_benchmark_evidence_findings {
+    my ($findings) = @_;
+    my @steps;
+    for my $finding (@{$findings // []}) {
+        last if @steps >= 12;
+        my $target = ($finding->{suite} // "benchmark") .
+            (($finding->{row} // "") ne "" ? "/" . $finding->{row} : "");
+        push @steps, {
+            path => $finding->{path},
+            line => $finding->{line},
+            message => $target . ": " .
+                ($finding->{message} // "required benchmark evidence is missing")
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_rule_metadata_findings {
+    my ($findings) = @_;
+    my @steps;
+    for my $finding (@{$findings // []}) {
+        last if @steps >= 12;
+        push @steps, {
+            path => $finding->{path},
+            line => $finding->{line},
+            message => ($finding->{rule} // "rule") . "/" .
+                ($finding->{field} // "metadata") . ": " .
+                ($finding->{message} // "rule metadata integrity finding")
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_recursion_cycle {
+    my ($cycle) = @_;
+    my @steps;
+    my $index = 0;
+    for my $member (@{$cycle->{members}}) {
+        $index += 1;
+        my $proof = $member->{hasProof}
+            ? "has bounded-recursion proof evidence"
+            : "has no local bounded-recursion proof evidence";
+        push @steps, {
+            path => $member->{path},
+            line => $member->{line},
+            message => "recursive SCC member $index '$member->{name}' $proof"
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_clone_group {
+    my ($group) = @_;
+    my @steps;
+    my $index = 0;
+    for my $example (@{$group->{examples} // []}) {
+        $index += 1;
+        push @steps, {
+            path => $example->{path},
+            line => $example->{line},
+            message => "clone occurrence $index spans lines " .
+                $example->{line} . "-" . $example->{endLine} .
+                " with normalized prefix: " . ($example->{preview} // "")
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_lifecycle_path {
+    my ($path) = @_;
+    my @steps;
+    for my $index (0 .. $#{$path}) {
+        my $step = $path->[$index];
+        my $message = $index == 0
+            ? "caller '$step->{name}' reaches a lifecycle gap"
+            : "callee '$step->{name}' carries local lifecycle imbalance";
+        push @steps, {
+            path => $step->{path},
+            line => $step->{line},
+            message => $message
+        };
+    }
+    return \@steps;
+}
+
+sub flow_steps_from_symbolic_witness {
+    my ($witness) = @_;
+    return [] if !defined $witness;
+    my @steps;
+    for my $condition (@{$witness->{conditions} // []}) {
+        my $polarity = $condition->{pathPolarity} // "unknown";
+        my $path_text = $condition->{pathText} // $condition->{text};
+        push @steps, {
+            path => $witness->{path},
+            line => $condition->{line},
+            message => "symbolic condition '" . $condition->{kind} . "' constrains path " .
+                "with polarity " . $polarity . ": " . $path_text
+        };
+    }
+    push @steps, {
+        path => $witness->{path},
+        line => $witness->{line},
+        message => "open hostile-input sink '" . $witness->{sink} . "' of kind " . $witness->{kind} .
+            " remains in function '" . $witness->{name} . "'"
+    };
+    return \@steps;
+}
+
+sub flow_steps_from_symbolic_path {
+    my ($path) = @_;
+    my @steps;
+    for my $index (0 .. $#{$path}) {
+        my $step = $path->[$index];
+        my $message = $index == 0
+            ? "caller '$step->{name}' reaches symbolic open-sink state"
+            : "callee '$step->{name}' propagates symbolic open-sink state";
+        if (defined $step->{via_call}) {
+            $message .= " through call '$step->{via_call}'";
+        }
+        push @steps, {
+            path => $step->{path},
+            line => $step->{call_line} // $step->{line},
+            message => $message
+        };
+    }
+    my $last = $path->[-1];
+    if (defined $last && defined $last->{witness}) {
+        push @steps, @{flow_steps_from_symbolic_witness($last->{witness})};
+    }
+    return \@steps;
+}
+
+sub annotate_diagnostics {
+    my ($diagnostics, $baseline) = @_;
+    my %ignored = map { $_ => 1 } @{$baseline->{ignored_fingerprints}};
+    for my $diag (@{$diagnostics}) {
+        my $fingerprint = diagnostic_fingerprint($diag);
+        $diag->{fingerprint} = $fingerprint;
+        if ($ignored{$fingerprint}) {
+            $diag->{suppressed} = 1;
+            $diag->{suppression} = "policy-baseline";
+        } else {
+            $diag->{suppressed} = 0;
+        }
+    }
+}
+
+sub ensure_diagnostic_fingerprints {
+    my ($diagnostics) = @_;
+    for my $diag (@{$diagnostics}) {
+        $diag->{fingerprint} = diagnostic_fingerprint($diag)
+            if !defined $diag->{fingerprint};
+        $diag->{suppressed} = 0 if !defined $diag->{suppressed};
+    }
+}
+
+sub apply_source_suppressions {
+    my ($diagnostics, $suppressions) = @_;
+    return if ref($suppressions) ne "HASH";
+    for my $diag (@{$diagnostics}) {
+        next if $diag->{suppressed};
+        my ($path, $line) = diagnostic_location($diag->{where});
+        next if !defined $path || !defined $line;
+        my $exact = "$path:$line:$diag->{code}";
+        my $wildcard = "$path:$line:*";
+        my $suppression = $suppressions->{$exact} // $suppressions->{$wildcard};
+        next if ref($suppression) ne "HASH";
+        $diag->{suppressed} = 1;
+        $diag->{suppression} = "source-comment";
+        $diag->{suppressionReason} = $suppression->{reason};
+        $diag->{suppressionRule} = $suppression->{rule};
+        $diag->{suppressionLine} = $suppression->{line};
+    }
+}
+
+sub source_suppression_rule_diagnostics {
+    my ($suppressions, $diagnostics) = @_;
+    my %known;
+    for my $diag (@{$diagnostics // []}) {
+        my $code = $diag->{code} // "";
+        $known{$code} = 1 if $code ne "";
+    }
+    for my $code (declared_analyzer_rule_codes()) {
+        $known{$code} = 1;
+    }
+
+    my @out;
+    for my $entry (source_suppression_directives($suppressions)) {
+        my $rule = $entry->{rule} // "";
+        next if $rule eq "*" || $rule eq "";
+        next if $known{$rule};
+        push @out, diagnostic(
+            "warning",
+            "source.suppression-rule",
+            $entry->{path} . ":" . $entry->{line},
+            "source suppression targets unknown rule '$rule'"
+        );
+    }
+    if (@out == 0) {
+        push @out, diagnostic("notice", "source.suppression-rule", "src", "source suppression rule codes resolve to analyzer rule metadata");
+    }
+    return @out;
+}
+
+
+sub source_suppression_wildcard_diagnostics {
+    my ($suppressions) = @_;
+    my @out;
+    for my $entry (source_suppression_directives($suppressions)) {
+        next if ($entry->{rule} // "") ne "*";
+        push @out, diagnostic(
+            "warning",
+            "source.suppression-wildcard",
+            $entry->{path} . ":" . $entry->{line},
+            "source suppression uses wildcard rule '*' and can hide unrelated findings"
+        );
+    }
+    if (@out == 0) {
+        push @out, diagnostic("notice", "source.suppression-wildcard", "src", "source suppression comments target specific analyzer rules");
+    }
+    return @out;
+}
+
+sub declared_analyzer_rule_codes {
+    return @{$declared_analyzer_rule_codes_cache} if defined $declared_analyzer_rule_codes_cache;
+
+    my $source = read_text("scripts/contributing-policy.pl");
+    my %seen;
+    while ($source =~ /diagnostic\(\s*"(?:error|warning|notice)"\s*,\s*"([A-Za-z0-9_.-]+)"/g) {
+        $seen{$1} = 1;
+    }
+    while ($source =~ /rule_metadata_synthetic_diagnostic\(\s*"([A-Za-z0-9_.-]+)"/g) {
+        $seen{$1} = 1;
+    }
+    while ($source =~ /"([A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z0-9_-]+)+)"\s*=>\s*\{/g) {
+        $seen{$1} = 1;
+    }
+    $declared_analyzer_rule_codes_cache = [sort keys %seen];
+    return @{$declared_analyzer_rule_codes_cache};
+}
+
+sub read_source_suppressions {
+    my ($path, $source) = @_;
+    my @lines = split(/\n/, $source, -1);
+    my %suppressions;
+    my @invalid;
+
+    for (my $index = 0; $index < @lines; $index += 1) {
+        my $line = $lines[$index];
+        next if !source_line_may_contain_suppression($line);
+
+        my ($comment_text, $directive_line, $comment_end_index, $comment_error) =
+            source_suppression_comment_text(\@lines, $index);
+        next if !defined $comment_text && !defined $comment_error;
+
+        my $line_number = $directive_line // ($index + 1);
+        if (defined $comment_error) {
+            push @invalid, {
+                path => $path,
+                line => $line_number,
+                message => $comment_error
+            };
+            next;
+        }
+
+        my ($directive, $rule, $reason) = parse_source_suppression_directive($comment_text);
+        if (!defined $directive) {
+            push @invalid, {
+                path => $path,
+                line => $line_number,
+                message => source_suppression_usage_message()
+            };
+            next;
+        }
+
+        if ($reason eq "") {
+            push @invalid, {
+                path => $path,
+                line => $line_number,
+                message => "source suppression requires a non-empty reason"
+            };
+            next;
+        }
+
+        my $target_line = next_source_code_line(\@lines, ($comment_end_index // $index) + 1);
+        if (!defined $target_line) {
+            push @invalid, {
+                path => $path,
+                line => $line_number,
+                message => "source suppression does not target a following declaration or statement"
+            };
+            next;
+        }
+        my ($target_start, $target_end) = ($target_line, $target_line);
+        if ($directive eq "typesea-ignore-next-declaration") {
+            ($target_start, $target_end) = source_declaration_span($source, $target_line);
+            if (!defined $target_start || !defined $target_end) {
+                push @invalid, {
+                    path => $path,
+                    line => $line_number,
+                    message => "source suppression does not target a following function, variable, or class declaration"
+                };
+                next;
+            }
+        }
+        for my $line_in_span ($target_start .. $target_end) {
+            $suppressions{"$path:$line_in_span:$rule"} = {
+                path => $path,
+                line => $line_number,
+                directive => $directive,
+                targetLine => $target_line,
+                targetStartLine => $target_start,
+                targetEndLine => $target_end,
+                rule => $rule,
+                reason => $reason
+            };
+        }
+    }
+
+    return (\%suppressions, \@invalid);
+}
+
+sub source_line_may_contain_suppression {
+    my ($line) = @_;
+    return index($line, "TINL") >= 0 ||
+        index($line, "TIND") >= 0 ||
+        index($line, "typesea-ignore-next-line") >= 0 ||
+        index($line, "typesea-ignore-next-declaration") >= 0;
+}
+
+sub source_suppression_comment_text {
+    my ($lines, $index) = @_;
+    my $line = $lines->[$index] // "";
+    my $line_comment = index($line, "//");
+    my $block_comment = index($line, "/*");
+
+    if ($line_comment >= 0 && ($block_comment < 0 || $line_comment < $block_comment)) {
+        return (substr($line, $line_comment), $index + 1, $index, undef);
+    }
+
+    my $block_start = source_suppression_block_start($lines, $index);
+    return (undef, undef, undef, undef) if !defined $block_start;
+
+    my @comment_lines;
+    for (my $cursor = $block_start; $cursor < @{$lines}; $cursor += 1) {
+        push @comment_lines, $lines->[$cursor];
+        my $search_from = $cursor == $block_start ? index($lines->[$cursor], "/*") + 2 : 0;
+        my $block_end = index($lines->[$cursor], "*/", $search_from);
+        if ($block_end >= 0) {
+            return (
+                normalize_source_suppression_comment(join("\n", @comment_lines)),
+                $index + 1,
+                $cursor,
+                undef
+            );
+        }
+    }
+
+    return (undef, $index + 1, $block_start, "unterminated source suppression block comment");
+}
+
+sub source_suppression_block_start {
+    my ($lines, $index) = @_;
+    for (my $cursor = $index; $cursor >= 0; $cursor -= 1) {
+        my $line = $lines->[$cursor] // "";
+        return undef if $cursor != $index && index($line, "*/") >= 0;
+        return $cursor if index($line, "/*") >= 0;
+    }
+    return undef;
+}
+
+sub normalize_source_suppression_comment {
+    my ($comment) = @_;
+    my @normalized;
+    my @lines = split(/\n/, $comment, -1);
+    for (my $index = 0; $index < @lines; $index += 1) {
+        my $line = $lines[$index];
+        $line =~ s/\A\s*\/\/\s?//;
+        $line =~ s/\A\s*\/\*\s?// if $index == 0;
+        $line =~ s/\s?\*\/\s*\z// if $index == $#lines;
+        $line =~ s/\A\s*\*\s?//;
+        $line =~ s/\A\s+//;
+        $line =~ s/\s+\z//;
+        push @normalized, $line if $line ne "";
+    }
+    return join(" ", @normalized);
+}
+
+sub parse_source_suppression_directive {
+    my ($comment_text) = @_;
+    my $text = normalize_source_suppression_comment($comment_text // "");
+    return (undef, undef, undef)
+        if $text !~ /\b(TINL|TIND|typesea-ignore-next-(?:line|declaration))\s+([A-Za-z0-9_.*-]+)\s*:\s*(\S.*)\z/;
+
+    my $directive = canonical_source_suppression_directive($1);
+    my $rule = $2;
+    my $reason = $3;
+    $reason =~ s/\s+\z//;
+    return ($directive, $rule, $reason);
+}
+
+sub canonical_source_suppression_directive {
+    my ($directive) = @_;
+    return "typesea-ignore-next-line" if $directive eq "TINL";
+    return "typesea-ignore-next-declaration" if $directive eq "TIND";
+    return $directive;
+}
+
+sub source_suppression_usage_message {
+    return "source suppression must use '/* TINL <rule-code>: <reason> */' for one statement or '/* TIND <rule-code>: <reason> */' above a function, variable, or class declaration";
+}
+
+sub source_declaration_span {
+    my ($source, $target_line) = @_;
+    my $lex = lex_ts_source($source);
+    my $tokens = $lex->{tokens};
+    my $start = first_token_at_or_after_line($tokens, $target_line);
+    return (undef, undef) if !defined $start;
+
+    my $cursor = skip_declaration_modifiers($tokens, $start);
+    my $kind = token_value($tokens, $cursor);
+    if ($kind eq "function") {
+        my $close = declaration_function_body_close($tokens, $cursor);
+        return (token_line($tokens, $start), token_line($tokens, $close)) if defined $close;
+        return (token_line($tokens, $start), token_line($tokens, $cursor));
+    }
+    if ($kind eq "const" || $kind eq "let" || $kind eq "var") {
+        my $end = variable_declaration_end($tokens, $cursor);
+        return (token_line($tokens, $start), token_line($tokens, $end)) if defined $end;
+        return (token_line($tokens, $start), token_line($tokens, $cursor));
+    }
+    if ($kind eq "class") {
+        my $body_open = find_token_value($tokens, "{", $cursor + 1, min_number($cursor + 80, scalar(@{$tokens})));
+        return (token_line($tokens, $start), token_line($tokens, $cursor)) if !defined $body_open;
+        my $body_close = find_matching_brace_token($tokens, $body_open, scalar(@{$tokens}));
+        return (token_line($tokens, $start), token_line($tokens, $body_close)) if defined $body_close;
+        return (token_line($tokens, $start), token_line($tokens, $body_open));
+    }
+    return (undef, undef);
+}
+
+sub first_token_at_or_after_line {
+    my ($tokens, $line) = @_;
+    for (my $index = 0; $index < @{$tokens}; $index += 1) {
+        return $index if token_line($tokens, $index) >= $line;
+    }
+    return undef;
+}
+
+sub skip_declaration_modifiers {
+    my ($tokens, $start) = @_;
+    my $cursor = $start;
+    while ($cursor < @{$tokens}) {
+        my $value = token_value($tokens, $cursor);
+        last if $value ne "export" &&
+            $value ne "default" &&
+            $value ne "declare" &&
+            $value ne "async" &&
+            $value ne "abstract" &&
+            $value ne "public" &&
+            $value ne "private" &&
+            $value ne "protected" &&
+            $value ne "static" &&
+            $value ne "readonly";
+        $cursor += 1;
+    }
+    return $cursor;
+}
+
+sub declaration_function_body_close {
+    my ($tokens, $function_index) = @_;
+    my $params_open = find_token_value($tokens, "(", $function_index + 1, min_number($function_index + 24, scalar(@{$tokens})));
+    return undef if !defined $params_open;
+    my $params_close = find_matching_paren_token($tokens, $params_open, scalar(@{$tokens}));
+    return undef if !defined $params_close;
+    my $body_open = find_token_value($tokens, "{", $params_close + 1, min_number($params_close + 40, scalar(@{$tokens})));
+    return undef if !defined $body_open;
+    return find_matching_brace_token($tokens, $body_open, scalar(@{$tokens}));
+}
+
+sub variable_declaration_end {
+    my ($tokens, $start) = @_;
+    my $statement_end = declaration_statement_end($tokens, $start);
+    return undef if !defined $statement_end;
+    my $arrow = find_token_value($tokens, "=>", $start, $statement_end + 1);
+    if (defined $arrow && token_value($tokens, $arrow + 1) eq "{") {
+        my $body_close = find_matching_brace_token($tokens, $arrow + 1, scalar(@{$tokens}));
+        return $body_close if defined $body_close && $body_close > $statement_end;
+    }
+    return $statement_end;
+}
+
+sub declaration_statement_end {
+    my ($tokens, $start) = @_;
+    my $depth = 0;
+    for (my $index = $start; $index < @{$tokens}; $index += 1) {
+        my $value = token_value($tokens, $index);
+        if ($value eq "(" || $value eq "{" || $value eq "[") {
+            $depth += 1;
+            next;
+        }
+        if ($value eq ")" || $value eq "}" || $value eq "]") {
+            $depth -= 1 if $depth > 0;
+            next;
+        }
+        return $index if $value eq ";" && $depth == 0;
+    }
+    return undef;
+}
+
+sub next_source_code_line {
+    my ($lines, $start) = @_;
+    for (my $index = $start; $index < @{$lines}; $index += 1) {
+        my $line = $lines->[$index];
+        next if $line =~ /\A\s*\z/;
+        next if $line =~ /\A\s*\/\//;
+        next if $line =~ /\A\s*\/\*/;
+        next if $line =~ /\A\s*\*/;
+        return $index + 1;
+    }
+    return undef;
+}
+
+sub read_policy_profile {
+    my ($path) = @_;
+    my $profile = default_policy_profile();
+    return $profile if !defined $path;
+    return $profile if !-f $path;
+    $profile->{sourcePath} = $path;
+    $profile->{custom} = 1;
+    my $json = read_json($path);
+    $profile->{name} = $json->{name} if defined $json->{name} && !ref($json->{name});
+    for my $field (qw(errorBudget warningBudget flowWarningBudget noticeBudget recursiveCycleBudget unboundedRecursionBudget taintedSinkPathBudget branchLeakBudget hotUnboundedLoopBudget rangeGapBudget indexGapBudget hostileMutationBudget memoryAliasGapBudget keySafetyGapBudget resultStateGapBudget freezeMutationBudget variantSwitchGapBudget generatedSourceGapBudget hotValidationThrowBudget lifecycleGapBudget interproceduralLifecycleGapBudget asyncSchedulingGapBudget typeEscapeBudget redosRiskBudget secretLeakBudget workflowHighRiskBudget workflowMutableActionBudget packageLockRiskBudget packageLockRuntimeDependencyBudget licenseRiskBudget licenseReviewBudget apiSurfaceDriftBudget apiDocumentationGapBudget releaseConsistencyRiskBudget testEvidenceGapBudget benchmarkEvidenceGapBudget ruleMetadataGapBudget genericRuleMetadataBudget symbolicPathBudget interproceduralSymbolicPathBudget nullishGapBudget hotLoopAllocationBudget contractGapBudget duplicateBlockBudget technicalDebtBudget componentOpenBudget componentDebtBudget rootCauseOpenBudget noisyRuleBudget findingProvenanceGapBudget findingWitnessGapBudget lowConfidenceFindingBudget runManifestGapBudget unownedOpenBudget unownedDiagnosticBudget unroutedDefectBudget expiredTriageBudget invalidTriageEntryBudget reviewDecisionRiskBudget staleWaiverBudget expiredWaiverBudget wildcardSuppressionBudget analysisCoverageGapBudget profileOverrideRiskBudget overdueIssueBudget maxIssueAgeDays assuranceGapBudget complianceFailureBudget securityHotspotReviewBudget exploitableSecurityBudget securityDataflowCriticalBudget pathFeasibilityUnknownBudget contextSensitivityRiskBudget soundnessAssumptionBudget proofObligationBudget newCodeOpenBudget newCodeDebtBudget changeImpactCriticalBudget changeImpactBlastRadiusBudget historyOpenRegressionBudget historyDebtRegressionBudget reopenedIssueBudget newDefectBudget)) {
+        $profile->{$field} = int($json->{$field}) if defined $json->{$field} && $json->{$field} =~ /\A\d+\z/;
+    }
+    if (ref($json->{slaDaysByPriority}) eq "HASH") {
+        $profile->{slaDaysByPriority} = $json->{slaDaysByPriority};
+    }
+    $profile->{unreachableBudget} = int($json->{unreachableBudget})
+        if defined $json->{unreachableBudget} && $json->{unreachableBudget} =~ /\A\d+\z/;
+    if (ref($json->{rules}) eq "HASH") {
+        $profile->{rules} = $json->{rules};
+    }
+    return $profile;
+}
+
+sub default_policy_profile {
+    return {
+        name => "TypeSea strict policy profile",
+        sourcePath => "default",
+        custom => 0,
+        errorBudget => 0,
+        warningBudget => 8,
+        flowWarningBudget => 5,
+        noticeBudget => 1_000,
+        recursiveCycleBudget => 80,
+        unboundedRecursionBudget => 46,
+        taintedSinkPathBudget => 12,
+        branchLeakBudget => 0,
+        hotUnboundedLoopBudget => 10,
+        rangeGapBudget => 0,
+        indexGapBudget => 0,
+        hostileMutationBudget => 0,
+        memoryAliasGapBudget => 0,
+        keySafetyGapBudget => 0,
+        resultStateGapBudget => 0,
+        freezeMutationBudget => 0,
+        variantSwitchGapBudget => 67,
+        generatedSourceGapBudget => 36,
+        hotValidationThrowBudget => 128,
+        lifecycleGapBudget => 0,
+        interproceduralLifecycleGapBudget => 0,
+        asyncSchedulingGapBudget => 2,
+        typeEscapeBudget => 20,
+        redosRiskBudget => 4,
+        secretLeakBudget => 0,
+        workflowHighRiskBudget => 0,
+        workflowMutableActionBudget => 10,
+        packageLockRiskBudget => 0,
+        packageLockRuntimeDependencyBudget => 0,
+        licenseRiskBudget => 0,
+        licenseReviewBudget => 12,
+        apiSurfaceDriftBudget => 0,
+        apiDocumentationGapBudget => 0,
+        releaseConsistencyRiskBudget => 0,
+        testEvidenceGapBudget => 0,
+        benchmarkEvidenceGapBudget => 0,
+        ruleMetadataGapBudget => 0,
+        genericRuleMetadataBudget => 0,
+        symbolicPathBudget => 8,
+        interproceduralSymbolicPathBudget => 32,
+        nullishGapBudget => 0,
+        hotLoopAllocationBudget => 32,
+        contractGapBudget => 0,
+        duplicateBlockBudget => 2_000,
+        technicalDebtBudget => 240,
+        componentOpenBudget => 4,
+        componentDebtBudget => 120,
+        rootCauseOpenBudget => 8,
+        noisyRuleBudget => 0,
+        findingProvenanceGapBudget => 0,
+        findingWitnessGapBudget => 0,
+        lowConfidenceFindingBudget => 0,
+        runManifestGapBudget => 0,
+        unownedOpenBudget => 0,
+        unownedDiagnosticBudget => 0,
+        unroutedDefectBudget => 0,
+        expiredTriageBudget => 0,
+        invalidTriageEntryBudget => 0,
+        reviewDecisionRiskBudget => 0,
+        staleWaiverBudget => 0,
+        expiredWaiverBudget => 0,
+        wildcardSuppressionBudget => 0,
+        analysisCoverageGapBudget => 0,
+        profileOverrideRiskBudget => 0,
+        overdueIssueBudget => 0,
+        maxIssueAgeDays => 365,
+        assuranceGapBudget => 0,
+        complianceFailureBudget => 0,
+        securityHotspotReviewBudget => 0,
+        exploitableSecurityBudget => 0,
+        securityDataflowCriticalBudget => 0,
+        pathFeasibilityUnknownBudget => 0,
+        contextSensitivityRiskBudget => 53,
+        soundnessAssumptionBudget => 0,
+        proofObligationBudget => 0,
+        newCodeOpenBudget => 0,
+        newCodeDebtBudget => 0,
+        changeImpactCriticalBudget => 8,
+        changeImpactBlastRadiusBudget => 350,
+        historyOpenRegressionBudget => 0,
+        historyDebtRegressionBudget => 120,
+        reopenedIssueBudget => 0,
+        newDefectBudget => 0,
+        unreachableBudget => 0,
+        rules => {}
+    };
+}
+
+sub apply_policy_profile {
+    my ($diagnostics, $profile) = @_;
+    my @out;
+    for my $diag (@{$diagnostics}) {
+        my $override = $profile->{rules}{$diag->{code}};
+        next if ref($override) eq "HASH" && defined $override->{enabled} && !$override->{enabled};
+        if (ref($override) eq "HASH" && defined $override->{severity} && valid_severity($override->{severity})) {
+            $diag->{severity} = $override->{severity};
+        }
+        push @out, $diag;
+    }
+    return @out;
+}
+
+sub quality_profile_model {
+    my ($profile, $diagnostics) = @_;
+    my $rules = object_or_empty($profile->{rules});
+    my %known = map { $_ => 1 } declared_analyzer_rule_codes();
+    my %observed_severity;
+    my %observed_count;
+    for my $diag (@{$diagnostics // []}) {
+        my $code = $diag->{code} // "";
+        next if $code eq "";
+        $known{$code} = 1;
+        $observed_count{$code} += 1;
+        my $rank = severity_rank($diag->{severity});
+        if (!defined($observed_severity{$code}) || $rank > $observed_severity{$code}{rank}) {
+            $observed_severity{$code} = {
+                severity => $diag->{severity},
+                rank => $rank
+            };
+        }
+    }
+
+    my @items;
+    my %by_status;
+    my %by_action;
+    for my $code (sort keys %{$rules}) {
+        my $item = quality_profile_rule_item($profile, $code, $rules->{$code}, \%known, \%observed_severity, \%observed_count);
+        push @items, $item;
+        $by_status{$item->{status}} += 1;
+        for my $action (@{$item->{actions}}) {
+            $by_action{$action} += 1;
+        }
+    }
+
+    my @risks = sort_quality_profile_risks(grep { ($_->{riskScore} // 0) > 0 } @items);
+    my @downgrades = grep { $_->{severityDowngrade} } @items;
+    my @disabled = grep { $_->{disabled} } @items;
+    my @unknown = grep { $_->{unknownRule} } @items;
+    my @invalid_severity = grep { $_->{invalidSeverity} } @items;
+    my @expired = grep { $_->{expired} } @items;
+    my @missing_reason = grep { $_->{missingReason} } @items;
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea quality profile governance",
+        sourcePath => $profile->{sourcePath} // "default",
+        profileName => $profile->{name} // "TypeSea strict policy profile",
+        status => @risks == 0 ? "clean" : "profile-overrides-need-review",
+        rules => scalar(@items),
+        riskyOverrides => scalar(@risks),
+        disabledRules => scalar(@disabled),
+        severityOverrides => int($by_action{severity} // 0),
+        severityDowngrades => scalar(@downgrades),
+        unknownRules => scalar(@unknown),
+        invalidSeverities => scalar(@invalid_severity),
+        expiredOverrides => scalar(@expired),
+        missingReasons => scalar(@missing_reason),
+        byStatus => \%by_status,
+        byAction => \%by_action,
+        ruleSet => \@items,
+        riskSet => [@risks[0 .. min_index(49, $#risks)]]
+    };
+}
+
+
+sub quality_profile_rule_item {
+    my ($profile, $code, $override, $known, $observed_severity, $observed_count) = @_;
+    my $where = $profile->{sourcePath} // "policy-profile";
+    my @actions;
+    my @risks;
+    my $risk_score = 0;
+    my $shape_ok = ref($override) eq "HASH";
+    my $enabled = $shape_ok ? $override->{enabled} : undef;
+    my $severity = $shape_ok ? $override->{severity} : undef;
+    my $reason = $shape_ok ? ($override->{reason} // $override->{justification} // "") : "";
+    my $expires = $shape_ok ? ($override->{expires} // "") : "";
+    my $unknown = !$known->{$code} ? 1 : 0;
+    my $disabled = $shape_ok && defined($enabled) && !$enabled ? 1 : 0;
+    my $invalid_severity = defined($severity) && !valid_severity($severity) ? 1 : 0;
+    my $observed = $observed_severity->{$code};
+    my $observed_rank = ref($observed) eq "HASH" ? int($observed->{rank} // 0) : 0;
+    my $override_rank = defined($severity) && valid_severity($severity) ? severity_rank($severity) : 0;
+    my $downgrade = $override_rank != 0 && $observed_rank != 0 && $override_rank < $observed_rank ? 1 : 0;
+    my $expired = quality_profile_override_expired($expires);
+    my $missing_reason = ($disabled || $downgrade || $unknown || $invalid_severity || $expired) && trim_text($reason) eq "" ? 1 : 0;
+
+    push @actions, "disable" if $disabled;
+    push @actions, "severity" if defined($severity);
+    push @actions, "expiry" if $expires ne "";
+    push @actions, "metadata" if @actions == 0;
+
+    if (!$shape_ok) {
+        push @risks, "invalid-rule-shape";
+        $risk_score += 35;
+    }
+    if ($unknown) {
+        push @risks, "unknown-rule";
+        $risk_score += 30;
+    }
+    if ($invalid_severity) {
+        push @risks, "invalid-severity";
+        $risk_score += 30;
+    }
+    if ($disabled) {
+        push @risks, "rule-disabled";
+        $risk_score += $observed_count->{$code} ? 24 : 14;
+    }
+    if ($downgrade) {
+        push @risks, "severity-downgrade";
+        $risk_score += 24;
+    }
+    if ($expired) {
+        push @risks, "expired-override";
+        $risk_score += 18;
+    }
+    if ($missing_reason) {
+        push @risks, "missing-reason";
+        $risk_score += 14;
+    }
+
+    my $meta = rule_metadata($code);
+    if (($meta->{category} // "") eq "security" || ($meta->{category} // "") eq "supply-chain") {
+        $risk_score += 10 if $disabled || $downgrade;
+        push @risks, "security-sensitive-override" if $disabled || $downgrade;
+    }
+    $risk_score = 100 if $risk_score > 100;
+
+    return {
+        rule => $code,
+        status => $risk_score == 0 ? "accepted" : "review-required",
+        actions => \@actions,
+        risks => \@risks,
+        riskScore => $risk_score,
+        unknownRule => $unknown,
+        invalidSeverity => $invalid_severity,
+        disabled => $disabled,
+        severityOverride => defined($severity) ? 1 : 0,
+        severityDowngrade => $downgrade,
+        expired => $expired,
+        missingReason => $missing_reason,
+        observedSeverity => ref($observed) eq "HASH" ? $observed->{severity} : undef,
+        overrideSeverity => $severity,
+        enabled => defined($enabled) ? ($enabled ? 1 : 0) : undef,
+        reason => $reason,
+        expires => $expires,
+        observedDiagnostics => int($observed_count->{$code} // 0),
+        category => $meta->{category},
+        engine => $meta->{engine},
+        where => $where
+    };
+}
+
+
+sub quality_profile_diagnostics {
+    my ($model) = @_;
+    return () if ref($model) ne "HASH";
+    my @risks = @{array_or_empty($model->{riskSet})};
+    if (@risks == 0) {
+        return diagnostic(
+            "notice",
+            "profile.governance",
+            $model->{sourcePath} // "policy-profile",
+            "quality profile has no risky rule overrides"
+        );
+    }
+
+    my @out;
+    for my $item (@risks[0 .. min_index(9, $#risks)]) {
+        push @out, diagnostic(
+            "warning",
+            quality_profile_rule_code($item),
+            $item->{where} // ($model->{sourcePath} // "policy-profile"),
+            "quality profile override for '" . ($item->{rule} // "<unknown>") .
+                "' requires review: " . join(", ", @{$item->{risks} // []})
+        );
+    }
+    return @out;
+}
+
+
+sub quality_profile_rule_code {
+    my ($item) = @_;
+    return "profile.rule-unknown" if $item->{unknownRule};
+    return "profile.severity-invalid" if $item->{invalidSeverity};
+    return "profile.override-expired" if $item->{expired};
+    return "profile.override-reason" if $item->{missingReason};
+    return "profile.severity-downgrade" if $item->{severityDowngrade};
+    return "profile.rule-disabled" if $item->{disabled};
+    return "profile.governance";
+}
+
+
+sub quality_profile_override_expired {
+    my ($expires) = @_;
+    return 0 if !defined($expires) || $expires eq "";
+    return 1 if $expires !~ /\A\d{4}-\d{2}-\d{2}\z/;
+    return $expires lt today_ymd() ? 1 : 0;
+}
+
+
+sub sort_quality_profile_risks {
+    return sort {
+        ($b->{riskScore} // 0) <=> ($a->{riskScore} // 0) ||
+            ($a->{rule} // "") cmp ($b->{rule} // "")
+    } @_;
+}
+
+sub compute_policy_quality_gate {
+    my ($ir, $diagnostics, $profile) = @_;
+    my $flow = $ir->{source}{function_analysis};
+    my @active = grep { !diagnostic_quality_excluded($_) } @{$diagnostics};
+    my $errors = count_severity("error", @active);
+    my $warnings = count_severity("warning", @active);
+    my $notices = count_severity("notice", @active);
+    my $flow_warnings = count_code_prefix("flow.", "warning", @active);
+    my $recursive_cycles = scalar(@{$flow->{graph}{cycles}});
+    my $unbounded_recursion_cycles = $flow->{abstract}{recursion}{unboundedCycles};
+    my $tainted_paths = scalar(@{$flow->{abstract}{taint}{paths}});
+    my $branch_leaks = scalar(@{$flow->{abstract}{branch_state_leaks}});
+    my $hot_unbounded_loops = scalar(@{$flow->{abstract}{loop_bound_gaps}});
+    my $range_gaps = scalar(@{$flow->{abstract}{range_gaps}});
+    my $index_gaps = scalar(@{$flow->{abstract}{index_gaps}});
+    my $hostile_mutations = scalar(@{$flow->{abstract}{mutation_gaps}});
+    my $memory_alias_gaps = scalar(@{$flow->{abstract}{memory_alias_gaps}});
+    my $key_safety_gaps = scalar(@{$flow->{abstract}{key_safety_gaps}});
+    my $result_state_gaps = scalar(@{$flow->{abstract}{result_state_gaps}});
+    my $freeze_mutations = scalar(@{$flow->{abstract}{freeze_state_gaps}});
+    my $variant_switch_gaps = scalar(@{$flow->{abstract}{variant_state_gaps}});
+    my $generated_source_gaps = scalar(@{$flow->{abstract}{source_taint_gaps}});
+    my $hot_validation_throws = scalar(@{$flow->{abstract}{exception_gaps}});
+    my $lifecycle_gaps = scalar(@{$flow->{abstract}{lifecycle_gaps}});
+    my $interprocedural_lifecycle_gaps = $flow->{abstract}{lifecycle}{propagatedGapFunctions};
+    my $async_scheduling_gaps = scalar(@{$flow->{abstract}{async_scheduling_gaps}});
+    my $type_escapes = int($ir->{source}{type_escape_domain}{totalEscapes} // 0);
+    my $redos_risks = int($ir->{source}{regex_safety_domain}{totalRedosRisks} // 0);
+    my $secret_leaks = int($ir->{secrets}{totalLeaks} // 0);
+    my $workflow_high_risk = int($ir->{workflows}{highRiskFindings} // 0);
+    my $workflow_mutable_actions = int($ir->{workflows}{mutableActionRefs} // 0);
+    my $package_lock_risks = int($ir->{package_lock}{lockRiskFindings} // 0);
+    my $package_lock_runtime_deps = int($ir->{package_lock}{runtimeDependencyCount} // 0);
+    my $license_risks = int($ir->{licenses}{licenseRiskFindings} // 0);
+    my $license_reviews = int($ir->{licenses}{licenseReviewFindings} // 0);
+    my $api_surface_drift = int($ir->{api_surface}{surfaceDriftFindings} // 0);
+    my $api_documentation_gaps = int($ir->{api_surface}{apiDocumentationFindings} // 0);
+    my $release_consistency_risks = int($ir->{release_consistency}{releaseConsistencyFindings} // 0);
+    my $test_evidence_gaps = int($ir->{test_evidence}{testEvidenceGaps} // 0);
+    my $benchmark_evidence_gaps = int($ir->{benchmark_evidence}{benchmarkEvidenceGaps} // 0);
+    my $rule_metadata_gaps = int($ir->{policy_runtime}{rule_metadata_model}{ruleMetadataGaps} // 0);
+    my $generic_rule_metadata = int($ir->{policy_runtime}{rule_metadata_model}{genericRuleMetadataItems} // 0);
+    my $symbolic_paths = scalar(@{$flow->{abstract}{symbolic_gaps}});
+    my $interprocedural_symbolic_paths = $flow->{abstract}{symbolic_dataflow}{propagatedOpenFunctions};
+    my $nullish_gaps = scalar(@{$flow->{abstract}{nullish_gaps}});
+    my $hot_loop_allocations = scalar(@{$flow->{abstract}{effect}{hot_loop_allocation_functions}});
+    my $contract_gaps = scalar(@{$flow->{abstract}{contracts}{contractless_sinks}});
+    my $duplicate_blocks = $flow->{abstract}{clone_domain}{duplicateGroups};
+    my $quality_model = quality_model($diagnostics);
+    my $unreachable = $flow->{abstract}{cfg}{unreachableStatements};
+    my @failed;
+
+    push @failed, "error-budget" if $errors > $profile->{errorBudget};
+    push @failed, "warning-budget" if $warnings > $profile->{warningBudget};
+    push @failed, "flow-warning-budget" if $flow_warnings > $profile->{flowWarningBudget};
+    push @failed, "notice-budget" if $notices > $profile->{noticeBudget};
+    push @failed, "recursive-cycle-budget" if $recursive_cycles > $profile->{recursiveCycleBudget};
+    push @failed, "unbounded-recursion-budget" if $unbounded_recursion_cycles > $profile->{unboundedRecursionBudget};
+    push @failed, "tainted-sink-path-budget" if $tainted_paths > $profile->{taintedSinkPathBudget};
+    push @failed, "branch-leak-budget" if $branch_leaks > $profile->{branchLeakBudget};
+    push @failed, "hot-unbounded-loop-budget" if $hot_unbounded_loops > $profile->{hotUnboundedLoopBudget};
+    push @failed, "range-gap-budget" if $range_gaps > $profile->{rangeGapBudget};
+    push @failed, "index-gap-budget" if $index_gaps > $profile->{indexGapBudget};
+    push @failed, "hostile-mutation-budget" if $hostile_mutations > $profile->{hostileMutationBudget};
+    push @failed, "memory-alias-gap-budget" if $memory_alias_gaps > $profile->{memoryAliasGapBudget};
+    push @failed, "key-safety-gap-budget" if $key_safety_gaps > $profile->{keySafetyGapBudget};
+    push @failed, "result-state-gap-budget" if $result_state_gaps > $profile->{resultStateGapBudget};
+    push @failed, "freeze-mutation-budget" if $freeze_mutations > $profile->{freezeMutationBudget};
+    push @failed, "variant-switch-gap-budget" if $variant_switch_gaps > $profile->{variantSwitchGapBudget};
+    push @failed, "generated-source-gap-budget" if $generated_source_gaps > $profile->{generatedSourceGapBudget};
+    push @failed, "hot-validation-throw-budget" if $hot_validation_throws > $profile->{hotValidationThrowBudget};
+    push @failed, "lifecycle-gap-budget" if $lifecycle_gaps > $profile->{lifecycleGapBudget};
+    push @failed, "interprocedural-lifecycle-gap-budget" if $interprocedural_lifecycle_gaps > $profile->{interproceduralLifecycleGapBudget};
+    push @failed, "async-scheduling-gap-budget" if $async_scheduling_gaps > $profile->{asyncSchedulingGapBudget};
+    push @failed, "type-escape-budget" if $type_escapes > $profile->{typeEscapeBudget};
+    push @failed, "redos-risk-budget" if $redos_risks > $profile->{redosRiskBudget};
+    push @failed, "secret-leak-budget" if $secret_leaks > $profile->{secretLeakBudget};
+    push @failed, "workflow-high-risk-budget" if $workflow_high_risk > $profile->{workflowHighRiskBudget};
+    push @failed, "workflow-mutable-action-budget" if $workflow_mutable_actions > $profile->{workflowMutableActionBudget};
+    push @failed, "package-lock-risk-budget" if $package_lock_risks > $profile->{packageLockRiskBudget};
+    push @failed, "package-lock-runtime-dependency-budget" if $package_lock_runtime_deps > $profile->{packageLockRuntimeDependencyBudget};
+    push @failed, "license-risk-budget" if $license_risks > $profile->{licenseRiskBudget};
+    push @failed, "license-review-budget" if $license_reviews > $profile->{licenseReviewBudget};
+    push @failed, "api-surface-drift-budget" if $api_surface_drift > $profile->{apiSurfaceDriftBudget};
+    push @failed, "api-documentation-gap-budget" if $api_documentation_gaps > $profile->{apiDocumentationGapBudget};
+    push @failed, "release-consistency-risk-budget" if $release_consistency_risks > $profile->{releaseConsistencyRiskBudget};
+    push @failed, "test-evidence-gap-budget" if $test_evidence_gaps > $profile->{testEvidenceGapBudget};
+    push @failed, "benchmark-evidence-gap-budget" if $benchmark_evidence_gaps > $profile->{benchmarkEvidenceGapBudget};
+    push @failed, "rule-metadata-gap-budget" if $rule_metadata_gaps > $profile->{ruleMetadataGapBudget};
+    push @failed, "generic-rule-metadata-budget" if $generic_rule_metadata > $profile->{genericRuleMetadataBudget};
+    push @failed, "symbolic-path-budget" if $symbolic_paths > $profile->{symbolicPathBudget};
+    push @failed, "interprocedural-symbolic-path-budget" if $interprocedural_symbolic_paths > $profile->{interproceduralSymbolicPathBudget};
+    push @failed, "nullish-gap-budget" if $nullish_gaps > $profile->{nullishGapBudget};
+    push @failed, "hot-loop-allocation-budget" if $hot_loop_allocations > $profile->{hotLoopAllocationBudget};
+    push @failed, "contract-gap-budget" if $contract_gaps > $profile->{contractGapBudget};
+    push @failed, "duplicate-block-budget" if $duplicate_blocks > $profile->{duplicateBlockBudget};
+    push @failed, "technical-debt-budget" if $quality_model->{technicalDebtMinutes} > $profile->{technicalDebtBudget};
+    push @failed, "unreachable-budget" if $unreachable > $profile->{unreachableBudget};
+
+    return {
+        status => @failed == 0 ? "passed" : "failed",
+        profile => $profile->{name},
+        failed => \@failed,
+        metrics => {
+            errors => $errors,
+            warnings => $warnings,
+            notices => $notices,
+            flowWarnings => $flow_warnings,
+            recursiveCycles => $recursive_cycles,
+            unboundedRecursionCycles => $unbounded_recursion_cycles,
+            taintedSinkPaths => $tainted_paths,
+            branchLeaks => $branch_leaks,
+            hotUnboundedLoops => $hot_unbounded_loops,
+            rangeGaps => $range_gaps,
+            indexGaps => $index_gaps,
+            hostileMutations => $hostile_mutations,
+            memoryAliasGaps => $memory_alias_gaps,
+            keySafetyGaps => $key_safety_gaps,
+            resultStateGaps => $result_state_gaps,
+            freezeMutations => $freeze_mutations,
+            variantSwitchGaps => $variant_switch_gaps,
+            generatedSourceGaps => $generated_source_gaps,
+            hotValidationThrows => $hot_validation_throws,
+            lifecycleGaps => $lifecycle_gaps,
+            interproceduralLifecycleGaps => $interprocedural_lifecycle_gaps,
+            asyncSchedulingGaps => $async_scheduling_gaps,
+            typeEscapes => $type_escapes,
+            redosRisks => $redos_risks,
+            secretLeaks => $secret_leaks,
+            workflowHighRiskFindings => $workflow_high_risk,
+            workflowMutableActionRefs => $workflow_mutable_actions,
+            packageLockRisks => $package_lock_risks,
+            packageLockRuntimeDependencies => $package_lock_runtime_deps,
+            licenseRisks => $license_risks,
+            licenseReviewItems => $license_reviews,
+            apiSurfaceDrift => $api_surface_drift,
+            apiDocumentationGaps => $api_documentation_gaps,
+            releaseConsistencyRisks => $release_consistency_risks,
+            testEvidenceGaps => $test_evidence_gaps,
+            benchmarkEvidenceGaps => $benchmark_evidence_gaps,
+            ruleMetadataGaps => $rule_metadata_gaps,
+            genericRuleMetadataItems => $generic_rule_metadata,
+            symbolicPaths => $symbolic_paths,
+            interproceduralSymbolicPaths => $interprocedural_symbolic_paths,
+            nullishGaps => $nullish_gaps,
+            hotLoopAllocations => $hot_loop_allocations,
+            contractGaps => $contract_gaps,
+            duplicateBlocks => $duplicate_blocks,
+            technicalDebtMinutes => $quality_model->{technicalDebtMinutes},
+            qualityRatingRank => $quality_model->{overall}{rank},
+            historySamples => 0,
+            historyOpenDelta => 0,
+            historyDebtDelta => 0,
+            reopenedIssues => 0,
+            lineageMatchedDefects => 0,
+            identityChurnAvoided => 0,
+            defectRoutes => 0,
+            routedDefects => 0,
+            unroutedDefects => 0,
+            routingOwners => 0,
+            routingEfficiencyPermille => 1000,
+            reviewDecisions => 0,
+            reviewDecisionRisks => 0,
+            highConfidenceFalsePositives => 0,
+            staleMitigations => 0,
+            qualityProfileRules => 0,
+            qualityProfileRiskyOverrides => 0,
+            qualityProfileDowngrades => 0,
+            qualityProfileDisabledRules => 0,
+            qualityProfileInvalidRules => 0,
+            securityExploitabilityFindings => 0,
+            exploitableSecurityFindings => 0,
+            criticalSecurityFindings => 0,
+            highSecurityRiskFindings => 0,
+            securityDataflowCriticalPaths => 0,
+            securityDataflowHighRiskEvidence => 0,
+            securityDataflowTaintedPaths => 0,
+            securityDataflowContractlessSinks => 0,
+            pathFeasibilityCandidates => 0,
+            pathFeasibilityPlausiblePaths => 0,
+            pathFeasibilityInfeasiblePaths => 0,
+            pathFeasibilityUnknownPaths => 0,
+            pathFeasibilityPolarizedConditions => 0,
+            pathFeasibilityFacts => 0,
+            contextSensitivityRisks => 0,
+            contextSensitiveFunctions => 0,
+            contextMergedCallsites => 0,
+            contextMaxFanIn => 0,
+            proofObligations => 0,
+            openProofObligations => 0,
+            budgetedProofObligations => 0,
+            unreachableStatements => $unreachable
+        },
+        budgets => {
+            errors => $profile->{errorBudget},
+            warnings => $profile->{warningBudget},
+            notices => $profile->{noticeBudget},
+            flowWarnings => $profile->{flowWarningBudget},
+            recursiveCycles => $profile->{recursiveCycleBudget},
+            unboundedRecursionCycles => $profile->{unboundedRecursionBudget},
+            taintedSinkPaths => $profile->{taintedSinkPathBudget},
+            branchLeaks => $profile->{branchLeakBudget},
+            hotUnboundedLoops => $profile->{hotUnboundedLoopBudget},
+            rangeGaps => $profile->{rangeGapBudget},
+            indexGaps => $profile->{indexGapBudget},
+            hostileMutations => $profile->{hostileMutationBudget},
+            memoryAliasGaps => $profile->{memoryAliasGapBudget},
+            keySafetyGaps => $profile->{keySafetyGapBudget},
+            resultStateGaps => $profile->{resultStateGapBudget},
+            freezeMutations => $profile->{freezeMutationBudget},
+            variantSwitchGaps => $profile->{variantSwitchGapBudget},
+            generatedSourceGaps => $profile->{generatedSourceGapBudget},
+            hotValidationThrows => $profile->{hotValidationThrowBudget},
+            lifecycleGaps => $profile->{lifecycleGapBudget},
+            interproceduralLifecycleGaps => $profile->{interproceduralLifecycleGapBudget},
+            asyncSchedulingGaps => $profile->{asyncSchedulingGapBudget},
+            typeEscapes => $profile->{typeEscapeBudget},
+            redosRisks => $profile->{redosRiskBudget},
+            secretLeaks => $profile->{secretLeakBudget},
+            workflowHighRiskFindings => $profile->{workflowHighRiskBudget},
+            workflowMutableActionRefs => $profile->{workflowMutableActionBudget},
+            packageLockRisks => $profile->{packageLockRiskBudget},
+            packageLockRuntimeDependencies => $profile->{packageLockRuntimeDependencyBudget},
+            licenseRisks => $profile->{licenseRiskBudget},
+            licenseReviewItems => $profile->{licenseReviewBudget},
+            apiSurfaceDrift => $profile->{apiSurfaceDriftBudget},
+            apiDocumentationGaps => $profile->{apiDocumentationGapBudget},
+            releaseConsistencyRisks => $profile->{releaseConsistencyRiskBudget},
+            testEvidenceGaps => $profile->{testEvidenceGapBudget},
+            benchmarkEvidenceGaps => $profile->{benchmarkEvidenceGapBudget},
+            ruleMetadataGaps => $profile->{ruleMetadataGapBudget},
+            genericRuleMetadataItems => $profile->{genericRuleMetadataBudget},
+            symbolicPaths => $profile->{symbolicPathBudget},
+            interproceduralSymbolicPaths => $profile->{interproceduralSymbolicPathBudget},
+            nullishGaps => $profile->{nullishGapBudget},
+            hotLoopAllocations => $profile->{hotLoopAllocationBudget},
+            contractGaps => $profile->{contractGapBudget},
+            duplicateBlocks => $profile->{duplicateBlockBudget},
+            technicalDebtMinutes => $profile->{technicalDebtBudget},
+            historyOpenDelta => $profile->{historyOpenRegressionBudget},
+            historyDebtDelta => $profile->{historyDebtRegressionBudget},
+            reopenedIssues => $profile->{reopenedIssueBudget},
+            unroutedDefects => $profile->{unroutedDefectBudget},
+            reviewDecisionRisks => $profile->{reviewDecisionRiskBudget},
+            qualityProfileRiskyOverrides => $profile->{profileOverrideRiskBudget},
+            exploitableSecurityFindings => $profile->{exploitableSecurityBudget},
+            securityDataflowCriticalPaths => $profile->{securityDataflowCriticalBudget},
+            pathFeasibilityUnknownPaths => $profile->{pathFeasibilityUnknownBudget},
+            contextSensitivityRisks => $profile->{contextSensitivityRiskBudget},
+            openProofObligations => $profile->{proofObligationBudget},
+            unreachableStatements => $profile->{unreachableBudget}
+        }
+    };
+}
+
+sub apply_defect_delta_quality_gate {
+    my ($quality_gate, $defect_delta, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($defect_delta) ne "HASH";
+    return $quality_gate if !$defect_delta->{enabled};
+
+    my $new_defects = int($defect_delta->{new} // 0);
+    my $resolved_defects = int($defect_delta->{resolved} // 0);
+    my $persisting_defects = int($defect_delta->{persisting} // 0);
+    my $lineage_matched = int($defect_delta->{lineageMatched} // 0);
+    my $identity_churn_avoided = int($defect_delta->{identityChurnAvoided} // 0);
+    my $budget = int($profile->{newDefectBudget} // 0);
+
+    $quality_gate->{metrics}{newDefects} = $new_defects;
+    $quality_gate->{metrics}{resolvedDefects} = $resolved_defects;
+    $quality_gate->{metrics}{persistingDefects} = $persisting_defects;
+    $quality_gate->{metrics}{lineageMatchedDefects} = $lineage_matched;
+    $quality_gate->{metrics}{identityChurnAvoided} = $identity_churn_avoided;
+    $quality_gate->{metrics}{defectComparisonEnabled} = 1;
+    $quality_gate->{budgets}{newDefects} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "defect-comparison-input"
+        if ($defect_delta->{status} // "") ne "compared";
+    push @failed, "new-defect-budget"
+        if ($new_defects > $budget);
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_component_quality_gate {
+    my ($quality_gate, $component_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($component_model) ne "HASH";
+
+    my $worst = object_or_empty($component_model->{worstComponent});
+    my $open = int($worst->{open} // 0);
+    my $debt = int($worst->{technicalDebtMinutes} // 0);
+    my $open_budget = int($profile->{componentOpenBudget} // 0);
+    my $debt_budget = int($profile->{componentDebtBudget} // 0);
+
+    $quality_gate->{metrics}{components} = $component_model->{components} // 0;
+    $quality_gate->{metrics}{componentHotspots} = scalar(@{$component_model->{hotspots} // []});
+    $quality_gate->{metrics}{maxComponentOpen} = $open;
+    $quality_gate->{metrics}{maxComponentDebtMinutes} = $debt;
+    $quality_gate->{budgets}{maxComponentOpen} = $open_budget;
+    $quality_gate->{budgets}{maxComponentDebtMinutes} = $debt_budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "component-open-budget" if $open > $open_budget;
+    push @failed, "component-debt-budget" if $debt > $debt_budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_root_cause_quality_gate {
+    my ($quality_gate, $root_cause_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($root_cause_model) ne "HASH";
+
+    my $open = int($root_cause_model->{openRootCauses} // 0);
+    my $budget = int($profile->{rootCauseOpenBudget} // 0);
+
+    $quality_gate->{metrics}{rootCauseClusters} = $root_cause_model->{rootCauses} // 0;
+    $quality_gate->{metrics}{openRootCauses} = $open;
+    $quality_gate->{metrics}{systemicRootCauses} = $root_cause_model->{systemicRootCauses} // 0;
+    $quality_gate->{metrics}{maxRootCauseScore} = $root_cause_model->{maxScore} // 0;
+    $quality_gate->{budgets}{openRootCauses} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "root-cause-open-budget" if $open > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_rule_health_quality_gate {
+    my ($quality_gate, $rule_health_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($rule_health_model) ne "HASH";
+
+    my $noisy = int($rule_health_model->{noisyRules} // 0);
+    my $budget = int($profile->{noisyRuleBudget} // 0);
+
+    $quality_gate->{metrics}{rulesAnalyzed} = $rule_health_model->{rules} // 0;
+    $quality_gate->{metrics}{watchRules} = $rule_health_model->{watchRules} // 0;
+    $quality_gate->{metrics}{noisyRules} = $noisy;
+    $quality_gate->{metrics}{maxRuleNoisePermille} = $rule_health_model->{maxNoisePermille} // 0;
+    $quality_gate->{budgets}{noisyRules} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "noisy-rule-budget" if $noisy > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_finding_provenance_quality_gate {
+    my ($quality_gate, $finding_provenance_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($finding_provenance_model) ne "HASH";
+
+    my $gaps = int($finding_provenance_model->{provenanceGaps} // 0);
+    my $budget = int($profile->{findingProvenanceGapBudget} // 0);
+
+    $quality_gate->{metrics}{findingProvenanceGaps} = $gaps;
+    $quality_gate->{metrics}{findingsWithCompleteProvenance} = $finding_provenance_model->{completeFindings} // 0;
+    $quality_gate->{metrics}{fingerprintCollisions} = $finding_provenance_model->{fingerprintCollisions} // 0;
+    $quality_gate->{budgets}{findingProvenanceGaps} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "finding-provenance-gap-budget" if $gaps > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_finding_witness_quality_gate {
+    my ($quality_gate, $finding_witness_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($finding_witness_model) ne "HASH";
+
+    my $gaps = int($finding_witness_model->{witnessGaps} // 0);
+    my $budget = int($profile->{findingWitnessGapBudget} // 0);
+
+    $quality_gate->{metrics}{findingWitnessGaps} = $gaps;
+    $quality_gate->{metrics}{findingsWithCompleteWitnesses} = $finding_witness_model->{completeFindings} // 0;
+    $quality_gate->{metrics}{findingsWithFlowWitnesses} = $finding_witness_model->{flowWitnesses} // 0;
+    $quality_gate->{metrics}{findingsWithMetricWitnesses} = $finding_witness_model->{metricWitnesses} // 0;
+    $quality_gate->{budgets}{findingWitnessGaps} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "finding-witness-gap-budget" if $gaps > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_finding_confidence_quality_gate {
+    my ($quality_gate, $finding_confidence_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($finding_confidence_model) ne "HASH";
+
+    my $low = int($finding_confidence_model->{lowConfidenceOpenFindings} // 0);
+    my $budget = int($profile->{lowConfidenceFindingBudget} // 0);
+
+    $quality_gate->{metrics}{lowConfidenceFindings} = $low;
+    $quality_gate->{metrics}{highConfidenceFindings} = $finding_confidence_model->{highConfidenceFindings} // 0;
+    $quality_gate->{metrics}{mediumConfidenceFindings} = $finding_confidence_model->{mediumConfidenceFindings} // 0;
+    $quality_gate->{metrics}{averageFindingConfidence} = $finding_confidence_model->{averageScore} // 0;
+    $quality_gate->{budgets}{lowConfidenceFindings} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "low-confidence-finding-budget" if $low > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_analysis_run_manifest_quality_gate {
+    my ($quality_gate, $analysis_run_manifest, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($analysis_run_manifest) ne "HASH";
+
+    my $gaps = int($analysis_run_manifest->{manifestGaps} // 0);
+    my $budget = int($profile->{runManifestGapBudget} // 0);
+
+    $quality_gate->{metrics}{runManifestGaps} = $gaps;
+    $quality_gate->{metrics}{sourceInputs} = $analysis_run_manifest->{inputs}{sourceFiles} // 0;
+    $quality_gate->{metrics}{dirtyGitFiles} = $analysis_run_manifest->{git}{dirtyFiles} // 0;
+    $quality_gate->{budgets}{runManifestGaps} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "run-manifest-gap-budget" if $gaps > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_ownership_quality_gate {
+    my ($quality_gate, $ownership_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($ownership_model) ne "HASH";
+
+    my $unowned_open = int($ownership_model->{unownedOpen} // 0);
+    my $unowned_diagnostics = int($ownership_model->{unownedDiagnostics} // 0);
+    my $open_budget = int($profile->{unownedOpenBudget} // 0);
+    my $diagnostic_budget = int($profile->{unownedDiagnosticBudget} // 0);
+
+    $quality_gate->{metrics}{owners} = $ownership_model->{owners} // 0;
+    $quality_gate->{metrics}{ownedDiagnostics} = $ownership_model->{ownedDiagnostics} // 0;
+    $quality_gate->{metrics}{unownedDiagnostics} = $unowned_diagnostics;
+    $quality_gate->{metrics}{ownedOpen} = $ownership_model->{ownedOpen} // 0;
+    $quality_gate->{metrics}{unownedOpen} = $unowned_open;
+    $quality_gate->{budgets}{unownedOpen} = $open_budget;
+    $quality_gate->{budgets}{unownedDiagnostics} = $diagnostic_budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "unowned-open-budget" if $unowned_open > $open_budget;
+    push @failed, "unowned-diagnostic-budget" if $unowned_diagnostics > $diagnostic_budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+
+sub apply_defect_routing_quality_gate {
+    my ($quality_gate, $defect_routing_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($defect_routing_model) ne "HASH";
+
+    my $unrouted = int($defect_routing_model->{unroutedDefects} // 0);
+    my $budget = int($profile->{unroutedDefectBudget} // 0);
+
+    $quality_gate->{metrics}{defectRoutes} = $defect_routing_model->{routes} // 0;
+    $quality_gate->{metrics}{routedDefects} = $defect_routing_model->{routedDefects} // 0;
+    $quality_gate->{metrics}{unroutedDefects} = $unrouted;
+    $quality_gate->{metrics}{routingOwners} = $defect_routing_model->{owners} // 0;
+    $quality_gate->{metrics}{routingEfficiencyPermille} = $defect_routing_model->{routingEfficiencyPermille} // 0;
+    $quality_gate->{budgets}{unroutedDefects} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "unrouted-defect-budget" if $unrouted > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+
+sub apply_triage_quality_gate {
+    my ($quality_gate, $triage_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($triage_model) ne "HASH";
+
+    my $expired = int($triage_model->{expiredAcceptedRisks} // 0);
+    my $invalid = int($triage_model->{invalidEntries} // 0);
+    my $unmatched = int($triage_model->{unmatchedEntries} // 0);
+    my $expired_budget = int($profile->{expiredTriageBudget} // 0);
+    my $invalid_budget = int($profile->{invalidTriageEntryBudget} // 0);
+
+    $quality_gate->{metrics}{triageEnabled} = $triage_model->{enabled} ? 1 : 0;
+    $quality_gate->{metrics}{triageEntries} = $triage_model->{entries} // 0;
+    $quality_gate->{metrics}{triageReviewedDiagnostics} = $triage_model->{reviewedDiagnostics} // 0;
+    $quality_gate->{metrics}{expiredTriage} = $expired;
+    $quality_gate->{metrics}{invalidTriageEntries} = $invalid;
+    $quality_gate->{metrics}{unmatchedTriageEntries} = $unmatched;
+    $quality_gate->{budgets}{expiredTriage} = $expired_budget;
+    $quality_gate->{budgets}{invalidTriageEntries} = $invalid_budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "triage-ledger-input"
+        if ($triage_model->{status} // "") eq "missing-triage-ledger" ||
+            ($triage_model->{status} // "") eq "invalid-json";
+    push @failed, "expired-triage-budget" if $expired > $expired_budget;
+    push @failed, "invalid-triage-entry-budget" if $invalid > $invalid_budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_waiver_quality_gate {
+    my ($quality_gate, $waiver_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($waiver_model) ne "HASH";
+
+    my $stale = int($waiver_model->{staleWaivers} // 0);
+    my $expired = int($waiver_model->{expiredWaivers} // 0);
+    my $wildcard = int($waiver_model->{wildcardSourceSuppressions} // 0);
+    my $stale_budget = int($profile->{staleWaiverBudget} // 0);
+    my $expired_budget = int($profile->{expiredWaiverBudget} // 0);
+    my $wildcard_budget = int($profile->{wildcardSuppressionBudget} // 0);
+
+    $quality_gate->{metrics}{waivers} = $waiver_model->{waivers} // 0;
+    $quality_gate->{metrics}{sourceSuppressionWaivers} = $waiver_model->{sourceSuppressions} // 0;
+    $quality_gate->{metrics}{baselineWaivers} = $waiver_model->{baselineSuppressions} // 0;
+    $quality_gate->{metrics}{acceptedRiskWaivers} = $waiver_model->{acceptedRisks} // 0;
+    $quality_gate->{metrics}{staleWaivers} = $stale;
+    $quality_gate->{metrics}{expiredWaivers} = $expired;
+    $quality_gate->{metrics}{wildcardSuppressions} = $wildcard;
+    $quality_gate->{budgets}{staleWaivers} = $stale_budget;
+    $quality_gate->{budgets}{expiredWaivers} = $expired_budget;
+    $quality_gate->{budgets}{wildcardSuppressions} = $wildcard_budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "stale-waiver-budget" if $stale > $stale_budget;
+    push @failed, "expired-waiver-budget" if $expired > $expired_budget;
+    push @failed, "wildcard-suppression-budget" if $wildcard > $wildcard_budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+
+sub apply_review_governance_quality_gate {
+    my ($quality_gate, $review_governance_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($review_governance_model) ne "HASH";
+
+    my $risks = int($review_governance_model->{decisionRisks} // 0);
+    my $budget = int($profile->{reviewDecisionRiskBudget} // 0);
+
+    $quality_gate->{metrics}{reviewDecisions} = $review_governance_model->{reviewDecisions} // 0;
+    $quality_gate->{metrics}{reviewDecisionRisks} = $risks;
+    $quality_gate->{metrics}{highConfidenceFalsePositives} = $review_governance_model->{highConfidenceFalsePositives} // 0;
+    $quality_gate->{metrics}{staleMitigations} = $review_governance_model->{staleMitigations} // 0;
+    $quality_gate->{budgets}{reviewDecisionRisks} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "review-decision-risk-budget" if $risks > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+
+sub apply_analysis_coverage_quality_gate {
+    my ($quality_gate, $analysis_coverage_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($analysis_coverage_model) ne "HASH";
+
+    my $gaps = int($analysis_coverage_model->{coverageGaps} // 0);
+    my $budget = int($profile->{analysisCoverageGapBudget} // 0);
+
+    $quality_gate->{metrics}{analysisCoverageGaps} = $gaps;
+    $quality_gate->{metrics}{analysisSourceFiles} = $analysis_coverage_model->{sourceFiles} // 0;
+    $quality_gate->{metrics}{analysisFunctions} = $analysis_coverage_model->{analyzedFunctions} // 0;
+    $quality_gate->{budgets}{analysisCoverageGaps} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "analysis-coverage-gap-budget" if $gaps > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_quality_profile_quality_gate {
+    my ($quality_gate, $quality_profile_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($quality_profile_model) ne "HASH";
+
+    my $risks = int($quality_profile_model->{riskyOverrides} // 0);
+    my $budget = int($profile->{profileOverrideRiskBudget} // 0);
+
+    $quality_gate->{metrics}{qualityProfileRules} = $quality_profile_model->{rules} // 0;
+    $quality_gate->{metrics}{qualityProfileRiskyOverrides} = $risks;
+    $quality_gate->{metrics}{qualityProfileDowngrades} = $quality_profile_model->{severityDowngrades} // 0;
+    $quality_gate->{metrics}{qualityProfileDisabledRules} = $quality_profile_model->{disabledRules} // 0;
+    $quality_gate->{metrics}{qualityProfileInvalidRules} =
+        ($quality_profile_model->{unknownRules} // 0) + ($quality_profile_model->{invalidSeverities} // 0);
+    $quality_gate->{budgets}{qualityProfileRiskyOverrides} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "quality-profile-override-budget" if $risks > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_new_code_quality_gate {
+    my ($quality_gate, $new_code_scope, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($new_code_scope) ne "HASH";
+    return $quality_gate if !$new_code_scope->{enabled};
+
+    my $open = int($new_code_scope->{defectLedger}{open} // 0);
+    my $debt = int($new_code_scope->{qualityModel}{technicalDebtMinutes} // 0);
+    my $open_budget = int($profile->{newCodeOpenBudget} // 0);
+    my $debt_budget = int($profile->{newCodeDebtBudget} // 0);
+
+    $quality_gate->{metrics}{newCodeFiles} = scalar(@{$new_code_scope->{files} // []});
+    $quality_gate->{metrics}{newCodeDiagnostics} = $new_code_scope->{diagnostics} // 0;
+    $quality_gate->{metrics}{newCodeOpen} = $open;
+    $quality_gate->{metrics}{newCodeDebtMinutes} = $debt;
+    $quality_gate->{budgets}{newCodeOpen} = $open_budget;
+    $quality_gate->{budgets}{newCodeDebtMinutes} = $debt_budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "new-code-scope-input"
+        if ($new_code_scope->{status} // "") eq "git-error";
+    push @failed, "new-code-open-budget" if $open > $open_budget;
+    push @failed, "new-code-debt-budget" if $debt > $debt_budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_change_impact_quality_gate {
+    my ($quality_gate, $change_impact_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($change_impact_model) ne "HASH";
+
+    my $critical = int($change_impact_model->{criticalImpactedFiles} // 0);
+    my $blast = int($change_impact_model->{blastRadiusPermille} // 0);
+    my $critical_budget = int($profile->{changeImpactCriticalBudget} // 0);
+    my $blast_budget = int($profile->{changeImpactBlastRadiusBudget} // 0);
+
+    $quality_gate->{metrics}{changeImpactChangedSourceFiles} = $change_impact_model->{changedSourceFiles} // 0;
+    $quality_gate->{metrics}{changeImpactImpactedSourceFiles} = $change_impact_model->{impactedSourceFiles} // 0;
+    $quality_gate->{metrics}{changeImpactCriticalFiles} = $critical;
+    $quality_gate->{metrics}{changeImpactPublicSurfaceFiles} = $change_impact_model->{publicSurfaceImpactedFiles} // 0;
+    $quality_gate->{metrics}{changeImpactBlastRadiusPermille} = $blast;
+    $quality_gate->{budgets}{changeImpactCriticalFiles} = $critical_budget;
+    $quality_gate->{budgets}{changeImpactBlastRadiusPermille} = $blast_budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    if ($change_impact_model->{gateEnabled}) {
+        push @failed, "change-impact-critical-budget" if $critical > $critical_budget;
+        push @failed, "change-impact-blast-radius-budget" if $blast > $blast_budget;
+    }
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_history_quality_gate {
+    my ($quality_gate, $history_trend, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($history_trend) ne "HASH";
+    return $quality_gate if !$history_trend->{enabled};
+
+    my $delta = object_or_empty($history_trend->{delta});
+    my $has_previous = $delta->{hasPrevious} ? 1 : 0;
+    my $open_delta = int($delta->{openDelta} // 0);
+    my $debt_delta = int($delta->{debtDelta} // 0);
+    my $lifecycle = object_or_empty($history_trend->{issueLifecycle});
+    my $reopened = int($lifecycle->{reopenedIssues} // 0);
+    my $open_budget = int($profile->{historyOpenRegressionBudget} // 0);
+    my $debt_budget = int($profile->{historyDebtRegressionBudget} // 0);
+    my $reopened_budget = int($profile->{reopenedIssueBudget} // 0);
+
+    $quality_gate->{metrics}{historySamples} = $history_trend->{samples} // 0;
+    $quality_gate->{metrics}{historyOpenDelta} = $open_delta;
+    $quality_gate->{metrics}{historyDebtDelta} = $debt_delta;
+    $quality_gate->{metrics}{reopenedIssues} = $reopened;
+    $quality_gate->{budgets}{historyOpenDelta} = $open_budget;
+    $quality_gate->{budgets}{historyDebtDelta} = $debt_budget;
+    $quality_gate->{budgets}{reopenedIssues} = $reopened_budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    if ($has_previous) {
+        push @failed, "history-open-regression-budget" if $open_delta > $open_budget;
+        push @failed, "history-debt-regression-budget" if $debt_delta > $debt_budget;
+        push @failed, "reopened-issue-budget" if $reopened > $reopened_budget;
+    }
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_issue_aging_quality_gate {
+    my ($quality_gate, $aging_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($aging_model) ne "HASH";
+
+    my $overdue = int($aging_model->{overdue} // 0);
+    my $max_age = int($aging_model->{maxAgeDays} // 0);
+    my $overdue_budget = int($profile->{overdueIssueBudget} // 0);
+    my $max_age_budget = int($profile->{maxIssueAgeDays} // 365);
+
+    $quality_gate->{metrics}{overdueIssues} = $overdue;
+    $quality_gate->{metrics}{maxIssueAgeDays} = $max_age;
+    $quality_gate->{metrics}{agingTrackedIssues} = $aging_model->{open} // 0;
+    $quality_gate->{budgets}{overdueIssues} = $overdue_budget;
+    $quality_gate->{budgets}{maxIssueAgeDays} = $max_age_budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "overdue-issue-budget" if $overdue > $overdue_budget;
+    push @failed, "max-issue-age-budget" if $max_age > $max_age_budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_assurance_quality_gate {
+    my ($quality_gate, $assurance_case, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($assurance_case) ne "HASH";
+
+    my $open = int($assurance_case->{openClaims} // 0);
+    my $budgeted = int($assurance_case->{budgetedClaims} // 0);
+    my $budget = int($profile->{assuranceGapBudget} // 0);
+
+    $quality_gate->{metrics}{assuranceClaims} = $assurance_case->{claims} // 0;
+    $quality_gate->{metrics}{assuranceOpenClaims} = $open;
+    $quality_gate->{metrics}{assuranceBudgetedClaims} = $budgeted;
+    $quality_gate->{budgets}{assuranceOpenClaims} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "assurance-gap-budget" if $open > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_compliance_quality_gate {
+    my ($quality_gate, $compliance_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($compliance_model) ne "HASH";
+
+    my $failed_controls = int($compliance_model->{failedControls} // 0);
+    my $budgeted_controls = int($compliance_model->{budgetedControls} // 0);
+    my $budget = int($profile->{complianceFailureBudget} // 0);
+
+    $quality_gate->{metrics}{complianceControls} = $compliance_model->{controls} // 0;
+    $quality_gate->{metrics}{complianceFailedControls} = $failed_controls;
+    $quality_gate->{metrics}{complianceBudgetedControls} = $budgeted_controls;
+    $quality_gate->{budgets}{complianceFailedControls} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "compliance-control-budget" if $failed_controls > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_security_hotspot_quality_gate {
+    my ($quality_gate, $security_hotspot_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($security_hotspot_model) ne "HASH";
+
+    my $to_review = int($security_hotspot_model->{toReview} // 0);
+    my $vulnerabilities = int($security_hotspot_model->{vulnerabilities} // 0);
+    my $unreviewed = $to_review + $vulnerabilities;
+    my $budget = int($profile->{securityHotspotReviewBudget} // 0);
+
+    $quality_gate->{metrics}{securityHotspots} = $security_hotspot_model->{hotspots} // 0;
+    $quality_gate->{metrics}{unreviewedSecurityHotspots} = $unreviewed;
+    $quality_gate->{metrics}{securityVulnerabilities} = $vulnerabilities;
+    $quality_gate->{budgets}{unreviewedSecurityHotspots} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "security-hotspot-review-budget" if $unreviewed > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+
+sub apply_security_exploitability_quality_gate {
+    my ($quality_gate, $security_exploitability_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($security_exploitability_model) ne "HASH";
+
+    my $exploitable = int($security_exploitability_model->{exploitableSecurityFindings} // 0);
+    my $budget = int($profile->{exploitableSecurityBudget} // 0);
+
+    $quality_gate->{metrics}{securityExploitabilityFindings} = $security_exploitability_model->{findings} // 0;
+    $quality_gate->{metrics}{exploitableSecurityFindings} = $exploitable;
+    $quality_gate->{metrics}{criticalSecurityFindings} = $security_exploitability_model->{criticalSecurityFindings} // 0;
+    $quality_gate->{metrics}{highSecurityRiskFindings} = $security_exploitability_model->{highSecurityRiskFindings} // 0;
+    $quality_gate->{budgets}{exploitableSecurityFindings} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "exploitable-security-budget" if $exploitable > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+
+sub apply_security_dataflow_quality_gate {
+    my ($quality_gate, $security_dataflow_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($security_dataflow_model) ne "HASH";
+
+    my $critical = int($security_dataflow_model->{criticalDataflows} // 0);
+    my $budget = int($profile->{securityDataflowCriticalBudget} // 0);
+
+    $quality_gate->{metrics}{securityDataflowCriticalPaths} = $critical;
+    $quality_gate->{metrics}{securityDataflowHighRiskEvidence} = $security_dataflow_model->{highRiskEvidence} // 0;
+    $quality_gate->{metrics}{securityDataflowTaintedPaths} = $security_dataflow_model->{taintedSinkPaths} // 0;
+    $quality_gate->{metrics}{securityDataflowContractlessSinks} = $security_dataflow_model->{contractlessSinks} // 0;
+    $quality_gate->{budgets}{securityDataflowCriticalPaths} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "security-dataflow-critical-budget" if $critical > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+
+sub apply_path_feasibility_quality_gate {
+    my ($quality_gate, $path_feasibility_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($path_feasibility_model) ne "HASH";
+
+    my $unknown = int($path_feasibility_model->{unknownPaths} // 0);
+    my $budget = int($profile->{pathFeasibilityUnknownBudget} // 64);
+
+    $quality_gate->{metrics}{pathFeasibilityCandidates} = $path_feasibility_model->{candidatePaths} // 0;
+    $quality_gate->{metrics}{pathFeasibilityPlausiblePaths} = $path_feasibility_model->{plausiblePaths} // 0;
+    $quality_gate->{metrics}{pathFeasibilityInfeasiblePaths} = $path_feasibility_model->{infeasiblePaths} // 0;
+    $quality_gate->{metrics}{pathFeasibilityUnknownPaths} = $unknown;
+    $quality_gate->{metrics}{pathFeasibilityPolarizedConditions} = $path_feasibility_model->{polarizedConditions} // 0;
+    $quality_gate->{metrics}{pathFeasibilityFacts} = $path_feasibility_model->{feasibilityFacts} // 0;
+    $quality_gate->{budgets}{pathFeasibilityUnknownPaths} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "path-feasibility-unknown-budget" if $unknown > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+
+sub apply_context_sensitivity_quality_gate {
+    my ($quality_gate, $context_sensitivity_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($context_sensitivity_model) ne "HASH";
+
+    my $risks = int($context_sensitivity_model->{contextRisks} // 0);
+    my $budget = int($profile->{contextSensitivityRiskBudget} // 32);
+
+    $quality_gate->{metrics}{contextSensitivityRisks} = $risks;
+    $quality_gate->{metrics}{contextSensitiveFunctions} = $context_sensitivity_model->{contextSensitiveFunctions} // 0;
+    $quality_gate->{metrics}{contextMergedCallsites} = $context_sensitivity_model->{mergedCallsites} // 0;
+    $quality_gate->{metrics}{contextMaxFanIn} = $context_sensitivity_model->{maxFanIn} // 0;
+    $quality_gate->{budgets}{contextSensitivityRisks} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "context-sensitivity-risk-budget" if $risks > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+
+sub apply_soundness_quality_gate {
+    my ($quality_gate, $soundness_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($soundness_model) ne "HASH";
+
+    my $open = int($soundness_model->{openAssumptions} // 0);
+    my $budgeted = int($soundness_model->{budgetedAssumptions} // 0);
+    my $budget = int($profile->{soundnessAssumptionBudget} // 0);
+
+    $quality_gate->{metrics}{soundnessAssumptions} = $soundness_model->{assumptions} // 0;
+    $quality_gate->{metrics}{openSoundnessAssumptions} = $open;
+    $quality_gate->{metrics}{budgetedSoundnessAssumptions} = $budgeted;
+    $quality_gate->{budgets}{openSoundnessAssumptions} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "soundness-assumption-budget" if $open > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+sub apply_proof_obligation_quality_gate {
+    my ($quality_gate, $proof_obligation_model, $profile) = @_;
+    return $quality_gate if ref($quality_gate) ne "HASH";
+    return $quality_gate if ref($proof_obligation_model) ne "HASH";
+
+    my $open = int($proof_obligation_model->{openProofObligations} // 0);
+    my $budgeted = int($proof_obligation_model->{budgetedProofObligations} // 0);
+    my $total = int($proof_obligation_model->{proofObligations} // 0);
+    my $budget = int($profile->{proofObligationBudget} // 0);
+
+    $quality_gate->{metrics}{proofObligations} = $total;
+    $quality_gate->{metrics}{openProofObligations} = $open;
+    $quality_gate->{metrics}{budgetedProofObligations} = $budgeted;
+    $quality_gate->{budgets}{openProofObligations} = $budget;
+
+    my @failed = @{$quality_gate->{failed} // []};
+    push @failed, "open-proof-obligation-budget" if $open > $budget;
+
+    my %seen;
+    @failed = grep { !$seen{$_}++ } @failed;
+    $quality_gate->{failed} = \@failed;
+    $quality_gate->{status} = @failed == 0 ? "passed" : "failed";
+    return $quality_gate;
+}
+
+
+sub count_code_prefix {
+    my ($prefix, $severity, @diagnostics) = @_;
+    my $count = 0;
+    for my $diag (@diagnostics) {
+        next if $diag->{suppressed};
+        next if $diag->{severity} ne $severity;
+        $count += 1 if index($diag->{code}, $prefix) == 0;
+    }
+    return $count;
+}
+
+sub valid_severity {
+    my ($severity) = @_;
+    return $severity eq "error" || $severity eq "warning" || $severity eq "notice";
+}
+
+sub severity_rank {
+    my ($severity) = @_;
+    return 3 if ($severity // "") eq "error";
+    return 2 if ($severity // "") eq "warning";
+    return 1 if ($severity // "") eq "notice";
+    return 0;
+}
+
+sub trim_text {
+    my ($value) = @_;
+    $value = "" if !defined $value;
+    $value =~ s/\A\s+//;
+    $value =~ s/\s+\z//;
+    return $value;
+}
+
+sub diagnostic_fingerprint {
+    my ($diag) = @_;
+    return "TPC-" . stable_hex_hash(join("\0", $diag->{code}, $diag->{where}, $diag->{message}));
+}
+
+sub stable_hex_hash {
+    my ($value) = @_;
+    my $hash = 2166136261;
+    for (my $index = 0; $index < length($value); $index += 1) {
+        $hash ^= ord(substr($value, $index, 1));
+        $hash = ($hash * 16777619) & 0xffffffff;
+    }
+    return sprintf("%08x", $hash);
+}
+
+sub read_policy_baseline {
+    my ($path) = @_;
+    return { ignored_fingerprints => [] } if !defined $path;
+    return { ignored_fingerprints => [] } if !-f $path;
+    my $json = read_json($path);
+    my $ignored = array_or_empty($json->{ignoredFingerprints});
+    my @fingerprints = grep { defined $_ && !ref($_) } @{$ignored};
+    return {
+        ignored_fingerprints => \@fingerprints
+    };
+}
+
+sub write_policy_baseline {
+    my ($path, $diagnostics) = @_;
+    my @fingerprints = sort map { $_->{fingerprint} } grep { defined $_->{fingerprint} } @{$diagnostics};
+    my %seen;
+    @fingerprints = grep { !$seen{$_}++ } @fingerprints;
+    my $payload = {
+        version => 1,
+        generatedBy => "TypeSea Perl Policy Analyzer",
+        ignoredFingerprints => \@fingerprints
+    };
+    open my $handle, ">:encoding(UTF-8)", $path or die "failed to write $path: $!";
+    print {$handle} json_encoder()->encode($payload);
+    close $handle or die "failed to close $path: $!";
+}
+
+sub read_triage_ledger {
+    my ($path) = @_;
+    return {
+        schemaVersion => 1,
+        enabled => 0,
+        status => "not-requested",
+        entries => [],
+        invalidEntries => [],
+        byKey => {},
+        byFingerprint => {}
+    } if !defined $path;
+
+    if (!-f $path) {
+        return {
+            schemaVersion => 1,
+            enabled => 1,
+            status => "missing-triage-ledger",
+            path => $path,
+            entries => [],
+            invalidEntries => [{
+                line => 0,
+                message => "triage ledger file does not exist"
+            }],
+            byKey => {},
+            byFingerprint => {}
+        };
+    }
+
+    my $text = read_text($path);
+    my $json = eval { decode_json($text) };
+    if ($@ || ref($json) ne "HASH") {
+        return {
+            schemaVersion => 1,
+            enabled => 1,
+            status => "invalid-json",
+            path => $path,
+            entries => [],
+            invalidEntries => [{
+                line => 0,
+                message => "triage ledger must be a JSON object"
+            }],
+            byKey => {},
+            byFingerprint => {}
+        };
+    }
+
+    my @entries;
+    my @invalid;
+    my %by_key;
+    my %by_fingerprint;
+    my $raw_entries = array_or_empty($json->{entries});
+    for (my $index = 0; $index < @{$raw_entries}; $index += 1) {
+        my $entry = normalize_triage_entry($raw_entries->[$index], $index + 1);
+        if ($entry->{valid}) {
+            push @entries, $entry;
+            $by_key{$entry->{key}} = $entry if defined $entry->{key};
+            $by_fingerprint{$entry->{fingerprint}} = $entry if defined $entry->{fingerprint};
+        } else {
+            push @invalid, $entry;
+        }
+    }
+
+    return {
+        schemaVersion => 1,
+        enabled => 1,
+        status => @invalid == 0 ? "loaded" : "loaded-with-invalid-entries",
+        path => $path,
+        entries => \@entries,
+        invalidEntries => \@invalid,
+        byKey => \%by_key,
+        byFingerprint => \%by_fingerprint
+    };
+}
+
+sub normalize_triage_entry {
+    my ($raw, $ordinal) = @_;
+    return {
+        valid => 0,
+        ordinal => $ordinal,
+        message => "triage entry must be an object"
+    } if ref($raw) ne "HASH";
+
+    my $state = $raw->{state} // "";
+    my $key = $raw->{key};
+    my $fingerprint = $raw->{fingerprint};
+    my $owner = $raw->{owner} // "";
+    my $reason = $raw->{reason} // "";
+    my $expires = $raw->{expires};
+    my @errors;
+    push @errors, "state must be one of confirmed, accepted-risk, false-positive, mitigated"
+        if !valid_triage_state($state);
+    push @errors, "entry must include key or fingerprint"
+        if (!defined $key || $key eq "") && (!defined $fingerprint || $fingerprint eq "");
+    if ($state eq "accepted-risk" || $state eq "false-positive" || $state eq "mitigated") {
+        push @errors, "owner is required for reviewed triage states" if $owner eq "";
+        push @errors, "reason is required for reviewed triage states" if $reason eq "";
+    }
+    if ($state eq "accepted-risk") {
+        push @errors, "accepted-risk entries require expires in YYYY-MM-DD form"
+            if !defined $expires || !valid_ymd($expires);
+    } elsif (defined $expires && $expires ne "" && !valid_ymd($expires)) {
+        push @errors, "expires must use YYYY-MM-DD form";
+    }
+
+    return {
+        valid => 0,
+        ordinal => $ordinal,
+        key => $key,
+        fingerprint => $fingerprint,
+        state => $state,
+        owner => $owner,
+        reason => $reason,
+        expires => $expires,
+        message => join("; ", @errors)
+    } if @errors != 0;
+
+    return {
+        valid => 1,
+        ordinal => $ordinal,
+        key => $key,
+        fingerprint => $fingerprint,
+        state => $state,
+        owner => $owner,
+        reason => $reason,
+        expires => $expires,
+        expired => defined $expires && $expires ne "" && ymd_before($expires, today_ymd()) ? 1 : 0
+    };
+}
+
+sub valid_triage_state {
+    my ($state) = @_;
+    return 1 if $state eq "confirmed" ||
+        $state eq "accepted-risk" ||
+        $state eq "false-positive" ||
+        $state eq "mitigated";
+    return 0;
+}
+
+sub valid_ymd {
+    my ($value) = @_;
+    return 0 if !defined $value;
+    return $value =~ /\A\d{4}-\d{2}-\d{2}\z/ ? 1 : 0;
+}
+
+sub today_ymd {
+    my @parts = gmtime(time());
+    return sprintf("%04d-%02d-%02d", $parts[5] + 1900, $parts[4] + 1, $parts[3]);
+}
+
+sub ymd_before {
+    my ($left, $right) = @_;
+    return 0 if !valid_ymd($left) || !valid_ymd($right);
+    return $left lt $right ? 1 : 0;
+}
+
+sub apply_triage_ledger {
+    my ($diagnostics, $ledger) = @_;
+    return if ref($ledger) ne "HASH" || !$ledger->{enabled};
+    for my $diag (@{$diagnostics}) {
+        my $key = defect_key($diag);
+        my $entry = $ledger->{byKey}{$key};
+        $entry = $ledger->{byFingerprint}{$diag->{fingerprint}}
+            if ref($entry) ne "HASH" && defined $diag->{fingerprint};
+        next if ref($entry) ne "HASH";
+        $diag->{triageState} = $entry->{state};
+        $diag->{triageOwner} = $entry->{owner};
+        $diag->{triageReason} = $entry->{reason};
+        $diag->{triageExpires} = $entry->{expires};
+        $diag->{triageExpired} = $entry->{expired};
+        $diag->{triageOrdinal} = $entry->{ordinal};
+    }
+}
+
+sub triage_ledger_diagnostics {
+    my ($ledger) = @_;
+    return () if ref($ledger) ne "HASH" || !$ledger->{enabled};
+    my @out;
+    if (($ledger->{status} // "") eq "missing-triage-ledger" || ($ledger->{status} // "") eq "invalid-json") {
+        push @out, diagnostic(
+            "error",
+            "triage.ledger",
+            ($ledger->{path} // "triage-ledger") . ":1",
+            $ledger->{invalidEntries}[0]{message} // "triage ledger could not be loaded"
+        );
+    }
+    for my $entry (@{$ledger->{invalidEntries} // []}) {
+        next if ($ledger->{status} // "") eq "missing-triage-ledger" || ($ledger->{status} // "") eq "invalid-json";
+        push @out, diagnostic(
+            "warning",
+            "triage.entry",
+            ($ledger->{path} // "triage-ledger") . ":" . ($entry->{ordinal} // 1),
+            "invalid triage entry: " . ($entry->{message} // "unknown validation failure")
+        );
+    }
+    return @out;
+}
+
+sub triage_model {
+    my ($diagnostics, $ledger) = @_;
+    my %states;
+    my %owners;
+    my @expired;
+    my @reviewed;
+    my @unmatched_entries = @{$ledger->{entries} // []};
+    my %matched_ordinals;
+
+    for my $diag (@{$diagnostics}) {
+        my $state = $diag->{triageState} // "untriaged";
+        $states{$state} += 1;
+        if (defined $diag->{triageOwner} && $diag->{triageOwner} ne "") {
+            $owners{$diag->{triageOwner}} += 1;
+        }
+        if ($diag->{triageExpired}) {
+            push @expired, triage_model_item($diag);
+        }
+        if ($state ne "untriaged") {
+            push @reviewed, triage_model_item($diag);
+            $matched_ordinals{$diag->{triageOrdinal}} = 1 if defined $diag->{triageOrdinal};
+        }
+    }
+
+    my @unmatched = grep { !$matched_ordinals{$_->{ordinal}} } @unmatched_entries;
+    return {
+        schemaVersion => 1,
+        enabled => $ledger->{enabled} ? 1 : 0,
+        status => $ledger->{status} // "not-requested",
+        path => $ledger->{path},
+        entries => scalar(@{$ledger->{entries} // []}),
+        invalidEntries => scalar(@{$ledger->{invalidEntries} // []}),
+        reviewedDiagnostics => scalar(@reviewed),
+        expiredAcceptedRisks => scalar(@expired),
+        unmatchedEntries => scalar(@unmatched),
+        states => \%states,
+        owners => \%owners,
+        expiredItems => [@expired[0 .. min_index(19, $#expired)]],
+        reviewedItems => [@reviewed[0 .. min_index(19, $#reviewed)]],
+        unmatchedEntryOrdinals => [map { $_->{ordinal} } @unmatched[0 .. min_index(19, $#unmatched)]]
+    };
+}
+
+sub triage_model_item {
+    my ($diag) = @_;
+    return {
+        key => defect_key($diag),
+        fingerprint => $diag->{fingerprint},
+        code => $diag->{code},
+        where => $diag->{where},
+        owner => $diag->{triageOwner},
+        state => $diag->{triageState},
+        reason => $diag->{triageReason},
+        expires => $diag->{triageExpires},
+        expired => $diag->{triageExpired} ? 1 : 0,
+        message => $diag->{message}
+    };
+}
+
+sub waiver_model {
+    my ($diagnostics, $source_suppressions) = @_;
+    my @diagnostic_waivers;
+    my %used_source_directives;
+    my %by_kind;
+    my %by_owner;
+    my %by_state;
+
+    for my $diag (@{$diagnostics}) {
+        if (($diag->{suppression} // "") eq "source-comment") {
+            $used_source_directives{source_suppression_directive_key_from_diag($diag)} = 1;
+        }
+        next if !diagnostic_has_waiver($diag);
+        my $item = waiver_item_from_diagnostic($diag);
+        push @diagnostic_waivers, $item;
+        $by_kind{$item->{kind}} += 1;
+        $by_owner{$item->{owner}} += 1;
+        $by_state{$item->{state}} += 1;
+    }
+
+    my @source_directives = source_suppression_directives($source_suppressions);
+    my @wildcard_source = grep {
+        ($_->{rule} // "") eq "*"
+    } @source_directives;
+    my @stale_source = grep {
+        !$used_source_directives{$_->{key}}
+    } @source_directives;
+    my @expired = grep {
+        $_->{expired}
+    } @diagnostic_waivers;
+    my @accepted = grep {
+        $_->{state} eq "accepted-risk"
+    } @diagnostic_waivers;
+    my @baseline = grep {
+        $_->{kind} eq "baseline"
+    } @diagnostic_waivers;
+    my @source = grep {
+        $_->{kind} eq "source-comment"
+    } @diagnostic_waivers;
+
+    my $status = @expired != 0 ? "expired-waivers-present" :
+        @stale_source != 0 ? "stale-waivers-present" :
+        @diagnostic_waivers != 0 ? "waivers-present" : "clean";
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea waiver audit model",
+        status => $status,
+        waivers => scalar(@diagnostic_waivers),
+        sourceSuppressions => scalar(@source),
+        baselineSuppressions => scalar(@baseline),
+        acceptedRisks => scalar(@accepted),
+        falsePositives => $by_state{"false-positive"} // 0,
+        mitigated => $by_state{mitigated} // 0,
+        expiredWaivers => scalar(@expired),
+        staleWaivers => scalar(@stale_source),
+        wildcardSourceSuppressions => scalar(@wildcard_source),
+        sourceDirectives => scalar(@source_directives),
+        byKind => \%by_kind,
+        byOwner => \%by_owner,
+        byState => \%by_state,
+        waiverSet => [@diagnostic_waivers[0 .. min_index(49, $#diagnostic_waivers)]],
+        expiredSet => [@expired[0 .. min_index(19, $#expired)]],
+        staleSourceSet => [@stale_source[0 .. min_index(19, $#stale_source)]],
+        wildcardSourceSet => [@wildcard_source[0 .. min_index(19, $#wildcard_source)]]
+    };
+}
+
+
+sub review_governance_model {
+    my ($diagnostics, $defect_ledger) = @_;
+    my @records = @{array_or_empty($defect_ledger->{records})};
+    my @decisions;
+    my @risks;
+    my %by_state;
+    my %by_owner;
+    my %by_risk;
+
+    for (my $index = 0; $index < @{$diagnostics}; $index += 1) {
+        my $diag = $diagnostics->[$index];
+        my $record = $records[$index];
+        $record = defect_record($diag) if ref($record) ne "HASH";
+        next if !record_has_review_decision($record);
+        my $confidence = finding_confidence_summary($diag, $record);
+        my $item = review_decision_item($diag, $record, $confidence);
+        push @decisions, $item;
+        push @risks, $item if @{$item->{risks}} != 0;
+        $by_state{$item->{state}} += 1;
+        $by_owner{$item->{owner}} += 1;
+        for my $risk (@{$item->{risks}}) {
+            $by_risk{$risk} += 1;
+        }
+    }
+
+    @decisions = sort_review_decisions(@decisions);
+    @risks = sort_review_decisions(@risks);
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea review governance model",
+        basis => "reviewed triage states, source suppressions, baseline suppressions, confidence calibration, and witness strength",
+        status => @risks != 0 ? "risky-review-decisions" :
+            @decisions != 0 ? "reviewed" : "clean",
+        reviewDecisions => scalar(@decisions),
+        decisionRisks => scalar(@risks),
+        highConfidenceFalsePositives => $by_risk{"high-confidence-false-positive"} // 0,
+        staleMitigations => $by_risk{"live-mitigation-evidence"} // 0,
+        byState => \%by_state,
+        byOwner => \%by_owner,
+        byRisk => \%by_risk,
+        decisionSet => [@decisions[0 .. min_index(49, $#decisions)]],
+        riskSet => [@risks[0 .. min_index(19, $#risks)]]
+    };
+}
+
+
+sub record_has_review_decision {
+    my ($record) = @_;
+    return 0 if ref($record) ne "HASH";
+    return 1 if ($record->{status} // "") eq "accepted-risk";
+    return 1 if ($record->{status} // "") eq "false-positive";
+    return 1 if ($record->{status} // "") eq "mitigated";
+    return 1 if ($record->{status} // "") eq "suppressed";
+    return 0;
+}
+
+
+sub review_decision_item {
+    my ($diag, $record, $confidence) = @_;
+    my $state = review_decision_state($record);
+    my @risks = review_decision_risks($diag, $record, $confidence, $state);
+    return {
+        key => $record->{key},
+        fingerprint => $record->{fingerprint},
+        state => $state,
+        decisionKind => review_decision_kind($record),
+        risks => \@risks,
+        owner => review_decision_owner($record),
+        reason => review_decision_reason($record),
+        expires => $record->{triageExpires},
+        expired => $record->{triageExpired} ? 1 : 0,
+        code => $record->{code},
+        where => $record->{where},
+        priority => $record->{priority},
+        category => $record->{category},
+        confidenceScore => $confidence->{score},
+        confidenceBand => $confidence->{band},
+        witnessKind => $confidence->{witnessKind},
+        suppressionRule => $record->{suppressionRule},
+        suppressionLine => $record->{suppressionLine},
+        message => $record->{message}
+    };
+}
+
+
+sub review_decision_state {
+    my ($record) = @_;
+    return $record->{status} if ($record->{status} // "") ne "";
+    return "source-suppressed" if ($record->{suppression} // "") ne "";
+    return "unreviewed";
+}
+
+
+sub review_decision_kind {
+    my ($record) = @_;
+    return "source-comment" if ($record->{suppression} // "") eq "source-comment";
+    return "baseline" if ($record->{suppression} // "") eq "policy-baseline";
+    return "triage-ledger" if ($record->{triageState} // "") ne "" && ($record->{triageState} // "") ne "untriaged";
+    return $record->{suppression} // "unknown";
+}
+
+
+sub review_decision_owner {
+    my ($record) = @_;
+    return $record->{triageOwner} if ($record->{triageOwner} // "") ne "";
+    return $record->{owner} if ($record->{owner} // "") ne "";
+    return "unowned";
+}
+
+
+sub review_decision_reason {
+    my ($record) = @_;
+    return $record->{triageReason} if ($record->{triageReason} // "") ne "";
+    return $record->{suppressionReason} if ($record->{suppressionReason} // "") ne "";
+    return "";
+}
+
+
+sub review_decision_risks {
+    my ($diag, $record, $confidence, $state) = @_;
+    my @risks;
+    my $reason = review_decision_reason($record);
+    my $owner = review_decision_owner($record);
+    push @risks, "missing-review-owner" if $owner eq "" || $owner eq "unowned";
+    push @risks, "missing-review-reason" if $reason eq "";
+    push @risks, "expired-accepted-risk" if $state eq "accepted-risk" && ($record->{triageExpired} // 0);
+    push @risks, "unbounded-accepted-risk" if $state eq "accepted-risk" && ($record->{triageExpires} // "") eq "";
+    push @risks, "wildcard-source-suppression" if ($record->{suppressionRule} // "") eq "*";
+    push @risks, "baseline-without-local-rationale"
+        if ($record->{suppression} // "") eq "policy-baseline" && $reason eq "";
+    push @risks, "high-confidence-false-positive"
+        if $state eq "false-positive" && ($confidence->{score} // 0) >= 80;
+    push @risks, "live-mitigation-evidence"
+        if $state eq "mitigated" && ($confidence->{score} // 0) >= 65;
+    push @risks, "security-risk-acceptance"
+        if $state eq "accepted-risk" && ($record->{category} // "") eq "security" &&
+            issue_priority_rank($record->{priority} // "P4") <= issue_priority_rank("P1");
+    return @risks;
+}
+
+
+sub sort_review_decisions {
+    return sort {
+        scalar(@{$b->{risks} // []}) <=> scalar(@{$a->{risks} // []}) ||
+            issue_priority_rank($a->{priority}) <=> issue_priority_rank($b->{priority}) ||
+            ($b->{confidenceScore} // 0) <=> ($a->{confidenceScore} // 0) ||
+            ($a->{state} // "") cmp ($b->{state} // "") ||
+            ($a->{key} // "") cmp ($b->{key} // "")
+    } @_;
+}
+
+
+sub diagnostic_has_waiver {
+    my ($diag) = @_;
+    return 1 if ($diag->{suppression} // "") ne "";
+    my $state = $diag->{triageState} // "";
+    return 1 if $state eq "accepted-risk" ||
+        $state eq "false-positive" ||
+        $state eq "mitigated";
+    return 0;
+}
+
+sub waiver_item_from_diagnostic {
+    my ($diag) = @_;
+    my $record = defect_record($diag);
+    my $state = $diag->{triageState} // "";
+    my $kind = ($diag->{suppression} // "") eq "source-comment" ? "source-comment" :
+        ($diag->{suppression} // "") eq "policy-baseline" ? "baseline" :
+        $state ne "" && $state ne "untriaged" ? "triage" : "unknown";
+    my $reason = $diag->{suppressionReason} // $diag->{triageReason} // $diag->{suppression} // "";
+    return {
+        key => $record->{key},
+        fingerprint => $diag->{fingerprint},
+        kind => $kind,
+        state => $state ne "" ? $state : ($diag->{suppression} // "waived"),
+        owner => $record->{owner} // "unowned",
+        owners => $record->{owners},
+        code => $diag->{code},
+        severity => $diag->{severity},
+        where => $diag->{where},
+        path => $record->{path},
+        line => $record->{line},
+        message => $diag->{message},
+        reason => $reason,
+        suppressionRule => $diag->{suppressionRule},
+        suppressionLine => $diag->{suppressionLine},
+        triageOwner => $diag->{triageOwner},
+        triageExpires => $diag->{triageExpires},
+        expired => $diag->{triageExpired} ? 1 : 0,
+        priority => $record->{priority},
+        triageScore => $record->{triageScore}
+    };
+}
+
+sub source_suppression_directives {
+    my ($source_suppressions) = @_;
+    return () if ref($source_suppressions) ne "HASH";
+    my %directives;
+    for my $entry (values %{$source_suppressions}) {
+        next if ref($entry) ne "HASH";
+        my $key = source_suppression_directive_key($entry);
+        $directives{$key} = {
+            key => $key,
+            path => $entry->{path},
+            line => $entry->{line},
+            directive => $entry->{directive},
+            rule => $entry->{rule},
+            reason => $entry->{reason},
+            targetLine => $entry->{targetLine},
+            targetStartLine => $entry->{targetStartLine},
+            targetEndLine => $entry->{targetEndLine}
+        };
+    }
+    return sort {
+        ($a->{path} // "") cmp ($b->{path} // "") ||
+            ($a->{line} // 0) <=> ($b->{line} // 0) ||
+            ($a->{rule} // "") cmp ($b->{rule} // "")
+    } values %directives;
+}
+
+sub source_suppression_directive_key {
+    my ($entry) = @_;
+    return join(":", $entry->{path} // "", $entry->{line} // 0, $entry->{rule} // "");
+}
+
+sub source_suppression_directive_key_from_diag {
+    my ($diag) = @_;
+    my ($path) = diagnostic_location($diag->{where});
+    return join(":", $path // "", $diag->{suppressionLine} // 0, $diag->{suppressionRule} // "");
+}
+
+sub analysis_coverage_model {
+    my ($ir, $diagnostics) = @_;
+    my $source = object_or_empty($ir->{source});
+    my $flow = object_or_empty($source->{function_analysis});
+    my $graph = object_or_empty($flow->{graph});
+    my $abstract = object_or_empty($flow->{abstract});
+    my $cfg = object_or_empty($abstract->{cfg});
+
+    my $source_files = scalar(@{array_or_empty($source->{files})});
+    my $modules = scalar(keys %{object_or_empty($source->{modules_by_path})});
+    my $functions = scalar(@{array_or_empty($flow->{functions})});
+    my $import_edges = scalar(@{array_or_empty($source->{import_edges})});
+    my $call_edges = scalar(@{array_or_empty($graph->{edges})});
+    my $cfg_blocks = int($cfg->{blocks} // 0);
+    my $cfg_edges = int($cfg->{edges} // 0);
+    my $cfg_decisions = int($cfg->{decisions} // 0);
+
+    my @source_front_end_gaps = (
+        analysis_coverage_diagnostic_gaps($diagnostics, ["lex.parse", "source.suppression-reason", "source.suppression-rule", "source.suppression-wildcard"])
+    );
+    push @source_front_end_gaps, map {
+        analysis_coverage_static_gap("lex.parse", $_->{path} . ":" . ($_->{line} // 1), $_->{message} // "lexer failed to parse source")
+    } @{array_or_empty($source->{lex_errors})};
+    push @source_front_end_gaps, map {
+        analysis_coverage_static_gap("source.suppression-reason", $_->{path} . ":" . ($_->{line} // 1), $_->{message} // "invalid source suppression")
+    } @{array_or_empty($source->{invalid_source_suppressions})};
+    push @source_front_end_gaps, map {
+        analysis_coverage_static_gap("import.unresolved", $_->{path} . ":" . ($_->{line} // 1), "relative import could not be resolved")
+    } @{array_or_empty($source->{unresolved_imports})};
+    push @source_front_end_gaps, analysis_coverage_static_gap("coverage.source-files", "src", "no TypeScript source files were analyzed")
+        if $source_files == 0;
+    push @source_front_end_gaps, analysis_coverage_static_gap("coverage.modules", "src", "source files were found but no module entries were built")
+        if $source_files != 0 && $modules == 0;
+
+    my @function_ir_gaps = analysis_coverage_diagnostic_gaps($diagnostics, [
+        "policy.function-ir",
+        "flow.function-ir",
+        "flow.callgraph",
+        "flow.cfg"
+    ]);
+    push @function_ir_gaps, analysis_coverage_static_gap("coverage.functions", "src", "source files were found but no function IR entries were built")
+        if $source_files != 0 && $functions == 0;
+    push @function_ir_gaps, analysis_coverage_static_gap("coverage.cfg", "src", "functions were found but no CFG blocks were built")
+        if $functions != 0 && $cfg_blocks == 0;
+
+    my @schema_tag_gaps = analysis_coverage_diagnostic_gaps($diagnostics, ["schema-tags."]);
+    push @schema_tag_gaps, analysis_coverage_static_gap("coverage.schema-tags", "src/kind/index.ts", "schema tag inventory is empty")
+        if scalar(@{array_or_empty($source->{schema_tags})}) == 0;
+
+    my @node_tag_gaps = analysis_coverage_diagnostic_gaps($diagnostics, ["node-tags."]);
+    push @node_tag_gaps, analysis_coverage_static_gap("coverage.node-tags", "src/kind/index.ts", "IR node tag inventory is empty")
+        if scalar(@{array_or_empty($source->{node_tags})}) == 0;
+
+    my @policy_gaps = analysis_coverage_diagnostic_gaps($diagnostics, [
+        "policy.severity",
+        "policy.verbose",
+        "policy.template-lexer",
+        "policy.import-ast",
+        "policy.import-type-name",
+        "policy.lex-errors",
+        "policy.dynamic-import",
+        "policy.semicolonless-import",
+        "policy.machine-report",
+        "policy.dashboard",
+        "policy.baseline",
+        "policy.source-suppression",
+        "policy.type-escape-domain",
+        "policy.regex-safety-domain",
+        "policy.benchmark-evidence-domain",
+        "policy.rule-metadata-domain",
+        "policy.waiver-model",
+        "policy.quality-gate",
+        "policy.rule-catalog"
+    ]);
+
+    my @abi_gaps = analysis_coverage_diagnostic_gaps($diagnostics, ["abi."]);
+
+    my @dimensions = (
+        analysis_coverage_dimension("source-front-end", "Source front end", {
+            sourceFiles => $source_files,
+            modules => $modules,
+            importEdges => $import_edges
+        }, \@source_front_end_gaps),
+        analysis_coverage_dimension("function-ir", "Function IR and CFG", {
+            functions => $functions,
+            callEdges => $call_edges,
+            cfgBlocks => $cfg_blocks,
+            cfgEdges => $cfg_edges,
+            cfgDecisions => $cfg_decisions
+        }, \@function_ir_gaps),
+        analysis_coverage_dimension("schema-tag-coverage", "Schema tag coverage", {
+            schemaTags => scalar(@{array_or_empty($source->{schema_tags})})
+        }, \@schema_tag_gaps),
+        analysis_coverage_dimension("node-tag-coverage", "IR node tag coverage", {
+            nodeTags => scalar(@{array_or_empty($source->{node_tags})})
+        }, \@node_tag_gaps),
+        analysis_coverage_dimension("policy-engine", "Policy engine self-checks", {
+            reportModes => 4,
+            sourceSuppressions => scalar(keys %{object_or_empty($source->{source_suppressions})})
+        }, \@policy_gaps),
+        analysis_coverage_dimension("generated-source-abi", "Generated source ABI", {
+            helpers => scalar(keys %{object_or_empty($source->{generated_abi})})
+        }, \@abi_gaps)
+    );
+
+    my @gap_set;
+    for my $dimension (@dimensions) {
+        push @gap_set, @{$dimension->{gapSet}};
+    }
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea analysis coverage model",
+        status => @gap_set == 0 ? "complete" : "gaps-present",
+        sourceFiles => $source_files,
+        modules => $modules,
+        importEdges => $import_edges,
+        analyzedFunctions => $functions,
+        callGraphEdges => $call_edges,
+        cfgBlocks => $cfg_blocks,
+        cfgEdges => $cfg_edges,
+        cfgDecisions => $cfg_decisions,
+        schemaTags => scalar(@{array_or_empty($source->{schema_tags})}),
+        nodeTags => scalar(@{array_or_empty($source->{node_tags})}),
+        coverageGaps => scalar(@gap_set),
+        dimensions => \@dimensions,
+        gapSet => [@gap_set[0 .. min_index(49, $#gap_set)]]
+    };
+}
+
+sub analysis_coverage_dimension {
+    my ($id, $name, $evidence, $gaps) = @_;
+    my @gap_set = @{$gaps // []};
+    return {
+        id => $id,
+        name => $name,
+        status => @gap_set == 0 ? "covered" : "gaps-present",
+        evidence => $evidence,
+        gaps => scalar(@gap_set),
+        gapSet => [@gap_set[0 .. min_index(11, $#gap_set)]]
+    };
+}
+
+sub analysis_coverage_diagnostic_gaps {
+    my ($diagnostics, $patterns) = @_;
+    my @out;
+    for my $diag (@{$diagnostics // []}) {
+        next if diagnostic_quality_excluded($diag);
+        next if ($diag->{severity} // "") eq "notice";
+        next if !analysis_coverage_code_matches($diag->{code} // "", $patterns);
+        push @out, {
+            kind => "diagnostic",
+            code => $diag->{code},
+            severity => $diag->{severity},
+            where => $diag->{where},
+            message => $diag->{message}
+        };
+    }
+    return @out;
+}
+
+sub analysis_coverage_code_matches {
+    my ($code, $patterns) = @_;
+    for my $pattern (@{$patterns // []}) {
+        return 1 if $pattern =~ /\.\z/ && index($code, $pattern) == 0;
+        return 1 if $code eq $pattern;
+    }
+    return 0;
+}
+
+sub analysis_coverage_static_gap {
+    my ($code, $where, $message) = @_;
+    return {
+        kind => "coverage",
+        code => $code,
+        severity => "error",
+        where => $where,
+        message => $message
+    };
+}
+
+sub write_triage_template {
+    my ($path, $defect_ledger) = @_;
+    my @records = active_defect_records($defect_ledger);
+    my @entries = map {
+        {
+            key => $_->{key},
+            fingerprint => $_->{fingerprint},
+            state => "confirmed",
+            owner => $_->{owner} // "",
+            reason => "",
+            expires => "",
+            code => $_->{code},
+            where => $_->{where},
+            priority => $_->{priority},
+            message => $_->{message}
+        }
+    } @records;
+    my $payload = {
+        schemaVersion => 1,
+        generatedBy => "TypeSea Perl Policy Analyzer",
+        generatedAt => iso_timestamp(time()),
+        states => ["confirmed", "accepted-risk", "false-positive", "mitigated"],
+        entries => \@entries
+    };
+    open my $handle, ">:encoding(UTF-8)", $path or die "failed to write $path: $!";
+    print {$handle} json_encoder()->encode($payload);
+    close $handle or die "failed to close $path: $!";
+}
+
+sub proof_obligation_model {
+    my ($assurance_case, $compliance_model, $soundness_model) = @_;
+    my @obligations;
+    my $assurance = object_or_empty($assurance_case);
+    my $compliance = object_or_empty($compliance_model);
+    my $soundness = object_or_empty($soundness_model);
+
+    for my $claim (@{array_or_empty($assurance->{claimSet})}) {
+        push @obligations, proof_obligation_from_claim($claim);
+    }
+    for my $control (@{array_or_empty($compliance->{controlSet})}) {
+        push @obligations, proof_obligation_from_control($control);
+    }
+    for my $assumption (@{array_or_empty($soundness->{assumptionSet})}) {
+        push @obligations, proof_obligation_from_assumption($assumption);
+    }
+
+    @obligations = sort_proof_obligations(grep { ref($_) eq "HASH" } @obligations);
+    my %by_status;
+    my %by_domain;
+    my %by_source;
+    for my $obligation (@obligations) {
+        $by_status{$obligation->{status}} += 1;
+        $by_domain{$obligation->{domain}} += 1;
+        $by_source{$obligation->{source}} += 1;
+    }
+    my @open = grep { ($_->{status} // "") eq "open" } @obligations;
+    my @budgeted = grep { ($_->{status} // "") eq "budgeted" } @obligations;
+    my @discharged = grep { ($_->{status} // "") eq "discharged" } @obligations;
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea proof obligation model",
+        status => @open != 0 ? "open-obligations" :
+            @budgeted != 0 ? "budgeted-obligations" : "discharged",
+        proofObligations => scalar(@obligations),
+        openProofObligations => scalar(@open),
+        budgetedProofObligations => scalar(@budgeted),
+        dischargedProofObligations => scalar(@discharged),
+        byStatus => \%by_status,
+        byDomain => \%by_domain,
+        bySource => \%by_source,
+        obligationSet => [@obligations[0 .. min_index(79, $#obligations)]],
+        openObligationSet => [@open[0 .. min_index(19, $#open)]],
+        budgetedObligationSet => [@budgeted[0 .. min_index(19, $#budgeted)]]
+    };
+}
+
+
+sub proof_obligation_from_claim {
+    my ($claim) = @_;
+    return undef if ref($claim) ne "HASH";
+    my $status = proof_obligation_status($claim->{status});
+    return {
+        id => "PO-CLAIM-" . ($claim->{id} // "unknown"),
+        source => "assurance-claim",
+        sourceId => $claim->{id},
+        domain => $claim->{safetyLevel} // "assurance",
+        status => $status,
+        title => $claim->{claim} // $claim->{id} // "assurance claim",
+        evidenceCount => $claim->{evidenceCount} // 0,
+        failureCount => $claim->{openFindings} // 0,
+        budgetMetric => $claim->{budgetMetric},
+        budgetValue => $claim->{budgetValue},
+        budgetLimit => $claim->{budgetLimit}
+    };
+}
+
+
+sub proof_obligation_from_control {
+    my ($control) = @_;
+    return undef if ref($control) ne "HASH";
+    my $status = proof_obligation_status($control->{status});
+    return {
+        id => "PO-CONTROL-" . ($control->{id} // "unknown"),
+        source => "compliance-control",
+        sourceId => $control->{id},
+        domain => $control->{standard} // "compliance",
+        status => $status,
+        title => $control->{title} // $control->{id} // "compliance control",
+        evidenceCount => $control->{evidenceCount} // 0,
+        failureCount => ($control->{diagnosticFailures} // 0) + scalar(@{array_or_empty($control->{metricFailures})}),
+        budgetMetric => $control->{budgetMetric},
+        budgetValue => $control->{budgetValue},
+        budgetLimit => $control->{budgetLimit}
+    };
+}
+
+
+sub proof_obligation_from_assumption {
+    my ($assumption) = @_;
+    return undef if ref($assumption) ne "HASH";
+    my $status = proof_obligation_status($assumption->{status});
+    return {
+        id => "PO-ASSUMPTION-" . ($assumption->{id} // "unknown"),
+        source => "soundness-assumption",
+        sourceId => $assumption->{id},
+        domain => $assumption->{domain} // "soundness",
+        status => $status,
+        title => $assumption->{title} // $assumption->{id} // "soundness assumption",
+        evidenceCount => $assumption->{evidenceCount} // 0,
+        failureCount => $assumption->{failureCount} // 0,
+        budgetMetric => join(",", map { $_->{metric} // "" } @{array_or_empty($assumption->{metricReviews})}),
+        budgetValue => join(",", map { $_->{value} // 0 } @{array_or_empty($assumption->{metricReviews})}),
+        budgetLimit => join(",", map { $_->{budget} // 0 } @{array_or_empty($assumption->{metricReviews})})
+    };
+}
+
+
+sub proof_obligation_status {
+    my ($status) = @_;
+    return "open" if ($status // "") eq "open" || ($status // "") eq "failed";
+    return "budgeted" if ($status // "") eq "budgeted" ||
+        ($status // "") eq "passed-with-budgeted-risk";
+    return "discharged";
+}
+
+
+sub sort_proof_obligations {
+    return sort {
+        proof_obligation_status_rank($a->{status}) <=> proof_obligation_status_rank($b->{status}) ||
+            ($a->{source} // "") cmp ($b->{source} // "") ||
+            ($a->{id} // "") cmp ($b->{id} // "")
+    } @_;
+}
+
+
+sub proof_obligation_status_rank {
+    my ($status) = @_;
+    return 0 if ($status // "") eq "open";
+    return 1 if ($status // "") eq "budgeted";
+    return 2;
+}
+
+
+sub assurance_case {
+    my ($ir, $diagnostics, $quality_gate) = @_;
+    my @claims = map {
+        assurance_claim($_, $diagnostics, $quality_gate)
+    } assurance_claim_specs();
+    my %by_status;
+    for my $claim (@claims) {
+        $by_status{$claim->{status}} += 1;
+    }
+    my @open = grep { $_->{status} eq "open" } @claims;
+    my @budgeted = grep { $_->{status} eq "budgeted" } @claims;
+    return {
+        schemaVersion => 1,
+        model => "TypeSea assurance case",
+        status => @open != 0 ? "open" :
+            @budgeted != 0 ? "proven-with-budgeted-risks" : "proven",
+        claims => scalar(@claims),
+        provenClaims => $by_status{proven} // 0,
+        budgetedClaims => $by_status{budgeted} // 0,
+        openClaims => $by_status{open} // 0,
+        byStatus => \%by_status,
+        claimSet => \@claims,
+        openClaimSet => [@open[0 .. min_index(19, $#open)]],
+        budgetedClaimSet => [@budgeted[0 .. min_index(19, $#budgeted)]]
+    };
+}
+
+sub assurance_claim_specs {
+    return (
+        {
+            id => "hostile-accessor-data-slot-proof",
+            claim => "Hostile input property reads use own data-slot proof before value consumption.",
+            safetyLevel => "security-critical",
+            evidence => ["safe.accessor", "flow.descriptor-proof", "flow.descriptor-dominance", "flow.abstract-domain", "flow.branch-state"],
+            openCodes => ["flow.descriptor-dominance", "flow.branch-leak"]
+        },
+        {
+            id => "hostile-input-immutability",
+            claim => "Safe validation paths do not mutate hostile input or frozen heap regions.",
+            safetyLevel => "security-critical",
+            evidence => ["flow.mutation-domain", "flow.mutation-gap", "flow.memory-alias-domain", "flow.memory-alias-gap", "flow.freeze-state-domain", "flow.freeze-state-gap"],
+            openCodes => ["flow.mutation-gap", "flow.memory-alias-gap", "flow.freeze-state-gap"]
+        },
+        {
+            id => "prototype-pollution-barrier",
+            claim => "Prototype-pollution keys cannot cross unsafe bulk-transfer or object materialization boundaries.",
+            safetyLevel => "security-critical",
+            evidence => ["flow.key-safety-domain", "flow.key-safety-gap"],
+            openCodes => ["flow.key-safety-gap"]
+        },
+        {
+            id => "result-state-soundness",
+            claim => "Result payload reads are dominated by .ok polarity evidence.",
+            safetyLevel => "correctness-critical",
+            evidence => ["flow.result-state-domain", "flow.result-state-gap"],
+            openCodes => ["flow.result-state-gap"]
+        },
+        {
+            id => "lifecycle-balance",
+            claim => "Path/frame lifecycle state cannot escape TypeSea-sensitive validation functions.",
+            safetyLevel => "correctness-critical",
+            evidence => ["flow.lifecycle-domain", "flow.lifecycle-gap", "flow.lifecycle-fixpoint", "flow.lifecycle-path"],
+            openCodes => ["flow.lifecycle-gap", "flow.lifecycle-path"],
+            metric => "lifecycleGaps",
+            budget => "lifecycleGaps"
+        },
+        {
+            id => "dynamic-code-confinement",
+            claim => "Dynamic code execution is confined to approved TypeSea JIT/AOT bridges.",
+            safetyLevel => "security-critical",
+            evidence => ["jit.codegen", "jit.side-table", "flow.dynamic-sink", "flow.tainted-path"],
+            openCodes => ["flow.dynamic-sink", "flow.tainted-path"]
+        },
+        {
+            id => "regex-redos-safety",
+            claim => "Hostile-string regex validators avoid known catastrophic-backtracking structures.",
+            safetyLevel => "security-critical",
+            evidence => ["security.regex-domain", "security.redos-risk"],
+            openCodes => ["security.redos-risk"],
+            metric => "redosRisks",
+            budget => "redosRisks"
+        },
+        {
+            id => "secret-leak-prevention",
+            claim => "Repository source does not contain hardcoded credentials or token material.",
+            safetyLevel => "security-critical",
+            evidence => ["security.secret-domain", "security.secret-leak"],
+            openCodes => ["security.secret-leak"],
+            metric => "secretLeaks",
+            budget => "secretLeaks"
+        },
+        {
+            id => "workflow-supply-chain-integrity",
+            claim => "GitHub Actions release and CI workflows avoid high-risk supply-chain execution patterns.",
+            safetyLevel => "security-critical",
+            evidence => ["supply.workflow-domain", "supply.workflow-permission", "supply.workflow-publish", "supply.workflow-action-ref"],
+            openCodes => ["supply.workflow-permission", "supply.workflow-publish"],
+            metric => "workflowHighRiskFindings",
+            budget => "workflowHighRiskFindings"
+        },
+        {
+            id => "lockfile-supply-chain-integrity",
+            claim => "npm lockfile entries preserve registry, integrity, and zero-runtime-dependency release invariants.",
+            safetyLevel => "security-critical",
+            evidence => ["supply.lockfile-domain", "supply.lockfile-integrity", "supply.lockfile-runtime"],
+            openCodes => ["supply.lockfile-integrity", "supply.lockfile-runtime"],
+            metric => "packageLockRisks",
+            budget => "packageLockRisks"
+        },
+        {
+            id => "license-compliance",
+            claim => "Published package and dependency metadata stay inside the approved license policy.",
+            safetyLevel => "release-critical",
+            evidence => ["legal.license-domain", "legal.license-risk", "legal.license-review"],
+            openCodes => ["legal.license-risk"],
+            metric => "licenseRisks",
+            budget => "licenseRisks"
+        },
+        {
+            id => "public-api-surface-integrity",
+            claim => "Published package export subpaths stay synchronized with README/API documentation and condition metadata.",
+            safetyLevel => "release-critical",
+            evidence => ["api.surface-domain", "api.surface-drift", "api.docs-coverage", "policy.api-surface-domain"],
+            openCodes => ["api.surface-drift", "api.docs-coverage"],
+            metric => "apiSurfaceDrift",
+            budget => "apiSurfaceDrift"
+        },
+        {
+            id => "release-metadata-consistency",
+            claim => "Release metadata agrees across package, lockfile, benchmarks, changelog, documentation site, and README badges.",
+            safetyLevel => "release-critical",
+            evidence => ["release.consistency-domain", "release.version-drift", "policy.release-consistency-domain"],
+            openCodes => ["release.version-drift"],
+            metric => "releaseConsistencyRisks",
+            budget => "releaseConsistencyRisks"
+        },
+        {
+            id => "test-evidence-coverage",
+            claim => "Core TypeSea compiler, security, compatibility, and public-surface semantics have direct test suite evidence.",
+            safetyLevel => "correctness-critical",
+            evidence => ["test.evidence-domain", "test.evidence-gap", "policy.test-evidence-domain"],
+            openCodes => ["test.evidence-gap"],
+            metric => "testEvidenceGaps",
+            budget => "testEvidenceGaps"
+        },
+        {
+            id => "benchmark-evidence-coverage",
+            claim => "TypeSea performance claims are backed by warm benchmark metadata and required comparison rows.",
+            safetyLevel => "performance-critical",
+            evidence => ["bench.evidence-domain", "bench.evidence-gap", "policy.benchmark-evidence-domain"],
+            openCodes => ["bench.evidence-gap"],
+            metric => "benchmarkEvidenceGaps",
+            budget => "benchmarkEvidenceGaps"
+        },
+        {
+            id => "rule-metadata-integrity",
+            claim => "Every emitted analyzer rule carries complete machine-readable metadata for SARIF, dashboard, and remediation workflows.",
+            safetyLevel => "analyzer-critical",
+            evidence => ["rule.metadata-domain", "rule.metadata-gap", "rule.metadata-generic", "policy.rule-metadata-domain"],
+            openCodes => ["rule.metadata-gap"],
+            metric => "ruleMetadataGaps",
+            budget => "ruleMetadataGaps"
+        },
+        {
+            id => "type-safety-boundary",
+            claim => "TypeScript type-safety escape hatches are visible and kept inside an explicit TypeSea budget.",
+            safetyLevel => "correctness-critical",
+            evidence => ["types.escape-domain", "types.unsafe-escape"],
+            openCodes => ["types.unsafe-escape"],
+            metric => "typeEscapes",
+            budget => "typeEscapes"
+        },
+        {
+            id => "generated-source-provenance",
+            claim => "Generated source fragments carry local escape, side-table, or propagated ABI proof evidence.",
+            safetyLevel => "security-critical",
+            evidence => ["flow.generated-source-domain", "flow.generated-source-gap"],
+            openCodes => ["flow.generated-source-gap"],
+            metric => "generatedSourceGaps",
+            budget => "generatedSourceGaps"
+        },
+        {
+            id => "symbolic-hostile-input-closure",
+            claim => "Symbolic hostile-input sink paths are either closed or explicitly budgeted.",
+            safetyLevel => "security-critical",
+            evidence => ["flow.symbolic-domain", "flow.symbolic-path", "flow.symbolic-fixpoint", "flow.symbolic-caller-path"],
+            openCodes => ["flow.symbolic-path", "flow.symbolic-caller-path"],
+            metric => "symbolicPaths",
+            budget => "symbolicPaths"
+        },
+        {
+            id => "hot-loop-allocation-control",
+            claim => "V8-sensitive validation loops keep allocation drift bounded and visible.",
+            safetyLevel => "performance-critical",
+            evidence => ["flow.effect-domain", "flow.hot-loop-allocation"],
+            openCodes => ["flow.hot-loop-allocation"],
+            metric => "hotLoopAllocations",
+            budget => "hotLoopAllocations"
+        },
+        {
+            id => "async-scheduling-control",
+            claim => "Async validation paths keep event-loop yielding and promise scheduling evidence visible.",
+            safetyLevel => "performance-critical",
+            evidence => ["flow.async-domain", "flow.async-scheduling-gap"],
+            openCodes => ["flow.async-scheduling-gap"],
+            metric => "asyncSchedulingGaps",
+            budget => "asyncSchedulingGaps"
+        },
+        {
+            id => "schema-union-exhaustiveness",
+            claim => "Schema and IR discriminant dispatchers expose default/fallthrough drift before release.",
+            safetyLevel => "correctness-critical",
+            evidence => ["schema-tags.", "node-tags.", "flow.variant-state-domain", "flow.variant-state-gap"],
+            openCodes => ["flow.variant-state-gap"],
+            metric => "variantSwitchGaps",
+            budget => "variantSwitchGaps"
+        }
+    );
+}
+
+sub assurance_claim {
+    my ($spec, $diagnostics, $quality_gate) = @_;
+    my @evidence = grep {
+        diagnostic_matches_any_code($_, $spec->{evidence})
+    } @{$diagnostics};
+    my @open = grep {
+        !diagnostic_quality_excluded($_) &&
+            ($_->{severity} // "notice") ne "notice" &&
+            diagnostic_matches_any_code($_, $spec->{openCodes})
+    } @{$diagnostics};
+    my $metric = defined $spec->{metric}
+        ? int($quality_gate->{metrics}{$spec->{metric}} // 0)
+        : 0;
+    my $budget = defined $spec->{budget}
+        ? int($quality_gate->{budgets}{$spec->{budget}} // 0)
+        : 0;
+    my $status = @open != 0 ? "open" :
+        (defined $spec->{metric} && $metric > 0 ? "budgeted" : "proven");
+    return {
+        id => $spec->{id},
+        claim => $spec->{claim},
+        safetyLevel => $spec->{safetyLevel},
+        status => $status,
+        evidenceCount => scalar(@evidence),
+        openDiagnostics => scalar(@open),
+        budgetMetric => $spec->{metric},
+        budgetValue => $metric,
+        budgetLimit => $budget,
+        evidence => [
+            map {
+                {
+                    code => $_->{code},
+                    severity => $_->{severity},
+                    where => $_->{where},
+                    message => $_->{message}
+                }
+            } @evidence[0 .. min_index(5, $#evidence)]
+        ],
+        openEvidence => [
+            map {
+                {
+                    code => $_->{code},
+                    severity => $_->{severity},
+                    where => $_->{where},
+                    message => $_->{message}
+                }
+            } @open[0 .. min_index(5, $#open)]
+        ]
+    };
+}
+
+sub diagnostic_matches_any_code {
+    my ($diag, $codes) = @_;
+    return 0 if ref($codes) ne "ARRAY";
+    my $code = $diag->{code} // "";
+    for my $needle (@{$codes}) {
+        next if !defined $needle;
+        return 1 if substr($needle, -1) eq "." && index($code, $needle) == 0;
+        return 1 if $code eq $needle;
+    }
+    return 0;
+}
+
+sub compliance_model {
+    my ($diagnostics, $quality_gate, $assurance_case) = @_;
+    my @controls = map {
+        compliance_control($_, $diagnostics, $quality_gate, $assurance_case)
+    } compliance_control_specs();
+    my %by_status;
+    my %by_standard;
+    for my $control (@controls) {
+        $by_status{$control->{status}} += 1;
+        $by_standard{$control->{standard}} += 1;
+    }
+    my @failed = grep { $_->{status} eq "failed" } @controls;
+    my @budgeted = grep { $_->{status} eq "passed-with-budgeted-risk" } @controls;
+    return {
+        schemaVersion => 1,
+        model => "TypeSea compliance control matrix",
+        status => @failed != 0 ? "failed" :
+            @budgeted != 0 ? "passed-with-budgeted-risks" : "passed",
+        standard => "TypeSea Safety Standard",
+        controls => scalar(@controls),
+        passedControls => $by_status{passed} // 0,
+        budgetedControls => $by_status{"passed-with-budgeted-risk"} // 0,
+        failedControls => $by_status{failed} // 0,
+        byStatus => \%by_status,
+        byStandard => \%by_standard,
+        controlSet => \@controls,
+        failedControlSet => [@failed[0 .. min_index(19, $#failed)]],
+        budgetedControlSet => [@budgeted[0 .. min_index(19, $#budgeted)]]
+    };
+}
+
+sub compliance_control_specs {
+    return (
+        {
+            id => "TSS-SEC-001",
+            standard => "hostile-input-security",
+            title => "Hostile input access requires own data-property proof",
+            claim => "hostile-accessor-data-slot-proof",
+            evidence => ["safe.accessor", "flow.descriptor-dominance"],
+            failCodes => ["flow.descriptor-dominance", "flow.branch-leak"]
+        },
+        {
+            id => "TSS-SEC-002",
+            standard => "prototype-pollution",
+            title => "Prototype-pollution key transfer is locally proven safe",
+            claim => "prototype-pollution-barrier",
+            evidence => ["flow.key-safety-domain", "flow.key-safety-gap"],
+            failCodes => ["flow.key-safety-gap"]
+        },
+        {
+            id => "TSS-SEC-003",
+            standard => "dynamic-code",
+            title => "Dynamic code generation is confined and provenance-backed",
+            claim => "dynamic-code-confinement",
+            evidence => ["flow.dynamic-sink", "flow.tainted-path", "jit.side-table"],
+            failCodes => ["flow.dynamic-sink", "flow.tainted-path"]
+        },
+        {
+            id => "TSS-SEC-004",
+            standard => "generated-source",
+            title => "Generated source carries escape or side-table evidence",
+            claim => "generated-source-provenance",
+            evidence => ["flow.generated-source-domain", "flow.generated-source-gap"],
+            failCodes => ["flow.generated-source-gap"],
+            metric => "generatedSourceGaps",
+            budget => "generatedSourceGaps"
+        },
+        {
+            id => "TSS-SEC-005",
+            standard => "regex-redos",
+            title => "Regex validators avoid catastrophic backtracking shapes",
+            claim => "regex-redos-safety",
+            evidence => ["security.regex-domain", "security.redos-risk"],
+            failCodes => ["security.redos-risk"],
+            metric => "redosRisks",
+            budget => "redosRisks"
+        },
+        {
+            id => "TSS-SEC-006",
+            standard => "secret-management",
+            title => "Hardcoded credentials are absent from release inputs",
+            claim => "secret-leak-prevention",
+            evidence => ["security.secret-domain", "security.secret-leak"],
+            failCodes => ["security.secret-leak"],
+            metric => "secretLeaks",
+            budget => "secretLeaks"
+        },
+        {
+            id => "TSS-SC-001",
+            standard => "workflow-supply-chain",
+            title => "GitHub Actions release workflows avoid high-risk execution patterns",
+            claim => "workflow-supply-chain-integrity",
+            evidence => ["supply.workflow-domain", "supply.workflow-permission", "supply.workflow-publish", "supply.workflow-action-ref"],
+            failCodes => ["supply.workflow-permission", "supply.workflow-publish"],
+            metric => "workflowHighRiskFindings",
+            budget => "workflowHighRiskFindings"
+        },
+        {
+            id => "TSS-SC-002",
+            standard => "lockfile-supply-chain",
+            title => "npm lockfile entries retain registry and integrity guarantees",
+            claim => "lockfile-supply-chain-integrity",
+            evidence => ["supply.lockfile-domain", "supply.lockfile-integrity", "supply.lockfile-runtime"],
+            failCodes => ["supply.lockfile-integrity", "supply.lockfile-runtime"],
+            metric => "packageLockRisks",
+            budget => "packageLockRisks"
+        },
+        {
+            id => "TSS-LIC-001",
+            standard => "license-compliance",
+            title => "Package licenses stay inside the approved distribution policy",
+            claim => "license-compliance",
+            evidence => ["legal.license-domain", "legal.license-risk", "legal.license-review"],
+            failCodes => ["legal.license-risk"],
+            metric => "licenseRisks",
+            budget => "licenseRisks"
+        },
+        {
+            id => "TSS-API-001",
+            standard => "public-api-contract",
+            title => "Package export subpaths and documentation stay synchronized",
+            claim => "public-api-surface-integrity",
+            evidence => ["api.surface-domain", "api.surface-drift", "api.docs-coverage", "policy.api-surface-domain"],
+            failCodes => ["api.surface-drift", "api.docs-coverage"],
+            metric => "apiSurfaceDrift",
+            budget => "apiSurfaceDrift"
+        },
+        {
+            id => "TSS-TEST-001",
+            standard => "test-evidence",
+            title => "Critical TypeSea semantics have direct test suite evidence",
+            claim => "test-evidence-coverage",
+            evidence => ["test.evidence-domain", "test.evidence-gap", "policy.test-evidence-domain"],
+            failCodes => ["test.evidence-gap"],
+            metric => "testEvidenceGaps",
+            budget => "testEvidenceGaps"
+        },
+        {
+            id => "TSS-COR-001",
+            standard => "result-state",
+            title => "Result payload reads require .ok polarity proof",
+            claim => "result-state-soundness",
+            evidence => ["flow.result-state-domain", "flow.result-state-gap"],
+            failCodes => ["flow.result-state-gap"]
+        },
+        {
+            id => "TSS-COR-002",
+            standard => "lifecycle",
+            title => "Validation path/frame lifecycle remains balanced",
+            claim => "lifecycle-balance",
+            evidence => ["flow.lifecycle-domain", "flow.lifecycle-path"],
+            failCodes => ["flow.lifecycle-gap", "flow.lifecycle-path"],
+            metric => "lifecycleGaps",
+            budget => "lifecycleGaps"
+        },
+        {
+            id => "TSS-COR-003",
+            standard => "variant-exhaustiveness",
+            title => "Schema and IR discriminant dispatch drift is visible",
+            claim => "schema-union-exhaustiveness",
+            evidence => ["schema-tags.", "node-tags.", "flow.variant-state-gap"],
+            failCodes => ["flow.variant-state-gap"],
+            metric => "variantSwitchGaps",
+            budget => "variantSwitchGaps"
+        },
+        {
+            id => "TSS-COR-004",
+            standard => "type-safety",
+            title => "TypeScript escape hatches are tracked and budgeted",
+            claim => "type-safety-boundary",
+            evidence => ["types.escape-domain", "types.unsafe-escape"],
+            failCodes => ["types.unsafe-escape"],
+            metric => "typeEscapes",
+            budget => "typeEscapes"
+        },
+        {
+            id => "TSS-PERF-001",
+            standard => "hot-path-performance",
+            title => "Hot validation loops keep allocation drift within budget",
+            claim => "hot-loop-allocation-control",
+            evidence => ["flow.effect-domain", "flow.hot-loop-allocation"],
+            failCodes => ["flow.hot-loop-allocation"],
+            metric => "hotLoopAllocations",
+            budget => "hotLoopAllocations"
+        },
+        {
+            id => "TSS-PERF-002",
+            standard => "async-scheduling",
+            title => "Async validation paths expose yield and promise scheduling drift",
+            claim => "async-scheduling-control",
+            evidence => ["flow.async-domain", "flow.async-scheduling-gap"],
+            failCodes => ["flow.async-scheduling-gap"],
+            metric => "asyncSchedulingGaps",
+            budget => "asyncSchedulingGaps"
+        },
+        {
+            id => "TSS-PERF-003",
+            standard => "benchmark-evidence",
+            title => "Benchmark snapshots include required warm performance evidence",
+            claim => "benchmark-evidence-coverage",
+            evidence => ["bench.evidence-domain", "bench.evidence-gap", "policy.benchmark-evidence-domain"],
+            failCodes => ["bench.evidence-gap"],
+            metric => "benchmarkEvidenceGaps",
+            budget => "benchmarkEvidenceGaps"
+        },
+        {
+            id => "TSS-ANA-001",
+            standard => "analyzer-integrity",
+            title => "Analyzer rules expose complete SARIF and remediation metadata",
+            claim => "rule-metadata-integrity",
+            evidence => ["rule.metadata-domain", "rule.metadata-gap", "rule.metadata-generic", "policy.rule-metadata-domain"],
+            failCodes => ["rule.metadata-gap"],
+            metric => "ruleMetadataGaps",
+            budget => "ruleMetadataGaps"
+        },
+        {
+            id => "TSS-OPS-001",
+            standard => "release-governance",
+            title => "All open defects are owner-assigned and triageable",
+            evidence => ["policy.ownership-model", "policy.triage-ledger", "policy.remediation-plan"],
+            failMetrics => ["unownedOpen", "expiredTriage", "invalidTriageEntries"]
+        },
+        {
+            id => "TSS-OPS-002",
+            standard => "release-governance",
+            title => "Open defects remain within age and regression budgets",
+            evidence => ["policy.issue-aging", "policy.history-trend", "policy.defect-delta"],
+            failMetrics => ["overdueIssues", "historyOpenDelta", "newDefects"]
+        },
+        {
+            id => "TSS-REL-001",
+            standard => "release-governance",
+            title => "Release metadata remains synchronized across generated artifacts",
+            claim => "release-metadata-consistency",
+            evidence => ["release.consistency-domain", "release.version-drift", "policy.release-consistency-domain"],
+            failCodes => ["release.version-drift"],
+            metric => "releaseConsistencyRisks",
+            budget => "releaseConsistencyRisks"
+        }
+    );
+}
+
+sub compliance_control {
+    my ($spec, $diagnostics, $quality_gate, $assurance_case) = @_;
+    my @evidence = grep {
+        diagnostic_matches_any_code($_, $spec->{evidence})
+    } @{$diagnostics};
+    my @failures = grep {
+        !diagnostic_quality_excluded($_) &&
+            ($_->{severity} // "notice") ne "notice" &&
+            diagnostic_matches_any_code($_, $spec->{failCodes})
+    } @{$diagnostics};
+    my @metric_failures;
+    for my $metric (@{$spec->{failMetrics} // []}) {
+        my $value = int($quality_gate->{metrics}{$metric} // 0);
+        push @metric_failures, {
+            metric => $metric,
+            value => $value
+        } if $value > 0;
+    }
+    my $claim = compliance_claim_for_id($assurance_case, $spec->{claim});
+    my $metric_value = defined $spec->{metric}
+        ? int($quality_gate->{metrics}{$spec->{metric}} // 0)
+        : 0;
+    my $metric_budget = defined $spec->{budget}
+        ? int($quality_gate->{budgets}{$spec->{budget}} // 0)
+        : 0;
+    my $status = @failures != 0 || @metric_failures != 0 || (ref($claim) eq "HASH" && ($claim->{status} // "") eq "open")
+        ? "failed"
+        : (defined $spec->{metric} && $metric_value > 0) || (ref($claim) eq "HASH" && ($claim->{status} // "") eq "budgeted")
+            ? "passed-with-budgeted-risk"
+            : "passed";
+    return {
+        id => $spec->{id},
+        standard => $spec->{standard},
+        title => $spec->{title},
+        status => $status,
+        claim => $spec->{claim},
+        claimStatus => ref($claim) eq "HASH" ? $claim->{status} : undef,
+        evidenceCount => scalar(@evidence),
+        diagnosticFailures => scalar(@failures),
+        metricFailures => \@metric_failures,
+        budgetMetric => $spec->{metric},
+        budgetValue => $metric_value,
+        budgetLimit => $metric_budget,
+        evidence => [
+            map {
+                {
+                    code => $_->{code},
+                    severity => $_->{severity},
+                    where => $_->{where},
+                    message => $_->{message}
+                }
+            } @evidence[0 .. min_index(5, $#evidence)]
+        ],
+        failureEvidence => [
+            map {
+                {
+                    code => $_->{code},
+                    severity => $_->{severity},
+                    where => $_->{where},
+                    message => $_->{message}
+                }
+            } @failures[0 .. min_index(5, $#failures)]
+        ]
+    };
+}
+
+sub compliance_claim_for_id {
+    my ($assurance_case, $id) = @_;
+    return undef if !defined $id || ref($assurance_case) ne "HASH";
+    for my $claim (@{$assurance_case->{claimSet} // []}) {
+        return $claim if ($claim->{id} // "") eq $id;
+    }
+    return undef;
+}
+
+sub security_hotspot_model {
+    my ($diagnostics) = @_;
+    my @hotspots = map {
+        security_hotspot_item($_)
+    } grep {
+        is_security_hotspot_diagnostic($_)
+    } @{$diagnostics};
+    @hotspots = sort {
+        security_hotspot_rank($a) <=> security_hotspot_rank($b) ||
+            ($b->{triageScore} // 0) <=> ($a->{triageScore} // 0) ||
+            ($a->{where} // "") cmp ($b->{where} // "")
+    } @hotspots;
+
+    my %by_status;
+    my %by_vector;
+    my %by_owner;
+    for my $hotspot (@hotspots) {
+        $by_status{$hotspot->{status}} += 1;
+        $by_vector{$hotspot->{vector}} += 1;
+        $by_owner{$hotspot->{owner}} += 1;
+    }
+    my @to_review = grep { $_->{status} eq "to-review" } @hotspots;
+    my @vulnerabilities = grep { $_->{status} eq "vulnerability" } @hotspots;
+    my @reviewed = grep { $_->{status} eq "reviewed" } @hotspots;
+    my @accepted = grep { $_->{status} eq "accepted-risk" } @hotspots;
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea security hotspot review",
+        status => @vulnerabilities != 0 ? "vulnerabilities-present" :
+            @to_review != 0 ? "review-required" : "reviewed",
+        hotspots => scalar(@hotspots),
+        reviewed => scalar(@reviewed),
+        toReview => scalar(@to_review),
+        vulnerabilities => scalar(@vulnerabilities),
+        acceptedRisk => scalar(@accepted),
+        byStatus => \%by_status,
+        byVector => \%by_vector,
+        byOwner => \%by_owner,
+        hotspotSet => [@hotspots[0 .. min_index(49, $#hotspots)]],
+        toReviewSet => [@to_review[0 .. min_index(19, $#to_review)]],
+        vulnerabilitySet => [@vulnerabilities[0 .. min_index(19, $#vulnerabilities)]]
+    };
+}
+
+sub is_security_hotspot_diagnostic {
+    my ($diag) = @_;
+    my $code = $diag->{code} // "";
+    my $meta = rule_metadata($code);
+    return 1 if ($meta->{category} // "") eq "security";
+    return 1 if ($meta->{category} // "") eq "supply-chain";
+    return 1 if $code =~ /\A(?:jit\.codegen|jit\.side-table|safe\.accessor|safe\.regression|abi\.factory)\z/;
+    return 1 if $code =~ /\Aflow\.(?:descriptor|branch|key-safety|generated-source|dynamic-sink|tainted-path|symbolic)/;
+    return 0;
+}
+
+sub security_hotspot_item {
+    my ($diag) = @_;
+    my $record = defect_record($diag);
+    my $meta = rule_metadata($diag->{code});
+    my $status = security_hotspot_status($diag, $record);
+    return {
+        id => "TSH-" . stable_hex_hash(join("\0", $diag->{code}, $diag->{where}, $diag->{message})),
+        key => $record->{key},
+        fingerprint => $diag->{fingerprint},
+        status => $status,
+        reviewState => security_hotspot_review_state($diag, $record, $status),
+        vector => security_hotspot_vector($diag->{code}, $meta),
+        severity => $diag->{severity},
+        code => $diag->{code},
+        title => $meta->{name},
+        category => $meta->{category},
+        engine => $meta->{engine},
+        precision => $meta->{precision},
+        confidence => $meta->{confidence},
+        cwe => $meta->{cwe},
+        owner => $record->{owner},
+        owners => $record->{owners},
+        where => $diag->{where},
+        path => $record->{path},
+        line => $record->{line},
+        message => $diag->{message},
+        triageState => $record->{triageState},
+        triageReason => $record->{triageReason},
+        triageExpired => $record->{triageExpired},
+        triageScore => $record->{triageScore},
+        priority => $record->{priority},
+        remediation => $meta->{remediation},
+        remediationText => $meta->{remediationText},
+        hasFlow => $record->{hasFlow},
+        flowLength => $record->{flowLength}
+    };
+}
+
+sub security_hotspot_status {
+    my ($diag, $record) = @_;
+    return "accepted-risk" if ($record->{status} // "") eq "accepted-risk";
+    return "false-positive" if ($record->{status} // "") eq "false-positive";
+    return "mitigated" if ($record->{status} // "") eq "mitigated";
+    return "reviewed" if ($record->{status} // "") eq "suppressed";
+    return "vulnerability" if ($diag->{severity} // "") eq "error";
+    return "to-review" if ($diag->{severity} // "") eq "warning";
+    return "reviewed";
+}
+
+sub security_hotspot_review_state {
+    my ($diag, $record, $status) = @_;
+    return "expired-review" if $record->{triageExpired};
+    return $record->{triageState} if ($record->{triageState} // "untriaged") ne "untriaged";
+    return "needs-review" if $status eq "to-review" || $status eq "vulnerability";
+    return "evidence-reviewed";
+}
+
+sub security_hotspot_vector {
+    my ($code, $meta) = @_;
+    return "dynamic-code" if $code =~ /\A(?:jit\.codegen|flow\.dynamic-sink|flow\.tainted-path)\z/;
+    return "generated-source" if $code =~ /\A(?:jit\.side-table|abi\.factory|flow\.generated-source)/;
+    return "prototype-pollution" if $code =~ /\Aflow\.key-safety/;
+    return "hostile-accessor" if $code =~ /\A(?:safe\.accessor|flow\.descriptor|flow\.branch)/;
+    return "symbolic-hostile-input" if $code =~ /\Aflow\.symbolic/;
+    return "security-regression" if $code =~ /\A(?:safe\.regression|pr\.security-regression)\z/;
+    return ($meta->{engine} // "security");
+}
+
+sub security_hotspot_rank {
+    my ($hotspot) = @_;
+    my $status = $hotspot->{status} // "";
+    return 0 if $status eq "vulnerability";
+    return 1 if $status eq "to-review";
+    return 2 if $status eq "accepted-risk";
+    return 3 if $status eq "mitigated";
+    return 4 if $status eq "false-positive";
+    return 5;
+}
+
+
+sub security_exploitability_model {
+    my ($diagnostics, $defect_ledger, $security_hotspot_model) = @_;
+    my @records = @{array_or_empty($defect_ledger->{records})};
+    my @findings;
+    my %by_vector;
+    my %by_band;
+    my %by_owner;
+
+    for (my $index = 0; $index < @{$diagnostics}; $index += 1) {
+        my $diag = $diagnostics->[$index];
+        next if !is_security_hotspot_diagnostic($diag);
+        my $record = $records[$index];
+        $record = defect_record($diag) if ref($record) ne "HASH";
+        my $item = security_exploitability_item($diag, $record);
+        push @findings, $item;
+        $by_vector{$item->{vector}} += 1;
+        $by_band{$item->{riskBand}} += 1;
+        $by_owner{$item->{owner}} += 1;
+    }
+
+    @findings = sort_security_exploitability_findings(@findings);
+    my @exploitable = grep { $_->{exploitable} } @findings;
+    my @critical = grep { ($_->{riskScore} // 0) >= 90 && $_->{actionable} } @findings;
+    my @high = grep { ($_->{riskBand} // "") eq "high" } @findings;
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea security exploitability model",
+        basis => "security hotspot candidates scored by severity, CWE, vector, confidence, witness flow, owner, and review state",
+        status => @critical != 0 ? "critical-exploitable-findings" :
+            @exploitable != 0 ? "exploitable-findings" :
+            @high != 0 ? "high-risk-evidence" : "clear",
+        hotspotStatus => $security_hotspot_model->{status} // "unknown",
+        findings => scalar(@findings),
+        exploitableSecurityFindings => scalar(@exploitable),
+        criticalSecurityFindings => scalar(@critical),
+        highSecurityRiskFindings => scalar(@high),
+        byVector => \%by_vector,
+        byBand => \%by_band,
+        byOwner => \%by_owner,
+        findingSet => [@findings[0 .. min_index(49, $#findings)]],
+        exploitableSet => [@exploitable[0 .. min_index(19, $#exploitable)]],
+        criticalSet => [@critical[0 .. min_index(19, $#critical)]]
+    };
+}
+
+
+sub security_exploitability_item {
+    my ($diag, $record) = @_;
+    my $meta = rule_metadata($diag->{code});
+    my $confidence = finding_confidence_summary($diag, $record);
+    my $vector = security_exploitability_vector($diag->{code}, $meta);
+    my $score = security_exploitability_score($diag, $record, $meta, $confidence, $vector);
+    my $actionable = security_exploitability_actionable($diag, $record);
+    return {
+        key => $record->{key},
+        fingerprint => $record->{fingerprint},
+        riskScore => $score,
+        riskBand => security_exploitability_band($score),
+        exploitable => ($actionable && $score >= 75) ? 1 : 0,
+        actionable => $actionable,
+        vector => $vector,
+        cwe => $meta->{cwe},
+        confidenceScore => $confidence->{score},
+        confidenceBand => $confidence->{band},
+        witnessKind => $confidence->{witnessKind},
+        severity => $diag->{severity},
+        status => $record->{status},
+        code => $diag->{code},
+        category => $meta->{category},
+        engine => $meta->{engine},
+        owner => $record->{owner},
+        owners => $record->{owners},
+        where => $diag->{where},
+        path => $record->{path},
+        line => $record->{line},
+        priority => $record->{priority},
+        triageScore => $record->{triageScore},
+        hasFlow => $record->{hasFlow},
+        flowLength => $record->{flowLength},
+        remediation => $meta->{remediation},
+        remediationText => $meta->{remediationText},
+        message => $diag->{message}
+    };
+}
+
+
+sub security_exploitability_score {
+    my ($diag, $record, $meta, $confidence, $vector) = @_;
+    my $score = 0;
+    my $severity = $diag->{severity} // "notice";
+    $score += $severity eq "error" ? 35 : $severity eq "warning" ? 20 : 5;
+    $score += ($meta->{category} // "") eq "security" ? 20 :
+        ($meta->{category} // "") eq "supply-chain" ? 16 : 8;
+    $score += defined($meta->{cwe}) ? 10 : 0;
+    $score += int(($confidence->{score} // 0) / 4);
+    $score += ($record->{hasFlow} // 0) ? 15 : 0;
+    $score += min_number(10, int(($record->{flowLength} // 0) * 2));
+    $score += security_vector_score($vector);
+    $score -= 35 if ($record->{status} // "") eq "false-positive";
+    $score -= 25 if ($record->{status} // "") eq "mitigated";
+    $score -= 15 if ($record->{status} // "") eq "accepted-risk";
+    $score = 0 if $score < 0;
+    return $score > 100 ? 100 : $score;
+}
+
+
+sub security_vector_score {
+    my ($vector) = @_;
+    return 25 if $vector eq "credential-exposure";
+    return 22 if $vector eq "dynamic-code-execution";
+    return 18 if $vector eq "prototype-pollution";
+    return 18 if $vector eq "supply-chain-execution";
+    return 16 if $vector eq "hostile-input-flow";
+    return 15 if $vector eq "generated-source-corruption";
+    return 12 if $vector eq "redos";
+    return 10;
+}
+
+
+sub security_exploitability_vector {
+    my ($code, $meta) = @_;
+    return "credential-exposure" if $code =~ /\Asecurity\.secret/;
+    return "dynamic-code-execution" if $code =~ /\A(?:jit\.codegen|flow\.dynamic-sink|flow\.tainted-path)\z/;
+    return "generated-source-corruption" if $code =~ /\A(?:jit\.side-table|abi\.factory|flow\.generated-source)/;
+    return "prototype-pollution" if $code =~ /\Aflow\.key-safety/;
+    return "hostile-input-flow" if $code =~ /\A(?:safe\.accessor|flow\.descriptor|flow\.branch|flow\.symbolic)/;
+    return "redos" if $code =~ /\Asecurity\.redos/;
+    return "supply-chain-execution" if ($meta->{category} // "") eq "supply-chain";
+    return "security-control";
+}
+
+
+sub security_exploitability_actionable {
+    my ($diag, $record) = @_;
+    return 0 if diagnostic_quality_excluded($diag);
+    return 0 if ($record->{status} // "") ne "open";
+    return 0 if ($diag->{severity} // "") eq "notice";
+    return 1;
+}
+
+
+sub security_exploitability_band {
+    my ($score) = @_;
+    return "critical" if $score >= 90;
+    return "high" if $score >= 75;
+    return "medium" if $score >= 50;
+    return "low";
+}
+
+
+sub sort_security_exploitability_findings {
+    return sort {
+        ($b->{exploitable} // 0) <=> ($a->{exploitable} // 0) ||
+            ($b->{riskScore} // 0) <=> ($a->{riskScore} // 0) ||
+            issue_priority_rank($a->{priority}) <=> issue_priority_rank($b->{priority}) ||
+            ($a->{vector} // "") cmp ($b->{vector} // "") ||
+            ($a->{key} // "") cmp ($b->{key} // "")
+    } @_;
+}
+
+
+sub security_dataflow_model {
+    my ($ir) = @_;
+    my $abstract = object_or_empty($ir->{source}{function_analysis}{abstract});
+    my $taint = object_or_empty($abstract->{taint});
+    my $contracts = object_or_empty($abstract->{contracts});
+    my $symbolic = object_or_empty($abstract->{symbolic_dataflow});
+    my @items;
+
+    for my $path (@{array_or_empty($taint->{paths})}) {
+        push @items, security_dataflow_taint_item($path);
+    }
+    for my $fn (@{array_or_empty($abstract->{unapproved_dynamic_sinks})}) {
+        push @items, security_dataflow_function_item("unapproved-dynamic-code", $fn, 95, 1);
+    }
+    for my $fn (@{array_or_empty($contracts->{contractless_sinks})}) {
+        push @items, security_dataflow_function_item("contractless-sink", $fn, 88, 1);
+    }
+    for my $fn (@{array_or_empty($abstract->{source_taint_gaps})}) {
+        push @items, security_dataflow_function_item("generated-source-gap", $fn, 64, 0);
+    }
+    for my $path (@{array_or_empty($symbolic->{paths})}) {
+        push @items, security_dataflow_symbolic_item($path);
+    }
+
+    @items = sort_security_dataflow_items(@items);
+    my @critical = grep { $_->{critical} } @items;
+    my @high = grep { ($_->{riskScore} // 0) >= 60 } @items;
+    my %by_kind;
+    my %by_layer;
+    for my $item (@items) {
+        $by_kind{$item->{kind}} += 1;
+        $by_layer{component_layer_for_path($item->{path} // "")} += 1;
+    }
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea security dataflow model",
+        basis => "source-to-sink taint paths, symbolic open sinks, dynamic-code sinks, generated-source provenance, and function contract evidence",
+        status => @critical != 0 ? "critical-dataflow-present" :
+            @high != 0 ? "high-risk-evidence" : "clear",
+        criticalDataflows => scalar(@critical),
+        highRiskEvidence => scalar(@high),
+        dataflows => scalar(@items),
+        taintedSinkPaths => scalar(@{array_or_empty($taint->{paths})}),
+        interproceduralTaintedPaths => scalar(@{array_or_empty($taint->{interprocedural_paths})}),
+        localTaintedPaths => scalar(@{array_or_empty($taint->{local_paths})}),
+        unapprovedDynamicSinks => scalar(@{array_or_empty($abstract->{unapproved_dynamic_sinks})}),
+        contractlessSinks => scalar(@{array_or_empty($contracts->{contractless_sinks})}),
+        generatedSourceGaps => scalar(@{array_or_empty($abstract->{source_taint_gaps})}),
+        symbolicOpenCallers => int($symbolic->{propagatedOpenFunctions} // 0),
+        symbolicLocalOpenFunctions => int($symbolic->{localOpenFunctions} // 0),
+        byKind => \%by_kind,
+        byLayer => \%by_layer,
+        dataflowSet => [@items[0 .. min_index(49, $#items)]],
+        criticalSet => [@critical[0 .. min_index(19, $#critical)]],
+        highRiskSet => [@high[0 .. min_index(19, $#high)]]
+    };
+}
+
+
+sub security_dataflow_taint_item {
+    my ($path) = @_;
+    my @steps = @{array_or_empty($path)};
+    my $first = $steps[0] // {};
+    my $last = $steps[-1] // $first;
+    return {
+        kind => "tainted-sink-path",
+        critical => 1,
+        riskScore => @steps > 1 ? 100 : 92,
+        path => $last->{path},
+        line => $last->{line},
+        function => $last->{function},
+        source => $first->{function},
+        sink => $last->{function},
+        flowLength => scalar(@steps),
+        trace => flow_steps_from_taint_path($path),
+        message => "hostile input reaches sink-like operation without sanitizer proof"
+    };
+}
+
+
+sub security_dataflow_function_item {
+    my ($kind, $fn, $score, $critical) = @_;
+    my $contract = object_or_empty($fn->{contract});
+    my $source_taint = object_or_empty($fn->{source_taint_domain});
+    return {
+        kind => $kind,
+        critical => $critical ? 1 : 0,
+        riskScore => $score,
+        path => $fn->{path},
+        line => $fn->{line},
+        function => $fn->{name},
+        source => $fn->{name},
+        sink => $fn->{name},
+        flowLength => 1,
+        dynamicCode => $fn->{dynamic_code_sinks} // $contract->{dynamicCode} // 0,
+        generatedFragments => $source_taint->{sourceFragments} // 0,
+        message => security_dataflow_kind_message($kind)
+    };
+}
+
+
+sub security_dataflow_symbolic_item {
+    my ($path) = @_;
+    my @steps = @{array_or_empty($path)};
+    my $first = $steps[0] // {};
+    my $last = $steps[-1] // $first;
+    return {
+        kind => "symbolic-open-caller",
+        critical => 0,
+        riskScore => 68,
+        path => $first->{path} // $last->{path},
+        line => $first->{call_line} // $first->{line} // $last->{line},
+        function => $first->{name},
+        source => $first->{name},
+        sink => $last->{name},
+        flowLength => scalar(@steps),
+        trace => flow_steps_from_symbolic_path($path),
+        message => "caller can reach symbolic hostile-input open sink through call graph"
+    };
+}
+
+
+sub security_dataflow_kind_message {
+    my ($kind) = @_;
+    return "dynamic code sink is outside approved JIT/AOT bridge" if $kind eq "unapproved-dynamic-code";
+    return "sink-like function lacks sanitizer, validator, descriptor-factory, or dynamic-bridge contract" if $kind eq "contractless-sink";
+    return "generated source fragment lacks local or propagated escape, side-table, or ABI proof" if $kind eq "generated-source-gap";
+    return "security dataflow evidence requires review";
+}
+
+
+sub sort_security_dataflow_items {
+    return sort {
+        ($b->{critical} // 0) <=> ($a->{critical} // 0) ||
+            ($b->{riskScore} // 0) <=> ($a->{riskScore} // 0) ||
+            ($a->{kind} // "") cmp ($b->{kind} // "") ||
+            ($a->{path} // "") cmp ($b->{path} // "") ||
+            ($a->{line} // 0) <=> ($b->{line} // 0)
+    } @_;
+}
+
+
+sub path_feasibility_model {
+    my ($ir) = @_;
+    my $abstract = object_or_empty($ir->{source}{function_analysis}{abstract});
+    my $symbolic = object_or_empty($abstract->{symbolic_dataflow});
+    my @items;
+
+    for my $entry (@{array_or_empty($symbolic->{local})}) {
+        push @items, path_feasibility_local_item($entry);
+    }
+    for my $path (@{array_or_empty($symbolic->{paths})}) {
+        push @items, path_feasibility_call_path_item($path);
+    }
+
+    @items = sort_path_feasibility_items(@items);
+    my @plausible = grep { ($_->{status} // "") eq "plausible" } @items;
+    my @infeasible = grep { ($_->{status} // "") eq "infeasible" } @items;
+    my @unknown = grep { ($_->{status} // "") eq "unknown" } @items;
+    my $polarized_conditions = 0;
+    my $facts = 0;
+    my %by_status;
+    my %by_kind;
+    for my $item (@items) {
+        $by_status{$item->{status} // "unknown"} += 1;
+        $by_kind{$item->{kind} // "symbolic"} += 1;
+        $polarized_conditions += int($item->{polarizedConditions} // 0);
+        $facts += int($item->{facts} // 0);
+    }
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea path feasibility model",
+        basis => "symbolic witness path conditions, simple contradiction facts, range intervals, and hostile-input sink witnesses",
+        status => @unknown != 0 ? "unknown-paths-present" :
+            @plausible != 0 ? "plausible-paths-present" :
+            @infeasible != 0 ? "infeasible-paths-only" : "clear",
+        candidatePaths => scalar(@items),
+        plausiblePaths => scalar(@plausible),
+        infeasiblePaths => scalar(@infeasible),
+        unknownPaths => scalar(@unknown),
+        polarizedConditions => $polarized_conditions,
+        feasibilityFacts => $facts,
+        byStatus => \%by_status,
+        byKind => \%by_kind,
+        pathSet => [@items[0 .. min_index(49, $#items)]],
+        plausibleSet => [@plausible[0 .. min_index(19, $#plausible)]],
+        infeasibleSet => [@infeasible[0 .. min_index(19, $#infeasible)]],
+        unknownSet => [@unknown[0 .. min_index(19, $#unknown)]]
+    };
+}
+
+
+sub path_feasibility_local_item {
+    my ($entry) = @_;
+    my $witness = object_or_empty($entry->{witness});
+    my $decision = path_feasibility_decision($witness);
+    my @conditions = @{array_or_empty($witness->{conditions})};
+    my $facts = path_feasibility_fact_count(\@conditions);
+    return {
+        kind => "local-symbolic-open-sink",
+        status => $decision->{status},
+        reason => $decision->{reason},
+        contradiction => $decision->{contradiction},
+        path => $entry->{path} // $witness->{path},
+        line => $entry->{line} // $witness->{line},
+        function => $entry->{name} // $witness->{name},
+        sink => $witness->{sink},
+        sinkKind => $witness->{kind},
+        conditions => scalar(@conditions),
+        polarizedConditions => path_feasibility_polarized_condition_count(\@conditions),
+        facts => $facts,
+        trace => flow_steps_from_symbolic_witness($witness)
+    };
+}
+
+
+sub path_feasibility_call_path_item {
+    my ($path) = @_;
+    my @steps = @{array_or_empty($path)};
+    my $first = $steps[0] // {};
+    my $last = $steps[-1] // $first;
+    my $witness = object_or_empty($last->{witness});
+    my $decision = path_feasibility_decision($witness);
+    my @conditions = @{array_or_empty($witness->{conditions})};
+    my $facts = path_feasibility_fact_count(\@conditions);
+    return {
+        kind => "propagated-symbolic-open-sink",
+        status => $decision->{status},
+        reason => $decision->{reason},
+        contradiction => $decision->{contradiction},
+        path => $first->{path} // $last->{path} // $witness->{path},
+        line => $first->{call_line} // $first->{line} // $last->{line} // $witness->{line},
+        function => $first->{name} // $last->{name} // $witness->{name},
+        sink => $witness->{sink},
+        sinkKind => $witness->{kind},
+        flowLength => scalar(@steps),
+        conditions => scalar(@conditions),
+        polarizedConditions => path_feasibility_polarized_condition_count(\@conditions),
+        facts => $facts,
+        trace => flow_steps_from_symbolic_path($path)
+    };
+}
+
+
+sub path_feasibility_decision {
+    my ($witness) = @_;
+    return {
+        status => "unknown",
+        reason => "missing symbolic witness",
+        contradiction => undef
+    } if ref($witness) ne "HASH" || ($witness->{sink} // "") eq "";
+
+    my @conditions = @{array_or_empty($witness->{conditions})};
+    if (@conditions == 0) {
+        return {
+            status => "plausible",
+            reason => "symbolic witness has no path conditions before the sink",
+            contradiction => undef
+        };
+    }
+
+    my $fact_count = path_feasibility_fact_count(\@conditions);
+    return {
+        status => "unknown",
+        reason => "symbolic witness conditions do not expose simple feasibility facts",
+        contradiction => undef
+    } if $fact_count == 0;
+
+    my $contradiction = path_feasibility_contradiction(\@conditions);
+    if (defined $contradiction) {
+        return {
+            status => "infeasible",
+            reason => "recorded path conditions contain a direct contradiction",
+            contradiction => $contradiction
+        };
+    }
+
+    return {
+        status => "plausible",
+        reason => "recorded path conditions contain no direct contradiction",
+        contradiction => undef
+    };
+}
+
+
+sub path_feasibility_contradiction {
+    my ($conditions) = @_;
+    my %positive;
+    my %negative;
+    my %lower;
+    my %upper;
+
+    for my $condition (@{array_or_empty($conditions)}) {
+        for my $fact (@{path_feasibility_effective_facts($condition)}) {
+            my $key = $fact->{key};
+            if ($fact->{polarity} eq "positive") {
+                return path_feasibility_contradiction_item("boolean", $fact, $negative{$key})
+                    if defined $negative{$key};
+                $positive{$key} = $fact;
+                next;
+            }
+            if ($fact->{polarity} eq "negative") {
+                return path_feasibility_contradiction_item("boolean", $positive{$key}, $fact)
+                    if defined $positive{$key};
+                $negative{$key} = $fact;
+                next;
+            }
+            if ($fact->{polarity} eq "lower") {
+                $lower{$key} = path_feasibility_stronger_lower($lower{$key}, $fact);
+            } elsif ($fact->{polarity} eq "upper") {
+                $upper{$key} = path_feasibility_stronger_upper($upper{$key}, $fact);
+            }
+            if (defined $lower{$key} && defined $upper{$key} &&
+                path_feasibility_interval_empty($lower{$key}, $upper{$key})) {
+                return path_feasibility_contradiction_item("range", $lower{$key}, $upper{$key});
+            }
+        }
+    }
+
+    return undef;
+}
+
+
+sub path_feasibility_fact_count {
+    my ($conditions) = @_;
+    my $count = 0;
+    for my $condition (@{array_or_empty($conditions)}) {
+        $count += scalar(@{path_feasibility_effective_facts($condition)});
+    }
+    return $count;
+}
+
+
+sub path_feasibility_polarized_condition_count {
+    my ($conditions) = @_;
+    my $count = 0;
+    for my $condition (@{array_or_empty($conditions)}) {
+        $count += 1 if ($condition->{pathPolarity} // "") eq "false-branch";
+    }
+    return $count;
+}
+
+
+sub path_feasibility_effective_facts {
+    my ($condition) = @_;
+    my $text = path_feasibility_normalize_condition($condition->{text});
+    my @facts = @{path_feasibility_facts($text)};
+    if (($condition->{pathPolarity} // "") eq "false-branch") {
+        @facts = map { path_feasibility_negate_fact($_) } @facts;
+    }
+    for my $fact (@facts) {
+        $fact->{rawText} = $fact->{text};
+        $fact->{pathPolarity} = $condition->{pathPolarity} // "unknown";
+        $fact->{text} = ($condition->{pathPolarity} // "") eq "false-branch"
+            ? "not(" . ($fact->{rawText} // "") . ")"
+            : ($fact->{rawText} // "");
+    }
+    return \@facts;
+}
+
+
+sub path_feasibility_negate_fact {
+    my ($fact) = @_;
+    my %next = %{$fact};
+    if (($fact->{polarity} // "") eq "positive") {
+        $next{polarity} = "negative";
+        return \%next;
+    }
+    if (($fact->{polarity} // "") eq "negative") {
+        $next{polarity} = "positive";
+        return \%next;
+    }
+    if (($fact->{polarity} // "") eq "lower") {
+        $next{polarity} = "upper";
+        $next{strict} = ($fact->{strict} // 0) ? 0 : 1;
+        return \%next;
+    }
+    if (($fact->{polarity} // "") eq "upper") {
+        $next{polarity} = "lower";
+        $next{strict} = ($fact->{strict} // 0) ? 0 : 1;
+        return \%next;
+    }
+    return \%next;
+}
+
+
+sub path_feasibility_normalize_condition {
+    my ($text) = @_;
+    $text = "" if !defined $text;
+    $text =~ s/\s+/ /g;
+    $text =~ s/\A\s+//;
+    $text =~ s/\s+\z//;
+    return $text;
+}
+
+
+sub path_feasibility_facts {
+    my ($text) = @_;
+    my @facts;
+
+    while ($text =~ /typeof\s+([A-Za-z_\$][A-Za-z0-9_\$]*(?:\.[A-Za-z_\$][A-Za-z0-9_\$]*)*)\s*([!=]==)\s*["']([^"']+)["']/g) {
+        push @facts, {
+            key => "typeof:$1:$3",
+            polarity => $2 eq "===" ? "positive" : "negative",
+            text => $&
+        };
+    }
+
+    while ($text =~ /([A-Za-z_\$][A-Za-z0-9_\$]*(?:\.[A-Za-z_\$][A-Za-z0-9_\$]*)*)\s*([!=]==)\s*(undefined|null|true|false|-?\d+(?:\.\d+)?|["'][^"']*["'])/g) {
+        push @facts, {
+            key => "eq:$1:" . path_feasibility_literal_key($3),
+            polarity => $2 eq "===" ? "positive" : "negative",
+            text => $&
+        };
+    }
+
+    while ($text =~ /(undefined|null|true|false|-?\d+(?:\.\d+)?|["'][^"']*["'])\s*([!=]==)\s*([A-Za-z_\$][A-Za-z0-9_\$]*(?:\.[A-Za-z_\$][A-Za-z0-9_\$]*)*)/g) {
+        push @facts, {
+            key => "eq:$3:" . path_feasibility_literal_key($1),
+            polarity => $2 eq "===" ? "positive" : "negative",
+            text => $&
+        };
+    }
+
+    while ($text =~ /([A-Za-z_\$][A-Za-z0-9_\$]*(?:(?:\.[A-Za-z_\$][A-Za-z0-9_\$]*)|(?:\.length))*)\s*(<=|<|>=|>)\s*(-?\d+(?:\.\d+)?)/g) {
+        my ($expr, $op, $value) = ($1, $2, 0 + $3);
+        if ($op eq ">" || $op eq ">=") {
+            push @facts, {
+                key => "range:$expr",
+                polarity => "lower",
+                value => $value,
+                strict => $op eq ">" ? 1 : 0,
+                text => $&
+            };
+        } else {
+            push @facts, {
+                key => "range:$expr",
+                polarity => "upper",
+                value => $value,
+                strict => $op eq "<" ? 1 : 0,
+                text => $&
+            };
+        }
+    }
+
+    while ($text =~ /(?<!!)(?<!!\()([A-Za-z_\$][A-Za-z0-9_\$]*(?:\.[A-Za-z_\$][A-Za-z0-9_\$]*)*)\s+instanceof\s+([A-Za-z_\$][A-Za-z0-9_\$]*)/g) {
+        push @facts, {
+            key => "predicate:$1:instanceof:$2",
+            polarity => "positive",
+            text => $&
+        };
+    }
+
+    while ($text =~ /!\s*\(?\s*([A-Za-z_\$][A-Za-z0-9_\$]*(?:\.[A-Za-z_\$][A-Za-z0-9_\$]*)*)\s+instanceof\s+([A-Za-z_\$][A-Za-z0-9_\$]*)\s*\)?/g) {
+        push @facts, {
+            key => "predicate:$1:instanceof:$2",
+            polarity => "negative",
+            text => $&
+        };
+    }
+
+    while ($text =~ /(!)?\s*(Array\.isArray|isObjectLike|isRecordCandidate|isPlainObject|isDataPropertyDescriptor)\s*\(\s*([A-Za-z_\$][A-Za-z0-9_\$]*(?:\.[A-Za-z_\$][A-Za-z0-9_\$]*)*)\s*\)/g) {
+        push @facts, {
+            key => "predicate:$3:$2",
+            polarity => defined($1) && $1 eq "!" ? "negative" : "positive",
+            text => $&
+        };
+    }
+
+    while ($text =~ /(!)?\s*(?:Object\.prototype\.)?hasOwnProperty\.call\s*\(\s*([A-Za-z_\$][A-Za-z0-9_\$]*(?:\.[A-Za-z_\$][A-Za-z0-9_\$]*)*)\s*,\s*([^)]+?)\s*\)/g) {
+        push @facts, {
+            key => "predicate:$2:hasOwnProperty:" . path_feasibility_literal_key($3),
+            polarity => defined($1) && $1 eq "!" ? "negative" : "positive",
+            text => $&
+        };
+    }
+
+    while ($text =~ /([A-Za-z_\$][A-Za-z0-9_\$]*(?:\.[A-Za-z_\$][A-Za-z0-9_\$]*)*)\.found\b/g) {
+        push @facts, {
+            key => "predicate:$1:found",
+            polarity => "positive",
+            text => $&
+        };
+    }
+
+    while ($text =~ /!\s*([A-Za-z_\$][A-Za-z0-9_\$]*(?:\.[A-Za-z_\$][A-Za-z0-9_\$]*)*)\.found\b/g) {
+        push @facts, {
+            key => "predicate:$1:found",
+            polarity => "negative",
+            text => $&
+        };
+    }
+
+    return \@facts;
+}
+
+
+sub path_feasibility_literal_key {
+    my ($value) = @_;
+    $value = "" if !defined $value;
+    $value =~ s/\A["']//;
+    $value =~ s/["']\z//;
+    return $value;
+}
+
+
+sub path_feasibility_stronger_lower {
+    my ($current, $next) = @_;
+    return $next if !defined $current;
+    return $next if ($next->{value} // 0) > ($current->{value} // 0);
+    return $next if ($next->{value} // 0) == ($current->{value} // 0) &&
+        ($next->{strict} // 0) > ($current->{strict} // 0);
+    return $current;
+}
+
+
+sub path_feasibility_stronger_upper {
+    my ($current, $next) = @_;
+    return $next if !defined $current;
+    return $next if ($next->{value} // 0) < ($current->{value} // 0);
+    return $next if ($next->{value} // 0) == ($current->{value} // 0) &&
+        ($next->{strict} // 0) > ($current->{strict} // 0);
+    return $current;
+}
+
+
+sub path_feasibility_interval_empty {
+    my ($lower, $upper) = @_;
+    return 1 if ($lower->{value} // 0) > ($upper->{value} // 0);
+    return 1 if ($lower->{value} // 0) == ($upper->{value} // 0) &&
+        (($lower->{strict} // 0) || ($upper->{strict} // 0));
+    return 0;
+}
+
+
+sub path_feasibility_contradiction_item {
+    my ($kind, $left, $right) = @_;
+    return {
+        kind => $kind,
+        left => ref($left) eq "HASH" ? ($left->{text} // "") : "",
+        right => ref($right) eq "HASH" ? ($right->{text} // "") : ""
+    };
+}
+
+
+sub sort_path_feasibility_items {
+    return sort {
+        path_feasibility_status_rank($b->{status}) <=> path_feasibility_status_rank($a->{status}) ||
+            ($a->{kind} // "") cmp ($b->{kind} // "") ||
+            ($a->{path} // "") cmp ($b->{path} // "") ||
+            ($a->{line} // 0) <=> ($b->{line} // 0)
+    } @_;
+}
+
+
+sub path_feasibility_status_rank {
+    my ($status) = @_;
+    return 3 if ($status // "") eq "unknown";
+    return 2 if ($status // "") eq "plausible";
+    return 1 if ($status // "") eq "infeasible";
+    return 0;
+}
+
+
+sub context_sensitivity_model {
+    my ($ir) = @_;
+    my $analysis = object_or_empty($ir->{source}{function_analysis});
+    my @functions = @{array_or_empty($analysis->{functions})};
+    my $graph = object_or_empty($analysis->{graph});
+    my %by_id = map { $_->{id} => $_ } @functions;
+    my %incoming;
+    my %outgoing;
+    for my $edge (@{array_or_empty($graph->{edges})}) {
+        push @{$incoming{$edge->{to}}}, $edge;
+        push @{$outgoing{$edge->{from}}}, $edge;
+    }
+
+    my @items;
+    my $merged_callsites = 0;
+    my $max_fan_in = 0;
+    my $sensitive_functions = 0;
+    for my $fn (@functions) {
+        next if !context_sensitive_function($fn);
+        $sensitive_functions += 1;
+        my @edges = @{array_or_empty($incoming{$fn->{id}})};
+        my $fan_in = scalar(@edges);
+        $max_fan_in = $fan_in if $fan_in > $max_fan_in;
+        my $contexts = context_callsite_set(\@edges);
+        my $distinct_callsites = scalar(keys %{$contexts});
+        $merged_callsites += $distinct_callsites > 1 ? $distinct_callsites - 1 : 0;
+        next if $distinct_callsites <= 1;
+        my $item = context_sensitivity_item($fn, \@edges, $distinct_callsites);
+        push @items, $item if ($item->{riskScore} // 0) >= 40;
+    }
+
+    @items = sort_context_sensitivity_items(@items);
+    my @critical = grep { ($_->{riskBand} // "") eq "critical" } @items;
+    my @high = grep { ($_->{riskBand} // "") eq "high" } @items;
+    my %by_layer;
+    for my $item (@items) {
+        $by_layer{component_layer_for_path($item->{path} // "")} += 1;
+    }
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea context sensitivity model",
+        basis => "call graph fan-in, distinct callsites, cross-file calls, tainted arguments, recursion, and sensitive sink summaries",
+        status => @critical != 0 ? "critical-context-mixing" :
+            @high != 0 ? "high-context-mixing" :
+            @items != 0 ? "context-risks-present" : "clear",
+        contextSensitiveFunctions => $sensitive_functions,
+        contextRisks => scalar(@items),
+        criticalContextRisks => scalar(@critical),
+        highContextRisks => scalar(@high),
+        mergedCallsites => $merged_callsites,
+        maxFanIn => $max_fan_in,
+        byLayer => \%by_layer,
+        riskSet => [@items[0 .. min_index(49, $#items)]],
+        criticalSet => [@critical[0 .. min_index(19, $#critical)]],
+        highSet => [@high[0 .. min_index(19, $#high)]]
+    };
+}
+
+
+sub context_sensitive_function {
+    my ($fn) = @_;
+    return 1 if int($fn->{dynamic_code_sinks} // 0) != 0 && !is_approved_dynamic_sink_function($fn);
+    return 1 if int($fn->{direct_hostile_reads} // 0) != 0;
+    return 1 if int($fn->{descriptor_value_unproved_reads} // 0) != 0;
+    return 1 if int($fn->{symbolic_domain}{sourcePathOpenSinks} // 0) != 0;
+    return 1 if int($fn->{symbolic_domain}{openSinkSites} // 0) != 0;
+    return 1 if int($fn->{source_taint_domain}{sourceTaintGaps} // 0) != 0;
+    return 1 if int($fn->{contract}{sink} // 0) != 0;
+    return 0;
+}
+
+
+sub context_callsite_set {
+    my ($edges) = @_;
+    my %contexts;
+    for my $edge (@{array_or_empty($edges)}) {
+        my $key = ($edge->{from} // "") . ":" . ($edge->{line} // 0) . ":" . ($edge->{name} // "");
+        $contexts{$key} = 1;
+    }
+    return \%contexts;
+}
+
+
+sub context_sensitivity_item {
+    my ($fn, $edges, $distinct_callsites) = @_;
+    my %callers = map { ($_->{from} // "") => 1 } @{$edges};
+    my $cross_file = scalar(grep { $_->{cross_file} } @{$edges});
+    my $tainted = scalar(grep { $_->{tainted_argument} } @{$edges});
+    my $fan_in = scalar(@{$edges});
+    my $score = 30 + min_number(30, $distinct_callsites * 6) + min_number(18, $cross_file * 4) + min_number(16, $tainted * 8);
+    $score += 12 if int($fn->{dynamic_code_sinks} // 0) != 0;
+    $score += 10 if int($fn->{source_taint_domain}{sourceTaintGaps} // 0) != 0;
+    $score += 8 if int($fn->{symbolic_domain}{sourcePathOpenSinks} // 0) != 0;
+    $score = 100 if $score > 100;
+    my @samples = map {
+        {
+            caller => $_->{from},
+            line => $_->{line},
+            call => $_->{name},
+            crossFile => $_->{cross_file} ? 1 : 0,
+            taintedArgument => $_->{tainted_argument} ? 1 : 0
+        }
+    } @{$edges}[0 .. min_index(7, $#{$edges})];
+    return {
+        target => $fn->{name},
+        id => $fn->{id},
+        path => $fn->{path},
+        line => $fn->{line},
+        riskScore => $score,
+        riskBand => context_sensitivity_band($score),
+        fanIn => $fan_in,
+        distinctCallers => scalar(keys %callers),
+        distinctCallsites => $distinct_callsites,
+        crossFileCallsites => $cross_file,
+        taintedCallsites => $tainted,
+        symbolicOpenSinks => int($fn->{symbolic_domain}{sourcePathOpenSinks} // 0),
+        sourceTaintGaps => int($fn->{source_taint_domain}{sourceTaintGaps} // 0),
+        dynamicCodeSinks => int($fn->{dynamic_code_sinks} // 0),
+        message => "sensitive function is reached from multiple call contexts; context-insensitive summaries can merge incompatible states",
+        callsites => \@samples
+    };
+}
+
+
+sub context_sensitivity_band {
+    my ($score) = @_;
+    return "critical" if $score >= 90;
+    return "high" if $score >= 75;
+    return "medium" if $score >= 55;
+    return "low";
+}
+
+
+sub sort_context_sensitivity_items {
+    return sort {
+        ($b->{riskScore} // 0) <=> ($a->{riskScore} // 0) ||
+            ($b->{distinctCallsites} // 0) <=> ($a->{distinctCallsites} // 0) ||
+            ($a->{path} // "") cmp ($b->{path} // "") ||
+            ($a->{line} // 0) <=> ($b->{line} // 0)
+    } @_;
+}
+
+
+sub soundness_model {
+    my ($ir, $diagnostics, $quality_gate, $assurance_case, $compliance_model) = @_;
+    my @assumptions = map {
+        soundness_assumption($_, $diagnostics, $quality_gate, $assurance_case, $compliance_model)
+    } soundness_assumption_specs();
+    my %by_status;
+    my %by_domain;
+    for my $assumption (@assumptions) {
+        $by_status{$assumption->{status}} += 1;
+        $by_domain{$assumption->{domain}} += 1;
+    }
+    my @open = grep { $_->{status} eq "open" } @assumptions;
+    my @budgeted = grep { $_->{status} eq "budgeted" } @assumptions;
+    return {
+        schemaVersion => 1,
+        model => "TypeSea soundness envelope",
+        status => @open != 0 ? "open-assumptions" :
+            @budgeted != 0 ? "sound-with-budgeted-assumptions" : "sound",
+        assumptions => scalar(@assumptions),
+        provenAssumptions => $by_status{proven} // 0,
+        budgetedAssumptions => $by_status{budgeted} // 0,
+        openAssumptions => $by_status{open} // 0,
+        byStatus => \%by_status,
+        byDomain => \%by_domain,
+        assumptionSet => \@assumptions,
+        openAssumptionSet => [@open[0 .. min_index(19, $#open)]],
+        budgetedAssumptionSet => [@budgeted[0 .. min_index(19, $#budgeted)]]
+    };
+}
+
+sub soundness_assumption_specs {
+    return (
+        {
+            id => "SND-FE-001",
+            domain => "front-end",
+            title => "TypeScript lexical boundaries are complete before policy analysis",
+            evidence => ["lex.parse", "policy.template-lexer", "policy.lex-errors", "policy.semicolonless-import"],
+            failCodes => ["lex.parse"]
+        },
+        {
+            id => "SND-GRAPH-001",
+            domain => "module-graph",
+            title => "Runtime dependency graph is closed enough for layer and cycle checks",
+            evidence => ["graph.cycles", "graph.layer-density", "policy.import-ast", "policy.dynamic-import"],
+            failCodes => ["graph.cycles"]
+        },
+        {
+            id => "SND-CFG-001",
+            domain => "function-ir",
+            title => "Function IR and CFG extraction cover statement-level policy evidence",
+            evidence => ["flow.function-ir", "flow.cfg", "flow.unreachable", "policy.function-ir"],
+            budgetMetrics => ["unreachableStatements"]
+        },
+        {
+            id => "SND-FIXPOINT-001",
+            domain => "interprocedural-analysis",
+            title => "Recursive and interprocedural fixed-points converge inside reviewed budgets",
+            evidence => ["flow.callgraph", "flow.recursion-domain", "flow.taint-fixpoint", "flow.lifecycle-fixpoint", "flow.symbolic-fixpoint"],
+            budgetMetrics => ["unboundedRecursionCycles", "interproceduralLifecycleGaps", "interproceduralSymbolicPaths"]
+        },
+        {
+            id => "SND-SEC-001",
+            domain => "hostile-input-security",
+            title => "Hostile input sink closure is proven or explicitly budgeted",
+            claim => "symbolic-hostile-input-closure",
+            controls => ["TSS-SEC-001", "TSS-SEC-002", "TSS-SEC-003"],
+            evidence => ["flow.symbolic-domain", "flow.symbolic-path", "flow.symbolic-caller-path", "flow.tainted-path", "flow.dynamic-sink"],
+            failCodes => ["flow.tainted-path", "flow.dynamic-sink"],
+            budgetMetrics => ["symbolicPaths", "interproceduralSymbolicPaths", "taintedSinkPaths"]
+        },
+        {
+            id => "SND-CODEGEN-001",
+            domain => "generated-source",
+            title => "Generated-source provenance and ABI helpers remain inside the trusted bridge",
+            claim => "generated-source-provenance",
+            controls => ["TSS-SEC-003", "TSS-SEC-004"],
+            evidence => ["abi.factory", "jit.side-table", "flow.generated-source-domain", "flow.generated-source-gap"],
+            budgetMetrics => ["generatedSourceGaps"]
+        },
+        {
+            id => "SND-REGEX-001",
+            domain => "regex-redos",
+            title => "Regex validators remain inside reviewed ReDoS risk budgets",
+            claim => "regex-redos-safety",
+            controls => ["TSS-SEC-005"],
+            evidence => ["security.regex-domain", "security.redos-risk"],
+            budgetMetrics => ["redosRisks"]
+        },
+        {
+            id => "SND-SECRET-001",
+            domain => "secret-management",
+            title => "Credential leak detection covers release-relevant source inputs",
+            claim => "secret-leak-prevention",
+            controls => ["TSS-SEC-006"],
+            evidence => ["security.secret-domain", "security.secret-leak", "policy.secret-leak-domain"],
+            budgetMetrics => ["secretLeaks"]
+        },
+        {
+            id => "SND-WORKFLOW-001",
+            domain => "workflow-supply-chain",
+            title => "Workflow security analysis covers release and CI supply-chain entrypoints",
+            claim => "workflow-supply-chain-integrity",
+            controls => ["TSS-SC-001"],
+            evidence => ["supply.workflow-domain", "supply.workflow-permission", "supply.workflow-publish", "policy.workflow-security-domain"],
+            budgetMetrics => ["workflowHighRiskFindings", "workflowMutableActionRefs"]
+        },
+        {
+            id => "SND-LOCKFILE-001",
+            domain => "lockfile-supply-chain",
+            title => "Lockfile security analysis covers npm registry and integrity invariants",
+            claim => "lockfile-supply-chain-integrity",
+            controls => ["TSS-SC-002"],
+            evidence => ["supply.lockfile-domain", "supply.lockfile-integrity", "supply.lockfile-runtime", "policy.package-lock-security-domain"],
+            budgetMetrics => ["packageLockRisks", "packageLockRuntimeDependencies"]
+        },
+        {
+            id => "SND-LICENSE-001",
+            domain => "license-compliance",
+            title => "License compliance analysis covers root package and lockfile dependency metadata",
+            claim => "license-compliance",
+            controls => ["TSS-LIC-001"],
+            evidence => ["legal.license-domain", "legal.license-risk", "legal.license-review", "policy.package-license-domain"],
+            budgetMetrics => ["licenseRisks", "licenseReviewItems"]
+        },
+        {
+            id => "SND-API-001",
+            domain => "public-api-contract",
+            title => "Public API surface analysis covers package exports and README/API documentation references",
+            claim => "public-api-surface-integrity",
+            controls => ["TSS-API-001"],
+            evidence => ["api.surface-domain", "api.surface-drift", "api.docs-coverage", "policy.api-surface-domain"],
+            budgetMetrics => ["apiSurfaceDrift", "apiDocumentationGaps"]
+        },
+        {
+            id => "SND-TEST-001",
+            domain => "test-evidence",
+            title => "Test evidence analysis covers TypeSea compiler, security, compatibility, and public-surface suites",
+            claim => "test-evidence-coverage",
+            controls => ["TSS-TEST-001"],
+            evidence => ["test.evidence-domain", "test.evidence-gap", "policy.test-evidence-domain"],
+            budgetMetrics => ["testEvidenceGaps"]
+        },
+        {
+            id => "SND-VARIANT-001",
+            domain => "variant-exhaustiveness",
+            title => "Schema and IR discriminant dispatch drift is visible before release",
+            claim => "schema-union-exhaustiveness",
+            controls => ["TSS-COR-003"],
+            evidence => ["schema-tags.", "node-tags.", "flow.variant-state-domain", "flow.variant-state-gap"],
+            budgetMetrics => ["variantSwitchGaps"]
+        },
+        {
+            id => "SND-TYPE-001",
+            domain => "type-safety",
+            title => "TypeScript escape hatches remain visible before release",
+            claim => "type-safety-boundary",
+            controls => ["TSS-COR-004"],
+            evidence => ["types.escape-domain", "types.unsafe-escape"],
+            budgetMetrics => ["typeEscapes"]
+        },
+        {
+            id => "SND-PERF-001",
+            domain => "performance-envelope",
+            title => "V8-sensitive performance approximations are tracked by explicit budgets",
+            claim => "hot-loop-allocation-control",
+            controls => ["TSS-PERF-001", "TSS-PERF-002"],
+            evidence => ["bench.hot-path", "flow.loop-bound-domain", "flow.effect-domain", "flow.hot-loop-allocation", "flow.async-domain", "flow.async-scheduling-gap", "flow.exception-domain"],
+            budgetMetrics => ["hotUnboundedLoops", "hotLoopAllocations", "asyncSchedulingGaps", "hotValidationThrows"]
+        },
+        {
+            id => "SND-BENCH-001",
+            domain => "performance-envelope",
+            title => "Benchmark evidence analysis covers warm TypeSea, ecosystem, union, and runtime feature rows",
+            claim => "benchmark-evidence-coverage",
+            controls => ["TSS-PERF-003"],
+            evidence => ["bench.evidence-domain", "bench.evidence-gap", "policy.benchmark-evidence-domain"],
+            budgetMetrics => ["benchmarkEvidenceGaps"]
+        },
+        {
+            id => "SND-RULE-001",
+            domain => "analyzer-integrity",
+            title => "Rule metadata is complete enough for SARIF, dashboards, remediation, and downstream triage",
+            claim => "rule-metadata-integrity",
+            controls => ["TSS-ANA-001"],
+            evidence => ["rule.metadata-domain", "rule.metadata-gap", "rule.metadata-generic", "policy.rule-metadata-domain"],
+            budgetMetrics => ["ruleMetadataGaps", "genericRuleMetadataItems"]
+        },
+        {
+            id => "SND-OPS-001",
+            domain => "release-governance",
+            title => "Release decision assumes no unowned, expired, overdue, or regressed open defects",
+            controls => ["TSS-OPS-001", "TSS-OPS-002"],
+            evidence => ["policy.ownership-model", "policy.triage-ledger", "policy.issue-aging", "policy.defect-delta", "policy.history-trend"],
+            failMetrics => ["unownedOpen", "expiredTriage", "invalidTriageEntries", "overdueIssues", "newDefects"]
+        },
+        {
+            id => "SND-RELEASE-001",
+            domain => "release-governance",
+            title => "Release metadata consistency analysis covers package, lockfile, benchmark, changelog, docs, and badge state",
+            claim => "release-metadata-consistency",
+            controls => ["TSS-REL-001"],
+            evidence => ["release.consistency-domain", "release.version-drift", "policy.release-consistency-domain"],
+            budgetMetrics => ["releaseConsistencyRisks"]
+        }
+    );
+}
+
+sub soundness_assumption {
+    my ($spec, $diagnostics, $quality_gate, $assurance_case, $compliance_model) = @_;
+    my @evidence = grep {
+        diagnostic_matches_any_code($_, $spec->{evidence})
+    } @{$diagnostics};
+    my @open_diagnostics = grep {
+        !diagnostic_quality_excluded($_) &&
+            ($_->{severity} // "notice") ne "notice" &&
+            diagnostic_matches_any_code($_, $spec->{failCodes})
+    } @{$diagnostics};
+    my @metric_reviews;
+    my @metric_failures;
+    for my $metric (@{$spec->{budgetMetrics} // []}) {
+        my $value = int($quality_gate->{metrics}{$metric} // 0);
+        my $budget = int($quality_gate->{budgets}{$metric} // 0);
+        next if $value == 0;
+        my $entry = {
+            metric => $metric,
+            value => $value,
+            budget => $budget,
+            status => $value > $budget ? "open" : "budgeted"
+        };
+        push @metric_reviews, $entry;
+        push @metric_failures, $entry if $value > $budget;
+    }
+    for my $metric (@{$spec->{failMetrics} // []}) {
+        my $value = int($quality_gate->{metrics}{$metric} // 0);
+        next if $value == 0;
+        my $entry = {
+            metric => $metric,
+            value => $value,
+            budget => 0,
+            status => "open"
+        };
+        push @metric_reviews, $entry;
+        push @metric_failures, $entry;
+    }
+    my $claim = compliance_claim_for_id($assurance_case, $spec->{claim});
+    my @controls = soundness_controls_for_spec($compliance_model, $spec->{controls});
+    my @failed_controls = grep { ($_->{status} // "") eq "failed" } @controls;
+    my @budgeted_controls = grep { ($_->{status} // "") eq "passed-with-budgeted-risk" } @controls;
+    my $claim_status = ref($claim) eq "HASH" ? ($claim->{status} // "") : "";
+    my $status = @open_diagnostics != 0 || @metric_failures != 0 || @failed_controls != 0 || $claim_status eq "open"
+        ? "open"
+        : @metric_reviews != 0 || @budgeted_controls != 0 || $claim_status eq "budgeted"
+            ? "budgeted"
+            : "proven";
+    return {
+        id => $spec->{id},
+        domain => $spec->{domain},
+        title => $spec->{title},
+        status => $status,
+        claim => $spec->{claim},
+        claimStatus => $claim_status ne "" ? $claim_status : undef,
+        controls => $spec->{controls} // [],
+        failedControls => [map { $_->{id} } @failed_controls],
+        budgetedControls => [map { $_->{id} } @budgeted_controls],
+        evidenceCount => scalar(@evidence),
+        openDiagnostics => scalar(@open_diagnostics),
+        metricReviews => \@metric_reviews,
+        metricFailures => \@metric_failures,
+        evidence => [
+            map {
+                {
+                    code => $_->{code},
+                    severity => $_->{severity},
+                    where => $_->{where},
+                    message => $_->{message}
+                }
+            } @evidence[0 .. min_index(5, $#evidence)]
+        ],
+        openEvidence => [
+            map {
+                {
+                    code => $_->{code},
+                    severity => $_->{severity},
+                    where => $_->{where},
+                    message => $_->{message}
+                }
+            } @open_diagnostics[0 .. min_index(5, $#open_diagnostics)]
+        ]
+    };
+}
+
+sub soundness_controls_for_spec {
+    my ($compliance_model, $ids) = @_;
+    return () if ref($compliance_model) ne "HASH" || ref($ids) ne "ARRAY";
+    my %wanted = map { $_ => 1 } @{$ids};
+    return grep { $wanted{$_->{id} // ""} } @{$compliance_model->{controlSet} // []};
+}
+
+sub machine_report_payload {
+    my ($ir, $diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model) = @_;
+    my $quality_model = quality_model($diagnostics);
+    my $remediation_plan = remediation_plan($defect_ledger, $ownership_model);
+    return {
+        schemaVersion => 1,
+        tool => "TypeSea Perl Policy Analyzer",
+        qualityGate => $quality_gate,
+        summary => policy_summary($ir, $errors, $warnings, $notices),
+        ruleCatalog => rule_catalog_for_diagnostics($diagnostics),
+        qualityProfileModel => object_or_empty($ir->{policy_runtime}{quality_profile_model}),
+        ruleMetadataModel => $ir->{policy_runtime}{rule_metadata_model},
+        taxonomySummary => diagnostic_taxonomy_summary($diagnostics),
+        qualityModel => $quality_model,
+        defectLedger => $defect_ledger,
+        ruleHealthModel => $rule_health_model,
+        rootCauseModel => $root_cause_model,
+        findingProvenanceModel => $finding_provenance_model,
+        findingWitnessModel => $finding_witness_model,
+        findingConfidenceModel => $finding_confidence_model,
+        analysisRunManifest => $analysis_run_manifest,
+        defectDelta => $defect_delta,
+        historyTrend => $history_trend,
+        newCode => $new_code_scope,
+        changeImpactModel => $change_impact_model,
+        componentModel => $component_model,
+        ownershipModel => $ownership_model,
+        defectRoutingModel => object_or_empty($ir->{policy_runtime}{defect_routing_model}),
+        triageModel => $triage_model,
+        waiverModel => $waiver_model,
+        reviewGovernanceModel => object_or_empty($ir->{policy_runtime}{review_governance_model}),
+        analysisCoverageModel => $analysis_coverage_model,
+        agingModel => $aging_model,
+        assuranceCase => $assurance_case,
+        complianceModel => $compliance_model,
+        securityHotspotModel => $security_hotspot_model,
+        securityExploitabilityModel => object_or_empty($ir->{policy_runtime}{security_exploitability_model}),
+        securityDataflowModel => object_or_empty($ir->{policy_runtime}{security_dataflow_model}),
+        pathFeasibilityModel => object_or_empty($ir->{policy_runtime}{path_feasibility_model}),
+        contextSensitivityModel => object_or_empty($ir->{policy_runtime}{context_sensitivity_model}),
+        soundnessModel => $soundness_model,
+        proofObligationModel => object_or_empty($ir->{policy_runtime}{proof_obligation_model}),
+        remediationPlan => $remediation_plan,
+        diagnostics => [map { diagnostic_with_taxonomy($_) } @{$diagnostics}]
+    };
+}
+
+sub emit_json_report {
+    my ($ir, $diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model) = @_;
+    print json_encoder()->encode(
+        machine_report_payload($ir, $diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model)
+    );
+}
+
+sub emit_html_report {
+    my ($ir, $diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model) = @_;
+    my $payload = machine_report_payload($ir, $diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model);
+    print html_dashboard($payload);
+}
+
+sub emit_sarif_report {
+    my ($ir, $diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model) = @_;
+    my $quality_model = quality_model($diagnostics);
+    my $remediation_plan = remediation_plan($defect_ledger, $ownership_model);
+    my %rules;
+    for my $diag (@{$diagnostics}) {
+        $rules{$diag->{code}} = sarif_rule_for_diagnostic($diag);
+    }
+    my @results = map { sarif_result($_) } @{$diagnostics};
+    print json_encoder()->encode({
+        version => "2.1.0",
+        "\$schema" => "https://json.schemastore.org/sarif-2.1.0.json",
+        runs => [{
+            tool => {
+                driver => {
+                    name => "TypeSea Perl Policy Analyzer",
+                    informationUri => "https://github.com/Feralthedogg/TypeSea",
+                    rules => [map { $rules{$_} } sort keys %rules]
+                }
+            },
+            invocations => [{
+                executionSuccessful => $quality_gate->{status} eq "passed" ? JSON::PP::true : JSON::PP::false,
+                properties => {
+                    qualityGate => $quality_gate,
+                    summary => policy_summary($ir, $errors, $warnings, $notices),
+                    qualityProfileModel => object_or_empty($ir->{policy_runtime}{quality_profile_model}),
+                    ruleMetadataModel => $ir->{policy_runtime}{rule_metadata_model},
+                    taxonomySummary => diagnostic_taxonomy_summary($diagnostics),
+                    qualityModel => $quality_model,
+                    defectLedger => $defect_ledger,
+                    ruleHealthModel => $rule_health_model,
+                    rootCauseModel => $root_cause_model,
+                    findingProvenanceModel => $finding_provenance_model,
+                    findingWitnessModel => $finding_witness_model,
+                    findingConfidenceModel => $finding_confidence_model,
+                    analysisRunManifest => $analysis_run_manifest,
+                    defectDelta => $defect_delta,
+                    historyTrend => $history_trend,
+                    newCode => $new_code_scope,
+                    changeImpactModel => $change_impact_model,
+                    componentModel => $component_model,
+                    ownershipModel => $ownership_model,
+                    defectRoutingModel => object_or_empty($ir->{policy_runtime}{defect_routing_model}),
+                    triageModel => $triage_model,
+                    waiverModel => $waiver_model,
+                    reviewGovernanceModel => object_or_empty($ir->{policy_runtime}{review_governance_model}),
+                    analysisCoverageModel => $analysis_coverage_model,
+                    agingModel => $aging_model,
+                    assuranceCase => $assurance_case,
+                    complianceModel => $compliance_model,
+                    securityHotspotModel => $security_hotspot_model,
+                    securityExploitabilityModel => object_or_empty($ir->{policy_runtime}{security_exploitability_model}),
+                    securityDataflowModel => object_or_empty($ir->{policy_runtime}{security_dataflow_model}),
+                    pathFeasibilityModel => object_or_empty($ir->{policy_runtime}{path_feasibility_model}),
+                    contextSensitivityModel => object_or_empty($ir->{policy_runtime}{context_sensitivity_model}),
+                    soundnessModel => $soundness_model,
+                    proofObligationModel => object_or_empty($ir->{policy_runtime}{proof_obligation_model}),
+                    remediationPlan => $remediation_plan
+                }
+            }],
+            results => \@results
+        }]
+    });
+}
+
+sub serve_analysis_dashboard {
+    my ($payload, $port) = @_;
+    $port = 7331 if !defined $port || $port !~ /\A\d+\z/;
+    my $server = IO::Socket::INET->new(
+        LocalAddr => "127.0.0.1",
+        LocalPort => int($port),
+        Proto => "tcp",
+        Listen => 8,
+        Reuse => 1
+    ) or die "failed to bind analyzer dashboard on 127.0.0.1:$port: $!";
+
+    print STDERR "TypeSea analyzer dashboard: http://127.0.0.1:$port/\n";
+    while (my $client = $server->accept()) {
+        $client->autoflush(1);
+        my $request = <$client> // "";
+        my ($method, $path) = $request =~ /\A(\S+)\s+(\S+)/;
+        while (my $line = <$client>) {
+            last if $line =~ /\A\r?\n\z/;
+        }
+
+        if (($method // "") ne "GET") {
+            print {$client} http_response(405, "text/plain; charset=utf-8", "method not allowed\n");
+        } elsif (($path // "/") eq "/api/report") {
+            print {$client} http_response(200, "application/json; charset=utf-8", json_encoder()->encode($payload));
+        } elsif (($path // "/") eq "/" || ($path // "/") eq "/index.html") {
+            print {$client} http_response(200, "text/html; charset=utf-8", html_dashboard($payload));
+        } else {
+            print {$client} http_response(404, "text/plain; charset=utf-8", "not found\n");
+        }
+        close $client;
+    }
+}
+
+sub http_response {
+    my ($status, $content_type, $body) = @_;
+    my %reason = (
+        200 => "OK",
+        404 => "Not Found",
+        405 => "Method Not Allowed"
+    );
+    return "HTTP/1.1 $status " . ($reason{$status} // "OK") . "\r\n" .
+        "Content-Type: $content_type\r\n" .
+        "Content-Length: " . length($body) . "\r\n" .
+        "Connection: close\r\n\r\n" .
+        $body;
+}
+
+sub html_dashboard {
+    my ($payload) = @_;
+    my $json = html_escape(json_encoder()->encode($payload));
+    my $html = <<'HTML';
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TypeSea Static Analysis</title>
+<style>
+:root{color-scheme:dark;--bg:#07110f;--panel:#0e1b1b;--line:#1e3b39;--text:#eefbf4;--muted:#9db5ad;--ok:#75f0a4;--warn:#ffc36b;--err:#ff6b7a;--info:#69b7ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:1180px;margin:0 auto;padding:32px 20px 48px}header{display:flex;gap:16px;align-items:flex-end;justify-content:space-between;margin-bottom:24px}
+h1{font-size:32px;line-height:1;margin:0}h2{font-size:18px;margin:0 0 12px}.muted{color:var(--muted)}
+.pill{border:1px solid var(--line);border-radius:999px;padding:6px 10px;color:var(--muted)}.pass{color:var(--ok)}.fail{color:var(--err)}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px}
+.metric{font-size:28px;font-weight:750;margin-top:4px}.bar{height:8px;background:#152626;border-radius:999px;overflow:hidden;margin-top:10px}.bar>i{display:block;height:100%;background:var(--ok)}
+.columns{display:grid;grid-template-columns:1.2fr .8fr;gap:14px;margin-top:14px}table{width:100%;border-collapse:collapse}th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--muted);font-weight:650}
+code{color:#bfffd3}.sev-error{color:var(--err)}.sev-warning{color:var(--warn)}.sev-notice{color:var(--info)}
+@media(max-width:860px){header,.columns{display:block}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header>*+*{margin-top:12px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<div><h1>TypeSea Static Analysis</h1><div class="muted">Perl policy analyzer dashboard with quality gate, defect ledger, and rule taxonomy.</div></div>
+<div class="pill" id="gate"></div>
+</header>
+<section class="grid" id="metrics"></section>
+<section class="card" style="margin-top:14px"><h2>Quality Model</h2><div id="quality-model"></div></section>
+<section class="card" style="margin-top:14px"><h2>Quality Profile Governance</h2><div id="quality-profile-governance"></div></section>
+<section class="card" style="margin-top:14px"><h2>Rule Health</h2><div id="rule-health"></div></section>
+<section class="card" style="margin-top:14px"><h2>Analysis Coverage</h2><div id="analysis-coverage"></div></section>
+<section class="card" style="margin-top:14px"><h2>Component Risk</h2><div id="component-risk"></div></section>
+<section class="card" style="margin-top:14px"><h2>Root Cause Correlation</h2><div id="root-cause"></div></section>
+<section class="card" style="margin-top:14px"><h2>Finding Provenance</h2><div id="finding-provenance"></div></section>
+<section class="card" style="margin-top:14px"><h2>Finding Witnesses</h2><div id="finding-witnesses"></div></section>
+<section class="card" style="margin-top:14px"><h2>Confidence Calibration</h2><div id="confidence-calibration"></div></section>
+<section class="card" style="margin-top:14px"><h2>Ownership</h2><div id="ownership"></div></section>
+<section class="card" style="margin-top:14px"><h2>Defect Routing</h2><div id="defect-routing"></div></section>
+<section class="card" style="margin-top:14px"><h2>Triage Ledger</h2><div id="triage-ledger"></div></section>
+<section class="card" style="margin-top:14px"><h2>Waiver Audit</h2><div id="waiver-audit"></div></section>
+<section class="card" style="margin-top:14px"><h2>Review Governance</h2><div id="review-governance"></div></section>
+<section class="card" style="margin-top:14px"><h2>Remediation Plan</h2><div id="remediation-plan"></div></section>
+<section class="card" style="margin-top:14px"><h2>New Code</h2><div id="new-code"></div></section>
+<section class="card" style="margin-top:14px"><h2>Change Impact</h2><div id="change-impact"></div></section>
+<section class="card" style="margin-top:14px"><h2>History Trend</h2><div id="history-trend"></div></section>
+<section class="card" style="margin-top:14px"><h2>Issue Aging</h2><div id="issue-aging"></div></section>
+<section class="card" style="margin-top:14px"><h2>Assurance Case</h2><div id="assurance-case"></div></section>
+<section class="card" style="margin-top:14px"><h2>Compliance Controls</h2><div id="compliance-controls"></div></section>
+<section class="card" style="margin-top:14px"><h2>Security Hotspots</h2><div id="security-hotspots"></div></section>
+<section class="card" style="margin-top:14px"><h2>Security Exploitability</h2><div id="security-exploitability"></div></section>
+<section class="card" style="margin-top:14px"><h2>Security Dataflow</h2><div id="security-dataflow"></div></section>
+<section class="card" style="margin-top:14px"><h2>Path Feasibility</h2><div id="path-feasibility"></div></section>
+<section class="card" style="margin-top:14px"><h2>Context Sensitivity</h2><div id="context-sensitivity"></div></section>
+<section class="card" style="margin-top:14px"><h2>Soundness Envelope</h2><div id="soundness-envelope"></div></section>
+<section class="card" style="margin-top:14px"><h2>Proof Obligations</h2><div id="proof-obligations"></div></section>
+<section class="card" style="margin-top:14px"><h2>Run Manifest</h2><div id="run-manifest"></div></section>
+<section class="columns">
+<div class="card"><h2>Open Defects</h2><table><thead><tr><th>Priority</th><th>Owner</th><th>Rule</th><th>Location</th><th>Message</th></tr></thead><tbody id="open-defects"></tbody></table></div>
+<div class="card"><h2>Defect Delta</h2><div id="delta"></div></div>
+</section>
+<section class="card" style="margin-top:14px"><h2>Diagnostics</h2><table><thead><tr><th>Severity</th><th>Owner</th><th>Rule</th><th>Where</th><th>Category</th><th>Message</th></tr></thead><tbody id="diagnostics"></tbody></table></section>
+</main>
+<script type="application/json" id="report-data">__REPORT_JSON__</script>
+<script>
+const report = JSON.parse(document.getElementById("report-data").textContent);
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));
+const gate = report.qualityGate;
+document.getElementById("gate").className = `pill ${gate.status === "passed" ? "pass" : "fail"}`;
+document.getElementById("gate").textContent = `Quality gate: ${gate.status}`;
+const metricRows = [
+    ["Errors", report.summary.errors, gate.budgets.errors],
+    ["Warnings", report.summary.warnings, gate.budgets.warnings],
+    ["Open defects", report.defectLedger.open, null],
+    ["Unowned open", gate.metrics.unownedOpen ?? 0, gate.budgets.unownedOpen ?? 0],
+    ["Expired triage", gate.metrics.expiredTriage ?? 0, gate.budgets.expiredTriage ?? 0],
+    ["Stale waivers", gate.metrics.staleWaivers ?? 0, gate.budgets.staleWaivers ?? 0],
+    ["Wildcard suppressions", gate.metrics.wildcardSuppressions ?? 0, gate.budgets.wildcardSuppressions ?? 0],
+    ["Profile override risks", gate.metrics.qualityProfileRiskyOverrides ?? 0, gate.budgets.qualityProfileRiskyOverrides ?? 0],
+    ["Review risks", gate.metrics.reviewDecisionRisks ?? 0, gate.budgets.reviewDecisionRisks ?? 0],
+    ["Reopened issues", gate.metrics.reopenedIssues ?? 0, gate.budgets.reopenedIssues ?? 0],
+    ["Overdue issues", gate.metrics.overdueIssues ?? 0, gate.budgets.overdueIssues ?? 0],
+    ["Unrouted defects", gate.metrics.unroutedDefects ?? 0, gate.budgets.unroutedDefects ?? 0],
+    ["Open claims", gate.metrics.assuranceOpenClaims ?? 0, gate.budgets.assuranceOpenClaims ?? 0],
+    ["Failed controls", gate.metrics.complianceFailedControls ?? 0, gate.budgets.complianceFailedControls ?? 0],
+    ["Hotspots to review", gate.metrics.unreviewedSecurityHotspots ?? 0, gate.budgets.unreviewedSecurityHotspots ?? 0],
+    ["Exploitable security", gate.metrics.exploitableSecurityFindings ?? 0, gate.budgets.exploitableSecurityFindings ?? 0],
+    ["Critical dataflows", gate.metrics.securityDataflowCriticalPaths ?? 0, gate.budgets.securityDataflowCriticalPaths ?? 0],
+    ["Unknown paths", gate.metrics.pathFeasibilityUnknownPaths ?? 0, gate.budgets.pathFeasibilityUnknownPaths ?? 0],
+    ["Context risks", gate.metrics.contextSensitivityRisks ?? 0, gate.budgets.contextSensitivityRisks ?? 0],
+    ["Open assumptions", gate.metrics.openSoundnessAssumptions ?? 0, gate.budgets.openSoundnessAssumptions ?? 0],
+    ["Proof obligations", gate.metrics.openProofObligations ?? 0, gate.budgets.openProofObligations ?? 0],
+    ["Async scheduling", gate.metrics.asyncSchedulingGaps ?? 0, gate.budgets.asyncSchedulingGaps ?? 0],
+    ["Type escapes", gate.metrics.typeEscapes ?? 0, gate.budgets.typeEscapes ?? 0],
+    ["ReDoS risks", gate.metrics.redosRisks ?? 0, gate.budgets.redosRisks ?? 0],
+    ["Secret leaks", gate.metrics.secretLeaks ?? 0, gate.budgets.secretLeaks ?? 0],
+    ["Workflow high risk", gate.metrics.workflowHighRiskFindings ?? 0, gate.budgets.workflowHighRiskFindings ?? 0],
+    ["Mutable actions", gate.metrics.workflowMutableActionRefs ?? 0, gate.budgets.workflowMutableActionRefs ?? 0],
+    ["Lockfile risks", gate.metrics.packageLockRisks ?? 0, gate.budgets.packageLockRisks ?? 0],
+    ["Runtime deps", gate.metrics.packageLockRuntimeDependencies ?? 0, gate.budgets.packageLockRuntimeDependencies ?? 0],
+    ["License risks", gate.metrics.licenseRisks ?? 0, gate.budgets.licenseRisks ?? 0],
+    ["License review", gate.metrics.licenseReviewItems ?? 0, gate.budgets.licenseReviewItems ?? 0],
+    ["API drift", gate.metrics.apiSurfaceDrift ?? 0, gate.budgets.apiSurfaceDrift ?? 0],
+    ["API docs gaps", gate.metrics.apiDocumentationGaps ?? 0, gate.budgets.apiDocumentationGaps ?? 0],
+    ["Release drift", gate.metrics.releaseConsistencyRisks ?? 0, gate.budgets.releaseConsistencyRisks ?? 0],
+    ["Test evidence", gate.metrics.testEvidenceGaps ?? 0, gate.budgets.testEvidenceGaps ?? 0],
+    ["Benchmark evidence", gate.metrics.benchmarkEvidenceGaps ?? 0, gate.budgets.benchmarkEvidenceGaps ?? 0],
+    ["Rule metadata", gate.metrics.ruleMetadataGaps ?? 0, gate.budgets.ruleMetadataGaps ?? 0],
+    ["Generic rule metadata", gate.metrics.genericRuleMetadataItems ?? 0, gate.budgets.genericRuleMetadataItems ?? 0],
+    ["Coverage gaps", gate.metrics.analysisCoverageGaps ?? 0, gate.budgets.analysisCoverageGaps ?? 0],
+    ["Open root causes", gate.metrics.openRootCauses ?? 0, gate.budgets.openRootCauses ?? 0],
+    ["Noisy rules", gate.metrics.noisyRules ?? 0, gate.budgets.noisyRules ?? 0],
+    ["Provenance gaps", gate.metrics.findingProvenanceGaps ?? 0, gate.budgets.findingProvenanceGaps ?? 0],
+    ["Witness gaps", gate.metrics.findingWitnessGaps ?? 0, gate.budgets.findingWitnessGaps ?? 0],
+    ["Low confidence", gate.metrics.lowConfidenceFindings ?? 0, gate.budgets.lowConfidenceFindings ?? 0],
+    ["Manifest gaps", gate.metrics.runManifestGaps ?? 0, gate.budgets.runManifestGaps ?? 0],
+    ["Critical impact", gate.metrics.changeImpactCriticalFiles ?? 0, gate.budgets.changeImpactCriticalFiles ?? 0],
+    ["Blast radius", gate.metrics.changeImpactBlastRadiusPermille ?? 0, gate.budgets.changeImpactBlastRadiusPermille ?? 0],
+    ["Must fix", report.remediationPlan?.mustFix ?? 0, null],
+    ["New defects", gate.metrics.newDefects ?? 0, gate.budgets.newDefects ?? 0],
+    ["Duplicate groups", gate.metrics.duplicateBlocks ?? 0, gate.budgets.duplicateBlocks ?? 0],
+    ["Debt minutes", gate.metrics.technicalDebtMinutes ?? 0, gate.budgets.technicalDebtMinutes ?? 0]
+];
+document.getElementById("metrics").innerHTML = metricRows.map(([name, value, budget]) => {
+    const pct = budget === null ? Math.min(100, value * 10) : budget === 0 ? (value === 0 ? 100 : 0) : Math.min(100, Math.round((value / budget) * 100));
+    return `<div class="card"><div class="muted">${esc(name)}</div><div class="metric">${esc(value)}</div><div class="muted">${budget === null ? "tracked" : `budget ${esc(budget)}`}</div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
+}).join("");
+const qm = report.qualityModel || { overall: {}, dimensions: {} };
+const dimensions = Object.values(qm.dimensions || {}).sort((a, b) => (a.rank ?? 1) - (b.rank ?? 1) || String(a.name).localeCompare(String(b.name)));
+document.getElementById("quality-model").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Overall</div><div class="metric">${esc(qm.overall?.rating ?? "A")}</div></div>
+<div><div class="muted">Open</div><div class="metric">${esc(qm.overall?.open ?? 0)}</div></div>
+<div><div class="muted">Debt</div><div class="metric">${esc(qm.technicalDebtMinutes ?? 0)}m</div></div>
+<div><div class="muted">Debt hours</div><div class="metric">${esc(qm.technicalDebtHours ?? 0)}</div></div>
+</div><table><thead><tr><th>Dimension</th><th>Rating</th><th>Open</th><th>Evidence</th><th>Debt</th></tr></thead><tbody>${
+dimensions.map((dim) => `<tr><td>${esc(dim.name)}</td><td>${esc(dim.rating)}</td><td>${esc(dim.open)}</td><td>${esc(dim.evidence)}</td><td>${esc(dim.technicalDebtMinutes)}m</td></tr>`).join("")
+}</tbody></table>`;
+const qpm = report.qualityProfileModel || { riskSet: [] };
+document.getElementById("quality-profile-governance").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(qpm.status ?? "clean")}</div></div>
+<div><div class="muted">Rules</div><div class="metric">${esc(qpm.rules ?? 0)}</div></div>
+<div><div class="muted">Risks</div><div class="metric">${esc(qpm.riskyOverrides ?? 0)}</div></div>
+<div><div class="muted">Downgrades</div><div class="metric">${esc(qpm.severityDowngrades ?? 0)}</div></div>
+</div><table><thead><tr><th>Score</th><th>Rule</th><th>Actions</th><th>Observed</th><th>Override</th><th>Expires</th><th>Risks</th></tr></thead><tbody>${
+(qpm.riskSet || []).slice(0, 20).map((item) => `<tr><td>${esc(item.riskScore)}</td><td><code>${esc(item.rule)}</code></td><td>${esc((item.actions || []).join(", "))}</td><td>${esc(item.observedSeverity ?? "")}</td><td>${esc(item.overrideSeverity ?? (item.enabled === 0 ? "disabled" : ""))}</td><td>${esc(item.expires ?? "")}</td><td>${esc((item.risks || []).join(", "))}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">No risky profile overrides.</td></tr>`
+}</tbody></table>`;
+const rh = report.ruleHealthModel || { ruleSet: [], watchSet: [], noisySet: [] };
+document.getElementById("rule-health").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(rh.status ?? "unknown")}</div></div>
+<div><div class="muted">Rules</div><div class="metric">${esc(rh.rules ?? 0)}</div></div>
+<div><div class="muted">Watch</div><div class="metric">${esc(rh.watchRules ?? 0)}</div></div>
+<div><div class="muted">Noisy</div><div class="metric">${esc(rh.noisyRules ?? 0)}</div></div>
+</div><table><thead><tr><th>Class</th><th>Rule</th><th>Engine</th><th>Open</th><th>Reviewed</th><th>Noise</th><th>Signal</th><th>Owner</th></tr></thead><tbody>${
+(rh.ruleSet || []).slice(0, 16).map((item) => `<tr><td>${esc(item.classification)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.engine)}</td><td>${esc(item.open)}</td><td>${esc(item.reviewed)}</td><td>${esc(item.noisePermille)}/1000</td><td>${esc(item.signalPermille)}/1000</td><td>${esc(item.suggestedOwner)}</td></tr>`).join("")
+}</tbody></table>`;
+const coverage = report.analysisCoverageModel || { dimensions: [], gapSet: [] };
+document.getElementById("analysis-coverage").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(coverage.status ?? "unknown")}</div></div>
+<div><div class="muted">Files</div><div class="metric">${esc(coverage.sourceFiles ?? 0)}</div></div>
+<div><div class="muted">Functions</div><div class="metric">${esc(coverage.analyzedFunctions ?? 0)}</div></div>
+<div><div class="muted">Gaps</div><div class="metric">${esc(coverage.coverageGaps ?? 0)}</div></div>
+</div><table><thead><tr><th>Dimension</th><th>Status</th><th>Gaps</th><th>Evidence</th></tr></thead><tbody>${
+(coverage.dimensions || []).map((item) => `<tr><td>${esc(item.name)}</td><td>${esc(item.status)}</td><td>${esc(item.gaps)}</td><td><code>${esc(JSON.stringify(item.evidence || {}))}</code></td></tr>`).join("")
+}</tbody></table><h2 style="margin-top:16px">Coverage Gaps</h2><table><thead><tr><th>Kind</th><th>Rule</th><th>Severity</th><th>Location</th><th>Message</th></tr></thead><tbody>${
+(coverage.gapSet || []).slice(0, 16).map((item) => `<tr><td>${esc(item.kind)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.severity)}</td><td>${esc(item.where)}</td><td>${esc(item.message)}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">No coverage gaps.</td></tr>`
+}</tbody></table>`;
+const nc = report.newCode || {};
+const ci = report.changeImpactModel || { topImpacts: [] };
+const cm = report.componentModel || { worstComponent: {}, hotspots: [] };
+document.getElementById("component-risk").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Worst</div><div class="metric">${esc(cm.worstComponent?.name ?? "project")}</div></div>
+<div><div class="muted">Rating</div><div class="metric">${esc(cm.worstComponent?.rating ?? "A")}</div></div>
+<div><div class="muted">Open</div><div class="metric">${esc(cm.worstComponent?.open ?? 0)}</div></div>
+<div><div class="muted">Debt</div><div class="metric">${esc(cm.worstComponent?.technicalDebtMinutes ?? 0)}m</div></div>
+</div><table><thead><tr><th>Component</th><th>Kind</th><th>Rating</th><th>Open</th><th>Debt</th><th>Risk</th></tr></thead><tbody>${
+(cm.hotspots || []).slice(0, 10).map((item) => `<tr><td>${esc(item.name)}</td><td>${esc(item.kind)}</td><td>${esc(item.rating)}</td><td>${esc(item.open)}</td><td>${esc(item.technicalDebtMinutes)}m</td><td>${esc(item.riskScore)}</td></tr>`).join("")
+}</tbody></table>`;
+const rc = report.rootCauseModel || { topOpen: [], clusterSet: [] };
+document.getElementById("root-cause").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(rc.status ?? "clear")}</div></div>
+<div><div class="muted">Open causes</div><div class="metric">${esc(rc.openRootCauses ?? 0)}</div></div>
+<div><div class="muted">Systemic</div><div class="metric">${esc(rc.systemicRootCauses ?? 0)}</div></div>
+<div><div class="muted">Max score</div><div class="metric">${esc(rc.maxScore ?? 0)}</div></div>
+</div><table><thead><tr><th>Class</th><th>Owner</th><th>Layer</th><th>Primary rule</th><th>Open</th><th>Evidence</th><th>Score</th><th>Title</th></tr></thead><tbody>${
+(rc.topOpen || []).slice(0, 12).map((item) => `<tr><td>${esc(item.classification)}</td><td>${esc(item.suggestedOwner)}</td><td>${esc(item.layer)}</td><td><code>${esc(item.primaryRule)}</code></td><td>${esc(item.open)}</td><td>${esc(item.evidence)}</td><td>${esc(item.score)}</td><td>${esc(item.title)}</td></tr>`).join("") || `<tr><td colspan="8" class="muted">No open root causes.</td></tr>`
+}</tbody></table>`;
+const fp = report.findingProvenanceModel || { gapSet: [] };
+document.getElementById("finding-provenance").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(fp.status ?? "unknown")}</div></div>
+<div><div class="muted">Findings</div><div class="metric">${esc(fp.findings ?? 0)}</div></div>
+<div><div class="muted">Complete</div><div class="metric">${esc(fp.completeFindings ?? 0)}</div></div>
+<div><div class="muted">Gaps</div><div class="metric">${esc(fp.provenanceGaps ?? 0)}</div></div>
+</div><table><thead><tr><th>Dimension</th><th>Code</th><th>Location</th><th>Message</th></tr></thead><tbody>${
+(fp.gapSet || []).slice(0, 16).map((item) => `<tr><td>${esc(item.dimension)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td><td>${esc(item.message)}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">All findings carry complete provenance.</td></tr>`
+}</tbody></table>`;
+const fw = report.findingWitnessModel || { witnessSet: [], gapSet: [] };
+document.getElementById("finding-witnesses").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(fw.status ?? "unknown")}</div></div>
+<div><div class="muted">Flow</div><div class="metric">${esc(fw.flowWitnesses ?? 0)}</div></div>
+<div><div class="muted">Metric</div><div class="metric">${esc(fw.metricWitnesses ?? 0)}</div></div>
+<div><div class="muted">Gaps</div><div class="metric">${esc(fw.witnessGaps ?? 0)}</div></div>
+</div><table><thead><tr><th>Kind</th><th>Rule</th><th>Severity</th><th>Location</th><th>Owner</th><th>Message</th></tr></thead><tbody>${
+(fw.witnessSet || []).slice(0, 12).map((item) => `<tr><td>${esc(item.witnessKind)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.severity)}</td><td>${esc(item.where)}</td><td>${esc(item.owner)}</td><td>${esc(item.message)}</td></tr>`).join("")
+}</tbody></table><h2 style="margin-top:16px">Witness Gaps</h2><table><thead><tr><th>Dimension</th><th>Rule</th><th>Location</th><th>Message</th></tr></thead><tbody>${
+(fw.gapSet || []).slice(0, 16).map((item) => `<tr><td>${esc(item.dimension)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td><td>${esc(item.message)}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">All actionable findings carry witnesses.</td></tr>`
+}</tbody></table>`;
+const fc = report.findingConfidenceModel || { findingSet: [], lowConfidenceSet: [] };
+const fcRows = (fc.actionableSet || []).length === 0 ? (fc.findingSet || []) : (fc.actionableSet || []);
+document.getElementById("confidence-calibration").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(fc.status ?? "unknown")}</div></div>
+<div><div class="muted">Average</div><div class="metric">${esc(fc.averageScore ?? 0)}</div></div>
+<div><div class="muted">High</div><div class="metric">${esc(fc.highConfidenceFindings ?? 0)}</div></div>
+<div><div class="muted">Low open</div><div class="metric">${esc(fc.lowConfidenceOpenFindings ?? 0)}</div></div>
+</div><table><thead><tr><th>Band</th><th>Score</th><th>Rule</th><th>Witness</th><th>Owner</th><th>Location</th><th>Message</th></tr></thead><tbody>${
+fcRows.slice(0, 16).map((item) => `<tr><td>${esc(item.band)}</td><td>${esc(item.score)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.witnessKind)}</td><td>${esc(item.owner)}</td><td>${esc(item.where)}</td><td>${esc(item.message)}</td></tr>`).join("")
+}</tbody></table><h2 style="margin-top:16px">Low Confidence Open Findings</h2><table><thead><tr><th>Score</th><th>Rule</th><th>Location</th><th>Reasons</th></tr></thead><tbody>${
+(fc.lowConfidenceSet || []).slice(0, 16).map((item) => `<tr><td>${esc(item.score)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td><td>${esc((item.reasons || []).join(", "))}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">No low-confidence open findings.</td></tr>`
+}</tbody></table>`;
+const om = report.ownershipModel || { topOwners: [] };
+document.getElementById("ownership").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Source</div><div class="metric">${esc(om.source ?? "n/a")}</div></div>
+<div><div class="muted">Owners</div><div class="metric">${esc(om.owners ?? 0)}</div></div>
+<div><div class="muted">Unowned open</div><div class="metric">${esc(om.unownedOpen ?? 0)}</div></div>
+<div><div class="muted">Rules</div><div class="metric">${esc(om.codeownersRules ?? 0)}</div></div>
+</div><table><thead><tr><th>Owner</th><th>Rating</th><th>Open</th><th>Evidence</th><th>Debt</th><th>Issues</th></tr></thead><tbody>${
+(om.topOwners || []).slice(0, 12).map((item) => `<tr><td>${esc(item.owner)}</td><td>${esc(item.rating)}</td><td>${esc(item.open)}</td><td>${esc(item.evidence)}</td><td>${esc(item.technicalDebtMinutes)}m</td><td>${esc(item.issues)}</td></tr>`).join("")
+}</tbody></table>`;
+const drm = report.defectRoutingModel || { ownerQueues: [], dispatchQueue: [] };
+document.getElementById("defect-routing").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(drm.status ?? "empty")}</div></div>
+<div><div class="muted">Routes</div><div class="metric">${esc(drm.routes ?? 0)}</div></div>
+<div><div class="muted">Unrouted</div><div class="metric">${esc(drm.unroutedDefects ?? 0)}</div></div>
+<div><div class="muted">Efficiency</div><div class="metric">${esc(drm.routingEfficiencyPermille ?? 1000)}/1000</div></div>
+</div><table><thead><tr><th>Owner</th><th>Routes</th><th>Unrouted</th><th>P0</th><th>P1</th><th>P2</th><th>Min SLA</th></tr></thead><tbody>${
+(drm.ownerQueues || []).slice(0, 12).map((item) => `<tr><td>${esc(item.owner)}</td><td>${esc(item.routes)}</td><td>${esc(item.unrouted)}</td><td>${esc(item.p0)}</td><td>${esc(item.p1)}</td><td>${esc(item.p2)}</td><td>${esc(item.minSlaDays ?? "")}d</td></tr>`).join("") || `<tr><td colspan="7" class="muted">No active defects need routing.</td></tr>`
+}</tbody></table><h2 style="margin-top:16px">Dispatch Queue</h2><table><thead><tr><th>Lane</th><th>Owner</th><th>SLA</th><th>Priority</th><th>Rule</th><th>Location</th><th>Blockers</th></tr></thead><tbody>${
+(drm.dispatchQueue || []).slice(0, 12).map((item) => `<tr><td>${esc(item.lane)}</td><td>${esc(item.owner)}</td><td>${esc(item.slaDays)}d</td><td>${esc(item.priority)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td><td>${esc((item.blockers || []).join(", "))}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">Dispatch queue is empty.</td></tr>`
+}</tbody></table>`;
+const tm = report.triageModel || {};
+document.getElementById("triage-ledger").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(tm.status ?? "not-requested")}</div></div>
+<div><div class="muted">Reviewed</div><div class="metric">${esc(tm.reviewedDiagnostics ?? 0)}</div></div>
+<div><div class="muted">Expired</div><div class="metric">${esc(tm.expiredAcceptedRisks ?? 0)}</div></div>
+<div><div class="muted">Invalid</div><div class="metric">${esc(tm.invalidEntries ?? 0)}</div></div>
+</div><table><thead><tr><th>State</th><th>Count</th></tr></thead><tbody>${
+Object.entries(tm.states || {}).map(([state, count]) => `<tr><td>${esc(state)}</td><td>${esc(count)}</td></tr>`).join("")
+}</tbody></table>`;
+const wm = report.waiverModel || { waiverSet: [], staleSourceSet: [] };
+document.getElementById("waiver-audit").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(wm.status ?? "clean")}</div></div>
+<div><div class="muted">Waivers</div><div class="metric">${esc(wm.waivers ?? 0)}</div></div>
+<div><div class="muted">Expired</div><div class="metric">${esc(wm.expiredWaivers ?? 0)}</div></div>
+<div><div class="muted">Stale</div><div class="metric">${esc(wm.staleWaivers ?? 0)}</div></div>
+<div><div class="muted">Wildcard</div><div class="metric">${esc(wm.wildcardSourceSuppressions ?? 0)}</div></div>
+</div><table><thead><tr><th>Kind</th><th>State</th><th>Owner</th><th>Rule</th><th>Location</th><th>Reason</th></tr></thead><tbody>${
+(wm.waiverSet || []).slice(0, 16).map((item) => `<tr><td>${esc(item.kind)}</td><td>${esc(item.state)}</td><td>${esc(item.owner)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td><td>${esc(item.reason)}</td></tr>`).join("")
+}</tbody></table><h2 style="margin-top:16px">Stale Source Suppressions</h2><table><thead><tr><th>Directive</th><th>Rule</th><th>Location</th><th>Target</th><th>Reason</th></tr></thead><tbody>${
+(wm.staleSourceSet || []).slice(0, 12).map((item) => `<tr><td>${esc(item.directive)}</td><td><code>${esc(item.rule)}</code></td><td>${esc(item.path)}:${esc(item.line)}</td><td>${esc(item.targetStartLine)}-${esc(item.targetEndLine)}</td><td>${esc(item.reason)}</td></tr>`).join("")
+}</tbody></table>`;
+const rgm = report.reviewGovernanceModel || { decisionSet: [], riskSet: [] };
+document.getElementById("review-governance").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(rgm.status ?? "clean")}</div></div>
+<div><div class="muted">Decisions</div><div class="metric">${esc(rgm.reviewDecisions ?? 0)}</div></div>
+<div><div class="muted">Risks</div><div class="metric">${esc(rgm.decisionRisks ?? 0)}</div></div>
+<div><div class="muted">False positives</div><div class="metric">${esc(rgm.highConfidenceFalsePositives ?? 0)}</div></div>
+</div><table><thead><tr><th>State</th><th>Owner</th><th>Score</th><th>Rule</th><th>Location</th><th>Risks</th><th>Reason</th></tr></thead><tbody>${
+(rgm.riskSet || []).slice(0, 16).map((item) => `<tr><td>${esc(item.state)}</td><td>${esc(item.owner)}</td><td>${esc(item.confidenceScore)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td><td>${esc((item.risks || []).join(", "))}</td><td>${esc(item.reason)}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">No risky review decisions.</td></tr>`
+}</tbody></table><h2 style="margin-top:16px">Review Decisions</h2><table><thead><tr><th>Kind</th><th>State</th><th>Owner</th><th>Band</th><th>Rule</th><th>Location</th></tr></thead><tbody>${
+(rgm.decisionSet || []).slice(0, 12).map((item) => `<tr><td>${esc(item.decisionKind)}</td><td>${esc(item.state)}</td><td>${esc(item.owner)}</td><td>${esc(item.confidenceBand)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td></tr>`).join("") || `<tr><td colspan="6" class="muted">No review decisions in this run.</td></tr>`
+}</tbody></table>`;
+const rp = report.remediationPlan || { ownerPlan: [], nextActions: [] };
+document.getElementById("remediation-plan").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Open</div><div class="metric">${esc(rp.open ?? 0)}</div></div>
+<div><div class="muted">Must fix</div><div class="metric">${esc(rp.mustFix ?? 0)}</div></div>
+<div><div class="muted">Quick wins</div><div class="metric">${esc(rp.quickWins ?? 0)}</div></div>
+<div><div class="muted">Effort</div><div class="metric">${esc(rp.totalEffortHours ?? 0)}h</div></div>
+</div><table><thead><tr><th>Owner</th><th>Open</th><th>Must</th><th>Quick</th><th>Backlog</th><th>Effort</th></tr></thead><tbody>${
+(rp.ownerPlan || []).slice(0, 10).map((item) => `<tr><td>${esc(item.owner)}</td><td>${esc(item.open)}</td><td>${esc(item.mustFix)}</td><td>${esc(item.quickWins)}</td><td>${esc(item.backlog)}</td><td>${esc(item.effortHours)}h</td></tr>`).join("")
+}</tbody></table><h2 style="margin-top:16px">Next Actions</h2><table><thead><tr><th>Class</th><th>Owner</th><th>Priority</th><th>Rule</th><th>Effort</th><th>Location</th></tr></thead><tbody>${
+(rp.nextActions || []).slice(0, 8).map((item) => `<tr><td>${esc(item.class)}</td><td>${esc(item.owner)}</td><td>${esc(item.priority)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.effortMinutes)}m</td><td>${esc(item.where)}</td></tr>`).join("")
+}</tbody></table>`;
+document.getElementById("new-code").innerHTML = `<table><tbody>
+<tr><th>Status</th><td>${esc(nc.status ?? "not-requested")}</td></tr>
+<tr><th>Base</th><td>${esc(nc.base ?? "n/a")}</td></tr>
+<tr><th>Files</th><td>${esc((nc.files || []).length)}</td></tr>
+<tr><th>Diagnostics</th><td>${esc(nc.diagnostics ?? 0)}</td></tr>
+<tr><th>Open</th><td>${esc(nc.defectLedger?.open ?? 0)}</td></tr>
+<tr><th>Debt</th><td>${esc(nc.qualityModel?.technicalDebtMinutes ?? 0)}m</td></tr>
+</tbody></table>`;
+document.getElementById("change-impact").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(ci.status ?? "no-source-changes")}</div></div>
+<div><div class="muted">Changed sources</div><div class="metric">${esc(ci.changedSourceFiles ?? 0)}</div></div>
+<div><div class="muted">Impacted sources</div><div class="metric">${esc(ci.impactedSourceFiles ?? 0)}</div></div>
+<div><div class="muted">Blast radius</div><div class="metric">${esc(ci.blastRadiusPermille ?? 0)}/1000</div></div>
+</div><table><thead><tr><th>Risk</th><th>Score</th><th>Layer</th><th>File</th><th>Dependents</th><th>Critical</th><th>Public</th></tr></thead><tbody>${
+(ci.topImpacts || []).slice(0, 16).map((item) => `<tr><td>${esc(item.risk)}</td><td>${esc(item.score)}</td><td>${esc(item.layer)}</td><td><code>${esc(item.file)}</code></td><td>${esc(item.transitiveDependents)}</td><td>${esc(item.impactedCriticalFiles)}</td><td>${esc(item.impactedPublicSurfaceFiles)}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">No changed source files in the current scope.</td></tr>`
+}</tbody></table>`;
+const open = report.defectLedger.topOpen || [];
+document.getElementById("open-defects").innerHTML = open.length === 0 ? `<tr><td colspan="5" class="muted">No open defects.</td></tr>` : open.map((item) => `<tr><td>${esc(item.priority)}</td><td>${esc(item.owner)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td><td>${esc(item.message)}</td></tr>`).join("");
+const delta = report.defectDelta || {};
+document.getElementById("delta").innerHTML = `<table><tbody>
+<tr><th>Status</th><td>${esc(delta.status)}</td></tr>
+<tr><th>Current open</th><td>${esc(delta.currentOpen ?? report.defectLedger.open)}</td></tr>
+<tr><th>Previous open</th><td>${esc(delta.previousOpen ?? "n/a")}</td></tr>
+<tr><th>New</th><td>${esc(delta.new ?? 0)}</td></tr>
+<tr><th>Resolved</th><td>${esc(delta.resolved ?? 0)}</td></tr>
+<tr><th>Persisting</th><td>${esc(delta.persisting ?? 0)}</td></tr>
+<tr><th>Lineage matched</th><td>${esc(delta.lineageMatched ?? 0)}</td></tr>
+<tr><th>Identity churn avoided</th><td>${esc(delta.identityChurnAvoided ?? 0)}</td></tr>
+</tbody></table><h2 style="margin-top:16px">Lineage Matches</h2><table><thead><tr><th>Priority</th><th>Rule</th><th>Previous</th><th>Current</th><th>Owner</th></tr></thead><tbody>${
+(delta.lineageMatches || []).slice(0, 12).map((item) => `<tr><td>${esc(item.priority)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.previousWhere)}</td><td>${esc(item.currentWhere)}</td><td>${esc(item.owner)}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">No moved or message-changed issues were lineage-matched.</td></tr>`
+}</tbody></table>`;
+const history = report.historyTrend || {};
+const historyDelta = history.delta || {};
+const historyLifecycle = history.issueLifecycle || {};
+document.getElementById("history-trend").innerHTML = `<table><tbody>
+<tr><th>Status</th><td>${esc(history.status ?? "not-requested")}</td></tr>
+<tr><th>Samples</th><td>${esc(history.samples ?? 0)}</td></tr>
+<tr><th>Open delta</th><td>${esc(historyDelta.openDelta ?? 0)}</td></tr>
+<tr><th>Debt delta</th><td>${esc(historyDelta.debtDelta ?? 0)}m</td></tr>
+<tr><th>New open</th><td>${esc(historyDelta.newOpen ?? 0)}</td></tr>
+<tr><th>Resolved open</th><td>${esc(historyDelta.resolvedOpen ?? 0)}</td></tr>
+<tr><th>Persisting open</th><td>${esc(historyDelta.persistingOpen ?? 0)}</td></tr>
+<tr><th>Reopened</th><td>${esc(historyLifecycle.reopenedIssues ?? 0)}</td></tr>
+<tr><th>Flapping</th><td>${esc(historyLifecycle.flappingIssues ?? 0)}</td></tr>
+</tbody></table><h2 style="margin-top:16px">Reopened Issues</h2><table><thead><tr><th>Reopens</th><th>Owner</th><th>Priority</th><th>Rule</th><th>Location</th></tr></thead><tbody>${
+(historyLifecycle.reopenedSet || []).slice(0, 12).map((item) => `<tr><td>${esc(item.reopenCount)}</td><td>${esc(item.owner)}</td><td>${esc(item.priority)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">No reopened issues in the current history window.</td></tr>`
+}</tbody></table>`;
+const aging = report.agingModel || { oldestItems: [] };
+document.getElementById("issue-aging").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(aging.status ?? "current-run-only")}</div></div>
+<div><div class="muted">Open</div><div class="metric">${esc(aging.open ?? 0)}</div></div>
+<div><div class="muted">Overdue</div><div class="metric">${esc(aging.overdue ?? 0)}</div></div>
+<div><div class="muted">Max age</div><div class="metric">${esc(aging.maxAgeDays ?? 0)}d</div></div>
+</div><table><thead><tr><th>Age</th><th>SLA</th><th>Owner</th><th>Priority</th><th>Rule</th><th>Location</th></tr></thead><tbody>${
+(aging.oldestItems || []).slice(0, 10).map((item) => `<tr><td>${esc(item.ageDays)}d</td><td>${esc(item.slaDays)}d</td><td>${esc(item.owner)}</td><td>${esc(item.priority)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td></tr>`).join("")
+}</tbody></table>`;
+const assurance = report.assuranceCase || { claimSet: [] };
+document.getElementById("assurance-case").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(assurance.status ?? "unknown")}</div></div>
+<div><div class="muted">Claims</div><div class="metric">${esc(assurance.claims ?? 0)}</div></div>
+<div><div class="muted">Budgeted</div><div class="metric">${esc(assurance.budgetedClaims ?? 0)}</div></div>
+<div><div class="muted">Open</div><div class="metric">${esc(assurance.openClaims ?? 0)}</div></div>
+</div><table><thead><tr><th>Status</th><th>Level</th><th>Claim</th><th>Evidence</th><th>Budget</th></tr></thead><tbody>${
+(assurance.claimSet || []).map((item) => `<tr><td>${esc(item.status)}</td><td>${esc(item.safetyLevel)}</td><td>${esc(item.claim)}</td><td>${esc(item.evidenceCount)}</td><td>${esc(item.budgetMetric ?? "")} ${esc(item.budgetValue ?? "")}/${esc(item.budgetLimit ?? "")}</td></tr>`).join("")
+}</tbody></table>`;
+const cc = report.complianceModel || { controlSet: [] };
+document.getElementById("compliance-controls").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(cc.status ?? "unknown")}</div></div>
+<div><div class="muted">Controls</div><div class="metric">${esc(cc.controls ?? 0)}</div></div>
+<div><div class="muted">Budgeted</div><div class="metric">${esc(cc.budgetedControls ?? 0)}</div></div>
+<div><div class="muted">Failed</div><div class="metric">${esc(cc.failedControls ?? 0)}</div></div>
+</div><table><thead><tr><th>Control</th><th>Status</th><th>Standard</th><th>Title</th><th>Evidence</th><th>Budget</th></tr></thead><tbody>${
+(cc.controlSet || []).map((item) => `<tr><td><code>${esc(item.id)}</code></td><td>${esc(item.status)}</td><td>${esc(item.standard)}</td><td>${esc(item.title)}</td><td>${esc(item.evidenceCount)}</td><td>${esc(item.budgetMetric ?? "")} ${esc(item.budgetValue ?? "")}/${esc(item.budgetLimit ?? "")}</td></tr>`).join("")
+}</tbody></table>`;
+const sh = report.securityHotspotModel || { hotspotSet: [] };
+document.getElementById("security-hotspots").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(sh.status ?? "unknown")}</div></div>
+<div><div class="muted">Hotspots</div><div class="metric">${esc(sh.hotspots ?? 0)}</div></div>
+<div><div class="muted">To review</div><div class="metric">${esc(sh.toReview ?? 0)}</div></div>
+<div><div class="muted">Vulnerabilities</div><div class="metric">${esc(sh.vulnerabilities ?? 0)}</div></div>
+</div><table><thead><tr><th>Status</th><th>Vector</th><th>Owner</th><th>Rule</th><th>Location</th><th>Message</th></tr></thead><tbody>${
+(sh.hotspotSet || []).slice(0, 20).map((item) => `<tr><td>${esc(item.status)}</td><td>${esc(item.vector)}</td><td>${esc(item.owner)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td><td>${esc(item.message)}</td></tr>`).join("")
+}</tbody></table>`;
+const sem = report.securityExploitabilityModel || { findingSet: [] };
+document.getElementById("security-exploitability").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(sem.status ?? "clear")}</div></div>
+<div><div class="muted">Findings</div><div class="metric">${esc(sem.findings ?? 0)}</div></div>
+<div><div class="muted">Exploitable</div><div class="metric">${esc(sem.exploitableSecurityFindings ?? 0)}</div></div>
+<div><div class="muted">Critical</div><div class="metric">${esc(sem.criticalSecurityFindings ?? 0)}</div></div>
+</div><table><thead><tr><th>Band</th><th>Score</th><th>Vector</th><th>Owner</th><th>Rule</th><th>CWE</th><th>Location</th></tr></thead><tbody>${
+(sem.findingSet || []).slice(0, 20).map((item) => `<tr><td>${esc(item.riskBand)}</td><td>${esc(item.riskScore)}</td><td>${esc(item.vector)}</td><td>${esc(item.owner)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.cwe ?? "")}</td><td>${esc(item.where)}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">No security exploitability findings.</td></tr>`
+}</tbody></table>`;
+const sdm = report.securityDataflowModel || { dataflowSet: [] };
+document.getElementById("security-dataflow").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(sdm.status ?? "clear")}</div></div>
+<div><div class="muted">Critical</div><div class="metric">${esc(sdm.criticalDataflows ?? 0)}</div></div>
+<div><div class="muted">High evidence</div><div class="metric">${esc(sdm.highRiskEvidence ?? 0)}</div></div>
+<div><div class="muted">Tainted paths</div><div class="metric">${esc(sdm.taintedSinkPaths ?? 0)}</div></div>
+</div><table><thead><tr><th>Score</th><th>Kind</th><th>Critical</th><th>Function</th><th>Flow</th><th>Location</th><th>Message</th></tr></thead><tbody>${
+(sdm.dataflowSet || []).slice(0, 20).map((item) => `<tr><td>${esc(item.riskScore)}</td><td>${esc(item.kind)}</td><td>${esc(item.critical ? "yes" : "no")}</td><td><code>${esc(item.function ?? "")}</code></td><td>${esc(item.source ?? "")} -> ${esc(item.sink ?? "")}</td><td>${esc(item.path ?? "")}:${esc(item.line ?? "")}</td><td>${esc(item.message ?? "")}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">No security dataflow findings.</td></tr>`
+}</tbody></table>`;
+const pfm = report.pathFeasibilityModel || { pathSet: [] };
+document.getElementById("path-feasibility").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(pfm.status ?? "clear")}</div></div>
+<div><div class="muted">Candidates</div><div class="metric">${esc(pfm.candidatePaths ?? 0)}</div></div>
+<div><div class="muted">Plausible</div><div class="metric">${esc(pfm.plausiblePaths ?? 0)}</div></div>
+<div><div class="muted">Unknown</div><div class="metric">${esc(pfm.unknownPaths ?? 0)}</div></div>
+<div><div class="muted">Facts</div><div class="metric">${esc(pfm.feasibilityFacts ?? 0)}</div></div>
+<div><div class="muted">Polarized</div><div class="metric">${esc(pfm.polarizedConditions ?? 0)}</div></div>
+</div><table><thead><tr><th>Status</th><th>Kind</th><th>Function</th><th>Sink</th><th>Conditions</th><th>Facts</th><th>Polarized</th><th>Location</th><th>Reason</th></tr></thead><tbody>${
+(pfm.pathSet || []).slice(0, 20).map((item) => `<tr><td>${esc(item.status)}</td><td>${esc(item.kind)}</td><td><code>${esc(item.function ?? "")}</code></td><td>${esc(item.sink ?? "")}</td><td>${esc(item.conditions ?? 0)}</td><td>${esc(item.facts ?? 0)}</td><td>${esc(item.polarizedConditions ?? 0)}</td><td>${esc(item.path ?? "")}:${esc(item.line ?? "")}</td><td>${esc(item.reason ?? "")}</td></tr>`).join("") || `<tr><td colspan="9" class="muted">No symbolic path feasibility candidates.</td></tr>`
+}</tbody></table>`;
+const csm = report.contextSensitivityModel || { riskSet: [] };
+document.getElementById("context-sensitivity").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(csm.status ?? "clear")}</div></div>
+<div><div class="muted">Sensitive</div><div class="metric">${esc(csm.contextSensitiveFunctions ?? 0)}</div></div>
+<div><div class="muted">Risks</div><div class="metric">${esc(csm.contextRisks ?? 0)}</div></div>
+<div><div class="muted">Merged sites</div><div class="metric">${esc(csm.mergedCallsites ?? 0)}</div></div>
+<div><div class="muted">Max fan-in</div><div class="metric">${esc(csm.maxFanIn ?? 0)}</div></div>
+</div><table><thead><tr><th>Band</th><th>Score</th><th>Target</th><th>Fan-in</th><th>Callsites</th><th>Cross-file</th><th>Tainted</th><th>Location</th></tr></thead><tbody>${
+(csm.riskSet || []).slice(0, 20).map((item) => `<tr><td>${esc(item.riskBand)}</td><td>${esc(item.riskScore)}</td><td><code>${esc(item.target ?? "")}</code></td><td>${esc(item.fanIn ?? 0)}</td><td>${esc(item.distinctCallsites ?? 0)}</td><td>${esc(item.crossFileCallsites ?? 0)}</td><td>${esc(item.taintedCallsites ?? 0)}</td><td>${esc(item.path ?? "")}:${esc(item.line ?? "")}</td></tr>`).join("") || `<tr><td colspan="8" class="muted">No sensitive call contexts are mixed.</td></tr>`
+}</tbody></table>`;
+const sm = report.soundnessModel || { assumptionSet: [] };
+document.getElementById("soundness-envelope").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(sm.status ?? "unknown")}</div></div>
+<div><div class="muted">Assumptions</div><div class="metric">${esc(sm.assumptions ?? 0)}</div></div>
+<div><div class="muted">Budgeted</div><div class="metric">${esc(sm.budgetedAssumptions ?? 0)}</div></div>
+<div><div class="muted">Open</div><div class="metric">${esc(sm.openAssumptions ?? 0)}</div></div>
+</div><table><thead><tr><th>Assumption</th><th>Status</th><th>Domain</th><th>Title</th><th>Evidence</th><th>Metrics</th></tr></thead><tbody>${
+(sm.assumptionSet || []).map((item) => `<tr><td><code>${esc(item.id)}</code></td><td>${esc(item.status)}</td><td>${esc(item.domain)}</td><td>${esc(item.title)}</td><td>${esc(item.evidenceCount)}</td><td>${esc((item.metricReviews || []).map((m) => `${m.metric}:${m.value}/${m.budget}`).join(", "))}</td></tr>`).join("")
+}</tbody></table>`;
+const pom = report.proofObligationModel || { obligationSet: [] };
+document.getElementById("proof-obligations").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(pom.status ?? "unknown")}</div></div>
+<div><div class="muted">Open</div><div class="metric">${esc(pom.openProofObligations ?? 0)}</div></div>
+<div><div class="muted">Budgeted</div><div class="metric">${esc(pom.budgetedProofObligations ?? 0)}</div></div>
+<div><div class="muted">Discharged</div><div class="metric">${esc(pom.dischargedProofObligations ?? 0)}</div></div>
+</div><table><thead><tr><th>Status</th><th>Source</th><th>Domain</th><th>Obligation</th><th>Evidence</th><th>Budget</th></tr></thead><tbody>${
+(pom.obligationSet || []).slice(0, 32).map((item) => `<tr><td>${esc(item.status)}</td><td>${esc(item.source)}</td><td>${esc(item.domain)}</td><td><code>${esc(item.sourceId)}</code> ${esc(item.title)}</td><td>${esc(item.evidenceCount)}</td><td>${esc(item.budgetMetric ?? "")} ${esc(item.budgetValue ?? "")}/${esc(item.budgetLimit ?? "")}</td></tr>`).join("")
+}</tbody></table>`;
+const rm = report.analysisRunManifest || { git: {}, inputs: {}, digests: {}, gapSet: [] };
+document.getElementById("run-manifest").innerHTML = `<div class="grid" style="margin-bottom:12px">
+<div><div class="muted">Status</div><div class="metric">${esc(rm.status ?? "unknown")}</div></div>
+<div><div class="muted">Git dirty</div><div class="metric">${esc(rm.git?.dirtyFiles ?? 0)}</div></div>
+<div><div class="muted">Sources</div><div class="metric">${esc(rm.inputs?.sourceFiles ?? 0)}</div></div>
+<div><div class="muted">Gaps</div><div class="metric">${esc(rm.manifestGaps ?? 0)}</div></div>
+</div><table><tbody>
+<tr><th>Package</th><td>${esc(rm.package?.name)} ${esc(rm.package?.version)}</td></tr>
+<tr><th>Git</th><td><code>${esc(rm.git?.branch)}</code> <code>${esc(rm.git?.head)}</code></td></tr>
+<tr><th>Profile</th><td>${esc(rm.profile?.name)} <code>${esc(rm.profile?.digest)}</code></td></tr>
+<tr><th>Source digest</th><td><code>${esc(rm.digests?.source)}</code></td></tr>
+<tr><th>Analyzer digest</th><td><code>${esc(rm.digests?.analyzer)}</code></td></tr>
+</tbody></table><h2 style="margin-top:16px">Manifest Gaps</h2><table><thead><tr><th>Dimension</th><th>Code</th><th>Location</th><th>Message</th></tr></thead><tbody>${
+(rm.gapSet || []).slice(0, 16).map((item) => `<tr><td>${esc(item.dimension)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td><td>${esc(item.message)}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Run manifest is reproducible.</td></tr>`
+}</tbody></table>`;
+document.getElementById("diagnostics").innerHTML = report.diagnostics.slice(0, 200).map((item) => `<tr><td class="sev-${esc(item.severity)}">${esc(item.severity)}</td><td>${esc(item.owner)}</td><td><code>${esc(item.code)}</code></td><td>${esc(item.where)}</td><td>${esc(item.rule?.category)}</td><td>${esc(item.message)}</td></tr>`).join("");
+</script>
+</body>
+</html>
+HTML
+    return join($json, split(/__REPORT_JSON__/, $html));
+}
+
+sub html_escape {
+    my ($text) = @_;
+    $text =~ s/&/&amp;/g;
+    $text =~ s/</&lt;/g;
+    $text =~ s/>/&gt;/g;
+    $text =~ s/"/&quot;/g;
+    $text =~ s/'/&#39;/g;
+    return $text;
+}
+
+sub emit_quality_gate {
+    my ($quality_gate) = @_;
+    my $status = $quality_gate->{status};
+    my $label = $status eq "passed" ? "NOTICE" : "ERROR";
+    my $failed = @{$quality_gate->{failed}} == 0 ? "none" : join(", ", @{$quality_gate->{failed}});
+    my $line = "$label [quality.gate] profile=" . $quality_gate->{profile} .
+        " status=$status failed=$failed warnings=" .
+        $quality_gate->{metrics}{warnings} . "/" . $quality_gate->{budgets}{warnings} .
+        " flowWarnings=" . $quality_gate->{metrics}{flowWarnings} . "/" . $quality_gate->{budgets}{flowWarnings} .
+        " debt=" . ($quality_gate->{metrics}{technicalDebtMinutes} // 0) . "/" .
+        ($quality_gate->{budgets}{technicalDebtMinutes} // 0) .
+        " unownedOpen=" . ($quality_gate->{metrics}{unownedOpen} // 0) . "/" .
+        ($quality_gate->{budgets}{unownedOpen} // 0) .
+        " expiredTriage=" . ($quality_gate->{metrics}{expiredTriage} // 0) . "/" .
+        ($quality_gate->{budgets}{expiredTriage} // 0) .
+        " staleWaivers=" . ($quality_gate->{metrics}{staleWaivers} // 0) . "/" .
+        ($quality_gate->{budgets}{staleWaivers} // 0) .
+        " expiredWaivers=" . ($quality_gate->{metrics}{expiredWaivers} // 0) . "/" .
+        ($quality_gate->{budgets}{expiredWaivers} // 0) .
+        " wildcardSuppressions=" . ($quality_gate->{metrics}{wildcardSuppressions} // 0) . "/" .
+        ($quality_gate->{budgets}{wildcardSuppressions} // 0) .
+        " profileOverrideRisks=" . ($quality_gate->{metrics}{qualityProfileRiskyOverrides} // 0) . "/" .
+        ($quality_gate->{budgets}{qualityProfileRiskyOverrides} // 0) .
+        " reviewDecisionRisks=" . ($quality_gate->{metrics}{reviewDecisionRisks} // 0) . "/" .
+        ($quality_gate->{budgets}{reviewDecisionRisks} // 0) .
+        " unroutedDefects=" . ($quality_gate->{metrics}{unroutedDefects} // 0) . "/" .
+        ($quality_gate->{budgets}{unroutedDefects} // 0) .
+        " routingEfficiency=" . ($quality_gate->{metrics}{routingEfficiencyPermille} // 0) . "/1000" .
+        " overdueIssues=" . ($quality_gate->{metrics}{overdueIssues} // 0) . "/" .
+        ($quality_gate->{budgets}{overdueIssues} // 0) .
+        " maxIssueAge=" . ($quality_gate->{metrics}{maxIssueAgeDays} // 0) . "/" .
+        ($quality_gate->{budgets}{maxIssueAgeDays} // 0) .
+        " assuranceOpen=" . ($quality_gate->{metrics}{assuranceOpenClaims} // 0) . "/" .
+        ($quality_gate->{budgets}{assuranceOpenClaims} // 0) .
+        " complianceFailed=" . ($quality_gate->{metrics}{complianceFailedControls} // 0) . "/" .
+        ($quality_gate->{budgets}{complianceFailedControls} // 0) .
+        " hotspotsToReview=" . ($quality_gate->{metrics}{unreviewedSecurityHotspots} // 0) . "/" .
+        ($quality_gate->{budgets}{unreviewedSecurityHotspots} // 0) .
+        " exploitableSecurity=" . ($quality_gate->{metrics}{exploitableSecurityFindings} // 0) . "/" .
+        ($quality_gate->{budgets}{exploitableSecurityFindings} // 0) .
+        " criticalDataflows=" . ($quality_gate->{metrics}{securityDataflowCriticalPaths} // 0) . "/" .
+        ($quality_gate->{budgets}{securityDataflowCriticalPaths} // 0) .
+        " unknownPaths=" . ($quality_gate->{metrics}{pathFeasibilityUnknownPaths} // 0) . "/" .
+        ($quality_gate->{budgets}{pathFeasibilityUnknownPaths} // 0) .
+        " contextRisks=" . ($quality_gate->{metrics}{contextSensitivityRisks} // 0) . "/" .
+        ($quality_gate->{budgets}{contextSensitivityRisks} // 0) .
+        " openAssumptions=" . ($quality_gate->{metrics}{openSoundnessAssumptions} // 0) . "/" .
+        ($quality_gate->{budgets}{openSoundnessAssumptions} // 0) .
+        " openProofObligations=" . ($quality_gate->{metrics}{openProofObligations} // 0) . "/" .
+        ($quality_gate->{budgets}{openProofObligations} // 0) .
+        " budgetedProofObligations=" . ($quality_gate->{metrics}{budgetedProofObligations} // 0) . "/" .
+        ($quality_gate->{metrics}{proofObligations} // 0) .
+        " asyncScheduling=" . ($quality_gate->{metrics}{asyncSchedulingGaps} // 0) . "/" .
+        ($quality_gate->{budgets}{asyncSchedulingGaps} // 0) .
+        " typeEscapes=" . ($quality_gate->{metrics}{typeEscapes} // 0) . "/" .
+        ($quality_gate->{budgets}{typeEscapes} // 0) .
+        " redosRisks=" . ($quality_gate->{metrics}{redosRisks} // 0) . "/" .
+        ($quality_gate->{budgets}{redosRisks} // 0) .
+        " secretLeaks=" . ($quality_gate->{metrics}{secretLeaks} // 0) . "/" .
+        ($quality_gate->{budgets}{secretLeaks} // 0) .
+        " workflowHighRisk=" . ($quality_gate->{metrics}{workflowHighRiskFindings} // 0) . "/" .
+        ($quality_gate->{budgets}{workflowHighRiskFindings} // 0) .
+        " mutableActions=" . ($quality_gate->{metrics}{workflowMutableActionRefs} // 0) . "/" .
+        ($quality_gate->{budgets}{workflowMutableActionRefs} // 0) .
+        " lockfileRisks=" . ($quality_gate->{metrics}{packageLockRisks} // 0) . "/" .
+        ($quality_gate->{budgets}{packageLockRisks} // 0) .
+        " runtimeDeps=" . ($quality_gate->{metrics}{packageLockRuntimeDependencies} // 0) . "/" .
+        ($quality_gate->{budgets}{packageLockRuntimeDependencies} // 0) .
+        " licenseRisks=" . ($quality_gate->{metrics}{licenseRisks} // 0) . "/" .
+        ($quality_gate->{budgets}{licenseRisks} // 0) .
+        " licenseReview=" . ($quality_gate->{metrics}{licenseReviewItems} // 0) . "/" .
+        ($quality_gate->{budgets}{licenseReviewItems} // 0) .
+        " apiDrift=" . ($quality_gate->{metrics}{apiSurfaceDrift} // 0) . "/" .
+        ($quality_gate->{budgets}{apiSurfaceDrift} // 0) .
+        " apiDocs=" . ($quality_gate->{metrics}{apiDocumentationGaps} // 0) . "/" .
+        ($quality_gate->{budgets}{apiDocumentationGaps} // 0) .
+        " releaseDrift=" . ($quality_gate->{metrics}{releaseConsistencyRisks} // 0) . "/" .
+        ($quality_gate->{budgets}{releaseConsistencyRisks} // 0) .
+        " testEvidence=" . ($quality_gate->{metrics}{testEvidenceGaps} // 0) . "/" .
+        ($quality_gate->{budgets}{testEvidenceGaps} // 0) .
+        " benchmarkEvidence=" . ($quality_gate->{metrics}{benchmarkEvidenceGaps} // 0) . "/" .
+        ($quality_gate->{budgets}{benchmarkEvidenceGaps} // 0) .
+        " ruleMetadata=" . ($quality_gate->{metrics}{ruleMetadataGaps} // 0) . "/" .
+        ($quality_gate->{budgets}{ruleMetadataGaps} // 0) .
+        " genericRuleMetadata=" . ($quality_gate->{metrics}{genericRuleMetadataItems} // 0) . "/" .
+        ($quality_gate->{budgets}{genericRuleMetadataItems} // 0) .
+        " coverageGaps=" . ($quality_gate->{metrics}{analysisCoverageGaps} // 0) . "/" .
+        ($quality_gate->{budgets}{analysisCoverageGaps} // 0) .
+        " openRootCauses=" . ($quality_gate->{metrics}{openRootCauses} // 0) . "/" .
+        ($quality_gate->{budgets}{openRootCauses} // 0) .
+        " noisyRules=" . ($quality_gate->{metrics}{noisyRules} // 0) . "/" .
+        ($quality_gate->{budgets}{noisyRules} // 0) .
+        " provenanceGaps=" . ($quality_gate->{metrics}{findingProvenanceGaps} // 0) . "/" .
+        ($quality_gate->{budgets}{findingProvenanceGaps} // 0) .
+        " witnessGaps=" . ($quality_gate->{metrics}{findingWitnessGaps} // 0) . "/" .
+        ($quality_gate->{budgets}{findingWitnessGaps} // 0) .
+        " lowConfidence=" . ($quality_gate->{metrics}{lowConfidenceFindings} // 0) . "/" .
+        ($quality_gate->{budgets}{lowConfidenceFindings} // 0) .
+        " manifestGaps=" . ($quality_gate->{metrics}{runManifestGaps} // 0) . "/" .
+        ($quality_gate->{budgets}{runManifestGaps} // 0) .
+        " changeImpactCritical=" . ($quality_gate->{metrics}{changeImpactCriticalFiles} // 0) . "/" .
+        ($quality_gate->{budgets}{changeImpactCriticalFiles} // 0) .
+        " changeImpactBlast=" . ($quality_gate->{metrics}{changeImpactBlastRadiusPermille} // 0) . "/" .
+        ($quality_gate->{budgets}{changeImpactBlastRadiusPermille} // 0) .
+        " historyDebtDelta=" . ($quality_gate->{metrics}{historyDebtDelta} // 0) . "/" .
+        ($quality_gate->{budgets}{historyDebtDelta} // 0) .
+        " reopenedIssues=" . ($quality_gate->{metrics}{reopenedIssues} // 0) . "/" .
+        ($quality_gate->{budgets}{reopenedIssues} // 0) .
+        " lineageMatched=" . ($quality_gate->{metrics}{lineageMatchedDefects} // 0) .
+        " identityChurnAvoided=" . ($quality_gate->{metrics}{identityChurnAvoided} // 0) .
+        "\n";
+    if ($status eq "passed") {
+        print STDOUT $line if $show_notices;
+    } else {
+        print STDERR $line;
+    }
+}
+
+sub rule_catalog_for_diagnostics {
+    my ($diagnostics) = @_;
+    my %seen;
+    for my $diag (@{$diagnostics}) {
+        $seen{$diag->{code}} = 1;
+    }
+    return [
+        map {
+            rule_metadata($_)
+        } sort keys %seen
+    ];
+}
+
+sub diagnostic_taxonomy_summary {
+    my ($diagnostics) = @_;
+    my %by_category;
+    my %by_engine;
+    my %by_remediation;
+    my %by_severity;
+    my %by_precision;
+    for my $diag (@{$diagnostics}) {
+        next if $diag->{suppressed};
+        my $meta = rule_metadata($diag->{code});
+        $by_category{$meta->{category}} += 1;
+        $by_engine{$meta->{engine}} += 1;
+        $by_remediation{$meta->{remediation}} += 1;
+        $by_precision{$meta->{precision}} += 1;
+        $by_severity{$diag->{severity}} += 1;
+    }
+    return {
+        categories => \%by_category,
+        engines => \%by_engine,
+        remediations => \%by_remediation,
+        precisions => \%by_precision,
+        severities => \%by_severity
+    };
+}
+
+sub quality_model {
+    my ($diagnostics) = @_;
+    my %dimensions = map {
+        $_ => empty_quality_dimension($_)
+    } qw(security reliability maintainability performance supply_chain release documentation analyzer);
+
+    my @hotspots;
+    for my $diag (@{$diagnostics}) {
+        next if diagnostic_quality_excluded($diag);
+        my $meta = rule_metadata($diag->{code});
+        my $dimension = quality_dimension_for_category($meta->{category});
+        $dimensions{$dimension} = empty_quality_dimension($dimension)
+            if !exists $dimensions{$dimension};
+        my $record = defect_record($diag);
+        my $severity = $diag->{severity} // "notice";
+        my $status = $record->{status} // "evidence";
+        my $debt = diagnostic_debt_minutes($diag, $meta, $record);
+
+        $dimensions{$dimension}{issues} += 1;
+        $dimensions{$dimension}{open} += 1 if $status eq "open";
+        $dimensions{$dimension}{evidence} += 1 if $status eq "evidence";
+        $dimensions{$dimension}{suppressed} += 1 if $status eq "suppressed";
+        $dimensions{$dimension}{errors} += 1 if $severity eq "error";
+        $dimensions{$dimension}{warnings} += 1 if $severity eq "warning";
+        $dimensions{$dimension}{notices} += 1 if $severity eq "notice";
+        $dimensions{$dimension}{technicalDebtMinutes} += $debt;
+
+        if ($status eq "open" || $debt != 0) {
+            push @hotspots, {
+                code => $diag->{code},
+                where => $diag->{where},
+                message => $diag->{message},
+                dimension => $dimension,
+                owner => $record->{owner} // "unowned",
+                priority => $record->{priority},
+                debtMinutes => $debt,
+                triageScore => $record->{triageScore}
+            };
+        }
+    }
+
+    my $total_debt = 0;
+    my $open = 0;
+    for my $dimension (keys %dimensions) {
+        $dimensions{$dimension}{rating} = quality_rating_for_dimension($dimensions{$dimension});
+        $dimensions{$dimension}{rank} = quality_rating_rank($dimensions{$dimension}{rating});
+        $dimensions{$dimension}{technicalDebtHours} =
+            rounded_number($dimensions{$dimension}{technicalDebtMinutes} / 60);
+        $total_debt += $dimensions{$dimension}{technicalDebtMinutes};
+        $open += $dimensions{$dimension}{open};
+    }
+
+    @hotspots = sort {
+        ($b->{debtMinutes} // 0) <=> ($a->{debtMinutes} // 0) ||
+            ($b->{triageScore} // 0) <=> ($a->{triageScore} // 0) ||
+            ($a->{where} // "") cmp ($b->{where} // "")
+    } @hotspots;
+
+    my $overall = {
+        rating => overall_quality_rating(values %dimensions),
+        open => $open,
+        technicalDebtMinutes => $total_debt,
+        technicalDebtHours => rounded_number($total_debt / 60)
+    };
+    $overall->{rank} = quality_rating_rank($overall->{rating});
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea quality model",
+        overall => $overall,
+        technicalDebtMinutes => $total_debt,
+        technicalDebtHours => rounded_number($total_debt / 60),
+        dimensions => \%dimensions,
+        hotspots => [@hotspots[0 .. min_index(19, $#hotspots)]]
+    };
+}
+
+sub component_model {
+    my ($diagnostics) = @_;
+    my %files;
+    my %layers;
+
+    for my $diag (@{$diagnostics}) {
+        my $path = diagnostic_report_path($diag);
+        $path = "project" if $path eq "";
+        my $layer = component_layer_for_path($path);
+        my $meta = rule_metadata($diag->{code});
+        my $record = defect_record($diag);
+        my $debt = diagnostic_debt_minutes($diag, $meta, $record);
+        add_component_issue(\%files, $path, "file", $diag, $meta, $record, $debt);
+        add_component_issue(\%layers, $layer, "layer", $diag, $meta, $record, $debt);
+    }
+
+    my @file_components = sort_components(values %files);
+    my @layer_components = sort_components(values %layers);
+    my @hotspots = sort_components(@file_components, @layer_components);
+    my $worst = @hotspots == 0 ? empty_component("project", "project") : $hotspots[0];
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea component risk model",
+        components => scalar(@file_components),
+        layers => scalar(@layer_components),
+        worstComponent => $worst,
+        files => [@file_components[0 .. min_index(39, $#file_components)]],
+        layerSummary => [@layer_components[0 .. min_index(19, $#layer_components)]],
+        hotspots => [@hotspots[0 .. min_index(19, $#hotspots)]]
+    };
+}
+
+sub add_component_issue {
+    my ($components, $name, $kind, $diag, $meta, $record, $debt) = @_;
+    $components->{$name} = empty_component($name, $kind) if !exists $components->{$name};
+    my $component = $components->{$name};
+    my $severity = $diag->{severity} // "notice";
+    my $status = $record->{status} // "evidence";
+    $component->{issues} += 1;
+    $component->{open} += 1 if $status eq "open";
+    $component->{evidence} += 1 if $status eq "evidence";
+    $component->{suppressed} += 1 if $status eq "suppressed";
+    $component->{errors} += 1 if $severity eq "error";
+    $component->{warnings} += 1 if $severity eq "warning";
+    $component->{notices} += 1 if $severity eq "notice";
+    $component->{technicalDebtMinutes} += $debt;
+    $component->{categories}{$meta->{category}} += 1;
+    $component->{owners}{$record->{owner} // "unowned"} += 1;
+    if ($status eq "open") {
+        $component->{riskScore} += ($record->{triageScore} // 0) + $debt;
+    } elsif ($status eq "suppressed") {
+        $component->{riskScore} += 0;
+    } else {
+        $component->{riskScore} += 1;
+    }
+    push @{$component->{topIssues}}, {
+        code => $diag->{code},
+        where => $diag->{where},
+        message => $diag->{message},
+        owner => $record->{owner} // "unowned",
+        priority => $record->{priority},
+        debtMinutes => $debt,
+        triageScore => $record->{triageScore}
+    } if @{$component->{topIssues}} < 5;
+    $component->{rating} = quality_rating_for_dimension($component);
+    $component->{rank} = quality_rating_rank($component->{rating});
+    $component->{technicalDebtHours} = rounded_number($component->{technicalDebtMinutes} / 60);
+}
+
+sub empty_component {
+    my ($name, $kind) = @_;
+    return {
+        name => $name,
+        kind => $kind,
+        rating => "A",
+        rank => 1,
+        issues => 0,
+        open => 0,
+        evidence => 0,
+        suppressed => 0,
+        errors => 0,
+        warnings => 0,
+        notices => 0,
+        technicalDebtMinutes => 0,
+        technicalDebtHours => 0,
+        riskScore => 0,
+        categories => {},
+        owners => {},
+        topIssues => []
+    };
+}
+
+sub sort_components {
+    return sort {
+        ($b->{riskScore} // 0) <=> ($a->{riskScore} // 0) ||
+            ($b->{technicalDebtMinutes} // 0) <=> ($a->{technicalDebtMinutes} // 0) ||
+            ($b->{open} // 0) <=> ($a->{open} // 0) ||
+            ($a->{name} // "") cmp ($b->{name} // "")
+    } @_;
+}
+
+sub component_layer_for_path {
+    my ($path) = @_;
+    return source_layer($path) if $path =~ m{\Asrc/};
+    return "bench" if $path =~ m{\Abench/};
+    return "test" if $path =~ m{\Atest/};
+    return "docs" if $path =~ m{\Adocs/};
+    return "scripts" if $path =~ m{\Ascripts/};
+    return "package" if $path =~ m{\A(?:package|package-lock)\.json\z};
+    return "project";
+}
+
+sub ownership_index {
+    my $codeowners_path = first_existing_codeowners_path();
+    my $rules = defined $codeowners_path ? read_codeowners_rules($codeowners_path) : [];
+    return {
+        schemaVersion => 1,
+        source => defined $codeowners_path ? "codeowners-with-layer-fallback" : "layer-fallback",
+        codeownersPath => $codeowners_path,
+        rules => $rules,
+        fallbackOwners => fallback_owner_catalog()
+    };
+}
+
+sub first_existing_codeowners_path {
+    for my $path ("CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS") {
+        return $path if -f $path;
+    }
+    return undef;
+}
+
+sub read_codeowners_rules {
+    my ($path) = @_;
+    my $source = read_text($path);
+    my @rules;
+    my @lines = split(/\n/, $source);
+    for (my $index = 0; $index < @lines; $index += 1) {
+        my $line = $lines[$index];
+        $line =~ s/\s+\z//;
+        $line =~ s/\A\s+//;
+        next if $line eq "" || $line =~ /\A#/;
+        $line =~ s/\s+#.*\z//;
+        my @parts = split(/\s+/, $line);
+        next if @parts < 2;
+        my $pattern = shift @parts;
+        my @owners = map { normalize_owner($_) } grep { $_ ne "" } @parts;
+        next if @owners == 0;
+        push @rules, {
+            pattern => $pattern,
+            owners => \@owners,
+            line => $index + 1
+        };
+    }
+    return \@rules;
+}
+
+sub annotate_diagnostic_owners {
+    my ($diagnostics, $ownership_index) = @_;
+    for my $diag (@{$diagnostics}) {
+        my $assignment = owner_assignment_for_path(diagnostic_report_path($diag), $ownership_index);
+        $diag->{owner} = $assignment->{owner};
+        $diag->{owners} = $assignment->{owners};
+        $diag->{ownerSource} = $assignment->{source};
+        $diag->{ownerPattern} = $assignment->{pattern};
+        $diag->{ownerLayer} = $assignment->{layer};
+    }
+}
+
+sub ownership_model {
+    my ($diagnostics, $ownership_index) = @_;
+    my %owners;
+    my $owned = 0;
+    my $unowned = 0;
+    my $owned_open = 0;
+    my $unowned_open = 0;
+
+    for my $diag (@{$diagnostics}) {
+        my $record = defect_record($diag);
+        my $owner = $record->{owner} // "unowned";
+        $owners{$owner} = empty_owner_summary($owner) if !exists $owners{$owner};
+        my $summary = $owners{$owner};
+        my $debt = diagnostic_debt_minutes($diag, rule_metadata($diag->{code}), $record);
+        my $status = $record->{status} // "evidence";
+        my $severity = $diag->{severity} // "notice";
+
+        $summary->{issues} += 1;
+        $summary->{open} += 1 if $status eq "open";
+        $summary->{evidence} += 1 if $status eq "evidence";
+        $summary->{suppressed} += 1 if $status eq "suppressed";
+        $summary->{errors} += 1 if $severity eq "error";
+        $summary->{warnings} += 1 if $severity eq "warning";
+        $summary->{notices} += 1 if $severity eq "notice";
+        $summary->{technicalDebtMinutes} += $debt;
+        $summary->{sources}{$diag->{ownerSource} // "unknown"} += 1;
+        $summary->{layers}{$diag->{ownerLayer} // "project"} += 1;
+        push @{$summary->{topIssues}}, {
+            code => $diag->{code},
+            where => $diag->{where},
+            message => $diag->{message},
+            priority => $record->{priority},
+            debtMinutes => $debt,
+            triageScore => $record->{triageScore}
+        } if $status eq "open" && @{$summary->{topIssues}} < 5;
+
+        if ($owner eq "unowned") {
+            $unowned += 1;
+            $unowned_open += 1 if $status eq "open";
+        } else {
+            $owned += 1;
+            $owned_open += 1 if $status eq "open";
+        }
+    }
+
+    for my $owner (keys %owners) {
+        $owners{$owner}{rating} = quality_rating_for_dimension($owners{$owner});
+        $owners{$owner}{rank} = quality_rating_rank($owners{$owner}{rating});
+        $owners{$owner}{technicalDebtHours} = rounded_number($owners{$owner}{technicalDebtMinutes} / 60);
+    }
+    my @top = sort_owner_summaries(values %owners);
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea ownership model",
+        source => $ownership_index->{source},
+        codeownersPath => $ownership_index->{codeownersPath},
+        codeownersRules => scalar(@{$ownership_index->{rules} // []}),
+        owners => scalar(keys %owners),
+        ownedDiagnostics => $owned,
+        unownedDiagnostics => $unowned,
+        ownedOpen => $owned_open,
+        unownedOpen => $unowned_open,
+        topOwners => [@top[0 .. min_index(19, $#top)]],
+        ownerSummary => { map { $_->{owner} => $_ } @top }
+    };
+}
+
+sub empty_owner_summary {
+    my ($owner) = @_;
+    return {
+        owner => $owner,
+        rating => "A",
+        rank => 1,
+        issues => 0,
+        open => 0,
+        evidence => 0,
+        suppressed => 0,
+        errors => 0,
+        warnings => 0,
+        notices => 0,
+        technicalDebtMinutes => 0,
+        technicalDebtHours => 0,
+        sources => {},
+        layers => {},
+        topIssues => []
+    };
+}
+
+sub sort_owner_summaries {
+    return sort {
+        ($b->{open} // 0) <=> ($a->{open} // 0) ||
+            ($b->{technicalDebtMinutes} // 0) <=> ($a->{technicalDebtMinutes} // 0) ||
+            ($b->{issues} // 0) <=> ($a->{issues} // 0) ||
+            ($a->{owner} // "") cmp ($b->{owner} // "")
+    } @_;
+}
+
+sub owner_assignment_for_path {
+    my ($path, $ownership_index) = @_;
+    $path = normalize_report_path($path);
+    my $layer = component_layer_for_path($path);
+    my $matched = undef;
+    for my $rule (@{$ownership_index->{rules} // []}) {
+        next if !codeowners_pattern_matches($rule->{pattern}, $path);
+        $matched = $rule;
+    }
+    if (defined $matched) {
+        my @owners = @{$matched->{owners}};
+        return {
+            owner => $owners[0] // "unowned",
+            owners => \@owners,
+            source => "codeowners",
+            pattern => $matched->{pattern},
+            layer => $layer
+        };
+    }
+
+    my $owner = fallback_owner_for_layer($layer, $path);
+    return {
+        owner => $owner,
+        owners => [$owner],
+        source => "layer-fallback",
+        pattern => $layer,
+        layer => $layer
+    };
+}
+
+sub codeowners_pattern_matches {
+    my ($pattern, $path) = @_;
+    return 0 if !defined $pattern || !defined $path || $path eq "";
+    $pattern =~ s{\\}{/}g;
+    $pattern =~ s{\A/}{};
+    $pattern =~ s{\A\./}{};
+    return 0 if $pattern eq "";
+
+    if ($pattern =~ m{/\z}) {
+        my $prefix = $pattern;
+        $prefix =~ s{/+\z}{};
+        return index($path, "$prefix/") == 0 ? 1 : 0;
+    }
+
+    if (index($pattern, "*") >= 0 || index($pattern, "?") >= 0) {
+        my $regex = codeowners_pattern_regex($pattern);
+        my $target = index($pattern, "/") < 0 ? path_basename($path) : $path;
+        return $target =~ /$regex/ ? 1 : 0;
+    }
+
+    return 1 if $path eq $pattern;
+    return 1 if index($path, "$pattern/") == 0;
+    return 1 if index($pattern, "/") < 0 && $path =~ m{(?:\A|/)\Q$pattern\E\z};
+    return 0;
+}
+
+sub path_basename {
+    my ($path) = @_;
+    return "" if !defined $path;
+    $path =~ s{\\}{/}g;
+    $path =~ s{\A.*/}{};
+    return $path;
+}
+
+sub codeowners_pattern_regex {
+    my ($pattern) = @_;
+    my $quoted = quotemeta($pattern);
+    $quoted =~ s/\\\*\\\*/.*/g;
+    $quoted =~ s/\\\*/[^\/]*/g;
+    $quoted =~ s/\\\?/[^\/]/g;
+    return qr/\A$quoted\z/;
+}
+
+sub normalize_owner {
+    my ($owner) = @_;
+    return "unowned" if !defined $owner || $owner eq "";
+    $owner =~ s/\A@//;
+    return $owner eq "" ? "unowned" : $owner;
+}
+
+sub fallback_owner_catalog {
+    return {
+        compiler => [qw(compile aot lower optimize ir plan evaluate async async-validation)],
+        runtime => [qw(builders schema guard parse result issue message registry regexes decoder internal root kind config)],
+        integrations => [qw(adapters plugin standard json-schema)],
+        seaflow => [qw(seaflow)],
+        seabreeze => [qw(seabreeze)],
+        performance => [qw(bench)],
+        verification => [qw(test)],
+        documentation => [qw(docs)],
+        tooling => [qw(scripts)],
+        release => [qw(package)],
+        core => [qw(project unknown)]
+    };
+}
+
+sub fallback_owner_for_layer {
+    my ($layer, $path) = @_;
+    my $catalog = fallback_owner_catalog();
+    for my $owner (sort keys %{$catalog}) {
+        for my $entry (@{$catalog->{$owner}}) {
+            return $owner if $entry eq $layer;
+        }
+    }
+    return "core" if defined $path && $path ne "";
+    return "unowned";
+}
+
+sub empty_quality_dimension {
+    my ($name) = @_;
+    return {
+        name => $name,
+        rating => "A",
+        rank => 1,
+        issues => 0,
+        open => 0,
+        evidence => 0,
+        suppressed => 0,
+        errors => 0,
+        warnings => 0,
+        notices => 0,
+        technicalDebtMinutes => 0,
+        technicalDebtHours => 0
+    };
+}
+
+sub quality_dimension_for_category {
+    my ($category) = @_;
+    return "security" if $category eq "security";
+    return "supply_chain" if $category eq "supply-chain";
+    return "reliability" if $category eq "correctness" || $category eq "type-safety";
+    return "maintainability" if $category eq "maintainability" || $category eq "architecture";
+    return "performance" if $category eq "performance";
+    return "release" if $category eq "release";
+    return "documentation" if $category eq "documentation";
+    return "analyzer" if $category eq "analyzer" || $category eq "policy";
+    return "reliability";
+}
+
+sub diagnostic_debt_minutes {
+    my ($diag, $meta, $record) = @_;
+    return 0 if $diag->{suppressed};
+    return 0 if ($record->{status} // "") ne "open";
+    my $severity = $diag->{severity} // "notice";
+    my $debt = $severity eq "error" ? 180 :
+        $severity eq "warning" ? 45 : 10;
+    $debt += 45 if ($meta->{category} // "") eq "security";
+    $debt += 30 if ($meta->{precision} // "") eq "high";
+    $debt += 20 if ($record->{priority} // "") eq "P1";
+    $debt += 45 if ($record->{priority} // "") eq "P0";
+    return $debt;
+}
+
+sub quality_rating_for_dimension {
+    my ($dimension) = @_;
+    return "E" if $dimension->{errors} != 0 || $dimension->{technicalDebtMinutes} > 480;
+    return "D" if $dimension->{technicalDebtMinutes} > 240 || $dimension->{open} > 8;
+    return "C" if $dimension->{technicalDebtMinutes} > 120 || $dimension->{open} > 4;
+    return "B" if $dimension->{technicalDebtMinutes} > 0 || $dimension->{open} > 0;
+    return "A";
+}
+
+sub overall_quality_rating {
+    my @dimensions = @_;
+    my $worst = 1;
+    for my $dimension (@dimensions) {
+        my $rank = quality_rating_rank($dimension->{rating});
+        $worst = $rank if $rank > $worst;
+    }
+    return quality_rating_from_rank($worst);
+}
+
+sub quality_rating_rank {
+    my ($rating) = @_;
+    return 1 if $rating eq "A";
+    return 2 if $rating eq "B";
+    return 3 if $rating eq "C";
+    return 4 if $rating eq "D";
+    return 5;
+}
+
+sub quality_rating_from_rank {
+    my ($rank) = @_;
+    return "A" if $rank <= 1;
+    return "B" if $rank == 2;
+    return "C" if $rank == 3;
+    return "D" if $rank == 4;
+    return "E";
+}
+
+sub rounded_number {
+    my ($value) = @_;
+    return int($value * 100 + 0.5) / 100;
+}
+
+sub diagnostic_with_taxonomy {
+    my ($diag) = @_;
+    my %copy = %{$diag};
+    $copy{rule} = rule_metadata($diag->{code});
+    $copy{defect} = defect_record($diag);
+    return \%copy;
+}
+
+sub defect_ledger {
+    my ($diagnostics) = @_;
+    my @records = map { defect_record($_) } @{$diagnostics};
+    my %by_status;
+    my %by_priority;
+    my %by_category;
+    my %by_remediation;
+    for my $record (@records) {
+        $by_status{$record->{status}} += 1;
+        $by_priority{$record->{priority}} += 1;
+        $by_category{$record->{category}} += 1;
+        $by_remediation{$record->{remediation}} += 1;
+    }
+    my @top = sort {
+        $b->{triageScore} <=> $a->{triageScore} ||
+            $a->{key} cmp $b->{key}
+    } grep {
+        $_->{status} eq "open"
+    } @records;
+    @top = @top[0 .. min_index(9, scalar(@top) - 1)] if @top != 0;
+    return {
+        schemaVersion => 1,
+        open => $by_status{open} // 0,
+        evidence => $by_status{evidence} // 0,
+        suppressed => $by_status{suppressed} // 0,
+        records => \@records,
+        topOpen => \@top,
+        byStatus => \%by_status,
+        byPriority => \%by_priority,
+        byCategory => \%by_category,
+        byRemediation => \%by_remediation
+    };
+}
+
+sub rule_health_model {
+    my ($defect_ledger) = @_;
+    my @records = grep {
+        ref($_) eq "HASH"
+    } @{array_or_empty($defect_ledger->{records})};
+    my %rules;
+
+    for my $record (@records) {
+        my $code = $record->{code} // "unknown";
+        $rules{$code} = empty_rule_health($code, $record) if !exists $rules{$code};
+        add_rule_health_record($rules{$code}, $record);
+    }
+
+    my @rule_set = map {
+        finalize_rule_health($_)
+    } values %rules;
+    @rule_set = sort_rule_health(@rule_set);
+
+    my @noisy = grep { ($_->{classification} // "") eq "noisy" } @rule_set;
+    my @watch = grep { ($_->{classification} // "") eq "watch" } @rule_set;
+    my @healthy = grep { ($_->{classification} // "") eq "healthy" } @rule_set;
+    my $max_noise = 0;
+    for my $rule (@rule_set) {
+        $max_noise = $rule->{noisePermille} if ($rule->{noisePermille} // 0) > $max_noise;
+    }
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea rule health model",
+        basis => "defect ledger signal/noise ratio by rule code",
+        status => @noisy != 0 ? "noisy-rules-present" :
+            @watch != 0 ? "watch-rules-present" : "healthy",
+        rules => scalar(@rule_set),
+        healthyRules => scalar(@healthy),
+        watchRules => scalar(@watch),
+        noisyRules => scalar(@noisy),
+        maxNoisePermille => $max_noise,
+        ruleSet => [@rule_set[0 .. min_index(49, $#rule_set)]],
+        watchSet => [@watch[0 .. min_index(19, $#watch)]],
+        noisySet => [@noisy[0 .. min_index(19, $#noisy)]]
+    };
+}
+
+sub empty_rule_health {
+    my ($code, $record) = @_;
+    return {
+        code => $code,
+        category => $record->{category} // "policy",
+        engine => $record->{engine} // "policy-ir",
+        remediation => $record->{remediation} // "review-policy-evidence",
+        remediationText => $record->{remediationText},
+        classification => "healthy",
+        confidence => "medium",
+        total => 0,
+        open => 0,
+        evidence => 0,
+        suppressed => 0,
+        acceptedRisks => 0,
+        falsePositives => 0,
+        mitigated => 0,
+        reviewed => 0,
+        noise => 0,
+        signal => 0,
+        noisePermille => 0,
+        signalPermille => 0,
+        owners => {},
+        components => {},
+        priorities => {},
+        topRecords => []
+    };
+}
+
+sub add_rule_health_record {
+    my ($rule, $record) = @_;
+    my $status = $record->{status} // "evidence";
+    my $owner = $record->{owner} // "unowned";
+    my $path = $record->{path} // "project";
+    my $priority = $record->{priority} // "P4";
+
+    $rule->{total} += 1;
+    $rule->{open} += 1 if $status eq "open";
+    $rule->{evidence} += 1 if $status eq "evidence";
+    $rule->{suppressed} += 1 if $status eq "suppressed";
+    $rule->{acceptedRisks} += 1 if $status eq "accepted-risk";
+    $rule->{falsePositives} += 1 if $status eq "false-positive";
+    $rule->{mitigated} += 1 if $status eq "mitigated";
+    $rule->{owners}{$owner} += 1;
+    $rule->{components}{$path} += 1;
+    $rule->{priorities}{$priority} += 1;
+
+    push @{$rule->{topRecords}}, rule_health_record_summary($record)
+        if @{$rule->{topRecords}} < 8;
+}
+
+sub finalize_rule_health {
+    my ($rule) = @_;
+    my $total = $rule->{total} // 0;
+    my $noise = ($rule->{suppressed} // 0) + ($rule->{falsePositives} // 0);
+    my $reviewed = $noise + ($rule->{acceptedRisks} // 0) + ($rule->{mitigated} // 0);
+    my $signal = ($rule->{open} // 0) + ($rule->{evidence} // 0) + ($rule->{mitigated} // 0);
+
+    $rule->{noise} = $noise;
+    $rule->{reviewed} = $reviewed;
+    $rule->{signal} = $signal;
+    $rule->{noisePermille} = $total == 0 ? 0 : int(($noise * 1000) / $total);
+    $rule->{signalPermille} = $total == 0 ? 0 : int(($signal * 1000) / $total);
+    $rule->{ownerCount} = scalar(keys %{$rule->{owners}});
+    $rule->{componentCount} = scalar(keys %{$rule->{components}});
+    $rule->{suggestedOwner} = top_count_key($rule->{owners}) // "unowned";
+    $rule->{primaryComponent} = top_count_key($rule->{components}) // "project";
+    $rule->{primaryPriority} = top_count_key($rule->{priorities}) // "P4";
+    $rule->{topRecords} = [sort_rule_health_records(@{$rule->{topRecords}})];
+
+    if ($noise >= 2 && ($rule->{noisePermille} // 0) >= 500) {
+        $rule->{classification} = "noisy";
+        $rule->{confidence} = "high";
+    } elsif ($reviewed != 0 || ($rule->{open} // 0) != 0) {
+        $rule->{classification} = "watch";
+        $rule->{confidence} = $reviewed != 0 ? "high" : "medium";
+    } else {
+        $rule->{classification} = "healthy";
+        $rule->{confidence} = "medium";
+    }
+    return $rule;
+}
+
+sub rule_health_record_summary {
+    my ($record) = @_;
+    return {
+        key => $record->{key},
+        status => $record->{status},
+        priority => $record->{priority},
+        triageScore => $record->{triageScore},
+        owner => $record->{owner},
+        where => $record->{where},
+        message => $record->{message}
+    };
+}
+
+sub sort_rule_health {
+    return sort {
+        rule_health_rank($a->{classification}) <=> rule_health_rank($b->{classification}) ||
+            ($b->{noisePermille} // 0) <=> ($a->{noisePermille} // 0) ||
+            ($b->{open} // 0) <=> ($a->{open} // 0) ||
+            ($b->{total} // 0) <=> ($a->{total} // 0) ||
+            ($a->{code} // "") cmp ($b->{code} // "")
+    } @_;
+}
+
+sub sort_rule_health_records {
+    return sort {
+        issue_priority_rank($a->{priority} // "P4") <=> issue_priority_rank($b->{priority} // "P4") ||
+            ($b->{triageScore} // 0) <=> ($a->{triageScore} // 0) ||
+            ($a->{key} // "") cmp ($b->{key} // "")
+    } @_;
+}
+
+sub rule_health_rank {
+    my ($classification) = @_;
+    return 0 if ($classification // "") eq "noisy";
+    return 1 if ($classification // "") eq "watch";
+    return 2;
+}
+
+sub finding_provenance_model {
+    my ($diagnostics, $defect_ledger) = @_;
+    my @records = @{array_or_empty($defect_ledger->{records})};
+    my @gaps;
+    my %fingerprints;
+    my %defect_keys;
+    my %by_dimension;
+    my $complete = 0;
+
+    for (my $index = 0; $index < @{$diagnostics}; $index += 1) {
+        my $diag = $diagnostics->[$index];
+        my $record = $records[$index];
+        my @finding_gaps = finding_provenance_gaps_for_diagnostic($diag, $record);
+        if (@finding_gaps == 0) {
+            $complete += 1;
+        } else {
+            push @gaps, @finding_gaps;
+            for my $gap (@finding_gaps) {
+                $by_dimension{$gap->{dimension}} += 1;
+            }
+        }
+        $fingerprints{$diag->{fingerprint} // ""} += 1 if defined $diag->{fingerprint} && $diag->{fingerprint} ne "";
+        $defect_keys{$record->{key} // ""} += 1 if ref($record) eq "HASH" && defined $record->{key} && $record->{key} ne "";
+    }
+
+    my @fingerprint_collisions = map {
+        finding_provenance_gap("fingerprint", "fingerprint.collision", "report", "fingerprint '$_' is shared by $fingerprints{$_} findings")
+    } grep {
+        $fingerprints{$_} > 1
+    } sort keys %fingerprints;
+    my @defect_key_collisions = map {
+        finding_provenance_gap("defect-key", "defect-key.collision", "report", "defect key '$_' is shared by $defect_keys{$_} findings")
+    } grep {
+        $defect_keys{$_} > 1
+    } sort keys %defect_keys;
+    push @gaps, @fingerprint_collisions, @defect_key_collisions;
+    $by_dimension{fingerprint} += scalar(@fingerprint_collisions);
+    $by_dimension{"defect-key"} += scalar(@defect_key_collisions);
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea finding provenance model",
+        basis => "diagnostic, rule metadata, defect ledger, owner, remediation, and SARIF projection integrity",
+        status => @gaps == 0 ? "complete" : "gaps-present",
+        findings => scalar(@{$diagnostics}),
+        completeFindings => $complete,
+        provenanceGaps => scalar(@gaps),
+        fingerprintCollisions => scalar(@fingerprint_collisions),
+        defectKeyCollisions => scalar(@defect_key_collisions),
+        byDimension => \%by_dimension,
+        gapSet => [@gaps[0 .. min_index(49, $#gaps)]]
+    };
+}
+
+sub finding_provenance_gaps_for_diagnostic {
+    my ($diag, $record) = @_;
+    my @gaps;
+    my $code = $diag->{code} // "";
+    my $where = $diag->{where} // "diagnostic";
+    my $meta = $code ne "" ? rule_metadata($code) : {};
+
+    push @gaps, finding_provenance_gap("diagnostic", "diagnostic.code", $where, "diagnostic is missing a rule code")
+        if $code eq "";
+    push @gaps, finding_provenance_gap("diagnostic", "diagnostic.severity", $where, "diagnostic is missing a valid severity")
+        if !valid_severity($diag->{severity} // "");
+    push @gaps, finding_provenance_gap("diagnostic", "diagnostic.where", $where, "diagnostic is missing a source location")
+        if ($diag->{where} // "") eq "";
+    push @gaps, finding_provenance_gap("diagnostic", "diagnostic.message", $where, "diagnostic is missing a message")
+        if ($diag->{message} // "") eq "";
+    push @gaps, finding_provenance_gap("fingerprint", "diagnostic.fingerprint", $where, "diagnostic is missing a stable fingerprint")
+        if ($diag->{fingerprint} // "") eq "";
+    push @gaps, finding_provenance_gap("flow", "diagnostic.flow", $where, "diagnostic flow must be an array")
+        if defined $diag->{flow} && ref($diag->{flow}) ne "ARRAY";
+
+    for my $field (qw(category engine precision confidence remediation remediationText description domain)) {
+        push @gaps, finding_provenance_gap("rule", "rule.$field", $where, "rule metadata for '$code' is missing $field")
+            if ($meta->{$field} // "") eq "";
+    }
+
+    if (ref($record) ne "HASH") {
+        push @gaps, finding_provenance_gap("defect", "defect.record", $where, "diagnostic is missing a defect ledger record");
+        return @gaps;
+    }
+
+    for my $field (qw(key status priority triageScore severity code category engine remediation remediationText owner ownerSource where path line message lifecycleState)) {
+        push @gaps, finding_provenance_gap("defect", "defect.$field", $where, "defect record is missing $field")
+            if !defined $record->{$field} || $record->{$field} eq "";
+    }
+    push @gaps, finding_provenance_gap("defect", "defect.owners", $where, "defect record is missing owner set")
+        if ref($record->{owners}) ne "ARRAY" || @{$record->{owners}} == 0;
+    push @gaps, finding_provenance_gap("defect", "defect.code-match", $where, "defect record code does not match diagnostic code")
+        if ($record->{code} // "") ne $code;
+    push @gaps, finding_provenance_gap("defect", "defect.where-match", $where, "defect record location does not match diagnostic location")
+        if ($record->{where} // "") ne ($diag->{where} // "");
+    push @gaps, finding_provenance_gap("sarif", "sarif.location", $where, "finding cannot be projected to a SARIF physical location")
+        if ($record->{path} // "") eq "" || !defined $record->{line};
+    push @gaps, finding_provenance_gap("sarif", "sarif.rule-properties", $where, "finding cannot be projected to SARIF rule properties")
+        if ($record->{category} // "") eq "" || ($record->{engine} // "") eq "";
+
+    return @gaps;
+}
+
+sub finding_provenance_gap {
+    my ($dimension, $code, $where, $message) = @_;
+    return {
+        dimension => $dimension,
+        code => $code,
+        where => $where,
+        message => $message
+    };
+}
+
+sub finding_witness_model {
+    my ($diagnostics, $defect_ledger) = @_;
+    my @records = @{array_or_empty($defect_ledger->{records})};
+    my @gaps;
+    my @witnesses;
+    my %by_dimension;
+    my $complete = 0;
+    my $flow_witnesses = 0;
+    my $metric_witnesses = 0;
+    my $waiver_witnesses = 0;
+
+    for (my $index = 0; $index < @{$diagnostics}; $index += 1) {
+        my $diag = $diagnostics->[$index];
+        my $record = $records[$index];
+        my $witness = finding_witness_summary($diag, $record);
+        my @finding_gaps = finding_witness_gaps_for_diagnostic($diag, $record, $witness);
+        push @witnesses, $witness if @witnesses < 50;
+        $flow_witnesses += 1 if $witness->{hasFlow};
+        $metric_witnesses += 1 if $witness->{hasMetric};
+        $waiver_witnesses += 1 if $witness->{hasWaiver};
+        if (@finding_gaps == 0) {
+            $complete += 1;
+        } else {
+            push @gaps, @finding_gaps;
+            for my $gap (@finding_gaps) {
+                $by_dimension{$gap->{dimension}} += 1;
+            }
+        }
+    }
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea finding witness completeness model",
+        basis => "actionable warning/error findings must carry a flow trace, quantified metric witness, or reviewed waiver plus remediation context",
+        status => @gaps == 0 ? "complete" : "gaps-present",
+        findings => scalar(@{$diagnostics}),
+        completeFindings => $complete,
+        witnessGaps => scalar(@gaps),
+        flowWitnesses => $flow_witnesses,
+        metricWitnesses => $metric_witnesses,
+        waiverWitnesses => $waiver_witnesses,
+        byDimension => \%by_dimension,
+        witnessSet => \@witnesses,
+        gapSet => [@gaps[0 .. min_index(49, $#gaps)]]
+    };
+}
+
+sub finding_witness_summary {
+    my ($diag, $record) = @_;
+    my $has_flow = diagnostic_has_flow_witness($diag);
+    my $has_metric = diagnostic_has_metric_witness($diag);
+    my $has_waiver = diagnostic_has_waiver($diag);
+    my $kind = $has_flow ? "flow" : $has_metric ? "metric" : $has_waiver ? "waiver" : "metadata";
+    return {
+        code => $diag->{code} // "",
+        severity => $diag->{severity} // "",
+        where => $diag->{where} // "",
+        status => ref($record) eq "HASH" ? ($record->{status} // "") : "",
+        witnessKind => $kind,
+        hasFlow => $has_flow ? 1 : 0,
+        flowSteps => scalar(@{$diag->{flow} // []}),
+        hasMetric => $has_metric ? 1 : 0,
+        hasWaiver => $has_waiver ? 1 : 0,
+        owner => ref($record) eq "HASH" ? ($record->{owner} // "") : ($diag->{owner} // ""),
+        remediation => ref($record) eq "HASH" ? ($record->{remediation} // "") : "",
+        message => $diag->{message} // ""
+    };
+}
+
+sub finding_witness_gaps_for_diagnostic {
+    my ($diag, $record, $witness) = @_;
+    my @gaps;
+    my $severity = $diag->{severity} // "";
+    return @gaps if $severity eq "notice";
+
+    my $where = $diag->{where} // "diagnostic";
+    my $is_waived = diagnostic_has_waiver($diag);
+    if ($is_waived) {
+        push @gaps, finding_witness_gap("waiver", $diag->{code}, $where, "waived finding is missing a reviewed suppression or triage reason")
+            if !finding_witness_has_reasoned_waiver($diag);
+        return @gaps;
+    }
+
+    push @gaps, finding_witness_gap("location", $diag->{code}, $where, "actionable finding must point to a concrete source line")
+        if !diagnostic_has_concrete_location($diag);
+    push @gaps, finding_witness_gap("witness", $diag->{code}, $where, "actionable finding needs a SARIF flow trace or quantified metric witness")
+        if !$witness->{hasFlow} && !$witness->{hasMetric};
+    push @gaps, finding_witness_gap("remediation", $diag->{code}, $where, "actionable finding is missing remediation guidance")
+        if ref($record) ne "HASH" || ($record->{remediationText} // "") eq "";
+    push @gaps, finding_witness_gap("ownership", $diag->{code}, $where, "actionable finding is missing owner routing")
+        if ref($record) ne "HASH" || ($record->{owner} // "") eq "" || ($record->{owner} // "") eq "unowned";
+    push @gaps, finding_witness_gap("fingerprint", $diag->{code}, $where, "actionable finding is missing a stable fingerprint")
+        if ($diag->{fingerprint} // "") eq "";
+
+    return @gaps;
+}
+
+sub diagnostic_has_flow_witness {
+    my ($diag) = @_;
+    return ref($diag->{flow}) eq "ARRAY" && @{$diag->{flow}} != 0;
+}
+
+sub diagnostic_has_metric_witness {
+    my ($diag) = @_;
+    my $message = $diag->{message} // "";
+    return 1 if $message =~ /\d/ && $message =~ /\b(?:hz|ms|s|m|bytes?|kb|mb|gb|budget|target|below|above|exceed|lack|missing|count|function|edge|block|path|gap|cycle|loop|warning|error|notice|%)\b/i;
+    return 1 if ($diag->{code} // "") =~ /\A(?:bench\.|types\.unsafe-escape|security\.(?:redos-risk|secret-leak)|flow\.(?:complexity|clone-gap|recursion-gap|loop-bound-gap|generated-source-gap|exception-gap|async-scheduling-gap|symbolic-path|symbolic-caller-path|hot-loop-allocation|variant-state-gap))\z/ &&
+        $message =~ /\d/;
+    return 0;
+}
+
+sub diagnostic_has_concrete_location {
+    my ($diag) = @_;
+    my $where = $diag->{where} // "";
+    return $where =~ /:\d+\z/ ? 1 : 0;
+}
+
+sub finding_witness_has_reasoned_waiver {
+    my ($diag) = @_;
+    return 1 if ($diag->{suppressionReason} // "") ne "";
+    return 1 if ($diag->{triageReason} // "") ne "";
+    return 1 if ($diag->{suppression} // "") eq "policy-baseline";
+    return 0;
+}
+
+sub finding_witness_gap {
+    my ($dimension, $code, $where, $message) = @_;
+    return {
+        dimension => $dimension,
+        code => $code // "",
+        where => $where,
+        message => $message
+    };
+}
+
+sub finding_confidence_model {
+    my ($diagnostics, $defect_ledger) = @_;
+    my @records = @{array_or_empty($defect_ledger->{records})};
+    my @findings;
+    my %by_band;
+    my %by_witness;
+    my $score_sum = 0;
+    my $actionable = 0;
+    my $low_open = 0;
+
+    for (my $index = 0; $index < @{$diagnostics}; $index += 1) {
+        my $diag = $diagnostics->[$index];
+        my $record = $records[$index];
+        my $item = finding_confidence_summary($diag, $record);
+        push @findings, $item;
+        $by_band{$item->{band}} += 1;
+        $by_witness{$item->{witnessKind}} += 1;
+        $score_sum += $item->{score};
+        $actionable += 1 if $item->{actionable};
+        $low_open += 1 if $item->{actionable} && ($item->{status} // "") eq "open" && ($item->{band} // "") eq "low";
+    }
+
+    my @ranked = sort_finding_confidence_records(@findings);
+    my @actionable_ranked = grep { $_->{actionable} } @ranked;
+    my @low = grep { ($_->{actionable} // 0) && ($_->{status} // "") eq "open" && ($_->{band} // "") eq "low" } @ranked;
+    my $average = @findings == 0 ? 0 : int($score_sum / scalar(@findings));
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea finding confidence calibration model",
+        basis => "rule precision/confidence, witness strength, concrete location, owner, remediation, and fingerprint evidence",
+        status => $low_open == 0 ? "calibrated" : "low-confidence-open-findings",
+        findings => scalar(@findings),
+        actionableFindings => $actionable,
+        highConfidenceFindings => $by_band{high} // 0,
+        mediumConfidenceFindings => $by_band{medium} // 0,
+        lowConfidenceFindings => $by_band{low} // 0,
+        lowConfidenceOpenFindings => $low_open,
+        averageScore => $average,
+        byBand => \%by_band,
+        byWitness => \%by_witness,
+        findingSet => [@ranked[0 .. min_index(49, $#ranked)]],
+        actionableSet => [@actionable_ranked[0 .. min_index(49, $#actionable_ranked)]],
+        lowConfidenceSet => [@low[0 .. min_index(19, $#low)]]
+    };
+}
+
+sub finding_confidence_summary {
+    my ($diag, $record) = @_;
+    my $meta = rule_metadata($diag->{code});
+    my $witness = finding_witness_summary($diag, $record);
+    my ($score, $reasons) = finding_confidence_score($diag, $record, $meta, $witness);
+    return {
+        code => $diag->{code} // "",
+        severity => $diag->{severity} // "",
+        where => $diag->{where} // "",
+        status => ref($record) eq "HASH" ? ($record->{status} // "") : "",
+        owner => ref($record) eq "HASH" ? ($record->{owner} // "") : ($diag->{owner} // ""),
+        category => $meta->{category},
+        engine => $meta->{engine},
+        precision => $meta->{precision},
+        ruleConfidence => $meta->{confidence},
+        witnessKind => $witness->{witnessKind},
+        score => $score,
+        band => finding_confidence_band($score),
+        actionable => (($diag->{severity} // "") ne "notice" && !diagnostic_has_waiver($diag)) ? 1 : 0,
+        reasons => $reasons,
+        message => $diag->{message} // ""
+    };
+}
+
+sub finding_confidence_score {
+    my ($diag, $record, $meta, $witness) = @_;
+    my $score = 0;
+    my @reasons;
+
+    my $precision_score = confidence_level_score($meta->{precision}, 25, 15, 5);
+    my $confidence_score = confidence_level_score($meta->{confidence}, 25, 15, 5);
+    my $witness_score = finding_witness_strength_score($witness);
+    $score += $precision_score;
+    $score += $confidence_score;
+    $score += $witness_score;
+    push @reasons, "precision:$meta->{precision}+$precision_score";
+    push @reasons, "rule-confidence:$meta->{confidence}+$confidence_score";
+    push @reasons, "witness:$witness->{witnessKind}+$witness_score";
+
+    if (diagnostic_has_concrete_location($diag)) {
+        $score += 10;
+        push @reasons, "location+10";
+    }
+    if (ref($record) eq "HASH" && ($record->{owner} // "") ne "" && ($record->{owner} // "") ne "unowned") {
+        $score += 8;
+        push @reasons, "owner+8";
+    }
+    if (ref($record) eq "HASH" && ($record->{remediationText} // "") ne "") {
+        $score += 7;
+        push @reasons, "remediation+7";
+    }
+    if (($diag->{fingerprint} // "") ne "") {
+        $score += 5;
+        push @reasons, "fingerprint+5";
+    }
+    if (diagnostic_has_waiver($diag) && finding_witness_has_reasoned_waiver($diag)) {
+        $score += 5;
+        push @reasons, "reviewed-waiver+5";
+    }
+
+    $score = 100 if $score > 100;
+    return ($score, \@reasons);
+}
+
+sub confidence_level_score {
+    my ($level, $high, $medium, $low) = @_;
+    return $high if ($level // "") eq "high";
+    return $medium if ($level // "") eq "medium";
+    return $low;
+}
+
+sub finding_witness_strength_score {
+    my ($witness) = @_;
+    return 25 if $witness->{hasFlow};
+    return 20 if $witness->{hasMetric};
+    return 15 if $witness->{hasWaiver};
+    return 0;
+}
+
+sub finding_confidence_band {
+    my ($score) = @_;
+    return "high" if $score >= 80;
+    return "medium" if $score >= 65;
+    return "low";
+}
+
+sub sort_finding_confidence_records {
+    return sort {
+        confidence_band_rank($a->{band}) <=> confidence_band_rank($b->{band}) ||
+            ($a->{score} // 0) <=> ($b->{score} // 0) ||
+            (($b->{actionable} // 0) <=> ($a->{actionable} // 0)) ||
+            ($a->{code} // "") cmp ($b->{code} // "") ||
+            ($a->{where} // "") cmp ($b->{where} // "")
+    } @_;
+}
+
+sub confidence_band_rank {
+    my ($band) = @_;
+    return 0 if ($band // "") eq "low";
+    return 1 if ($band // "") eq "medium";
+    return 2;
+}
+
+sub analysis_run_manifest {
+    my ($ir, $profile, $diagnostics) = @_;
+    my $package = object_or_empty($ir->{package}{json});
+    my $git = git_manifest();
+    my $inputs = analysis_input_manifest($ir);
+    my $digests = {
+        analyzer => file_digest("scripts/contributing-policy.pl"),
+        profile => stable_hex_hash(json_encoder()->encode($profile // {})),
+        package => stable_hex_hash(json_encoder()->encode($package)),
+        source => source_tree_digest(array_or_empty($ir->{source}{files})),
+        benchmarks => stable_hex_hash(json_encoder()->encode($ir->{benchmarks} // {})),
+        contributing => file_digest("CONTRIBUTING.md")
+    };
+    my @gaps = analysis_run_manifest_gaps($package, $git, $inputs, $digests);
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea analysis run manifest",
+        basis => "package identity, policy profile, analyzer script, source tree, benchmark snapshot, and git revision reproducibility",
+        status => @gaps == 0 ? "reproducible" : "gaps-present",
+        generatedAt => iso_timestamp(time()),
+        tool => {
+            name => "TypeSea Perl Policy Analyzer",
+            schemaVersion => 1,
+            script => "scripts/contributing-policy.pl"
+        },
+        package => {
+            name => $package->{name} // "",
+            version => $package->{version} // ""
+        },
+        profile => {
+            name => $profile->{name} // "unnamed",
+            digest => $digests->{profile}
+        },
+        git => $git,
+        inputs => $inputs,
+        diagnostics => {
+            total => scalar(@{$diagnostics // []}),
+            digest => stable_hex_hash(join("\0", map { ($_->{fingerprint} // "") . ":" . ($_->{severity} // "") } @{$diagnostics // []}))
+        },
+        digests => $digests,
+        manifestGaps => scalar(@gaps),
+        gapSet => \@gaps
+    };
+}
+
+sub analysis_input_manifest {
+    my ($ir) = @_;
+    my @source_files = source_file_paths(array_or_empty($ir->{source}{files}));
+    return {
+        sourceFiles => scalar(@source_files),
+        testFiles => scalar(keys %{object_or_empty($ir->{tests}{files})}),
+        benchmarkRows => scalar(keys %{object_or_empty($ir->{benchmarks}{rows_by_id})}),
+        packageFiles => scalar(@{array_or_empty($ir->{package}{files})}),
+        importEdges => scalar(@{array_or_empty($ir->{source}{import_edges})}),
+        functions => scalar(@{array_or_empty($ir->{source}{function_analysis}{functions})})
+    };
+}
+
+sub analysis_run_manifest_gaps {
+    my ($package, $git, $inputs, $digests) = @_;
+    my @gaps;
+    push @gaps, analysis_run_manifest_gap("package", "package.name", "package.json", "package name is missing from analysis manifest")
+        if ($package->{name} // "") eq "";
+    push @gaps, analysis_run_manifest_gap("package", "package.version", "package.json", "package version is missing from analysis manifest")
+        if ($package->{version} // "") eq "";
+    push @gaps, analysis_run_manifest_gap("git", "git.head", "git", "git HEAD could not be resolved")
+        if ($git->{head} // "") eq "";
+    push @gaps, analysis_run_manifest_gap("input", "source.files", "src", "source file set is empty")
+        if int($inputs->{sourceFiles} // 0) == 0;
+    for my $field (qw(analyzer profile package source benchmarks contributing)) {
+        push @gaps, analysis_run_manifest_gap("digest", "digest.$field", "analysis", "analysis manifest is missing $field digest")
+            if ($digests->{$field} // "") eq "";
+    }
+    return @gaps;
+}
+
+sub analysis_run_manifest_gap {
+    my ($dimension, $code, $where, $message) = @_;
+    return {
+        dimension => $dimension,
+        code => $code,
+        where => $where,
+        message => $message
+    };
+}
+
+sub git_manifest {
+    my $head = command_output("git", "rev-parse", "--verify", "HEAD");
+    my $branch = command_output("git", "rev-parse", "--abbrev-ref", "HEAD");
+    my $status = command_output("git", "status", "--short");
+    my @dirty = grep { $_ ne "" } split(/\n/, $status // "");
+    return {
+        head => $head // "",
+        branch => $branch // "",
+        dirty => @dirty == 0 ? JSON::PP::false : JSON::PP::true,
+        dirtyFiles => scalar(@dirty),
+        dirtySample => [@dirty[0 .. min_index(9, $#dirty)]]
+    };
+}
+
+sub command_output {
+    my (@command) = @_;
+    open my $handle, "-|", @command or return undef;
+    local $/;
+    my $out = <$handle>;
+    close $handle;
+    return undef if !defined $out;
+    $out =~ s/\s+\z//;
+    return $out;
+}
+
+sub file_digest {
+    my ($path) = @_;
+    return "" if !-f $path;
+    return stable_hex_hash(read_text($path));
+}
+
+sub source_tree_digest {
+    my ($files) = @_;
+    my @parts;
+    for my $path (source_file_paths($files)) {
+        next if !defined $path || !-f $path;
+        push @parts, $path . ":" . file_digest($path);
+    }
+    return stable_hex_hash(join("\0", @parts));
+}
+
+sub source_file_paths {
+    my ($files) = @_;
+    my @paths;
+    for my $entry (@{array_or_empty($files)}) {
+        if (ref($entry) eq "HASH") {
+            push @paths, $entry->{path} if defined $entry->{path} && $entry->{path} ne "";
+        } elsif (defined $entry && !ref($entry) && $entry ne "") {
+            push @paths, $entry;
+        }
+    }
+    my %seen;
+    return sort grep { !$seen{$_}++ } @paths;
+}
+
+sub change_impact_model {
+    my ($ir, $new_code_scope) = @_;
+    my @source_files = source_file_paths(array_or_empty($ir->{source}{files}));
+    my %source = map { $_ => 1 } @source_files;
+    my @raw_changes = change_impact_changed_files($new_code_scope);
+    my @changed_sources = sort grep { $source{$_} } map { normalize_changed_path($_) } @raw_changes;
+    my %changed_seen;
+    @changed_sources = grep { !$changed_seen{$_}++ } @changed_sources;
+
+    my $reverse = reverse_import_graph(array_or_empty($ir->{source}{import_edges}));
+    my @impacts = map {
+        change_impact_entry($_, $reverse, \%source)
+    } @changed_sources;
+    @impacts = sort_change_impact_entries(@impacts);
+
+    my %impacted;
+    my %critical;
+    my %public_surface;
+    my %layers;
+    for my $entry (@impacts) {
+        $impacted{$entry->{file}} = 1;
+        $critical{$entry->{file}} = 1 if $entry->{critical};
+        $public_surface{$entry->{file}} = 1 if $entry->{publicSurface};
+        $layers{$entry->{layer}} += 1;
+        for my $path (@{$entry->{impactedFiles}}) {
+            $impacted{$path} = 1;
+            $critical{$path} = 1 if change_impact_is_critical_file($path);
+            $public_surface{$path} = 1 if change_impact_is_public_surface($path);
+            $layers{source_layer($path)} += 1;
+        }
+    }
+
+    my $total = scalar(@source_files);
+    my $impacted = scalar(keys %impacted);
+    my $blast = $total == 0 ? 0 : int(($impacted * 1000) / $total);
+    my $gate_enabled = ref($new_code_scope) eq "HASH" && $new_code_scope->{enabled} ? 1 : 0;
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea change impact model",
+        basis => "changed file set, reverse import graph, TypeSea critical layer classification, and public surface reachability",
+        enabled => @raw_changes == 0 ? JSON::PP::false : JSON::PP::true,
+        gateEnabled => $gate_enabled ? JSON::PP::true : JSON::PP::false,
+        status => @changed_sources == 0 ? "no-source-changes" :
+            scalar(keys %critical) != 0 || scalar(keys %public_surface) != 0 ? "critical-impact" : "contained",
+        changedFiles => scalar(@raw_changes),
+        changedSourceFiles => scalar(@changed_sources),
+        impactedSourceFiles => $impacted,
+        criticalImpactedFiles => scalar(keys %critical),
+        publicSurfaceImpactedFiles => scalar(keys %public_surface),
+        blastRadiusPermille => $blast,
+        byLayer => \%layers,
+        changedSet => \@changed_sources,
+        topImpacts => [@impacts[0 .. min_index(19, $#impacts)]]
+    };
+}
+
+sub change_impact_changed_files {
+    my ($new_code_scope) = @_;
+    if (ref($new_code_scope) eq "HASH" && $new_code_scope->{enabled}) {
+        return @{array_or_empty($new_code_scope->{files})};
+    }
+    return git_status_changed_files();
+}
+
+sub git_status_changed_files {
+    my $status = command_output("git", "status", "--short");
+    return () if !defined $status || $status eq "";
+    my @files;
+    for my $line (split(/\n/, $status)) {
+        next if $line eq "";
+        my $path = substr($line, 3);
+        $path =~ s/\A\s+//;
+        $path =~ s/\s+\z//;
+        $path = $1 if $path =~ / -> (.+)\z/;
+        push @files, $path if $path ne "";
+    }
+    return @files;
+}
+
+sub normalize_changed_path {
+    my ($path) = @_;
+    $path //= "";
+    $path =~ s#\A\./##;
+    $path =~ s#//#/#g;
+    return $path;
+}
+
+sub reverse_import_graph {
+    my ($edges) = @_;
+    my %reverse;
+    for my $edge (@{$edges}) {
+        next if ref($edge) ne "HASH";
+        my $from = $edge->{from} // "";
+        my $to = $edge->{to} // "";
+        next if $from eq "" || $to eq "";
+        $reverse{$to}{$from} = 1;
+    }
+    return \%reverse;
+}
+
+sub change_impact_entry {
+    my ($file, $reverse, $source) = @_;
+    my @queue = ($file);
+    my %seen = ($file => 1);
+    my @impacted;
+    while (@queue != 0) {
+        my $current = shift @queue;
+        for my $next (sort keys %{object_or_empty($reverse->{$current})}) {
+            next if !$source->{$next};
+            next if $seen{$next};
+            $seen{$next} = 1;
+            push @impacted, $next;
+            push @queue, $next;
+        }
+    }
+
+    my $critical = change_impact_is_critical_file($file);
+    my $public = change_impact_is_public_surface($file);
+    my $impacted_critical = 0;
+    my $impacted_public = 0;
+    for my $path (@impacted) {
+        $impacted_critical += 1 if change_impact_is_critical_file($path);
+        $impacted_public += 1 if change_impact_is_public_surface($path);
+    }
+    my $score = change_impact_score($file, scalar(@impacted), $critical, $public, $impacted_critical, $impacted_public);
+
+    return {
+        file => $file,
+        layer => source_layer($file),
+        risk => change_impact_risk($score),
+        score => $score,
+        critical => $critical ? JSON::PP::true : JSON::PP::false,
+        publicSurface => $public ? JSON::PP::true : JSON::PP::false,
+        directDependents => scalar(keys %{object_or_empty($reverse->{$file})}),
+        transitiveDependents => scalar(@impacted),
+        impactedCriticalFiles => $impacted_critical,
+        impactedPublicSurfaceFiles => $impacted_public,
+        impactedFiles => [@impacted[0 .. min_index(24, $#impacted)]]
+    };
+}
+
+sub change_impact_score {
+    my ($file, $dependents, $critical, $public, $impacted_critical, $impacted_public) = @_;
+    my $score = 10;
+    $score += 35 if $critical;
+    $score += 30 if $public;
+    $score += min_number(30, $dependents * 4);
+    $score += min_number(20, $impacted_critical * 8);
+    $score += min_number(20, $impacted_public * 10);
+    return $score > 100 ? 100 : $score;
+}
+
+sub change_impact_risk {
+    my ($score) = @_;
+    return "high" if $score >= 70;
+    return "medium" if $score >= 40;
+    return "low";
+}
+
+sub change_impact_is_critical_file {
+    my ($path) = @_;
+    return $path =~ m{\Asrc/(?:compile|aot|plan|evaluate|async-validation|lower|optimize|ir|builders)/} ? 1 : 0;
+}
+
+sub change_impact_is_public_surface {
+    my ($path) = @_;
+    return 1 if $path eq "src/index.ts";
+    return 1 if $path =~ m{\Asrc/(?:adapters|plugin|seabreeze|standard)/};
+    return 0;
+}
+
+sub sort_change_impact_entries {
+    return sort {
+        ($b->{score} // 0) <=> ($a->{score} // 0) ||
+            ($b->{transitiveDependents} // 0) <=> ($a->{transitiveDependents} // 0) ||
+            ($a->{file} // "") cmp ($b->{file} // "")
+    } @_;
+}
+
+sub root_cause_model {
+    my ($defect_ledger) = @_;
+    my @records = grep {
+        ref($_) eq "HASH"
+    } @{array_or_empty($defect_ledger->{records})};
+    my %clusters;
+
+    for my $record (@records) {
+        my $key = root_cause_key($record);
+        $clusters{$key} = empty_root_cause_cluster($key, $record)
+            if !exists $clusters{$key};
+        add_root_cause_record($clusters{$key}, $record);
+    }
+
+    my @root_causes = map {
+        finalize_root_cause_cluster($_)
+    } values %clusters;
+    @root_causes = sort_root_cause_clusters(@root_causes);
+
+    my @open = grep { ($_->{open} // 0) != 0 } @root_causes;
+    my @systemic = grep {
+        ($_->{open} // 0) != 0 && ($_->{classification} // "") eq "systemic"
+    } @root_causes;
+    my @localized = grep {
+        ($_->{open} // 0) != 0 && ($_->{classification} // "") eq "localized"
+    } @root_causes;
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea root-cause correlation model",
+        basis => "defect ledger grouped by component layer, analyzer engine, and remediation class",
+        status => @open == 0 ? "clear" : "open-root-causes",
+        rootCauses => scalar(@root_causes),
+        openRootCauses => scalar(@open),
+        systemicRootCauses => scalar(@systemic),
+        localizedRootCauses => scalar(@localized),
+        maxScore => @root_causes == 0 ? 0 : $root_causes[0]{score},
+        clusterSet => [@root_causes[0 .. min_index(39, $#root_causes)]],
+        topOpen => [@open[0 .. min_index(11, $#open)]],
+        systemicSet => [@systemic[0 .. min_index(11, $#systemic)]]
+    };
+}
+
+sub root_cause_key {
+    my ($record) = @_;
+    my $path = $record->{path} // "";
+    my $layer = component_layer_for_path($path);
+    my $engine = $record->{engine} // "unknown-engine";
+    my $remediation = $record->{remediation} // "review-policy-evidence";
+    return join("\0", $layer, $engine, $remediation);
+}
+
+sub empty_root_cause_cluster {
+    my ($key, $record) = @_;
+    my $path = $record->{path} // "";
+    my $layer = component_layer_for_path($path);
+    my $engine = $record->{engine} // "unknown-engine";
+    my $remediation = $record->{remediation} // "review-policy-evidence";
+    my $category = $record->{category} // "policy";
+    return {
+        id => "RC-" . stable_hex_hash($key),
+        key => stable_hex_hash($key),
+        title => root_cause_title($layer, $engine, $remediation),
+        layer => $layer,
+        category => $category,
+        engine => $engine,
+        remediation => $remediation,
+        remediationText => $record->{remediationText},
+        classification => "localized",
+        confidence => "medium",
+        issues => 0,
+        open => 0,
+        evidence => 0,
+        suppressed => 0,
+        score => 0,
+        owners => {},
+        components => {},
+        rules => {},
+        priorities => {},
+        records => []
+    };
+}
+
+sub add_root_cause_record {
+    my ($cluster, $record) = @_;
+    my $status = $record->{status} // "evidence";
+    my $owner = $record->{owner} // "unowned";
+    my $path = $record->{path} // "project";
+    my $code = $record->{code} // "unknown";
+    my $priority = $record->{priority} // "P4";
+
+    $cluster->{issues} += 1;
+    $cluster->{open} += 1 if $status eq "open";
+    $cluster->{evidence} += 1 if $status eq "evidence";
+    $cluster->{suppressed} += 1 if $status eq "suppressed";
+    $cluster->{owners}{$owner} += 1;
+    $cluster->{components}{$path} += 1;
+    $cluster->{rules}{$code} += 1;
+    $cluster->{priorities}{$priority} += 1;
+    $cluster->{score} += root_cause_record_score($record);
+    push @{$cluster->{records}}, root_cause_record_summary($record);
+}
+
+sub finalize_root_cause_cluster {
+    my ($cluster) = @_;
+    my $component_count = scalar(keys %{$cluster->{components}});
+    my $rule_count = scalar(keys %{$cluster->{rules}});
+    my $owner_count = scalar(keys %{$cluster->{owners}});
+    my @records = sort_root_cause_records(@{$cluster->{records}});
+
+    $cluster->{componentCount} = $component_count;
+    $cluster->{ruleCount} = $rule_count;
+    $cluster->{ownerCount} = $owner_count;
+    $cluster->{classification} = ($component_count > 1 || $rule_count > 1 || ($cluster->{open} // 0) >= 3)
+        ? "systemic"
+        : "localized";
+    $cluster->{confidence} = ($cluster->{open} // 0) >= 2 || $component_count > 1
+        ? "high"
+        : ($cluster->{issues} // 0) != 0 ? "medium" : "low";
+    $cluster->{suggestedOwner} = top_count_key($cluster->{owners}) // "unowned";
+    $cluster->{primaryRule} = top_count_key($cluster->{rules}) // "unknown";
+    $cluster->{primaryComponent} = top_count_key($cluster->{components}) // "project";
+    $cluster->{topRecords} = [@records[0 .. min_index(7, $#records)]];
+    delete $cluster->{records};
+    return $cluster;
+}
+
+sub root_cause_title {
+    my ($layer, $engine, $remediation) = @_;
+    $layer = "project" if !defined $layer || $layer eq "";
+    $engine = "unknown-engine" if !defined $engine || $engine eq "";
+    $remediation = "review-policy-evidence" if !defined $remediation || $remediation eq "";
+    return "$layer / $engine / $remediation";
+}
+
+sub root_cause_record_score {
+    my ($record) = @_;
+    my $status = $record->{status} // "evidence";
+    return 0 if $status eq "suppressed";
+    my $score = int($record->{triageScore} // 0);
+    return $status eq "open" ? $score : int($score / 4);
+}
+
+sub root_cause_record_summary {
+    my ($record) = @_;
+    return {
+        key => $record->{key},
+        status => $record->{status},
+        priority => $record->{priority},
+        triageScore => $record->{triageScore},
+        owner => $record->{owner},
+        code => $record->{code},
+        where => $record->{where},
+        path => $record->{path},
+        line => $record->{line},
+        message => $record->{message}
+    };
+}
+
+sub sort_root_cause_clusters {
+    return sort {
+        ($b->{open} // 0) <=> ($a->{open} // 0) ||
+            ($b->{score} // 0) <=> ($a->{score} // 0) ||
+            ($b->{issues} // 0) <=> ($a->{issues} // 0) ||
+            ($a->{id} // "") cmp ($b->{id} // "")
+    } @_;
+}
+
+sub sort_root_cause_records {
+    return sort {
+        issue_priority_rank($a->{priority} // "P4") <=> issue_priority_rank($b->{priority} // "P4") ||
+            ($b->{triageScore} // 0) <=> ($a->{triageScore} // 0) ||
+            ($a->{key} // "") cmp ($b->{key} // "")
+    } @_;
+}
+
+sub top_count_key {
+    my ($counts) = @_;
+    return undef if ref($counts) ne "HASH";
+    my @keys = sort {
+        ($counts->{$b} // 0) <=> ($counts->{$a} // 0) ||
+            $a cmp $b
+    } keys %{$counts};
+    return @keys == 0 ? undef : $keys[0];
+}
+
+sub remediation_plan {
+    my ($defect_ledger, $ownership_model) = @_;
+    my @records = grep {
+        ref($_) eq "HASH" && ($_->{status} // "") eq "open"
+    } @{$defect_ledger->{records} // []};
+    my %by_owner;
+    my %by_remediation;
+    my @items;
+    my @quick_wins;
+    my @must_fix;
+    my @backlog;
+    my $total_effort = 0;
+
+    for my $record (@records) {
+        my $effort = remediation_effort_minutes($record);
+        my $class = remediation_work_class($record, $effort);
+        my $item = remediation_item($record, $effort, $class);
+        push @items, $item;
+        push @quick_wins, $item if $class eq "quick-win";
+        push @must_fix, $item if $class eq "must-fix";
+        push @backlog, $item if $class eq "backlog";
+        $total_effort += $effort;
+
+        my $owner = $item->{owner};
+        $by_owner{$owner} = empty_remediation_owner($owner) if !exists $by_owner{$owner};
+        add_remediation_owner_item($by_owner{$owner}, $item);
+
+        my $remediation = $item->{remediation};
+        $by_remediation{$remediation} = empty_remediation_bucket($remediation) if !exists $by_remediation{$remediation};
+        add_remediation_bucket_item($by_remediation{$remediation}, $item);
+    }
+
+    my @owner_plan = sort_remediation_owners(values %by_owner);
+    my @remediation_buckets = sort_remediation_buckets(values %by_remediation);
+    @items = sort_remediation_items(@items);
+    @quick_wins = sort_remediation_items(@quick_wins);
+    @must_fix = sort_remediation_items(@must_fix);
+    @backlog = sort_remediation_items(@backlog);
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea remediation planner",
+        basis => "open defect ledger plus ownership model",
+        owners => $ownership_model->{owners} // scalar(@owner_plan),
+        open => scalar(@records),
+        totalEffortMinutes => $total_effort,
+        totalEffortHours => rounded_number($total_effort / 60),
+        mustFix => scalar(@must_fix),
+        quickWins => scalar(@quick_wins),
+        backlog => scalar(@backlog),
+        ownerPlan => [@owner_plan[0 .. min_index(19, $#owner_plan)]],
+        remediationBuckets => [@remediation_buckets[0 .. min_index(19, $#remediation_buckets)]],
+        mustFixItems => [@must_fix[0 .. min_index(9, $#must_fix)]],
+        quickWinItems => [@quick_wins[0 .. min_index(9, $#quick_wins)]],
+        backlogItems => [@backlog[0 .. min_index(9, $#backlog)]],
+        nextActions => [@items[0 .. min_index(11, $#items)]]
+    };
+}
+
+
+sub defect_routing_model {
+    my ($defect_ledger, $ownership_model, $profile) = @_;
+    my @records = active_defect_records($defect_ledger);
+    my $sla = issue_sla_days($profile);
+    my @routes;
+    my @unrouted;
+    my %by_owner;
+    my %by_lane;
+    my %by_remediation;
+
+    for my $record (@records) {
+        my $item = defect_route_item($record, $sla);
+        push @routes, $item;
+        push @unrouted, $item if !$item->{routed};
+        add_route_owner(\%by_owner, $item);
+        $by_lane{$item->{lane}} += 1;
+        $by_remediation{$item->{remediation} // "unknown"} += 1;
+    }
+
+    @routes = sort_route_items(@routes);
+    @unrouted = sort_route_items(@unrouted);
+    my @owners = sort_route_owners(values %by_owner);
+    my $routed = scalar(@routes) - scalar(@unrouted);
+    my $efficiency = @routes == 0 ? 1000 : int(($routed * 1000) / scalar(@routes));
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea defect routing model",
+        basis => "active defect ledger records plus owner and SLA policy",
+        status => @unrouted != 0 ? "routing-gaps-present" :
+            @routes != 0 ? "routed" : "empty",
+        owners => $ownership_model->{owners} // scalar(@owners),
+        routes => scalar(@routes),
+        routedDefects => $routed,
+        unroutedDefects => scalar(@unrouted),
+        routingEfficiencyPermille => $efficiency,
+        slaDaysByPriority => $sla,
+        byLane => \%by_lane,
+        byRemediation => \%by_remediation,
+        ownerQueues => [@owners[0 .. min_index(19, $#owners)]],
+        routeSet => [@routes[0 .. min_index(49, $#routes)]],
+        dispatchQueue => [@routes[0 .. min_index(19, $#routes)]],
+        unroutedSet => [@unrouted[0 .. min_index(19, $#unrouted)]]
+    };
+}
+
+
+sub defect_route_item {
+    my ($record, $sla) = @_;
+    my $priority = $record->{priority} // "P4";
+    my $owner = $record->{owner} // "unowned";
+    my @blockers = defect_route_blockers($record);
+    my $routed = @blockers == 0 ? 1 : 0;
+
+    return {
+        key => $record->{key},
+        routeKey => join(":", $owner, $priority, $record->{remediation} // "unknown"),
+        routed => $routed,
+        blockers => \@blockers,
+        owner => $owner,
+        owners => $record->{owners} // [$owner],
+        ownerSource => $record->{ownerSource} // "unknown",
+        ownerLayer => $record->{ownerLayer} // component_layer_for_path($record->{path} // ""),
+        lane => defect_route_lane($priority),
+        priority => $priority,
+        slaDays => $sla->{$priority} // $sla->{P4},
+        code => $record->{code},
+        where => $record->{where},
+        path => $record->{path},
+        line => $record->{line},
+        category => $record->{category},
+        remediation => $record->{remediation},
+        remediationText => $record->{remediationText},
+        triageScore => $record->{triageScore} // 0,
+        message => $record->{message}
+    };
+}
+
+
+sub defect_route_blockers {
+    my ($record) = @_;
+    my @blockers;
+    my $owner = $record->{owner} // "unowned";
+    my $priority = $record->{priority} // "";
+    push @blockers, "missing-owner" if $owner eq "" || $owner eq "unowned";
+    push @blockers, "missing-remediation" if ($record->{remediation} // "") eq "";
+    push @blockers, "missing-location" if ($record->{where} // "") eq "";
+    push @blockers, "invalid-priority" if !valid_issue_priority($priority);
+    return @blockers;
+}
+
+
+sub valid_issue_priority {
+    my ($priority) = @_;
+    return 1 if defined $priority && $priority =~ /\AP[0-4]\z/;
+    return 0;
+}
+
+
+sub defect_route_lane {
+    my ($priority) = @_;
+    return "immediate" if ($priority // "") eq "P0";
+    return "this-week" if ($priority // "") eq "P1";
+    return "next-sprint" if ($priority // "") eq "P2";
+    return "backlog" if ($priority // "") eq "P3";
+    return "evidence";
+}
+
+
+sub add_route_owner {
+    my ($owners, $item) = @_;
+    my $owner = $item->{owner} // "unowned";
+    $owners->{$owner} = {
+        owner => $owner,
+        routes => 0,
+        routed => 0,
+        unrouted => 0,
+        p0 => 0,
+        p1 => 0,
+        p2 => 0,
+        p3 => 0,
+        p4 => 0,
+        minSlaDays => undef,
+        lanes => {},
+        remediations => {},
+        topRoutes => []
+    } if !exists $owners->{$owner};
+
+    my $summary = $owners->{$owner};
+    $summary->{routes} += 1;
+    $summary->{routed} += 1 if $item->{routed};
+    $summary->{unrouted} += 1 if !$item->{routed};
+    my $priority_key = lc($item->{priority} // "P4");
+    $summary->{$priority_key} += 1 if exists $summary->{$priority_key};
+    $summary->{lanes}{$item->{lane}} += 1;
+    $summary->{remediations}{$item->{remediation} // "unknown"} += 1;
+    $summary->{minSlaDays} = $item->{slaDays}
+        if !defined $summary->{minSlaDays} || $item->{slaDays} < $summary->{minSlaDays};
+    push @{$summary->{topRoutes}}, $item if @{$summary->{topRoutes}} < 6;
+}
+
+
+sub sort_route_items {
+    return sort {
+        ($a->{routed} // 0) <=> ($b->{routed} // 0) ||
+            issue_priority_rank($a->{priority}) <=> issue_priority_rank($b->{priority}) ||
+            ($b->{triageScore} // 0) <=> ($a->{triageScore} // 0) ||
+            ($a->{routeKey} // "") cmp ($b->{routeKey} // "") ||
+            ($a->{key} // "") cmp ($b->{key} // "")
+    } @_;
+}
+
+
+sub sort_route_owners {
+    return sort {
+        ($b->{unrouted} // 0) <=> ($a->{unrouted} // 0) ||
+            issue_priority_rank(owner_worst_route_priority($a)) <=> issue_priority_rank(owner_worst_route_priority($b)) ||
+            ($b->{routes} // 0) <=> ($a->{routes} // 0) ||
+            ($a->{owner} // "") cmp ($b->{owner} // "")
+    } @_;
+}
+
+
+sub owner_worst_route_priority {
+    my ($owner) = @_;
+    return "P0" if ($owner->{p0} // 0) != 0;
+    return "P1" if ($owner->{p1} // 0) != 0;
+    return "P2" if ($owner->{p2} // 0) != 0;
+    return "P3" if ($owner->{p3} // 0) != 0;
+    return "P4";
+}
+
+
+sub remediation_item {
+    my ($record, $effort, $class) = @_;
+    return {
+        key => $record->{key},
+        owner => $record->{owner} // "unowned",
+        code => $record->{code},
+        where => $record->{where},
+        priority => $record->{priority},
+        category => $record->{category},
+        remediation => $record->{remediation},
+        remediationText => $record->{remediationText},
+        cwe => $record->{cwe},
+        lifecycleState => $record->{lifecycleState},
+        hasFlow => $record->{hasFlow},
+        flowLength => $record->{flowLength},
+        triageScore => $record->{triageScore},
+        effortMinutes => $effort,
+        class => $class,
+        message => $record->{message}
+    };
+}
+
+sub remediation_effort_minutes {
+    my ($record) = @_;
+    my $effort = 15;
+    $effort += $record->{priority} eq "P0" ? 120 :
+        $record->{priority} eq "P1" ? 80 :
+        $record->{priority} eq "P2" ? 45 :
+        $record->{priority} eq "P3" ? 20 : 10;
+    $effort += $record->{category} eq "security" ? 45 :
+        $record->{category} eq "correctness" ? 35 :
+        $record->{category} eq "performance" ? 30 :
+        $record->{category} eq "architecture" ? 25 :
+        $record->{category} eq "maintainability" ? 10 : 15;
+    $effort += min_number(60, int(($record->{flowLength} // 0) * 10));
+    $effort += 20 if ($record->{owner} // "unowned") eq "unowned";
+    return $effort;
+}
+
+sub remediation_work_class {
+    my ($record, $effort) = @_;
+    return "must-fix" if ($record->{priority} // "") eq "P0" || ($record->{priority} // "") eq "P1";
+    return "must-fix" if ($record->{category} // "") eq "security" && ($record->{priority} // "") eq "P2";
+    return "quick-win" if $effort <= 60 && (($record->{priority} // "") eq "P2" || ($record->{priority} // "") eq "P3");
+    return "backlog";
+}
+
+sub empty_remediation_owner {
+    my ($owner) = @_;
+    return {
+        owner => $owner,
+        open => 0,
+        mustFix => 0,
+        quickWins => 0,
+        backlog => 0,
+        effortMinutes => 0,
+        effortHours => 0,
+        remediations => {},
+        categories => {},
+        topItems => []
+    };
+}
+
+sub add_remediation_owner_item {
+    my ($owner, $item) = @_;
+    $owner->{open} += 1;
+    $owner->{mustFix} += 1 if $item->{class} eq "must-fix";
+    $owner->{quickWins} += 1 if $item->{class} eq "quick-win";
+    $owner->{backlog} += 1 if $item->{class} eq "backlog";
+    $owner->{effortMinutes} += $item->{effortMinutes};
+    $owner->{effortHours} = rounded_number($owner->{effortMinutes} / 60);
+    $owner->{remediations}{$item->{remediation}} += 1;
+    $owner->{categories}{$item->{category}} += 1;
+    push @{$owner->{topItems}}, $item if @{$owner->{topItems}} < 5;
+}
+
+sub empty_remediation_bucket {
+    my ($remediation) = @_;
+    return {
+        remediation => $remediation,
+        open => 0,
+        mustFix => 0,
+        quickWins => 0,
+        effortMinutes => 0,
+        effortHours => 0,
+        owners => {},
+        topItems => []
+    };
+}
+
+sub add_remediation_bucket_item {
+    my ($bucket, $item) = @_;
+    $bucket->{open} += 1;
+    $bucket->{mustFix} += 1 if $item->{class} eq "must-fix";
+    $bucket->{quickWins} += 1 if $item->{class} eq "quick-win";
+    $bucket->{effortMinutes} += $item->{effortMinutes};
+    $bucket->{effortHours} = rounded_number($bucket->{effortMinutes} / 60);
+    $bucket->{owners}{$item->{owner}} += 1;
+    push @{$bucket->{topItems}}, $item if @{$bucket->{topItems}} < 5;
+}
+
+sub sort_remediation_items {
+    return sort {
+        remediation_class_rank($a->{class}) <=> remediation_class_rank($b->{class}) ||
+            ($b->{triageScore} // 0) <=> ($a->{triageScore} // 0) ||
+            ($a->{effortMinutes} // 0) <=> ($b->{effortMinutes} // 0) ||
+            ($a->{key} // "") cmp ($b->{key} // "")
+    } @_;
+}
+
+sub sort_remediation_owners {
+    return sort {
+        ($b->{mustFix} // 0) <=> ($a->{mustFix} // 0) ||
+            ($b->{quickWins} // 0) <=> ($a->{quickWins} // 0) ||
+            ($b->{effortMinutes} // 0) <=> ($a->{effortMinutes} // 0) ||
+            ($b->{open} // 0) <=> ($a->{open} // 0) ||
+            ($a->{owner} // "") cmp ($b->{owner} // "")
+    } @_;
+}
+
+sub sort_remediation_buckets {
+    return sort {
+        ($b->{mustFix} // 0) <=> ($a->{mustFix} // 0) ||
+            ($b->{open} // 0) <=> ($a->{open} // 0) ||
+            ($b->{effortMinutes} // 0) <=> ($a->{effortMinutes} // 0) ||
+            ($a->{remediation} // "") cmp ($b->{remediation} // "")
+    } @_;
+}
+
+sub remediation_class_rank {
+    my ($class) = @_;
+    return 0 if $class eq "must-fix";
+    return 1 if $class eq "quick-win";
+    return 2;
+}
+
+sub defect_delta {
+    my ($path, $current_ledger) = @_;
+    return {
+        schemaVersion => 1,
+        enabled => 0,
+        status => "not-requested"
+    } if !defined $path;
+
+    if (!-f $path) {
+        return {
+            schemaVersion => 1,
+            enabled => 1,
+            status => "missing-previous-report",
+            previousReport => $path,
+            currentOpen => $current_ledger->{open} // 0,
+            previousOpen => 0,
+            new => $current_ledger->{open} // 0,
+            resolved => 0,
+            persisting => 0,
+            newRecords => limited_defect_records(active_defect_records($current_ledger)),
+            resolvedRecords => [],
+            persistingRecords => []
+        };
+    }
+
+    my $previous_json = eval { read_json($path) };
+    if ($@ || ref($previous_json) ne "HASH") {
+        return {
+            schemaVersion => 1,
+            enabled => 1,
+            status => "unreadable-previous-report",
+            previousReport => $path,
+            error => "$@"
+        };
+    }
+
+    my $previous_ledger = extract_defect_ledger($previous_json);
+    if (ref($previous_ledger) ne "HASH") {
+        return {
+            schemaVersion => 1,
+            enabled => 1,
+            status => "previous-report-has-no-ledger",
+            previousReport => $path
+        };
+    }
+
+    return compute_defect_delta($previous_ledger, $current_ledger, $path);
+}
+
+
+sub compute_defect_delta {
+    my ($previous_ledger, $current_ledger, $path) = @_;
+    my @current_open = active_defect_records($current_ledger);
+    my @previous_open = active_defect_records($previous_ledger);
+    my %current_by_key = map { $_->{key} => $_ } grep { defined $_->{key} } @current_open;
+    my %previous_by_key = map { $_->{key} => $_ } grep { defined $_->{key} } @previous_open;
+
+    my @exact_persisting = sort_defect_records(grep { exists $previous_by_key{$_->{key}} } @current_open);
+    my %exact_current = map { $_->{key} => 1 } @exact_persisting;
+    my %exact_previous = map { $_->{key} => 1 } grep { exists $current_by_key{$_->{key}} } @previous_open;
+    my @current_candidates = grep { !$exact_current{$_->{key}} } @current_open;
+    my @previous_candidates = grep { !$exact_previous{$_->{key}} } @previous_open;
+    my ($lineage_matches, $lineage_current, $lineage_previous) =
+        defect_lineage_matches(\@previous_candidates, \@current_candidates);
+    my @lineage_persisting = map { $_->{currentRecord} } @{$lineage_matches};
+    my @new = sort_defect_records(grep { !$lineage_current->{$_->{key}} } @current_candidates);
+    my @resolved = sort_defect_records(grep { !$lineage_previous->{$_->{key}} } @previous_candidates);
+    my @persisting = sort_defect_records(@exact_persisting, @lineage_persisting);
+
+    return {
+        schemaVersion => 1,
+        enabled => 1,
+        status => "compared",
+        previousReport => $path,
+        currentOpen => scalar(@current_open),
+        previousOpen => scalar(@previous_open),
+        currentEvidence => $current_ledger->{evidence} // 0,
+        previousEvidence => $previous_ledger->{evidence} // 0,
+        new => scalar(@new),
+        resolved => scalar(@resolved),
+        persisting => scalar(@persisting),
+        exactPersisting => scalar(@exact_persisting),
+        lineageMatched => scalar(@{$lineage_matches}),
+        identityChurnAvoided => scalar(@{$lineage_matches}),
+        newRecords => limited_defect_records(@new),
+        resolvedRecords => limited_defect_records(@resolved),
+        persistingRecords => limited_defect_records(@persisting),
+        lineageMatches => limited_defect_lineage_matches(@{$lineage_matches})
+    };
+}
+
+
+sub defect_lineage_matches {
+    my ($previous, $current) = @_;
+    my %previous_by_lineage;
+    my %current_by_lineage;
+    for my $record (@{$previous // []}) {
+        my $key = $record->{lineageKey} // defect_lineage_key($record);
+        next if $key eq "";
+        push @{$previous_by_lineage{$key}}, $record;
+    }
+    for my $record (@{$current // []}) {
+        my $key = $record->{lineageKey} // defect_lineage_key($record);
+        next if $key eq "";
+        push @{$current_by_lineage{$key}}, $record;
+    }
+
+    my @matches;
+    my %matched_previous;
+    my %matched_current;
+    for my $lineage_key (sort keys %current_by_lineage) {
+        next if ref($previous_by_lineage{$lineage_key}) ne "ARRAY";
+        next if @{$previous_by_lineage{$lineage_key}} != 1;
+        next if @{$current_by_lineage{$lineage_key}} != 1;
+        my $previous_record = $previous_by_lineage{$lineage_key}[0];
+        my $current_record = $current_by_lineage{$lineage_key}[0];
+        next if ($previous_record->{key} // "") eq ($current_record->{key} // "");
+        $matched_previous{$previous_record->{key}} = 1 if defined $previous_record->{key};
+        $matched_current{$current_record->{key}} = 1 if defined $current_record->{key};
+        push @matches, {
+            lineageKey => $lineage_key,
+            previousKey => $previous_record->{key},
+            currentKey => $current_record->{key},
+            previousWhere => $previous_record->{where},
+            currentWhere => $current_record->{where},
+            code => $current_record->{code} // $previous_record->{code},
+            owner => $current_record->{owner} // $previous_record->{owner},
+            priority => $current_record->{priority} // $previous_record->{priority},
+            previousRecord => $previous_record,
+            currentRecord => $current_record
+        };
+    }
+    return (\@matches, \%matched_current, \%matched_previous);
+}
+
+
+sub limited_defect_lineage_matches {
+    my @matches = sort {
+        issue_priority_rank($a->{priority}) <=> issue_priority_rank($b->{priority}) ||
+            ($a->{lineageKey} // "") cmp ($b->{lineageKey} // "")
+    } @_;
+    return [] if @matches == 0;
+    return [
+        map {
+            {
+                lineageKey => $_->{lineageKey},
+                previousKey => $_->{previousKey},
+                currentKey => $_->{currentKey},
+                previousWhere => $_->{previousWhere},
+                currentWhere => $_->{currentWhere},
+                code => $_->{code},
+                owner => $_->{owner},
+                priority => $_->{priority}
+            }
+        } @matches[0 .. min_index(19, scalar(@matches) - 1)]
+    ];
+}
+
+sub new_code_scope {
+    my ($base, $explicit_files, $diagnostics) = @_;
+    my @files = map { normalize_report_path($_) } @{$explicit_files // []};
+    my $git_status = "not-requested";
+    my $git_error = undef;
+
+    if (defined $base) {
+        my ($git_files, $error) = changed_files_from_git_base($base);
+        if (defined $error) {
+            $git_status = "git-error";
+            $git_error = $error;
+        } else {
+            $git_status = "git-diff";
+            push @files, @{$git_files};
+        }
+    }
+
+    my %seen;
+    @files = sort grep { $_ ne "" && !$seen{$_}++ } @files;
+    if (@files == 0 && !defined $base) {
+        return {
+            schemaVersion => 1,
+            enabled => 0,
+            status => "not-requested",
+            files => [],
+            diagnostics => 0,
+            qualityModel => quality_model([]),
+            defectLedger => defect_ledger([])
+        };
+    }
+
+    my %changed = map { $_ => 1 } @files;
+    my @scoped = grep {
+        my $path = diagnostic_report_path($_);
+        exists $changed{$path};
+    } @{$diagnostics};
+
+    my $errors = count_severity("error", @scoped);
+    my $warnings = count_severity("warning", @scoped);
+    my $notices = count_severity("notice", @scoped);
+    my $status = defined $git_error ? "git-error" :
+        defined $base ? "git-diff" : "explicit-files";
+
+    return {
+        schemaVersion => 1,
+        enabled => 1,
+        status => $status,
+        base => $base,
+        error => $git_error,
+        files => \@files,
+        diagnostics => scalar(@scoped),
+        errors => $errors,
+        warnings => $warnings,
+        notices => $notices,
+        qualityModel => quality_model(\@scoped),
+        defectLedger => defect_ledger(\@scoped),
+        topDiagnostics => [
+            map {
+                {
+                    code => $_->{code},
+                    severity => $_->{severity},
+                    where => $_->{where},
+                    owner => $_->{owner},
+                    message => $_->{message}
+                }
+            } @scoped[0 .. min_index(19, $#scoped)]
+        ]
+    };
+}
+
+sub changed_files_from_git_base {
+    my ($base) = @_;
+    my @files;
+    my $range = "$base...HEAD";
+    if (open my $git, "-|", "git", "diff", "--name-only", $range, "--") {
+        while (my $line = <$git>) {
+            chomp $line;
+            push @files, normalize_report_path($line) if $line ne "";
+        }
+        my $ok = close $git;
+        return (\@files, undef) if $ok;
+        return (\@files, "git diff failed for base '$base'");
+    }
+    return ([], "failed to start git diff for base '$base': $!");
+}
+
+sub diagnostic_report_path {
+    my ($diag) = @_;
+    my $where = $diag->{where} // "";
+    $where =~ s/:\d+(?::\d+)?\z//;
+    return normalize_report_path($where);
+}
+
+sub normalize_report_path {
+    my ($path) = @_;
+    return "" if !defined $path;
+    $path =~ s{\\}{/}g;
+    $path =~ s{\A\./}{};
+    $path =~ s{/+\z}{};
+    return $path;
+}
+
+sub history_trend {
+    my ($path, $diagnostics, $quality_gate, $defect_ledger) = @_;
+    my $current = current_history_snapshot($diagnostics, $quality_gate, $defect_ledger);
+    my @current_only = ($current);
+    my $current_issue_index = history_issue_index(\@current_only);
+    return {
+        schemaVersion => 1,
+        enabled => 0,
+        status => "not-requested",
+        current => $current,
+        issueIndex => $current_issue_index,
+        issueLifecycle => history_lifecycle_model($current_issue_index, \@current_only),
+        samples => 0
+    } if !defined $path;
+
+    my $ledger = read_history_ledger($path);
+    my $snapshots = array_or_empty($ledger->{snapshots});
+    my $previous = @{$snapshots} == 0 ? undef : $snapshots->[-1];
+    my $delta = history_delta($previous, $current);
+    my @all = (@{$snapshots}, $current);
+    my $issue_index = history_issue_index(\@all);
+    my $issue_lifecycle = history_lifecycle_model($issue_index, \@all);
+    my @recent = @all;
+    @recent = @recent[scalar(@recent) - 12 .. $#recent] if @recent > 12;
+
+    return {
+        schemaVersion => 1,
+        enabled => 1,
+        status => @{$snapshots} == 0 ? "new-history" : "compared",
+        path => $path,
+        samples => scalar(@{$snapshots}),
+        current => $current,
+        previous => $previous,
+        delta => $delta,
+        issueIndex => $issue_index,
+        issueLifecycle => $issue_lifecycle,
+        recentSnapshots => \@recent
+    };
+}
+
+sub read_history_ledger {
+    my ($path) = @_;
+    return { schemaVersion => 1, snapshots => [] } if !defined $path || !-f $path;
+    my $json = read_json($path);
+    my $snapshots = array_or_empty($json->{snapshots});
+    return {
+        schemaVersion => 1,
+        snapshots => $snapshots
+    };
+}
+
+sub write_history_ledger {
+    my ($path, $history_trend) = @_;
+    my $existing = read_history_ledger($path);
+    my @snapshots = @{$existing->{snapshots}};
+    push @snapshots, $history_trend->{current};
+    @snapshots = @snapshots[scalar(@snapshots) - 200 .. $#snapshots] if @snapshots > 200;
+    my $payload = {
+        schemaVersion => 1,
+        generatedBy => "TypeSea Perl Policy Analyzer",
+        snapshots => \@snapshots
+    };
+    open my $handle, ">:encoding(UTF-8)", $path or die "failed to write $path: $!";
+    print {$handle} json_encoder()->encode($payload);
+    close $handle or die "failed to close $path: $!";
+}
+
+sub refresh_history_current_gate {
+    my ($history_trend, $quality_gate) = @_;
+    return if ref($history_trend) ne "HASH";
+    return if ref($history_trend->{current}) ne "HASH";
+    $history_trend->{current}{qualityGateStatus} = $quality_gate->{status};
+    $history_trend->{current}{failed} = $quality_gate->{failed};
+}
+
+sub current_history_snapshot {
+    my ($diagnostics, $quality_gate, $defect_ledger) = @_;
+    my $quality = quality_model($diagnostics);
+    my @open_records = sort_defect_records(active_defect_records($defect_ledger));
+    my @open_keys = sort map { $_->{key} } @open_records;
+    my @open_defects = map {
+        compact_history_defect_record($_)
+    } @open_records;
+    my @top_open = map {
+        {
+            key => $_->{key},
+            code => $_->{code},
+            where => $_->{where},
+            owner => $_->{owner},
+            priority => $_->{priority},
+            triageScore => $_->{triageScore}
+        }
+    } @open_records[0 .. min_index(9, $#open_records)];
+    return {
+        timestamp => iso_timestamp(time()),
+        qualityGateStatus => $quality_gate->{status},
+        failed => $quality_gate->{failed},
+        rating => $quality->{overall}{rating},
+        ratingRank => $quality->{overall}{rank},
+        technicalDebtMinutes => $quality->{technicalDebtMinutes},
+        open => $defect_ledger->{open} // 0,
+        evidence => $defect_ledger->{evidence} // 0,
+        suppressed => $defect_ledger->{suppressed} // 0,
+        errors => $quality_gate->{metrics}{errors} // 0,
+        warnings => $quality_gate->{metrics}{warnings} // 0,
+        notices => $quality_gate->{metrics}{notices} // 0,
+        openDefectKeys => \@open_keys,
+        openDefects => \@open_defects,
+        topOpen => \@top_open
+    };
+}
+
+sub history_delta {
+    my ($previous, $current) = @_;
+    return {
+        hasPrevious => 0,
+        openDelta => $current->{open},
+        debtDelta => $current->{technicalDebtMinutes},
+        ratingDelta => 0,
+        newOpen => scalar(@{$current->{openDefectKeys} // []}),
+        resolvedOpen => 0,
+        persistingOpen => 0,
+        newOpenKeys => $current->{openDefectKeys} // [],
+        resolvedOpenKeys => [],
+        persistingOpenKeys => []
+    } if ref($previous) ne "HASH";
+
+    my %previous = map { $_ => 1 } @{$previous->{openDefectKeys} // []};
+    my %current = map { $_ => 1 } @{$current->{openDefectKeys} // []};
+    my @new = sort grep { !$previous{$_} } keys %current;
+    my @resolved = sort grep { !$current{$_} } keys %previous;
+    my @persisting = sort grep { $previous{$_} } keys %current;
+
+    return {
+        hasPrevious => 1,
+        openDelta => ($current->{open} // 0) - ($previous->{open} // 0),
+        debtDelta => ($current->{technicalDebtMinutes} // 0) - ($previous->{technicalDebtMinutes} // 0),
+        ratingDelta => ($current->{ratingRank} // 1) - ($previous->{ratingRank} // 1),
+        newOpen => scalar(@new),
+        resolvedOpen => scalar(@resolved),
+        persistingOpen => scalar(@persisting),
+        newOpenKeys => [@new[0 .. min_index(19, $#new)]],
+        resolvedOpenKeys => [@resolved[0 .. min_index(19, $#resolved)]],
+        persistingOpenKeys => [@persisting[0 .. min_index(19, $#persisting)]]
+    };
+}
+
+sub history_issue_index {
+    my ($snapshots) = @_;
+    my %index;
+    my $sample = 0;
+    my $last_sample = @{$snapshots} == 0 ? -1 : scalar(@{$snapshots}) - 1;
+    for my $snapshot (@{$snapshots}) {
+        next if ref($snapshot) ne "HASH";
+        my $timestamp = $snapshot->{timestamp} // iso_timestamp(time());
+        my %details = history_snapshot_open_defect_map($snapshot);
+        my %open = map {
+            $_ => 1
+        } grep {
+            defined $_ && $_ ne ""
+        } @{$snapshot->{openDefectKeys} // []};
+        for my $key (sort keys %open) {
+            next if !defined $key || $key eq "";
+            $index{$key} = {
+                key => $key,
+                firstSeen => $timestamp,
+                lastSeen => $timestamp,
+                observations => 0,
+                firstSample => $sample,
+                lastSample => $sample,
+                transitions => 0,
+                reopenCount => 0,
+                reopened => 0,
+                currentState => "open"
+            } if !exists $index{$key};
+            if (($index{$key}{currentState} // "") eq "resolved") {
+                $index{$key}{transitions} += 1;
+                $index{$key}{reopenCount} += 1;
+                $index{$key}{reopened} = 1;
+                delete $index{$key}{resolvedAt};
+            }
+            $index{$key}{lastSeen} = $timestamp;
+            $index{$key}{lastSample} = $sample;
+            $index{$key}{observations} += 1;
+            $index{$key}{currentState} = "open";
+            if (ref($details{$key}) eq "HASH") {
+                for my $field (qw(code where owner priority message category remediation triageScore fingerprint)) {
+                    $index{$key}{$field} = $details{$key}{$field} if defined $details{$key}{$field};
+                }
+            }
+        }
+        for my $key (sort keys %index) {
+            next if $open{$key};
+            next if ($index{$key}{currentState} // "") ne "open";
+            $index{$key}{currentState} = "resolved";
+            $index{$key}{resolvedAt} = $timestamp;
+            $index{$key}{transitions} += 1;
+        }
+        $sample += 1;
+    }
+    for my $key (keys %index) {
+        $index{$key}{seenInLatest} = ($index{$key}{lastSample} // -1) == $last_sample ? 1 : 0;
+        $index{$key}{currentState} = $index{$key}{seenInLatest} ? "open" : "resolved";
+        $index{$key}{sampleSpan} = (($index{$key}{lastSample} // 0) - ($index{$key}{firstSample} // 0)) + 1;
+    }
+    return \%index;
+}
+
+sub history_snapshot_open_defect_map {
+    my ($snapshot) = @_;
+    my %details;
+    for my $record (@{$snapshot->{openDefects} // $snapshot->{topOpen} // []}) {
+        next if ref($record) ne "HASH";
+        my $key = $record->{key};
+        next if !defined $key || $key eq "";
+        $details{$key} = $record;
+    }
+    return %details;
+}
+
+
+sub compact_history_defect_record {
+    my ($record) = @_;
+    return {
+        key => $record->{key},
+        fingerprint => $record->{fingerprint},
+        lineageKey => $record->{lineageKey},
+        code => $record->{code},
+        where => $record->{where},
+        owner => $record->{owner},
+        priority => $record->{priority},
+        category => $record->{category},
+        remediation => $record->{remediation},
+        triageScore => $record->{triageScore},
+        message => $record->{message}
+    };
+}
+
+
+sub history_lifecycle_model {
+    my ($issue_index, $snapshots) = @_;
+    my @issues = sort_history_lifecycle_items(values %{object_or_empty($issue_index)});
+    my $last_sample = @{$snapshots // []} == 0 ? -1 : scalar(@{$snapshots}) - 1;
+    my @open = grep { ($_->{seenInLatest} // 0) == 1 } @issues;
+    my @resolved = grep { ($_->{seenInLatest} // 0) == 0 } @issues;
+    my @newly_opened = grep {
+        ($_->{seenInLatest} // 0) == 1 && ($_->{firstSample} // -1) == $last_sample
+    } @issues;
+    my @persisting = grep {
+        ($_->{seenInLatest} // 0) == 1 && ($_->{firstSample} // -1) != $last_sample
+    } @issues;
+    my @reopened = grep {
+        ($_->{reopenCount} // 0) > 0
+    } @issues;
+    my @flapping = grep {
+        ($_->{transitions} // 0) >= 3
+    } @issues;
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea persistent issue lifecycle model",
+        status => @reopened != 0 ? "reopened-issues-present" :
+            @flapping != 0 ? "flapping-issues-present" : "tracked",
+        totalIssues => scalar(@issues),
+        openIssues => scalar(@open),
+        resolvedIssues => scalar(@resolved),
+        newlyOpenedIssues => scalar(@newly_opened),
+        persistingOpenIssues => scalar(@persisting),
+        reopenedIssues => scalar(@reopened),
+        flappingIssues => scalar(@flapping),
+        issueSet => [@issues[0 .. min_index(49, $#issues)]],
+        newlyOpenedSet => [@newly_opened[0 .. min_index(19, $#newly_opened)]],
+        persistingOpenSet => [@persisting[0 .. min_index(19, $#persisting)]],
+        reopenedSet => [@reopened[0 .. min_index(19, $#reopened)]],
+        resolvedSet => [@resolved[0 .. min_index(19, $#resolved)]]
+    };
+}
+
+
+sub sort_history_lifecycle_items {
+    return sort {
+        ($b->{seenInLatest} // 0) <=> ($a->{seenInLatest} // 0) ||
+            ($b->{reopenCount} // 0) <=> ($a->{reopenCount} // 0) ||
+            ($b->{transitions} // 0) <=> ($a->{transitions} // 0) ||
+            issue_priority_rank($a->{priority}) <=> issue_priority_rank($b->{priority}) ||
+            ($a->{key} // "") cmp ($b->{key} // "")
+    } @_;
+}
+
+
+sub issue_aging_model {
+    my ($history_trend, $defect_ledger, $profile) = @_;
+    my @open_records = active_defect_records($defect_ledger);
+    my $issue_index = object_or_empty($history_trend->{issueIndex});
+    my $today = today_ymd();
+    my $sla = issue_sla_days($profile);
+    my @items;
+    my @overdue;
+    my %by_priority;
+    my %by_owner;
+    my $max_age = 0;
+
+    for my $record (@open_records) {
+        my $index = object_or_empty($issue_index->{$record->{key}});
+        my $first_seen = $index->{firstSeen} // iso_timestamp(time());
+        my $last_seen = $index->{lastSeen} // $first_seen;
+        my $first_day = timestamp_ymd($first_seen);
+        my $age_days = date_days_between($first_day, $today);
+        my $priority = $record->{priority} // "P4";
+        my $sla_days = $sla->{$priority} // $sla->{P4};
+        my $is_overdue = $age_days > $sla_days ? 1 : 0;
+        my $item = {
+            key => $record->{key},
+            code => $record->{code},
+            where => $record->{where},
+            owner => $record->{owner} // "unowned",
+            priority => $priority,
+            firstSeen => $first_seen,
+            lastSeen => $last_seen,
+            ageDays => $age_days,
+            slaDays => $sla_days,
+            overdue => $is_overdue,
+            observations => $index->{observations} // 1,
+            message => $record->{message}
+        };
+        push @items, $item;
+        push @overdue, $item if $is_overdue;
+        $max_age = $age_days if $age_days > $max_age;
+        add_aging_bucket(\%by_priority, $priority, $item);
+        add_aging_bucket(\%by_owner, $item->{owner}, $item);
+    }
+
+    @items = sort_aging_items(@items);
+    @overdue = sort_aging_items(@overdue);
+
+    return {
+        schemaVersion => 1,
+        model => "TypeSea issue aging model",
+        enabled => $history_trend->{enabled} ? 1 : 0,
+        status => $history_trend->{enabled} ? "tracked" : "current-run-only",
+        today => $today,
+        open => scalar(@open_records),
+        overdue => scalar(@overdue),
+        maxAgeDays => $max_age,
+        slaDaysByPriority => $sla,
+        byPriority => \%by_priority,
+        byOwner => \%by_owner,
+        oldestItems => [@items[0 .. min_index(19, $#items)]],
+        overdueItems => [@overdue[0 .. min_index(19, $#overdue)]]
+    };
+}
+
+sub add_aging_bucket {
+    my ($buckets, $name, $item) = @_;
+    $buckets->{$name} = {
+        name => $name,
+        open => 0,
+        overdue => 0,
+        maxAgeDays => 0,
+        totalAgeDays => 0,
+        averageAgeDays => 0
+    } if !exists $buckets->{$name};
+    my $bucket = $buckets->{$name};
+    $bucket->{open} += 1;
+    $bucket->{overdue} += 1 if $item->{overdue};
+    $bucket->{maxAgeDays} = $item->{ageDays} if $item->{ageDays} > $bucket->{maxAgeDays};
+    $bucket->{totalAgeDays} += $item->{ageDays};
+    $bucket->{averageAgeDays} = rounded_number($bucket->{totalAgeDays} / $bucket->{open});
+}
+
+sub sort_aging_items {
+    return sort {
+        ($b->{overdue} // 0) <=> ($a->{overdue} // 0) ||
+            ($b->{ageDays} // 0) <=> ($a->{ageDays} // 0) ||
+            issue_priority_rank($a->{priority}) <=> issue_priority_rank($b->{priority}) ||
+            ($a->{key} // "") cmp ($b->{key} // "")
+    } @_;
+}
+
+sub issue_priority_rank {
+    my ($priority) = @_;
+    return 0 if $priority eq "P0";
+    return 1 if $priority eq "P1";
+    return 2 if $priority eq "P2";
+    return 3 if $priority eq "P3";
+    return 4;
+}
+
+sub issue_sla_days {
+    my ($profile) = @_;
+    my %sla = (
+        P0 => 0,
+        P1 => 7,
+        P2 => 30,
+        P3 => 90,
+        P4 => 180
+    );
+    my $override = object_or_empty($profile->{slaDaysByPriority});
+    for my $priority (keys %sla) {
+        my $value = $override->{$priority};
+        $sla{$priority} = int($value)
+            if defined $value && !ref($value) && $value =~ /\A\d+\z/;
+    }
+    return \%sla;
+}
+
+sub timestamp_ymd {
+    my ($timestamp) = @_;
+    return $1 if defined $timestamp && $timestamp =~ /\A(\d{4}-\d{2}-\d{2})/;
+    return today_ymd();
+}
+
+sub date_days_between {
+    my ($start, $end) = @_;
+    return 0 if !valid_ymd($start) || !valid_ymd($end);
+    my $days = ymd_day_number($end) - ymd_day_number($start);
+    return $days < 0 ? 0 : $days;
+}
+
+sub ymd_day_number {
+    my ($ymd) = @_;
+    my ($year, $month, $day) = $ymd =~ /\A(\d{4})-(\d{2})-(\d{2})\z/;
+    $year = int($year);
+    $month = int($month);
+    $day = int($day);
+    $year -= 1 if $month <= 2;
+    my $era = int($year / 400);
+    my $year_of_era = $year - $era * 400;
+    my $month_prime = $month > 2 ? $month - 3 : $month + 9;
+    my $day_of_year = int((153 * $month_prime + 2) / 5) + $day - 1;
+    my $day_of_era = $year_of_era * 365 + int($year_of_era / 4) - int($year_of_era / 100) + $day_of_year;
+    return $era * 146097 + $day_of_era;
+}
+
+sub iso_timestamp {
+    my ($epoch) = @_;
+    my @parts = gmtime($epoch);
+    return sprintf(
+        "%04d-%02d-%02dT%02d:%02d:%02dZ",
+        $parts[5] + 1900,
+        $parts[4] + 1,
+        $parts[3],
+        $parts[2],
+        $parts[1],
+        $parts[0]
+    );
+}
+
+sub extract_defect_ledger {
+    my ($json) = @_;
+    return $json->{defectLedger} if ref($json->{defectLedger}) eq "HASH";
+    if (ref($json->{runs}) eq "ARRAY" &&
+        ref($json->{runs}[0]) eq "HASH" &&
+        ref($json->{runs}[0]{invocations}) eq "ARRAY" &&
+        ref($json->{runs}[0]{invocations}[0]) eq "HASH" &&
+        ref($json->{runs}[0]{invocations}[0]{properties}) eq "HASH") {
+        my $ledger = $json->{runs}[0]{invocations}[0]{properties}{defectLedger};
+        return $ledger if ref($ledger) eq "HASH";
+    }
+    return undef;
+}
+
+sub active_defect_records {
+    my ($ledger) = @_;
+    return () if ref($ledger) ne "HASH";
+    my $records = array_or_empty($ledger->{records});
+    return grep {
+        ref($_) eq "HASH" && ($_->{status} // "") eq "open" && defined $_->{key}
+    } @{$records};
+}
+
+sub sort_defect_records {
+    return sort {
+        ($b->{triageScore} // 0) <=> ($a->{triageScore} // 0) ||
+            ($a->{key} // "") cmp ($b->{key} // "")
+    } @_;
+}
+
+sub limited_defect_records {
+    my @records = @_;
+    @records = sort_defect_records(@records);
+    return [] if @records == 0;
+    return [@records[0 .. min_index(19, scalar(@records) - 1)]];
+}
+
+sub defect_record {
+    my ($diag) = @_;
+    my $meta = rule_metadata($diag->{code});
+    my ($path, $line) = diagnostic_location($diag->{where});
+    my $score = triage_score($diag, $meta);
+    return {
+        key => defect_key($diag),
+        fingerprint => $diag->{fingerprint},
+        lineageKey => defect_lineage_key({
+            code => $diag->{code},
+            path => $path,
+            remediation => $meta->{remediation}
+        }),
+        status => defect_status($diag),
+        suppression => $diag->{suppression},
+        suppressionReason => $diag->{suppressionReason},
+        suppressionRule => $diag->{suppressionRule},
+        suppressionLine => $diag->{suppressionLine},
+        priority => triage_priority($score),
+        triageScore => $score,
+        severity => $diag->{severity},
+        code => $diag->{code},
+        category => $meta->{category},
+        engine => $meta->{engine},
+        precision => $meta->{precision},
+        confidence => $meta->{confidence},
+        remediation => $meta->{remediation},
+        remediationText => $meta->{remediationText},
+        cwe => $meta->{cwe},
+        owner => $diag->{owner} // "unowned",
+        owners => $diag->{owners} // [$diag->{owner} // "unowned"],
+        ownerSource => $diag->{ownerSource} // "unknown",
+        ownerPattern => $diag->{ownerPattern},
+        ownerLayer => $diag->{ownerLayer},
+        triageState => $diag->{triageState} // "untriaged",
+        triageOwner => $diag->{triageOwner},
+        triageReason => $diag->{triageReason},
+        triageExpires => $diag->{triageExpires},
+        triageExpired => $diag->{triageExpired} ? 1 : 0,
+        where => $diag->{where},
+        path => $path,
+        line => $line,
+        message => $diag->{message},
+        hasFlow => @{$diag->{flow} // []} != 0 ? 1 : 0,
+        flowLength => scalar(@{$diag->{flow} // []}),
+        lifecycleState => defect_lifecycle_state($diag)
+    };
+}
+
+sub defect_status {
+    my ($diag) = @_;
+    return "suppressed" if $diag->{suppressed};
+    my $state = $diag->{triageState} // "";
+    return "open" if $diag->{triageExpired};
+    return "accepted-risk" if $state eq "accepted-risk";
+    return "false-positive" if $state eq "false-positive";
+    return "mitigated" if $state eq "mitigated";
+    return "open" if $state eq "confirmed";
+    return "evidence" if $diag->{severity} eq "notice";
+    return "open";
+}
+
+sub defect_lifecycle_state {
+    my ($diag) = @_;
+    return "accepted" if $diag->{suppressed};
+    my $state = $diag->{triageState} // "";
+    return "expired-accepted-risk" if $diag->{triageExpired};
+    return "accepted-risk" if $state eq "accepted-risk";
+    return "false-positive" if $state eq "false-positive";
+    return "mitigated" if $state eq "mitigated";
+    return "confirmed" if $state eq "confirmed";
+    return "informational-evidence" if $diag->{severity} eq "notice";
+    return "new-or-open";
+}
+
+sub diagnostic_quality_excluded {
+    my ($diag) = @_;
+    return 1 if $diag->{suppressed};
+    return 0 if $diag->{triageExpired};
+    my $state = $diag->{triageState} // "";
+    return 1 if $state eq "accepted-risk" ||
+        $state eq "false-positive" ||
+        $state eq "mitigated";
+    return 0;
+}
+
+sub defect_key {
+    my ($diag) = @_;
+    return "TSD-" . stable_hex_hash(join("\0", $diag->{code}, $diag->{where}, $diag->{message}));
+}
+
+
+sub defect_lineage_key {
+    my ($record) = @_;
+    return "" if ref($record) ne "HASH";
+    my $code = $record->{code} // "";
+    my $path = normalize_report_path($record->{path} // "");
+    my $remediation = $record->{remediation} // "";
+    return "" if $code eq "" || $path eq "";
+    return "TSL-" . stable_hex_hash(join("\0", $code, $path, $remediation));
+}
+
+sub triage_score {
+    my ($diag, $meta) = @_;
+    my $score = 0;
+    $score += $diag->{severity} eq "error" ? 100 :
+        $diag->{severity} eq "warning" ? 70 : 20;
+    $score += $meta->{category} eq "security" ? 25 :
+        $meta->{category} eq "correctness" ? 18 :
+        $meta->{category} eq "performance" ? 12 :
+        $meta->{category} eq "supply-chain" ? 18 :
+        $meta->{category} eq "release" ? 14 :
+        $meta->{category} eq "architecture" ? 10 :
+        $meta->{category} eq "maintainability" ? 8 : 0;
+    $score += $meta->{precision} eq "high" ? 10 : 0;
+    $score += $meta->{confidence} eq "high" ? 8 : 0;
+    my $flow_len = scalar(@{$diag->{flow} // []});
+    $score += min_number(12, $flow_len * 2);
+    $score -= 40 if diagnostic_quality_excluded($diag);
+    return $score < 0 ? 0 : $score;
+}
+
+sub triage_priority {
+    my ($score) = @_;
+    return "P0" if $score >= 120;
+    return "P1" if $score >= 95;
+    return "P2" if $score >= 70;
+    return "P3" if $score >= 40;
+    return "P4";
+}
+
+sub sarif_rule_for_diagnostic {
+    my ($diag) = @_;
+    my $meta = rule_metadata($diag->{code});
+    my $properties = rule_properties($meta);
+    return {
+        id => $diag->{code},
+        name => $meta->{name},
+        shortDescription => {
+            text => $meta->{name}
+        },
+        fullDescription => {
+            text => $meta->{description}
+        },
+        help => {
+            text => $meta->{remediationText}
+        },
+        defaultConfiguration => {
+            level => sarif_level($diag->{severity})
+        },
+        properties => $properties
+    };
+}
+
+sub rule_metadata {
+    my ($code) = @_;
+    my $meta = default_rule_metadata($code);
+    my $override = specific_rule_metadata($code);
+    for my $key (keys %{$override}) {
+        $meta->{$key} = $override->{$key};
+    }
+    $meta->{id} = $code;
+    $meta->{domain} = diagnostic_domain($code);
+    $meta->{tags} = rule_tags($meta);
+    return $meta;
+}
+
+sub default_rule_metadata {
+    my ($code) = @_;
+    my %meta = (
+        name => $code,
+        category => "policy",
+        engine => "policy-ir",
+        precision => "medium",
+        confidence => "medium",
+        remediation => "review-policy-evidence",
+        remediationText => "Review the TypeSea contributing policy evidence and either fix the source invariant or adjust the rule profile with a tracked rationale.",
+        description => "TypeSea contributing policy diagnostic " . $code,
+        severityClass => "audit",
+        cwe => undef
+    );
+
+    if ($code =~ /\Aflow\./) {
+        $meta{category} = "correctness";
+        $meta{engine} = "abstract-interpretation";
+        $meta{remediation} = "add-local-proof-or-budget";
+        $meta{description} = "Function IR abstract interpretation diagnostic for TypeSea validation, compiler, or runtime paths.";
+        $meta{remediationText} = "Add a local proof, fail-fast guard, explicit sanitizer contract, or update the quality-gate budget only with reviewed evidence.";
+    } elsif ($code =~ /\Abench\./ || $code =~ /\Ajit\./) {
+        $meta{category} = "performance";
+        $meta{engine} = "performance-policy";
+        $meta{remediation} = "restore-hot-path-evidence";
+        $meta{description} = "Performance policy diagnostic for TypeSea JIT, AOT, or benchmark invariants.";
+        $meta{remediationText} = "Restore the hot-path invariant, update benchmark evidence after warmup, or document a deliberate tradeoff.";
+    } elsif ($code =~ /\A(?:deps|package|exports)\./) {
+        $meta{category} = "supply-chain";
+        $meta{engine} = "manifest-policy";
+        $meta{remediation} = "fix-package-metadata";
+        $meta{description} = "Package, dependency, or export-surface policy diagnostic.";
+        $meta{remediationText} = "Fix package metadata, export conditions, or dependency shape so TypeSea remains zero-dependency and release-safe.";
+    } elsif ($code =~ /\A(?:doc|docs)\./) {
+        $meta{category} = "documentation";
+        $meta{engine} = "documentation-policy";
+        $meta{remediation} = "update-durable-docs";
+        $meta{description} = "Documentation policy diagnostic for durable TypeSea engineering context.";
+        $meta{remediationText} = "Update durable documentation or comments with information that explains security, ABI, or semantic constraints.";
+    } elsif ($code =~ /\A(?:arch|schema-tags|node-tags|abi)\./) {
+        $meta{category} = "architecture";
+        $meta{engine} = "compiler-coverage";
+        $meta{remediation} = "preserve-pipeline-coverage";
+        $meta{description} = "Compiler architecture and variant coverage diagnostic.";
+        $meta{remediationText} = "Preserve coverage across builder, lowering, optimizer, evaluator, JIT/AOT, and public schema/IR variants.";
+    } elsif ($code =~ /\A(?:ci|release|pr)\./) {
+        $meta{category} = "release";
+        $meta{engine} = "release-policy";
+        $meta{remediation} = "restore-release-gate";
+        $meta{description} = "Release and pull-request gate diagnostic.";
+        $meta{remediationText} = "Restore the release or PR gate so CI validates the required TypeSea contract before publication.";
+    } elsif ($code =~ /\Atypes\./) {
+        $meta{category} = "type-safety";
+        $meta{engine} = "type-policy";
+        $meta{remediation} = "restore-type-contract";
+        $meta{description} = "Public TypeScript type-safety diagnostic.";
+        $meta{remediationText} = "Restore strict public type tests and readonly contracts that protect TypeSea's compile-time API.";
+    } elsif ($code =~ /\Apolicy\./) {
+        $meta{category} = "analyzer";
+        $meta{engine} = "policy-analyzer";
+        $meta{remediation} = "maintain-analyzer-capability";
+        $meta{description} = "Self-check diagnostic for the TypeSea policy analyzer.";
+        $meta{remediationText} = "Keep the analyzer capability wired into diagnostics, reports, baselines, and quality gates.";
+    }
+
+    return \%meta;
+}
+
+sub specific_rule_metadata {
+    my ($code) = @_;
+    my %specific = (
+        "flow.dynamic-sink" => {
+            category => "security",
+            engine => "taint-analysis",
+            precision => "high",
+            confidence => "high",
+            remediation => "confine-dynamic-code",
+            cwe => "CWE-94",
+            description => "Dynamic code execution must remain confined to approved TypeSea JIT/AOT bridges.",
+            remediationText => "Move dynamic code generation behind the approved source bridge or prove side-table escaping before allowing it."
+        },
+        "flow.generated-source-gap" => {
+            category => "security",
+            engine => "generated-source-provenance",
+            precision => "medium",
+            cwe => "CWE-94",
+            remediation => "prove-generated-source",
+            description => "Generated-source builders need escape, side-table, or ABI provenance evidence.",
+            remediationText => "Add local escaping, side-table literal handling, ABI proof evidence, or a reviewed helper propagation path."
+        },
+        "flow.key-safety-gap" => {
+            category => "security",
+            engine => "prototype-pollution",
+            precision => "high",
+            cwe => "CWE-1321",
+            remediation => "harden-key-transfer",
+            description => "Prototype-pollution key literals must be paired with key-safety proof evidence.",
+            remediationText => "Use null-prototype storage, own-key enumeration, descriptor writes, or explicit key rejection before bulk transfer."
+        },
+        "flow.tainted-path" => {
+            category => "security",
+            engine => "taint-analysis",
+            precision => "medium",
+            remediation => "add-sanitizer-proof",
+            description => "Hostile input reaches a sink-like operation without sanitizer proof.",
+            remediationText => "Add a sanitizer, descriptor proof, value-slot proof, or approved dynamic bridge contract."
+        },
+        "flow.symbolic-path" => {
+            category => "security",
+            engine => "symbolic-execution",
+            precision => "medium",
+            remediation => "close-symbolic-sink",
+            description => "A TypeSea-sensitive function leaves a hostile-input sink open after symbolic fail-fast analysis.",
+            remediationText => "Add a fail-fast guard, narrow the hostile value before use, or route the operation through an approved proof helper."
+        },
+        "flow.symbolic-caller-path" => {
+            category => "security",
+            engine => "interprocedural-symbolic-execution",
+            precision => "medium",
+            remediation => "close-caller-reachable-sink",
+            description => "A caller can reach a symbolic hostile-input sink through the call graph.",
+            remediationText => "Close the callee sink, add caller-side validation, or stop forwarding hostile values into the vulnerable path."
+        },
+        "flow.memory-alias-gap" => {
+            category => "correctness",
+            engine => "abstract-memory",
+            precision => "medium",
+            remediation => "break-or-prove-alias",
+            description => "A TypeSea-sensitive path mutates hostile or frozen heap regions through aliases.",
+            remediationText => "Clone before mutation, remove the aliasing write, or add an immutable/freeze proof that dominates all writes."
+        },
+        "flow.range-gap" => {
+            category => "correctness",
+            engine => "interval-analysis",
+            precision => "medium",
+            remediation => "prove-index-range",
+            description => "Hostile safe-path index reads need local interval lower/upper evidence.",
+            remediationText => "Add lower and upper index bounds, length checks, or descriptor-based indexed access helpers."
+        },
+        "flow.index-gap" => {
+            category => "correctness",
+            engine => "bounds-analysis",
+            precision => "medium",
+            remediation => "guard-index-read",
+            description => "Hostile bracket reads need local length/index guard evidence.",
+            remediationText => "Guard the index, use a descriptor helper, or restructure iteration around known length bounds."
+        },
+        "flow.freeze-state-gap" => {
+            category => "correctness",
+            engine => "temporal-state-analysis",
+            precision => "medium",
+            remediation => "remove-post-freeze-mutation",
+            description => "A value is mutated after local Object.freeze evidence.",
+            remediationText => "Move mutation before freezing, clone the value, or remove the post-freeze write."
+        },
+        "flow.lifecycle-gap" => {
+            category => "correctness",
+            engine => "lifecycle-state-analysis",
+            precision => "high",
+            remediation => "balance-lifecycle",
+            description => "Lifecycle-sensitive functions must balance path/frame enter and release operations.",
+            remediationText => "Ensure every path push, graph frame acquire, or validation enter has a dominating release on every exit path."
+        },
+        "flow.lifecycle-path" => {
+            category => "correctness",
+            engine => "interprocedural-lifecycle-analysis",
+            precision => "high",
+            remediation => "close-lifecycle-wrapper",
+            description => "A caller can reach a lifecycle imbalance through the call graph.",
+            remediationText => "Fix the callee lifecycle imbalance or ensure wrappers cannot reach the unbalanced path."
+        },
+        "flow.hot-loop-allocation" => {
+            category => "performance",
+            engine => "allocation-effect-analysis",
+            precision => "medium",
+            remediation => "remove-hot-allocation",
+            description => "V8-sensitive validation loops should avoid loop-carried allocation sites.",
+            remediationText => "Hoist allocations, reuse scratch state, or move diagnostic allocation out of the hot boolean path."
+        },
+        "flow.async-domain" => {
+            category => "performance",
+            engine => "async-scheduling-analysis",
+            precision => "medium",
+            remediation => "review-async-scheduling",
+            description => "Async validation paths are summarized for await, yield, and promise scheduling evidence.",
+            remediationText => "Use the async domain summary to inspect event-loop yield coverage, sequential await loops, and promise fan-out."
+        },
+        "flow.async-scheduling-gap" => {
+            category => "performance",
+            engine => "async-scheduling-analysis",
+            precision => "medium",
+            remediation => "add-yield-or-combinator",
+            description => "Async-sensitive paths should not contain sequential loop awaits or floating promises without scheduling evidence.",
+            remediationText => "Add cooperative yield calls in large loops, use Promise combinators for intentional fan-out, or document and budget a sequential async path."
+        },
+        "security.regex-domain" => {
+            category => "security",
+            engine => "regex-redos-analysis",
+            precision => "medium",
+            confidence => "high",
+            remediation => "review-regex-inventory",
+            cwe => "CWE-1333",
+            description => "Regex literals and string constructors are summarized for ReDoS-relevant shape evidence.",
+            remediationText => "Review dynamic constructors, stateful regexps, and pattern inventory before accepting hostile-string validators."
+        },
+        "security.redos-risk" => {
+            category => "security",
+            engine => "regex-redos-analysis",
+            precision => "medium",
+            confidence => "medium",
+            remediation => "harden-regex-pattern",
+            cwe => "CWE-1333",
+            description => "Regex patterns should avoid known catastrophic-backtracking structures.",
+            remediationText => "Replace nested unbounded quantifiers, overlapping quantified alternation, backreferences, or wildcard chains with bounded, linear-time patterns."
+        },
+        "security.secret-domain" => {
+            category => "security",
+            engine => "secret-leak-analysis",
+            precision => "medium",
+            confidence => "high",
+            remediation => "review-secret-inventory",
+            cwe => "CWE-798",
+            description => "Release-relevant source inputs are summarized for hardcoded credential material.",
+            remediationText => "Review the redacted secret inventory and keep release inputs free of committed credentials, tokens, and private keys."
+        },
+        "security.secret-leak" => {
+            category => "security",
+            engine => "secret-leak-analysis",
+            precision => "high",
+            confidence => "high",
+            remediation => "remove-secret",
+            cwe => "CWE-798",
+            description => "Repository source must not contain hardcoded credentials, tokens, or private-key material.",
+            remediationText => "Remove the committed secret, rotate any exposed credential, and keep local credentials in ignored environment or secret-manager storage."
+        },
+        "supply.workflow-domain" => {
+            category => "supply-chain",
+            engine => "github-actions-supply-chain",
+            precision => "medium",
+            confidence => "high",
+            remediation => "review-workflow-inventory",
+            description => "GitHub Actions workflows are summarized for supply-chain sensitive triggers, permissions, action refs, and release evidence.",
+            remediationText => "Review workflow triggers, token permissions, action references, and release publish evidence before accepting release automation changes."
+        },
+        "supply.workflow-permission" => {
+            category => "supply-chain",
+            engine => "github-actions-supply-chain",
+            precision => "high",
+            confidence => "high",
+            remediation => "harden-workflow-permissions",
+            cwe => "CWE-266",
+            description => "GitHub Actions workflows must not expose high-risk triggers, broad write permissions, or secrets to untrusted pull request execution.",
+            remediationText => "Avoid pull_request_target for untrusted code, declare least-privilege permissions, and keep secrets out of pull_request workflows."
+        },
+        "supply.workflow-action-ref" => {
+            category => "supply-chain",
+            engine => "github-actions-supply-chain",
+            precision => "high",
+            confidence => "high",
+            remediation => "pin-workflow-action",
+            description => "Workflow action references are mutable unless pinned to full commit SHAs.",
+            remediationText => "Pin third-party and GitHub Actions references to full 40-character commit SHAs or keep the mutable action count inside an explicitly reviewed budget."
+        },
+        "supply.workflow-publish" => {
+            category => "supply-chain",
+            engine => "github-actions-supply-chain",
+            precision => "high",
+            confidence => "high",
+            remediation => "harden-release-workflow",
+            description => "The release workflow must preserve tag validation, protected environment, provenance publish, and token permission evidence.",
+            remediationText => "Restore semver tag validation, npm-publish environment protection, npm publish provenance, and required id-token/contents permissions."
+        },
+        "supply.lockfile-domain" => {
+            category => "supply-chain",
+            engine => "npm-lockfile-supply-chain",
+            precision => "medium",
+            confidence => "high",
+            remediation => "review-lockfile-inventory",
+            description => "npm package-lock entries are summarized for registry, integrity, lifecycle-script, and runtime-dependency evidence.",
+            remediationText => "Review the lockfile inventory before accepting dependency or release-tooling changes."
+        },
+        "supply.lockfile-integrity" => {
+            category => "supply-chain",
+            engine => "npm-lockfile-supply-chain",
+            precision => "high",
+            confidence => "high",
+            remediation => "restore-lockfile-integrity",
+            cwe => "CWE-494",
+            description => "package-lock entries must resolve through trusted HTTPS registry tarballs with integrity and no risky lifecycle scripts.",
+            remediationText => "Regenerate package-lock.json with npm, remove git/file/http/non-registry resolved entries, and reject entries without integrity metadata."
+        },
+        "supply.lockfile-runtime" => {
+            category => "supply-chain",
+            engine => "npm-lockfile-supply-chain",
+            precision => "high",
+            confidence => "high",
+            remediation => "remove-runtime-dependency",
+            description => "TypeSea package manifests and lockfile root must not contain runtime dependencies.",
+            remediationText => "Move tooling to devDependencies only, remove package-lock root dependencies, and preserve TypeSea's zero-runtime-dependency contract."
+        },
+        "legal.license-domain" => {
+            category => "legal",
+            engine => "license-compliance",
+            precision => "medium",
+            confidence => "high",
+            remediation => "review-license-inventory",
+            description => "Package manifest and lockfile license metadata are summarized for release compliance.",
+            remediationText => "Review the license inventory before accepting dependency changes that affect release distribution."
+        },
+        "legal.license-risk" => {
+            category => "legal",
+            engine => "license-compliance",
+            precision => "high",
+            confidence => "high",
+            remediation => "remove-denied-license",
+            description => "Denied, missing, or unknown package licenses must not enter TypeSea release inputs.",
+            remediationText => "Remove the package, replace it with an approved-license alternative, or add missing license metadata upstream before release."
+        },
+        "legal.license-review" => {
+            category => "legal",
+            engine => "license-compliance",
+            precision => "medium",
+            confidence => "high",
+            remediation => "review-license-obligation",
+            description => "Weak-copyleft or review-required package licenses must stay inside an explicit reviewed budget.",
+            remediationText => "Review MPL/EPL/CDDL obligations for dev-toolchain use, keep them out of runtime dependencies, or reduce the reviewed-license budget."
+        },
+        "api.surface-domain" => {
+            category => "maintainability",
+            engine => "public-api-surface",
+            precision => "medium",
+            confidence => "high",
+            remediation => "review-api-inventory",
+            description => "Package export subpaths and documentation references are summarized for public API contract drift.",
+            remediationText => "Review package.json exports, README examples, and API reference imports before accepting public surface changes."
+        },
+        "api.surface-drift" => {
+            category => "correctness",
+            engine => "public-api-surface",
+            precision => "high",
+            confidence => "high",
+            remediation => "fix-api-surface-drift",
+            description => "Package exports and documented TypeSea import specifiers must remain mutually consistent.",
+            remediationText => "Add the missing package export, remove stale documentation references, or restore types/import/default condition metadata."
+        },
+        "api.docs-coverage" => {
+            category => "documentation",
+            engine => "public-api-surface",
+            precision => "high",
+            confidence => "high",
+            remediation => "document-public-export",
+            description => "Every public package export subpath must be covered by README or API documentation.",
+            remediationText => "Document the new subpath in README.md or docs/api.md, including the import specifier and intended use."
+        },
+        "release.consistency-domain" => {
+            category => "release",
+            engine => "release-consistency",
+            precision => "high",
+            confidence => "high",
+            remediation => "review-release-metadata",
+            description => "Release metadata is summarized across package, lockfile, benchmark, changelog, generated docs, and README badge state.",
+            remediationText => "Review release metadata before publication, especially after version bumps or benchmark regeneration."
+        },
+        "release.version-drift" => {
+            category => "release",
+            engine => "release-consistency",
+            precision => "high",
+            confidence => "high",
+            remediation => "synchronize-release-version",
+            description => "Package version, lockfile version, benchmark snapshot, changelog heading, generated docs, and README badge state must agree.",
+            remediationText => "Update package.json, package-lock.json, benchmark results, CHANGELOG.md, generated docs, or the unpinned Socket badge so release metadata is synchronized."
+        },
+        "test.evidence-domain" => {
+            category => "reliability",
+            engine => "test-evidence",
+            precision => "high",
+            confidence => "high",
+            remediation => "review-test-portfolio",
+            description => "Required TypeSea test evidence is summarized across compiler, security, compatibility, and public-surface suites.",
+            remediationText => "Review the required test portfolio before accepting changes to compiler, public API, compatibility, security, or release-sensitive surfaces."
+        },
+        "test.evidence-gap" => {
+            category => "reliability",
+            engine => "test-evidence",
+            precision => "high",
+            confidence => "high",
+            remediation => "restore-required-test",
+            description => "Each critical TypeSea behavior surface must have a corresponding test file in the required test portfolio.",
+            remediationText => "Restore the missing test file or add an equivalent focused test suite and update the required test-evidence domain intentionally."
+        },
+        "types.escape-domain" => {
+            category => "correctness",
+            engine => "type-escape-analysis",
+            precision => "medium",
+            confidence => "high",
+            remediation => "review-type-boundary",
+            description => "TypeScript type-safety escape hatches are summarized as a first-class TypeSea soundness domain.",
+            remediationText => "Review explicit any, double assertions, non-null assertions, JSON.parse boundaries, and TypeScript diagnostic suppressions before release."
+        },
+        "types.unsafe-escape" => {
+            category => "correctness",
+            engine => "type-escape-analysis",
+            precision => "medium",
+            confidence => "high",
+            remediation => "remove-or-justify-type-escape",
+            description => "TypeScript type-safety escape hatches must remain inside an explicit budget.",
+            remediationText => "Replace any with unknown plus TypeSea validation, avoid double assertions, guard nullish values, or add a reviewed local suppression with a concrete reason."
+        },
+        "flow.loop-bound-gap" => {
+            category => "performance",
+            engine => "loop-bound-analysis",
+            precision => "medium",
+            remediation => "prove-loop-bound",
+            description => "Hot validation loops need length, key, fixed, or budget bound evidence.",
+            remediationText => "Add a concrete loop bound, key enumeration bound, recursion budget, or explicit progress proof."
+        },
+        "bench.hot-path" => {
+            category => "performance",
+            engine => "benchmark-gate",
+            precision => "high",
+            remediation => "restore-benchmark-target",
+            description => "Unchecked valid hot path benchmark is below the TypeSea performance target.",
+            remediationText => "Re-run warm benchmark evidence, investigate hot-path regressions, and update results only after the target is met or deliberately reset."
+        },
+        "flow.complexity" => {
+            category => "maintainability",
+            engine => "complexity-analysis",
+            precision => "medium",
+            remediation => "split-complex-function",
+            description => "Function complexity exceeds the local TypeSea maintainability budget.",
+            remediationText => "Split the function along semantic boundaries or document and budget the complexity if it is compiler-table driven."
+        },
+        "flow.clone-domain" => {
+            category => "maintainability",
+            engine => "clone-analysis",
+            precision => "medium",
+            remediation => "track-duplication",
+            description => "Normalized token clone analysis summarizes duplicated TypeSea source structures.",
+            remediationText => "Use the clone summary to find repeated validator, emitter, or adapter logic before it drifts."
+        },
+        "flow.clone-gap" => {
+            category => "maintainability",
+            engine => "clone-analysis",
+            precision => "medium",
+            remediation => "deduplicate-source",
+            description => "Normalized token clone groups exceed the TypeSea maintainability budget.",
+            remediationText => "Extract a shared helper, table-drive the repeated cases, or explicitly budget generated/compiler-table duplication."
+        },
+        "bench.evidence-domain" => {
+            category => "performance",
+            engine => "benchmark-evidence",
+            precision => "high",
+            confidence => "high",
+            remediation => "review-benchmark-snapshot",
+            description => "Benchmark snapshot metadata and required TypeSea comparison rows are summarized for release evidence.",
+            remediationText => "Review bench/results/latest.json after benchmark regeneration and confirm Node/V8, aggregation, and required row coverage."
+        },
+        "bench.evidence-gap" => {
+            category => "performance",
+            engine => "benchmark-evidence",
+            precision => "high",
+            confidence => "high",
+            remediation => "restore-benchmark-evidence",
+            description => "Required benchmark metadata or comparison rows are missing or invalid.",
+            remediationText => "Re-run npm run bench:record after warmup, restore missing benchmark rows, or update the required benchmark evidence domain intentionally."
+        },
+        "rule.metadata-domain" => {
+            category => "analyzer",
+            engine => "rule-metadata-integrity",
+            precision => "high",
+            confidence => "high",
+            remediation => "review-rule-catalog",
+            description => "Analyzer rule metadata is summarized for SARIF, dashboard, remediation, and triage readiness.",
+            remediationText => "Review the rule catalog integrity model before accepting analyzer rule or reporting changes."
+        },
+        "rule.metadata-gap" => {
+            category => "analyzer",
+            engine => "rule-metadata-integrity",
+            precision => "high",
+            confidence => "high",
+            remediation => "complete-rule-metadata",
+            description => "Every emitted analyzer rule must carry complete machine-readable metadata.",
+            remediationText => "Add category, engine, precision, confidence, remediation, description, remediation text, severity class, and tags for the affected rule."
+        },
+        "rule.metadata-generic" => {
+            category => "analyzer",
+            engine => "rule-metadata-integrity",
+            precision => "medium",
+            confidence => "high",
+            remediation => "specialize-rule-metadata",
+            description => "Rules that rely only on prefix-derived metadata remain visible as analyzer debt.",
+            remediationText => "Move important generic rules into specific_rule_metadata with focused descriptions and remediation text, then lower genericRuleMetadataBudget."
+        },
+        "source.suppression-reason" => {
+            category => "maintainability",
+            engine => "suppression-policy",
+            precision => "high",
+            remediation => "add-suppression-reason",
+            description => "Source suppression comments must name the rule and explain why the warning is intentionally accepted.",
+            remediationText => "Use '/* TINL <rule-code>: <reason> */' for one statement or '/* TIND <rule-code>: <reason> */' above a function, variable, or class declaration."
+        },
+        "source.suppression-rule" => {
+            category => "maintainability",
+            engine => "suppression-policy",
+            precision => "high",
+            confidence => "high",
+            remediation => "fix-suppression-rule",
+            description => "Source suppression comments must target a known analyzer rule code.",
+            remediationText => "Fix the misspelled rule code, use '*' only for a deliberately broad local waiver, or remove the stale suppression comment."
+        },
+        "source.suppression-wildcard" => {
+            category => "maintainability",
+            engine => "suppression-policy",
+            precision => "high",
+            confidence => "high",
+            remediation => "narrow-suppression-rule",
+            description => "Source suppression comments should not use wildcard rule targets.",
+            remediationText => "Replace '*' with the exact analyzer rule code, or raise wildcardSuppressionBudget only for a reviewed generated-code or migration exception."
+        },
+        "profile.governance" => {
+            category => "maintainability",
+            engine => "quality-profile-governance",
+            precision => "high",
+            confidence => "high",
+            remediation => "review-quality-profile",
+            description => "Quality profile rule overrides are summarized for drift, disablement, downgrade, expiry, and rationale evidence.",
+            remediationText => "Review rule-profile overrides before accepting analyzer configuration changes, especially disabled rules and severity downgrades."
+        },
+        "profile.rule-unknown" => {
+            category => "maintainability",
+            engine => "quality-profile-governance",
+            precision => "high",
+            confidence => "high",
+            remediation => "fix-profile-rule-code",
+            description => "Quality profiles must reference known analyzer rule codes.",
+            remediationText => "Fix the misspelled rule code, remove the stale override, or add the analyzer rule before referencing it in a profile."
+        },
+        "profile.severity-invalid" => {
+            category => "maintainability",
+            engine => "quality-profile-governance",
+            precision => "high",
+            confidence => "high",
+            remediation => "fix-profile-severity",
+            description => "Quality profile severity overrides must use TypeSea analyzer severity levels.",
+            remediationText => "Use error, warning, or notice as the profile severity override; do not use non-analyzer levels such as info."
+        },
+        "profile.override-reason" => {
+            category => "maintainability",
+            engine => "quality-profile-governance",
+            precision => "high",
+            confidence => "high",
+            remediation => "add-profile-override-reason",
+            description => "Risky quality profile overrides need an explicit reason.",
+            remediationText => "Add reason or justification to disabled rules, severity downgrades, expired entries, unknown rules, and invalid severity entries."
+        },
+        "profile.override-expired" => {
+            category => "maintainability",
+            engine => "quality-profile-governance",
+            precision => "high",
+            confidence => "high",
+            remediation => "remove-expired-profile-override",
+            description => "Expired quality profile overrides should not remain active.",
+            remediationText => "Remove the override, restore the rule, or renew the expiry only with a fresh review reason."
+        },
+        "profile.severity-downgrade" => {
+            category => "maintainability",
+            engine => "quality-profile-governance",
+            precision => "high",
+            confidence => "high",
+            remediation => "review-severity-downgrade",
+            description => "Quality profiles should not silently lower severity for observed findings.",
+            remediationText => "Fix the finding, keep the original severity, or add a reviewed reason and expiry for the downgrade."
+        },
+        "profile.rule-disabled" => {
+            category => "maintainability",
+            engine => "quality-profile-governance",
+            precision => "high",
+            confidence => "high",
+            remediation => "review-disabled-rule",
+            description => "Disabled analyzer rules must be visible as quality-profile risk.",
+            remediationText => "Re-enable the rule where possible, or keep the override bounded by reason, expiry, and profileOverrideRiskBudget."
+        },
+        "triage.ledger" => {
+            category => "maintainability",
+            engine => "triage-ledger",
+            precision => "high",
+            remediation => "fix-triage-ledger",
+            description => "The reviewed triage ledger must be readable before accepted risks can affect quality gates.",
+            remediationText => "Provide a valid JSON triage ledger or remove the --triage argument for runs that should not apply reviewed issue state."
+        },
+        "triage.entry" => {
+            category => "maintainability",
+            engine => "triage-ledger",
+            precision => "high",
+            remediation => "fix-triage-entry",
+            description => "Each triage entry must name a defect key or fingerprint and include required owner, reason, and expiry metadata.",
+            remediationText => "Use --write-triage-template to regenerate entries, then fill owner/reason/expires for accepted-risk, false-positive, or mitigated states."
+        }
+    );
+    return $specific{$code} if exists $specific{$code};
+    return generated_specific_rule_metadata($code);
+}
+
+sub generated_specific_rule_metadata {
+    my ($code) = @_;
+    my $label = rule_code_label($code);
+    if ($code =~ /\Apolicy\.(.+)\z/) {
+        return {
+            category => "analyzer",
+            engine => "policy-analyzer",
+            precision => "high",
+            confidence => "high",
+            remediation => "maintain-analyzer-capability",
+            description => "Policy analyzer capability '$label' must remain wired into diagnostics, reports, and quality gates.",
+            remediationText => "Restore the '$label' policy analyzer capability, its self-test evidence, and its report or quality-gate projection before accepting the change."
+        };
+    }
+    if ($code =~ /\Aflow\.(.+)\z/) {
+        my $kind = $1;
+        my $is_gap = $kind =~ /(?:gap|leak|path|sink|allocation)\z/ ? 1 : 0;
+        return {
+            category => $is_gap ? "correctness" : "architecture",
+            engine => "abstract-interpretation",
+            precision => $is_gap ? "medium" : "high",
+            confidence => "medium",
+            remediation => $is_gap ? "add-local-proof-or-budget" : "review-analysis-domain",
+            description => "Function IR abstract-analysis rule '$label' tracks TypeSea validation, compiler, or runtime proof state.",
+            remediationText => $is_gap
+                ? "Add a local guard, dominance proof, sanitizer contract, lifecycle proof, or reviewed quality budget for '$label'."
+                : "Review the '$label' abstract domain summary before changing TypeSea validation, compiler, or runtime control flow."
+        };
+    }
+    if ($code =~ /\Aarch\.(.+)\z/) {
+        return {
+            category => "architecture",
+            engine => "compiler-pipeline-coverage",
+            precision => "high",
+            confidence => "high",
+            remediation => "preserve-pipeline-coverage",
+            description => "Compiler pipeline stage '$label' must remain represented in TypeSea architecture evidence.",
+            remediationText => "Restore the '$label' compiler stage evidence or update the architecture policy only with an intentional pipeline change."
+        };
+    }
+    if ($code =~ /\Aschema-tags\.(.+)\z/) {
+        return {
+            category => "architecture",
+            engine => "schema-variant-coverage",
+            precision => "high",
+            confidence => "high",
+            remediation => "preserve-schema-variant-coverage",
+            description => "SchemaTag variant coverage for '$label' must stay synchronized with TypeSea compiler stages.",
+            remediationText => "Add the missing SchemaTag handling for '$label' across builders, lowering, evaluation, compile, AOT, JSON Schema, or async paths."
+        };
+    }
+    if ($code =~ /\Anode-tags\.(.+)\z/) {
+        return {
+            category => "architecture",
+            engine => "ir-node-variant-coverage",
+            precision => "high",
+            confidence => "high",
+            remediation => "preserve-ir-node-coverage",
+            description => "IR NodeTag variant coverage for '$label' must stay synchronized with TypeSea graph consumers.",
+            remediationText => "Add or restore '$label' NodeTag handling in IR construction, optimization, planning, compile, or introspection paths."
+        };
+    }
+    if ($code =~ /\Ajit\.(.+)\z/) {
+        return {
+            category => "performance",
+            engine => "jit-codegen-policy",
+            precision => "high",
+            confidence => "high",
+            remediation => "restore-jit-invariant",
+            description => "JIT code generation invariant '$label' protects TypeSea hot-path performance or dynamic-code confinement.",
+            remediationText => "Restore the '$label' generated-code invariant, then re-run warm benchmarks and source-audit tests before accepting the change."
+        };
+    }
+    if ($code =~ /\Asafe\.(.+)\z/) {
+        return {
+            category => "security",
+            engine => "hostile-input-safety",
+            precision => "high",
+            confidence => "high",
+            remediation => "restore-safe-mode-proof",
+            description => "Safe-mode hostile-input rule '$label' protects descriptor, accessor, or regression defenses.",
+            remediationText => "Restore the '$label' safe-mode proof with descriptor reads, own data-slot checks, or focused hostile-input regression tests."
+        };
+    }
+    if ($code =~ /\A(?:ci|release|pr)\.(.+)\z/) {
+        return {
+            category => "release",
+            engine => "release-governance",
+            precision => "high",
+            confidence => "high",
+            remediation => "restore-release-gate",
+            description => "Release-governance rule '$label' keeps CI, publication, or PR evidence intact.",
+            remediationText => "Restore the '$label' release gate, metadata evidence, or PR check before publishing or merging release-sensitive changes."
+        };
+    }
+    if ($code =~ /\A(?:deps|package|exports)\.(.+)\z/) {
+        return {
+            category => "supply-chain",
+            engine => "manifest-policy",
+            precision => "high",
+            confidence => "high",
+            remediation => "fix-package-metadata",
+            description => "Manifest rule '$label' protects TypeSea zero-dependency packaging, exports, or source-boundary guarantees.",
+            remediationText => "Fix '$label' in package metadata, export conditions, dependency declarations, or source import boundaries."
+        };
+    }
+    if ($code =~ /\A(?:doc|docs)\.(.+)\z/) {
+        return {
+            category => "documentation",
+            engine => "documentation-policy",
+            precision => "medium",
+            confidence => "high",
+            remediation => "update-durable-docs",
+            description => "Documentation rule '$label' keeps durable TypeSea engineering context and public comments useful.",
+            remediationText => "Update '$label' with durable rationale, API documentation, or high-signal source comments instead of boilerplate."
+        };
+    }
+    if ($code =~ /\Agraph\.(.+)\z/) {
+        return {
+            category => "architecture",
+            engine => "module-graph-analysis",
+            precision => "high",
+            confidence => "high",
+            remediation => "restore-layer-boundary",
+            description => "Module graph rule '$label' protects TypeSea import layering and cycle boundaries.",
+            remediationText => "Break the '$label' import cycle or density issue, or move code to the correct TypeSea layer."
+        };
+    }
+    if ($code =~ /\Alex\.(.+)\z/) {
+        return {
+            category => "analyzer",
+            engine => "typescript-lexer",
+            precision => "high",
+            confidence => "high",
+            remediation => "fix-source-front-end",
+            description => "Lexer rule '$label' protects source front-end tokenization before policy analysis.",
+            remediationText => "Fix malformed TypeScript input or extend the policy lexer so '$label' cannot silently corrupt analyzer state."
+        };
+    }
+    if ($code =~ /\Atypes\.(.+)\z/) {
+        return {
+            category => "type-safety",
+            engine => "type-policy",
+            precision => "high",
+            confidence => "high",
+            remediation => "restore-type-contract",
+            description => "Type-safety rule '$label' protects TypeSea's public compile-time contract.",
+            remediationText => "Restore '$label' through strict public type tests, readonly invariants, or explicit unknown-to-guard boundaries."
+        };
+    }
+    if ($code eq "abi.factory") {
+        return {
+            category => "architecture",
+            engine => "generated-source-abi",
+            precision => "high",
+            confidence => "high",
+            remediation => "restore-generated-abi",
+            description => "Generated source ABI factory helpers must remain stable across JIT/AOT source emission.",
+            remediationText => "Restore factory helper ABI evidence or update generated-source audits before changing emitted validator source."
+        };
+    }
+    if ($code eq "bench.invalid-fast-path") {
+        return {
+            category => "performance",
+            engine => "benchmark-gate",
+            precision => "high",
+            confidence => "high",
+            remediation => "restore-invalid-fast-path",
+            description => "Invalid-input fast-fail benchmark evidence must stay visible for TypeSea's defensive hot path.",
+            remediationText => "Re-run warm benchmark evidence and investigate invalid-input fast-fail regressions before updating benchmark claims."
+        };
+    }
+    return {};
+}
+
+sub rule_code_label {
+    my ($code) = @_;
+    $code = "" if !defined $code;
+    $code =~ s/\A[^.]+\.//;
+    $code =~ s/[_-]+/ /g;
+    return $code eq "" ? "rule" : $code;
+}
+
+sub rule_tags {
+    my ($meta) = @_;
+    my @tags = ($meta->{category}, $meta->{engine}, $meta->{remediation});
+    push @tags, $meta->{cwe} if defined $meta->{cwe};
+    return \@tags;
+}
+
+sub rule_properties {
+    my ($meta) = @_;
+    my %properties = (
+        domain => $meta->{domain},
+        category => $meta->{category},
+        engine => $meta->{engine},
+        precision => $meta->{precision},
+        confidence => $meta->{confidence},
+        remediation => $meta->{remediation},
+        severityClass => $meta->{severityClass},
+        tags => $meta->{tags}
+    );
+    $properties{cwe} = $meta->{cwe} if defined $meta->{cwe};
+    return \%properties;
+}
+
+sub policy_summary {
+    my ($ir, $errors, $warnings, $notices) = @_;
+    my $flow = $ir->{source}{function_analysis};
+    my $suppressed = $ir->{policy_runtime}{suppressed_diagnostics} // 0;
+    return {
+        errors => $errors,
+        warnings => $warnings,
+        notices => $notices,
+        suppressedDiagnostics => $suppressed,
+        sourceFiles => scalar(@{$ir->{source}{files}}),
+        importEdges => scalar(@{$ir->{source}{import_edges}}),
+        importCycles => scalar(@{$ir->{source}{import_cycles}}),
+        functions => scalar(@{$flow->{functions}}),
+        callEdges => scalar(@{$flow->{graph}{edges}}),
+        recursiveFunctionCycles => scalar(@{$flow->{graph}{cycles}}),
+        recursionDomain => {
+            cycles => $flow->{abstract}{recursion}{cycles},
+            boundedCycles => $flow->{abstract}{recursion}{boundedCycles},
+            unboundedCycles => $flow->{abstract}{recursion}{unboundedCycles},
+            proofTotals => $flow->{abstract}{recursion}{proofTotals},
+            sampleUnbounded => [
+                map {
+                    {
+                        size => $_->{size},
+                        where => $_->{where},
+                        members => [map { $_->{name} } @{$_->{members}}]
+                    }
+                } @{$flow->{abstract}{recursion}{unbounded}}[0 .. min_index(4, scalar(@{$flow->{abstract}{recursion}{unbounded}}) - 1)]
+            ]
+        },
+        cfg => $flow->{abstract}{cfg},
+        taintedFunctions => $flow->{abstract}{taint}{tainted_functions},
+        taintedSinkPaths => scalar(@{$flow->{abstract}{taint}{paths}}),
+        interproceduralTaintedSinkPaths => scalar(@{$flow->{abstract}{taint}{interprocedural_paths}}),
+        localTaintedSinkPaths => scalar(@{$flow->{abstract}{taint}{local_paths}}),
+        descriptorDomain => $flow->{abstract}{domains}{descriptor},
+        branchState => $flow->{abstract}{branch_state},
+        branchStateLeaks => scalar(@{$flow->{abstract}{branch_state_leaks}}),
+        loopBoundDomain => $flow->{abstract}{loop_bound_domain},
+        loopBoundGaps => scalar(@{$flow->{abstract}{loop_bound_gaps}}),
+        rangeDomain => $flow->{abstract}{range_domain},
+        rangeGaps => scalar(@{$flow->{abstract}{range_gaps}}),
+        indexDomain => $flow->{abstract}{index_domain},
+        indexGaps => scalar(@{$flow->{abstract}{index_gaps}}),
+        mutationDomain => $flow->{abstract}{mutation_domain},
+        mutationGaps => scalar(@{$flow->{abstract}{mutation_gaps}}),
+        memoryAliasDomain => $flow->{abstract}{memory_alias_domain},
+        memoryAliasGaps => scalar(@{$flow->{abstract}{memory_alias_gaps}}),
+        keySafetyDomain => $flow->{abstract}{key_safety_domain},
+        keySafetyGaps => scalar(@{$flow->{abstract}{key_safety_gaps}}),
+        resultStateDomain => $flow->{abstract}{result_state_domain},
+        resultStateGaps => scalar(@{$flow->{abstract}{result_state_gaps}}),
+        freezeStateDomain => $flow->{abstract}{freeze_state_domain},
+        freezeStateGaps => scalar(@{$flow->{abstract}{freeze_state_gaps}}),
+        variantStateDomain => $flow->{abstract}{variant_state_domain},
+        variantStateGaps => scalar(@{$flow->{abstract}{variant_state_gaps}}),
+        generatedSourceDomain => $flow->{abstract}{source_taint_domain},
+        generatedSourceProvenance => {
+            localProofFunctions => $flow->{abstract}{source_provenance}{localProofFunctions},
+            propagatedProofFunctions => $flow->{abstract}{source_provenance}{propagatedProofFunctions},
+            proofedSourceBuilders => $flow->{abstract}{source_provenance}{proofedSourceBuilders},
+            gapSourceBuilders => $flow->{abstract}{source_provenance}{gapSourceBuilders}
+        },
+        generatedSourceGaps => scalar(@{$flow->{abstract}{source_taint_gaps}}),
+        exceptionDomain => $flow->{abstract}{exception_domain},
+        exceptionGaps => scalar(@{$flow->{abstract}{exception_gaps}}),
+        lifecycleDomain => $flow->{abstract}{lifecycle_domain},
+        lifecycleGaps => scalar(@{$flow->{abstract}{lifecycle_gaps}}),
+        lifecycleDataflow => {
+            localGapFunctions => $flow->{abstract}{lifecycle}{localGapFunctions},
+            propagatedGapFunctions => $flow->{abstract}{lifecycle}{propagatedGapFunctions},
+            reachableLifecycleGapFunctions => $flow->{abstract}{lifecycle}{reachableLifecycleGapFunctions},
+            samplePaths => $flow->{abstract}{lifecycle}{paths}
+        },
+        asyncDomain => $flow->{abstract}{async_domain},
+        asyncSchedulingGaps => scalar(@{$flow->{abstract}{async_scheduling_gaps}}),
+        typeEscapeDomain => $ir->{source}{type_escape_domain},
+        regexSafetyDomain => $ir->{source}{regex_safety_domain},
+        secretLeakDomain => $ir->{secrets},
+        workflowSecurityDomain => $ir->{workflows},
+        packageLockSecurityDomain => $ir->{package_lock},
+        packageLicenseDomain => $ir->{licenses},
+        apiSurfaceDomain => $ir->{api_surface},
+        releaseConsistencyDomain => $ir->{release_consistency},
+        testEvidenceDomain => $ir->{test_evidence},
+        benchmarkEvidenceDomain => $ir->{benchmark_evidence},
+        ruleMetadataDomain => $ir->{policy_runtime}{rule_metadata_model},
+        symbolicDomain => $flow->{abstract}{symbolic_domain},
+        symbolicPaths => scalar(@{$flow->{abstract}{symbolic_gaps}}),
+        symbolicDataflow => {
+            localOpenFunctions => $flow->{abstract}{symbolic_dataflow}{localOpenFunctions},
+            propagatedOpenFunctions => $flow->{abstract}{symbolic_dataflow}{propagatedOpenFunctions},
+            reachableOpenFunctions => $flow->{abstract}{symbolic_dataflow}{reachableOpenFunctions},
+            samplePaths => [
+                @{$flow->{abstract}{symbolic_dataflow}{paths}}[0 .. min_index(4, scalar(@{$flow->{abstract}{symbolic_dataflow}{paths}}) - 1)]
+            ]
+        },
+        symbolicWitnesses => [
+            map {
+                $_->{symbolic_domain}{witness}
+            } grep {
+                defined $_->{symbolic_domain}{witness}
+            } @{$flow->{abstract}{symbolic_gaps}}[0 .. min_index(4, scalar(@{$flow->{abstract}{symbolic_gaps}}) - 1)]
+        ],
+        nullishDomain => $flow->{abstract}{nullish_domain},
+        nullishGaps => scalar(@{$flow->{abstract}{nullish_gaps}}),
+        effectDomain => {
+            totals => $flow->{abstract}{effect}{totals},
+            allocationFunctions => scalar(@{$flow->{abstract}{effect}{allocation_functions}}),
+            loopAllocationFunctions => scalar(@{$flow->{abstract}{effect}{loop_allocation_functions}}),
+            hotLoopAllocationFunctions => scalar(@{$flow->{abstract}{effect}{hot_loop_allocation_functions}}),
+            propagatedAllocationFunctions => $flow->{abstract}{effect}{propagated_allocation_functions},
+            topFunctions => $flow->{abstract}{effect}{top_functions}
+        },
+        contractDomain => {
+            totals => $flow->{abstract}{contracts}{totals},
+            contractlessSinks => scalar(@{$flow->{abstract}{contracts}{contractless_sinks}}),
+            throwingPredicates => scalar(@{$flow->{abstract}{contracts}{throwing_predicates}}),
+            sinkReachableFunctions => $flow->{abstract}{contracts}{sink_reachable_functions},
+            topContractlessSinks => $flow->{abstract}{contracts}{top_contractless_sinks}
+        },
+        sinkDomain => $flow->{abstract}{domains}{sink},
+        schemaTags => scalar(@{$ir->{source}{schema_tags}}),
+        nodeTags => scalar(@{$ir->{source}{node_tags}})
+    };
+}
+
+sub sarif_result {
+    my ($diag) = @_;
+    my ($path, $line) = diagnostic_location($diag->{where});
+    my $meta = rule_metadata($diag->{code});
+    my $properties = rule_properties($meta);
+    my $defect = defect_record($diag);
+    my $witness = finding_witness_summary($diag, $defect);
+    my $confidence = finding_confidence_summary($diag, $defect);
+    my $root_cause_key = root_cause_key($defect);
+    $properties->{fingerprint} = $diag->{fingerprint};
+    $properties->{severity} = $diag->{severity};
+    $properties->{where} = $diag->{where};
+    $properties->{defectKey} = $defect->{key};
+    $properties->{rootCauseId} = "RC-" . stable_hex_hash($root_cause_key);
+    $properties->{rootCauseKey} = stable_hex_hash($root_cause_key);
+    $properties->{witnessKind} = $witness->{witnessKind};
+    $properties->{witnessFlowSteps} = $witness->{flowSteps};
+    $properties->{witnessHasMetric} = $witness->{hasMetric};
+    $properties->{confidenceScore} = $confidence->{score};
+    $properties->{confidenceBand} = $confidence->{band};
+    $properties->{confidenceReasons} = $confidence->{reasons};
+    $properties->{triageScore} = $defect->{triageScore};
+    $properties->{priority} = $defect->{priority};
+    $properties->{lifecycleState} = $defect->{lifecycleState};
+    $properties->{status} = $defect->{status};
+    $properties->{owner} = $defect->{owner};
+    $properties->{owners} = $defect->{owners};
+    $properties->{ownerSource} = $defect->{ownerSource};
+    $properties->{ownerLayer} = $defect->{ownerLayer};
+    $properties->{triageState} = $defect->{triageState};
+    $properties->{triageOwner} = $defect->{triageOwner};
+    $properties->{triageReason} = $defect->{triageReason};
+    $properties->{triageExpires} = $defect->{triageExpires};
+    $properties->{triageExpired} = $defect->{triageExpired};
+    my $result = {
+        ruleId => $diag->{code},
+        level => sarif_level($diag->{severity}),
+        message => {
+            text => $diag->{message}
+        },
+        locations => [{
+            physicalLocation => {
+                artifactLocation => {
+                    uri => $path
+                },
+                region => {
+                    startLine => $line
+                }
+            }
+        }],
+        partialFingerprints => {
+            primaryLocationLineHash => $diag->{fingerprint},
+            typeSeaPolicyFingerprint => $diag->{fingerprint}
+        },
+        properties => $properties
+    };
+    if ($diag->{suppressed}) {
+        $result->{suppressions} = [{
+            kind => ($diag->{suppression} // "") eq "source-comment" ? "inSource" : "external",
+            justification => $diag->{suppressionReason} // $diag->{suppression} // "policy-baseline"
+        }];
+    }
+    if (@{$diag->{flow} // []} != 0) {
+        $result->{codeFlows} = [{
+            threadFlows => [{
+                locations => [map { sarif_thread_location($_) } @{$diag->{flow}}]
+            }]
+        }];
+    }
+    return $result;
+}
+
+sub sarif_thread_location {
+    my ($step) = @_;
+    return {
+        location => {
+            physicalLocation => {
+                artifactLocation => {
+                    uri => $step->{path}
+                },
+                region => {
+                    startLine => $step->{line}
+                }
+            },
+            message => {
+                text => $step->{message}
+            }
+        }
+    };
+}
+
+sub diagnostic_location {
+    my ($where) = @_;
+    if ($where =~ /\A(.+):(\d+)\z/) {
+        return ($1, int($2));
+    }
+    return ($where, 1);
+}
+
+sub sarif_level {
+    my ($severity) = @_;
+    return "error" if $severity eq "error";
+    return "warning" if $severity eq "warning";
+    return "note";
+}
+
+sub diagnostic_domain {
+    my ($code) = @_;
+    return $1 if $code =~ /\A([^.]+)/;
+    return "policy";
+}
+
+sub json_encoder {
+    return JSON::PP->new->canonical->pretty->utf8;
+}
+
+sub emit_diagnostics {
+    my (@diagnostics) = @_;
+    for my $diag (@diagnostics) {
+        next if diagnostic_quality_excluded($diag);
+        next if $diag->{severity} eq "notice" && !$show_notices;
+        my $label = severity_label($diag->{severity});
+        my $line = "$label [$diag->{code}] $diag->{where}: $diag->{message}\n";
+        if ($diag->{severity} eq "error") {
+            print STDERR $line;
+        } elsif ($diag->{severity} eq "warning") {
+            print STDERR $line;
+        } else {
+            print STDOUT $line;
+        }
+    }
+}
+
+sub severity_label {
+    my ($severity) = @_;
+    return "ERROR" if $severity eq "error";
+    return "WARNING" if $severity eq "warning";
+    return "NOTICE";
+}
+
+sub count_severity {
+    my ($severity, @diagnostics) = @_;
+    my $count = 0;
+    for my $diag (@diagnostics) {
+        next if diagnostic_quality_excluded($diag);
+        $count += 1 if $diag->{severity} eq $severity;
+    }
+    return $count;
+}
+
+sub count_suppressed {
+    my (@diagnostics) = @_;
+    my $count = 0;
+    for my $diag (@diagnostics) {
+        $count += 1 if $diag->{suppressed};
+    }
+    return $count;
+}
+
+sub summary_line {
+    my ($errors, $warnings, $notices, $status) = @_;
+    return "contributing policy $status ($errors errors, $warnings warnings, $notices notices)\n";
+}
+
+sub format_hz {
+    my ($value) = @_;
+    return sprintf("%.2fM", $value / 1_000_000);
+}
+
+sub percent {
+    my ($value) = @_;
+    return sprintf("%.1f%%", $value * 100);
+}

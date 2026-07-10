@@ -36,8 +36,7 @@ export function readGuardSchema(
 }
 
 /**
- * @brief Check record.
- * @details This helper keeps a local invariant explicit at the module boundary.
+ * @brief Accept non-array objects before structured field reads.
  */
 export function isRecord(
     value: unknown
