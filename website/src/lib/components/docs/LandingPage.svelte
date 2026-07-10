@@ -31,7 +31,7 @@
 
     let { benchmark, codeExamples }: Props = $props();
     const packageName = 'typesea';
-    const installCommand = `pnpm add ${packageName}`;
+    const installCommand = `npm install ${packageName}`;
     const locale = $derived(currentLocale());
     const readmeQuickStart = $derived(getLocalizedHeadingId('readme', locale, 'quick-start'));
     const readmePerformance = $derived(
