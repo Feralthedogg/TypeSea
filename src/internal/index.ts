@@ -1,9 +1,6 @@
 /**
  * @file internal.ts
  * @brief Private helpers shared across TypeSea translation units.
- * @details This declaration records the local invariant that callers rely on after this
- * module boundary.
- *
  * @invariant Values crossing a module boundary stay `unknown` until a local
  * guard proves the shape needed by that module.
  */
@@ -46,8 +43,6 @@ export function isRecord(
 
 /**
  * @brief Accept an array before a caller performs local element validation.
- * @details This declaration records the local invariant that callers rely on after this
- * module boundary.
  * @param value Candidate vector.
  * @returns True when the value is an Array instance.
  */
@@ -57,8 +52,6 @@ export function isUnknownArray(value: unknown): value is readonly unknown[] {
 
 /**
  * @brief Linear membership for short builder-owned string vectors.
- * @details This declaration records the local invariant that callers rely on after this
- * module boundary.
  * @param values Candidate set represented as an ordered vector.
  * @param value String being searched.
  * @returns True when the string is present.
@@ -77,8 +70,6 @@ export function includesString(
 
 /**
  * @brief Accept only the literal boolean success value from user predicates.
- * @details This declaration records the local invariant that callers rely on after this
- * module boundary.
  * @param value Predicate return value.
  * @returns True only for `true`.
  */
@@ -88,8 +79,6 @@ export function isStrictTrue(value: unknown): boolean {
 
 /**
  * @brief Check whether a value structurally exposes a TypeSea schema.
- * @details This declaration records the local invariant that callers rely on after this
- * module boundary.
  * @param value Candidate guard-like object.
  * @returns True when a valid schema is stored directly on the object.
  */
@@ -108,8 +97,6 @@ function isObjectLike(value: unknown): value is object {
 
 /**
  * @brief Read one own data property without running getters.
- * @details This declaration records the local invariant that callers rely on after this
- * module boundary.
  * @param value Object being normalized.
  * @param key Field name or symbol.
  * @returns Stored field value, or undefined when the own data slot is absent.

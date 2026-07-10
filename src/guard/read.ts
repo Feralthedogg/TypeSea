@@ -1,8 +1,6 @@
 /**
  * @file read.ts
  * @brief Guard receiver and constructor validation.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  */
 
 import { SchemaTag } from "../kind/index.js";

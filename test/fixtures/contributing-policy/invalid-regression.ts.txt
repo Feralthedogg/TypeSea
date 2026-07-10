@@ -1,0 +1,2 @@
+/* a multiline comment containing fake syntax: function nope<T>(x: T): T */
+const broken = `outer ${(() => ({ value: 1 }))()}

@@ -1,8 +1,6 @@
 /**
  * @file emit-composite.ts
  * @brief Container TypeSea schema to JSON Schema emitters.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  */
 
 import {

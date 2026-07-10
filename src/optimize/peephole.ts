@@ -1,8 +1,6 @@
 /**
  * @file peephole.ts
  * @brief Local graph rewrites that remove dead dispatch arms.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 
 import { NodeTag } from "../kind/index.js";
@@ -78,8 +76,6 @@ export function peepholeGraph(graph: Graph): Graph {
 
 /**
  * @brief Apply the local peephole rule for one node.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Node with dependencies already alias-rewritten.
  * @param nodes Mutable graph node table.
  * @param aliases Alias table updated by replacements.
@@ -106,8 +102,6 @@ function peepholeNode(
 
 /**
  * @brief Remove impossible discriminant dispatch arms.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Discriminant dispatch node to compact.
  * @param nodes Mutable graph node table used for replacement constants.
  * @param aliases Alias table updated by replacements.
@@ -163,8 +157,6 @@ function compactDiscriminantDispatch(
 
 /**
  * @brief Remove impossible general union dispatch arms.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Union dispatch node to compact.
  * @param nodes Mutable graph node table used for replacement constants.
  * @param aliases Alias table updated by replacements.
@@ -270,8 +262,6 @@ function compactPresenceDispatch(
 
 /**
  * @brief Remove impossible primitive-union dispatch arms.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Primitive union dispatch node to compact.
  * @param nodes Mutable graph node table used for replacement constants.
  * @param aliases Alias table updated by replacements.
@@ -317,8 +307,6 @@ function compactPrimitiveUnion(
 
 /**
  * @brief Read whether a graph's result is a constant boolean.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param graph Child graph to inspect.
  * @returns Constant boolean result, or undefined for non-constant graphs.
  */
@@ -336,8 +324,6 @@ function readGraphResultBoolean(graph: Graph): boolean | undefined {
 
 /**
  * @brief Build a literal-to-arm lookup for discriminant dispatch.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param literals Remaining discriminant literals in arm order.
  * @returns Frozen null-prototype lookup from literal to compacted arm index.
  */

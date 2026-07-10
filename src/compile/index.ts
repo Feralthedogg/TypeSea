@@ -1,8 +1,6 @@
 /**
  * @file compile/index.ts
  * @brief Public compile module barrel.
- * @details This barrel keeps public import paths stable while implementation files remain
- * split by responsibility.
  */
 
 export {

@@ -26,6 +26,7 @@ import type {
     SeaFlowContext,
     SeaFlowEmitter
 } from "./types.js";
+import { copySeaFlowRecord } from "./record.js";
 
 /**
  * @brief Dispatch composite schemas into structural SeaFlow probes.
@@ -614,17 +615,7 @@ function firstRequiredEntry(entries: readonly ObjectEntry[]): ObjectEntry | unde
  * @brief Copy an object while deleting one own enumerable key.
  */
 function omitOwnKey(value: unknown, key: string): Record<string, unknown> {
-    const output: Record<string, unknown> = {};
-    if (isRecord(value)) {
-        const keys = Object.keys(value);
-        for (let index = 0; index < keys.length; index += 1) {
-            const item = keys[index];
-            if (item !== undefined && item !== key) {
-                output[item] = value[item];
-            }
-        }
-    }
-    return output;
+    return copySeaFlowRecord(value, key);
 }
 
 /**
@@ -668,18 +659,7 @@ function setAccessorKey(
  * @brief Copy own enumerable data into a plain record.
  */
 function copyRecord(value: unknown): Record<string, unknown> {
-    const output: Record<string, unknown> = {};
-    if (!isRecord(value)) {
-        return output;
-    }
-    const keys = Object.keys(value);
-    for (let index = 0; index < keys.length; index += 1) {
-        const key = keys[index];
-        if (key !== undefined) {
-            output[key] = value[key];
-        }
-    }
-    return output;
+    return copySeaFlowRecord(value);
 }
 
 /**

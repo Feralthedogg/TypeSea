@@ -22,6 +22,7 @@ import type {
 } from "../schema/index.js";
 import type { SeaFlowContext } from "./types.js";
 import { childContext, descendContext } from "./case.js";
+import { defineSeaFlowDataProperty } from "./record.js";
 
 /**
  * @brief Synthesize one deterministic value expected to satisfy a schema.
@@ -249,9 +250,10 @@ function sampleObject(
         if (entry.presence === PresenceTag.Required ||
             (context.config.intensity !== "low" &&
                 context.depth + 1 < context.config.maxDepth)) {
-            output[entry.key] = sampleValidValue(
-                entry.schema,
-                childContext(context, entry.key)
+            defineSeaFlowDataProperty(
+                output,
+                entry.key,
+                sampleValidValue(entry.schema, childContext(context, entry.key))
             );
         }
     }
@@ -283,7 +285,11 @@ function sampleProperty(
 ): unknown {
     const base = sampleValidValue(schema.base, descendContext(context));
     if (isMutableRecord(base)) {
-        base[schema.key] = sampleValidValue(schema.value, childContext(context, schema.key));
+        defineSeaFlowDataProperty(
+            base,
+            schema.key,
+            sampleValidValue(schema.value, childContext(context, schema.key))
+        );
         return base;
     }
     return {
@@ -304,7 +310,11 @@ function samplePatternProperties(
     }
     const entry = schema.entries[0];
     if (entry !== undefined) {
-        base[entry.source] = sampleValidValue(entry.schema, childContext(context, entry.source));
+        defineSeaFlowDataProperty(
+            base,
+            entry.source,
+            sampleValidValue(entry.schema, childContext(context, entry.source))
+        );
     }
     return base;
 }

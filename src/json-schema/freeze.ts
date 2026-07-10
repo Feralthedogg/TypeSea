@@ -1,8 +1,6 @@
 /**
  * @file freeze.ts
  * @brief Immutable JSON Schema export results.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  */
 
 import type {
@@ -140,8 +138,6 @@ function freezeJsonSchemaItems(
 
 /**
  * @brief Freeze one nested JSON Schema value when it is object-shaped.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  * @param schema Boolean or object-shaped JSON Schema fragment.
  * @param frozen Objects already processed by this hardening walk.
  */

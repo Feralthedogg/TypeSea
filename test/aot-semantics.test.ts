@@ -192,6 +192,76 @@ describe("AOT module emission", () => {
         expect(transformed?.code.match(/typesea:aot\/user/gu)).toHaveLength(1);
     });
 
+    test("leaves regular expressions and JSX text outside the macro language", () => {
+        const plugin = createTypeSeaRollupPlugin({
+            entries: [{
+                id: "user",
+                guard: t.string,
+                options: undefined
+            }],
+            transformCompileCached: true
+        });
+        const transformed = plugin.transform([
+            "\"use client\" /* preserve directive */;",
+            "import { compileCached } from \"typesea\";",
+            "const pattern = /compileCached(\"user\", factory)/;",
+            "if (ready) /compileCached(\"user\", factory)/.test(text);",
+            "const label = <code>compileCached(\"user\", factory)</code>;",
+            "const view = <Widget guard={compileCached(\"user\", () => makeUser())} />;",
+            "type Mapper = <T>(value: T) => T;",
+            "const generic = <T,>(value: T) => compileCached(\"user\", () => makeUser());",
+            "const divided = total / compileCached(\"user\", () => makeUser());"
+        ].join("\n"), "/project/src/view.tsx");
+
+        expect(transformed?.code.startsWith(
+            "\"use client\" /* preserve directive */;\n"
+        )).toBe(true);
+        expect(transformed?.code)
+            .toContain("/compileCached(\"user\", factory)/");
+        expect(transformed?.code)
+            .toContain("if (ready) /compileCached(\"user\", factory)/.test(text)");
+        expect(transformed?.code)
+            .toContain("<code>compileCached(\"user\", factory)</code>");
+        expect(transformed?.code)
+            .toContain("<Widget guard={__typesea_aotuser} />");
+        expect(transformed?.code)
+            .toContain("<T,>(value: T) => __typesea_aotuser");
+        expect(transformed?.code)
+            .toContain("total / __typesea_aotuser");
+    });
+
+    test("keeps shebangs first and generates collision-free import bindings", () => {
+        const plugin = createTypeSeaRollupPlugin({
+            entries: [
+                { id: "a-b", guard: t.string, options: undefined },
+                { id: "a_b", guard: t.number, options: undefined }
+            ],
+            transformCompileCached: true
+        });
+        const transformed = plugin.transform([
+            "#!/usr/bin/env node",
+            "import { compileCached } from \"typesea\";",
+            "const A = compileCached(\"a-b\", () => t.string);",
+            "const B = compileCached(\"a_b\", () => t.number);"
+        ].join("\n"), "/project/src/cli.js");
+        const imports = transformed?.code.match(
+            /import (__typesea_aot[^ ]+) from "typesea:aot\/(?:a-b|a_b)";/gu
+        ) ?? [];
+        const bindings = imports.map((item) => item.split(" ")[1]);
+
+        expect(transformed?.code.startsWith("#!/usr/bin/env node\n")).toBe(true);
+        expect(imports).toHaveLength(2);
+        expect(new Set(bindings).size).toBe(2);
+        const first = bindings[0];
+        const second = bindings[1];
+        expect(first).toBeDefined();
+        expect(second).toBeDefined();
+        if (first !== undefined && second !== undefined) {
+            expect(transformed?.code).toContain(`const A = ${first};`);
+            expect(transformed?.code).toContain(`const B = ${second};`);
+        }
+    });
+
     test("emits importable ESM validators matching interpreter semantics", async () => {
         const User = t.strictObject({
             id: t.string.min(1),

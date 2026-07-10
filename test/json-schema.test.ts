@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
     compile,
+    compileAsync,
     fromJSONSchema,
     fromJsonSchema,
     registry,
@@ -412,6 +413,94 @@ describe("JSON Schema export", () => {
         expect(imported.value.is({
             count: 1
         })).toBe(false);
+    });
+
+    test("composes object count, property-name, and pattern-property rules", () => {
+        const imported = fromJsonSchema({
+            type: "object",
+            minProperties: 1,
+            maxProperties: 2,
+            propertyNames: {
+                type: "string",
+                pattern: "^x_"
+            },
+            patternProperties: {
+                "^x_": { type: "number" }
+            },
+            additionalProperties: false
+        });
+
+        expect(imported.ok).toBe(true);
+        if (!imported.ok) {
+            return;
+        }
+        const Fast = compile(imported.value, { name: "composedObjectKeywords" });
+        const valid = { x_id: 1 };
+        const values: readonly unknown[] = [
+            valid,
+            {},
+            { bad: 1 },
+            { x_id: "1" },
+            { x_a: 1, x_b: 2, x_c: 3 }
+        ];
+
+        expect(imported.value.is(valid)).toBe(true);
+        expect(Fast.is(valid)).toBe(true);
+        for (let index = 1; index < values.length; index += 1) {
+            expect(imported.value.is(values[index])).toBe(false);
+            expect(Fast.is(values[index])).toBe(false);
+        }
+        const exported = toJsonSchema(imported.value);
+        expect(exported.ok).toBe(true);
+        if (exported.ok) {
+            expect(exported.value).toMatchObject({
+                minProperties: 1,
+                maxProperties: 2,
+                propertyNames: { pattern: "^x_" },
+                patternProperties: {
+                    "^x_": { type: "number" }
+                },
+                additionalProperties: false
+            });
+        }
+    });
+
+    test("treats decimal JSON Schema multiples mathematically", async () => {
+        const imported = fromJsonSchema({
+            type: "number",
+            multipleOf: 0.1
+        });
+
+        expect(imported.ok).toBe(true);
+        if (!imported.ok) {
+            return;
+        }
+        const Fast = compile(imported.value, { name: "decimalMultiple" });
+        const Async = compileAsync(imported.value, {
+            name: "asyncDecimalMultiple",
+            yieldEvery: 1,
+            yieldTimeout: 0
+        });
+        const Nested = compile(t.object({
+            value: t.number.multipleOf(0.1)
+        }), { name: "nestedDecimalMultiple" });
+        const Deep = compile(t.array(t.object({
+            value: t.number.multipleOf(0.1)
+        })), { name: "deepDecimalMultiple" });
+
+        expect(imported.value.is(0.3)).toBe(true);
+        expect(Fast.is(0.3)).toBe(true);
+        expect(imported.value.check(0.3).ok).toBe(true);
+        expect(Fast.check(0.3).ok).toBe(true);
+        expect(Fast.checkFirst(0.3).ok).toBe(true);
+        expect(await Async.is(0.3)).toBe(true);
+        expect((await Async.check(0.3)).ok).toBe(true);
+        expect(Nested.check({ value: 0.3 }).ok).toBe(true);
+        expect(Nested.checkFirst({ value: 0.3 }).ok).toBe(true);
+        expect(Deep.check([{ value: 0.3 }]).ok).toBe(true);
+        expect(Deep.checkFirst([{ value: 0.3 }]).ok).toBe(true);
+        expect(imported.value.is(0.31)).toBe(false);
+        expect(Fast.is(0.31)).toBe(false);
     });
 
     test("rejects invalid JSON Schema object property-count bounds", () => {

@@ -1,8 +1,6 @@
 /**
  * @file compact.ts
  * @brief Reachability compaction for optimized graphs.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 
 import type { Graph, GraphNode, NodeId } from "../ir/index.js";

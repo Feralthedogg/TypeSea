@@ -354,6 +354,41 @@ describe("SeaBreeze arena solver", () => {
                 maxFields: 16
             }), badCycle);
         }).toThrow(RangeError);
+
+        const ghostField: SeaBreezeSnapshot = {
+            ...snapshot,
+            fieldLength: snapshot.fieldLength + 1,
+            fieldKeys: new Int32Array([...snapshot.fieldKeys, 99]),
+            fieldTypes: new Int32Array([...snapshot.fieldTypes, arena.string]),
+            fieldPresence: new Uint8Array([
+                ...snapshot.fieldPresence,
+                SeaBreezePresence.Required
+            ])
+        };
+        expect(() => {
+            loadSeaBreezeSnapshot(new SeaBreezeArena({
+                maxNodes: 64,
+                maxFields: 16
+            }), ghostField);
+        }).toThrow(RangeError);
+    });
+
+    test("keeps occurs checks finite for recursive structural graphs", () => {
+        const arena = new SeaBreezeArena({
+            maxNodes: 64,
+            maxFields: 16
+        });
+        const recursive = arena.allocObject();
+        arena.appendField(
+            recursive,
+            1,
+            recursive,
+            SeaBreezePresence.Required
+        );
+        const variable = arena.allocVar(0);
+
+        expect(arena.principalJoin(variable, recursive)).toBe(recursive);
+        expect(arena.find(variable)).toBe(recursive);
     });
 
     test("exposes a reader facade over arena typed arrays", () => {

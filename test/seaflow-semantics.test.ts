@@ -89,6 +89,30 @@ describe("SeaFlow symbolic fuzzer", () => {
         expect(noSecurity.every((item) => item.kind !== "security")).toBe(true);
     });
 
+    test("synthesizes own data properties for prototype-sensitive field names", () => {
+        const shape = Object.create(null) as Record<string, Guard<string>>;
+        Object.defineProperty(shape, "__proto__", {
+            value: t.string,
+            writable: true,
+            enumerable: true,
+            configurable: true
+        });
+        const PrototypeField = t.strictObject(shape);
+        const cases = [...fuzzCases(PrototypeField, {
+            intensity: "extreme",
+            includeInvalid: false,
+            maxYields: 16
+        })];
+
+        expect(cases.length).toBeGreaterThan(0);
+        expect(cases.every((item) => item.valid)).toBe(true);
+        expect(cases.every((item) => PrototypeField.is(item.value))).toBe(true);
+        expect(cases.some((item) => Object.prototype.hasOwnProperty.call(
+            item.value,
+            "__proto__"
+        ))).toBe(true);
+    });
+
     test("keeps property-count wrapper verdicts aligned with generated payloads", () => {
         const imported = fromJsonSchema({
             type: "object",

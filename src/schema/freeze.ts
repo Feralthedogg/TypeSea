@@ -1,8 +1,6 @@
 /**
  * @file schema/freeze.ts
  * @brief Schema freezing and collection hardening.
- * @details Freezing hardens builder output before execution engines or exporters rely on
- * schema identity and shape stability.
  */
 
 import { SchemaTag, StringCheckTag } from "../kind/index.js";
@@ -18,8 +16,6 @@ import type {
 
 /**
  * @brief freeze schema.
- * @details Freezing hardens builder output before execution engines or exporters rely on
- * schema identity and shape stability.
  */
 export function freezeSchema(schema: Schema): Schema {
     return freezeSchemaInner(schema, new WeakSet<object>());
@@ -27,8 +23,6 @@ export function freezeSchema(schema: Schema): Schema {
 
 /**
  * @brief freeze schema inner.
- * @details Freezing hardens builder output before execution engines or exporters rely on
- * schema identity and shape stability.
  */
 function freezeSchemaInner(schema: Schema, frozen: WeakSet<object>): Schema {
     if (frozen.has(schema)) {
@@ -195,11 +189,6 @@ function freezeWrapperSchemaChildren(schema: Schema, frozen: WeakSet<object>): b
     }
 }
 
-/**
- * @brief freeze array.
- * @details Freezing hardens builder output before execution engines or exporters rely on
- * schema identity and shape stability.
- */
 function freezeArray(
     values: readonly object[],
     frozen: WeakSet<object>
@@ -236,11 +225,6 @@ function freezeFileChecks(
     Object.freeze(values);
 }
 
-/**
- * @brief freeze string checks.
- * @details Freezing hardens builder output before execution engines or exporters rely on
- * schema identity and shape stability.
- */
 function freezeStringChecks(
     values: readonly StringCheck[],
     frozen: WeakSet<object>
@@ -259,11 +243,6 @@ function freezeStringChecks(
     Object.freeze(values);
 }
 
-/**
- * @brief freeze regex check.
- * @details Freezing hardens builder output before execution engines or exporters rely on
- * schema identity and shape stability.
- */
 function freezeRegexCheck(check: StringRegexCheck): void {
     const regex = check.regex;
     if (!isPlainRegExp(regex)) {
@@ -285,11 +264,6 @@ function freezeRegexCheck(check: StringRegexCheck): void {
     });
 }
 
-/**
- * @brief freeze schema array.
- * @details Freezing hardens builder output before execution engines or exporters rely on
- * schema identity and shape stability.
- */
 function freezeSchemaArray(
     values: readonly Schema[],
     frozen: WeakSet<object>
@@ -303,11 +277,6 @@ function freezeSchemaArray(
     Object.freeze(values);
 }
 
-/**
- * @brief freeze object entries.
- * @details Freezing hardens builder output before execution engines or exporters rely on
- * schema identity and shape stability.
- */
 function freezeObjectEntries(
     entries: readonly ObjectEntry[],
     frozen: WeakSet<object>
@@ -346,11 +315,6 @@ function freezePatternPropertyEntries(
     Object.freeze(entries);
 }
 
-/**
- * @brief freeze discriminated union cases.
- * @details Freezing hardens builder output before execution engines or exporters rely on
- * schema identity and shape stability.
- */
 function freezeDiscriminatedUnionCases(
     cases: readonly DiscriminatedUnionCase[],
     frozen: WeakSet<object>

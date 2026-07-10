@@ -2,7 +2,7 @@
 
 All notable changes to TypeSea are recorded here.
 
-## 1.1.1 - 2026-07-09
+## 1.1.1 - 2026-07-11
 
 ### Changed
 
@@ -22,11 +22,51 @@ All notable changes to TypeSea are recorded here.
   coverage, comment-policy wiring, safe-mode descriptor evidence,
   compiler-pipeline coverage, and benchmark target drift. Diagnostics are split
   into error, warning, and notice levels.
-- Replaced whole-source regular-expression policy checks with a TypeScript lexer
-  pass inside `check:contributing`. The gate now separates comments, string
-  literals, template fragments, imports, exports, and identifiers before checking
-  module edges, public declaration JSDoc proximity, generated-source fragments,
-  and helper ABI slots.
+- Replaced the policy gate's structural TypeScript parsing with a shared
+  TypeScript `Program`/AST/`TypeChecker` front end. Imports, exports, public
+  declarations, function-like nodes, resolved call targets, inferred types,
+  type-safety escapes, regex literals, and compiler diagnostics now carry exact
+  zero-based UTF-16, end-exclusive ranges; the Perl layer remains responsible
+  for policy aggregation, quality gates, and reports.
+- Added a constrained Algorithm-W inference supplement for local expressions.
+  TypeScript inference and explicit annotations remain authoritative; HM output
+  is provenance-labeled, non-blocking fallback evidence and reports occurs-check,
+  unsupported-syntax, value-restriction, and analysis-budget outcomes.
+- Added a stdio TypeScript language server for compiler and document-local
+  TypeSea policy diagnostics, inferred-type hover, go-to-definition, and safe
+  quick-fix code actions. Rust-style terminal diagnostics and SARIF now preserve
+  exact start/end columns, related locations, UTF-16 offsets, compiler codes,
+  remediation notes, and suggested fixes.
+- Added compiler-front-end regression fixtures for comment/parser bait, nested
+  templates, complex generics, methods, constructors, arrows, postfix non-null
+  assertions, cross-file generic inference, malformed syntax, deterministic
+  output, and emoji-sensitive UTF-16 columns.
+- Kept the standalone analyzer warning budget at 200. Newly visible, exact
+  TypeChecker call cycles remain visible to the gate rather than being hidden by
+  a broad budget increase.
+- Rebased only the Perl gate's affected domain baselines after full AST-body
+  coverage exposed previously uncounted recursion, hot-loop, exception, async,
+  allocation, and call-context debt. Global warning/error budgets were not
+  raised; future growth above the recorded per-domain counts still fails.
+- Made executable AST bodies and TypeChecker-resolved targets the function and
+  call inventory for interprocedural abstract domains. Local TypeSea-specific
+  metrics are re-tokenized strictly inside Compiler API runtime spans. Nested
+  bodies and parameter initializers remain owned by the nested function, while
+  closure creation and evaluated computed names/decorators remain visible to the
+  enclosing runtime. Earlier summaries are migration comparisons only;
+  extraction failures are explicit unknowns, not missing functions or
+  assumed-safe zeros.
+- Added explicit runtime-owner nodes for module execution, class-static
+  initialization, implicit constructors, and instance-field initialization.
+  Synthetic semantic edges model `new`, `super`, decorators, computed names,
+  static blocks, and field initializers without leaking deferred closure bodies
+  or instance costs into their lexical parent. Compiler-enumerated non-runtime
+  type spans are masked before local token domains, preventing generic/type-only
+  syntax from being mistaken for calls, allocations, or dynamic-code sinks.
+- Added TypeChecker-resolved implicit edges for getter/setter dispatch, object
+  literal computed method names, and decorator application. Setter RHS facts
+  participate in taint propagation; unresolved project-local decorator factory
+  results fail closed as runtime-ownership obligations.
 - Hardened the policy lexer's template literal handling for nested `${...}`
   interpolation, nested template literals inside interpolation expressions, and
   comments or RegExp literals inside interpolation blocks. The analyzer now runs
@@ -93,6 +133,13 @@ All notable changes to TypeSea are recorded here.
 - Added human-readable analyzer output to the Perl policy analyzer. `--html`
   emits a self-contained dashboard, and `--serve [port]` exposes the same report
   through a zero-dependency local HTTP endpoint with `/api/report` JSON.
+- Upgraded human terminal diagnostics with a Rust-style rich view containing
+  source context, carets, reasons, remediation help, and bounded flow traces.
+  Color is TTY-aware, honors `NO_COLOR`, and can be controlled with
+  `--color auto|always|never` or `--no-color`; `--diagnostic-format rich|short`,
+  `--context-lines N`, and `--max-flow-steps N` tune detail. `--explain RULE`
+  and `--help` provide rule and CLI guidance. JSON, SARIF, and HTML output remains
+  free of terminal color and decoration.
 - Added a normalized token clone-analysis domain to the Perl policy analyzer.
   The analyzer now fingerprints TypeSea source token windows, reports duplicate
   and cross-file clone groups, exposes them in JSON/SARIF/HTML output, and

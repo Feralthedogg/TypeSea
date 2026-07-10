@@ -1,8 +1,6 @@
 /**
  * @file fold-boolean.ts
  * @brief Constant folding for boolean fold nodes.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 
 import type {

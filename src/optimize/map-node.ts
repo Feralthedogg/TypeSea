@@ -1,8 +1,6 @@
 /**
  * @file map-node.ts
  * @brief Shared graph node-id mapping utility.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 
 import { NodeTag } from "../kind/index.js";

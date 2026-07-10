@@ -1,8 +1,6 @@
 /**
  * @file emit-combinator.ts
  * @brief Combinator TypeSea schema to JSON Schema emitters.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  */
 
 import { SchemaTag } from "../kind/index.js";

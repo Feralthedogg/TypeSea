@@ -1,8 +1,6 @@
 /**
  * @file predicate.ts
  * @brief Sea-of-Nodes predicate executor.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  */
 
 import {
@@ -112,8 +110,6 @@ export function executeGraphPredicate(
 
 /**
  * @brief execute schema predicate inner.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  */
 function executeSchemaPredicateInner(
     schema: Schema,
@@ -147,11 +143,7 @@ function executeSchemaPredicateInner(
     }
 }
 
-/**
- * @brief evaluate node.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function evaluateNode(
     graph: Graph,
     id: NodeId,
@@ -173,11 +165,7 @@ function evaluateNode(
     return result;
 }
 
-/**
- * @brief evaluate graph node.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function evaluateGraphNode(
     graph: Graph,
     node: GraphNode,
@@ -343,11 +331,7 @@ function evaluateGraphNode(
     }
 }
 
-/**
- * @brief evaluate and.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function evaluateAnd(
     graph: Graph,
     ids: readonly NodeId[],
@@ -367,11 +351,7 @@ function evaluateAnd(
     return true;
 }
 
-/**
- * @brief evaluate or.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function evaluateOr(
     graph: Graph,
     ids: readonly NodeId[],
@@ -392,9 +372,7 @@ function evaluateOr(
 }
 
 /**
- * @brief test array every.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
+ * @brief Preserve sparse-array semantics while executing an ArrayEvery node.
  * @param value Candidate value supplied to the graph executor.
  * @param item Source schema retained by the ArrayEvery node.
  * @param itemGraph Optimized graph used for each validated slot.
@@ -464,7 +442,7 @@ function testArrayLengthChecks(
 }
 
 /**
- * @brief test present array indexes.
+ * @brief Validate own indexes without scanning an attacker-controlled length.
  * @details Holes are skipped only after the caller proved that undefined passes
  * the item schema, preserving sparse-array semantics without scanning every hole.
  * @param value Array already proven by the caller.
@@ -499,11 +477,7 @@ function testPresentArrayIndexes(
     return true;
 }
 
-/**
- * @brief test tuple items.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function testTupleItems(
     value: unknown,
     itemGraphs: readonly Graph[],
@@ -526,11 +500,7 @@ function testTupleItems(
     return true;
 }
 
-/**
- * @brief test record every.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function testRecordEvery(
     value: unknown,
     itemGraph: Graph,
@@ -557,11 +527,7 @@ function testRecordEvery(
     return true;
 }
 
-/**
- * @brief test discriminant dispatch.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function testDiscriminantDispatch(
     value: unknown,
     key: string,
@@ -586,11 +552,7 @@ function testDiscriminantDispatch(
     return graph !== undefined && executeGraphPredicate(graph, value, state);
 }
 
-/**
- * @brief test object shape.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function testObjectShape(
     value: unknown,
     entries: readonly ObjectShapeEntry[],
@@ -641,8 +603,6 @@ function testObjectShape(
 
 /**
  * @brief union mask.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  */
 const UnionMask = {
     String: 1 << 0,
@@ -660,8 +620,6 @@ const UnionMask = {
 
 /**
  * @brief test union dispatch.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  */
 function testUnionDispatch(
     value: unknown,
@@ -683,11 +641,7 @@ function testUnionDispatch(
     return false;
 }
 
-/**
- * @brief value union mask.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function valueUnionMask(value: unknown): number {
     if (value === null) {
         return UnionMask.Null;
@@ -719,8 +673,6 @@ function valueUnionMask(value: unknown): number {
 
 /**
  * @brief Read one array index for graph predicate execution.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param value Array being inspected.
  * @param index Numeric index.
  * @returns Descriptor-derived slot record including accessor status.
@@ -778,8 +730,6 @@ function readArrayKeyValue(
 
 /**
  * @brief Read one own data property from an object or function host.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param value Candidate property host.
  * @param key Property key to inspect.
  * @returns Stored value, or undefined when absent or accessor-backed.
@@ -797,8 +747,6 @@ function readOwnDataValue(value: unknown, key: string): unknown {
 
 /**
  * @brief Test whether a value owns a property without reading it.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param value Candidate property host.
  * @param key Property key to inspect.
  * @returns True when the key exists directly on the value.
@@ -810,8 +758,6 @@ function hasOwnProperty(value: unknown, key: string): boolean {
 
 /**
  * @brief Test whether a value owns a stable data property.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param value Candidate property host.
  * @param key Property key to inspect.
  * @returns True when the key is present as a data descriptor.
@@ -823,11 +769,7 @@ function hasOwnDataProperty(value: unknown, key: string): boolean {
     return readOwnDataProperty(value, key) !== undefined;
 }
 
-/**
- * @brief test strict keys.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function testStrictKeys(value: unknown, keys: readonly string[]): boolean {
     if (!isPlainRecord(value)) {
         return false;
@@ -845,11 +787,7 @@ function testStrictKeys(value: unknown, keys: readonly string[]): boolean {
     return true;
 }
 
-/**
- * @brief compare number.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function compareNumber(left: unknown, right: unknown, gte: boolean): boolean {
     if (typeof left === "number" && typeof right === "number") {
         return gte ? left >= right : left <= right;
@@ -860,11 +798,7 @@ function compareNumber(left: unknown, right: unknown, gte: boolean): boolean {
     return false;
 }
 
-/**
- * @brief test string bound.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function testStringBound(value: unknown, bound: number, min: boolean): boolean {
     if (typeof value !== "string") {
         return false;
@@ -872,11 +806,7 @@ function testStringBound(value: unknown, bound: number, min: boolean): boolean {
     return min ? value.length >= bound : value.length <= bound;
 }
 
-/**
- * @brief test regex.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function testRegex(value: unknown, regex: RegExp): boolean {
     if (typeof value !== "string") {
         return false;
@@ -889,8 +819,6 @@ function testRegex(value: unknown, regex: RegExp): boolean {
 
 /**
  * @brief Test the numeric domain accepted by TypeSea number schemas.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param value Candidate runtime value.
  * @returns True for finite JavaScript numbers.
  */
@@ -900,8 +828,6 @@ function isFiniteNumber(value: unknown): boolean {
 
 /**
  * @brief Test whether descriptor APIs can inspect the value.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param value Candidate runtime value.
  * @returns True for objects and functions.
  */
@@ -909,11 +835,7 @@ function isPropertyHost(value: unknown): value is object {
     return (typeof value === "object" && value !== null) || typeof value === "function";
 }
 
-/**
- * @brief acquire graph frame.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function acquireGraphFrame(
     state: ValidationState,
     nodeCount: number
@@ -941,11 +863,7 @@ function acquireGraphFrame(
     return frame;
 }
 
-/**
- * @brief release graph frame.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
- */
+
 function releaseGraphFrame(state: ValidationState): void {
     state.graphDepth -= 1;
 }

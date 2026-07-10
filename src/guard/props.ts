@@ -1,14 +1,10 @@
 /**
  * @file props.ts
  * @brief Guard object shape helpers.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  */
 
 /**
  * @brief Define one immutable public property.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  * @param target Object receiving the property.
  * @param key Property key.
  * @param value Stored property value.
@@ -31,8 +27,6 @@ export function defineReadonlyProperty(
 
 /**
  * @brief Test for the only accepted refinement success value.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  * @param value Predicate return value.
  * @returns True only for the boolean literal true.
  */
@@ -42,8 +36,6 @@ export function isStrictTrue(value: unknown): boolean {
 
 /**
  * @brief Test whether a value is a non-array object record.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  * @param value Candidate runtime value.
  * @returns True for object values that can carry string properties.
  */

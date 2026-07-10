@@ -45,8 +45,6 @@ export type SchemaTag = (typeof SchemaTag)[keyof typeof SchemaTag];
 
 /**
  * @brief Object unknown-key policy tags.
- * @details This declaration records the local invariant that callers rely on after this
- * module boundary.
  */
 export const ObjectModeTag = {
     Passthrough: 1,

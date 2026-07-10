@@ -625,7 +625,7 @@ export function propertyCountObject(
     min: number | undefined,
     max: number | undefined
 ): BaseGuard<unknown> {
-    const schema = readObjectMethodSchema(guard, "object property-count receiver");
+    const schema = readObjectConstraintSchema(guard, "object property-count receiver");
     const lower = readPropertyCountBound(min, "minProperties");
     const upper = readPropertyCountBound(max, "maxProperties");
     if (lower !== undefined && upper !== undefined && lower > upper) {
@@ -648,7 +648,7 @@ export function propertyNamesObject(
 ): BaseGuard<unknown> {
     return new BaseGuard<unknown>({
         tag: SchemaTag.PropertyNames,
-        inner: readObjectMethodSchema(guard, "object property-names receiver"),
+        inner: readObjectConstraintSchema(guard, "object property-names receiver"),
         key: readGuardSchema(key, "propertyNames key")
     });
 }
@@ -665,7 +665,7 @@ export function patternPropertiesObject(
 ): BaseGuard<unknown> {
     return new BaseGuard<unknown>({
         tag: SchemaTag.PatternProperties,
-        inner: readObjectMethodSchema(guard, "object pattern-properties receiver"),
+        inner: readObjectConstraintSchema(guard, "object pattern-properties receiver"),
         entries: readPatternPropertyEntries(entries),
         keys: readPatternPropertyKeys(keys),
         keyLookup: makePatternPropertyKeyLookup(keys),
@@ -674,6 +674,30 @@ export function patternPropertiesObject(
             : readGuardSchema(additional, "patternProperties additionalProperties"),
         allowAdditional
     });
+}
+
+/**
+ * JSON Schema object keywords are independent constraints and may wrap one
+ * another. Preserve the complete outer chain after proving it terminates at an
+ * object schema; shape-changing ObjectGuard methods remain stricter.
+ */
+function readObjectConstraintSchema(guard: unknown, label: string): Schema {
+    const schema = readGuardSchema(guard, label);
+    let current = schema;
+    for (let depth = 0; depth < 65_536; depth += 1) {
+        switch (current.tag) {
+            case SchemaTag.Object:
+                return schema;
+            case SchemaTag.PropertyCount:
+            case SchemaTag.PropertyNames:
+            case SchemaTag.PatternProperties:
+                current = current.inner;
+                break;
+            default:
+                throw new TypeError(`${label} must be an object TypeSea guard`);
+        }
+    }
+    throw new TypeError(`${label} exceeds the object constraint depth limit`);
 }
 
 /**

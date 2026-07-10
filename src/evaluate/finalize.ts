@@ -16,6 +16,13 @@ import {
 } from "../schema/index.js";
 import { isSchema } from "./predicate.js";
 import {
+    freezeIntersectionReadonlyOutputs,
+    makeIntersectionFinalizeState,
+    markIntersectionOutputReadonly,
+    mergeIntersectionOutputs,
+    type IntersectionFinalizeState
+} from "./finalize-intersection.js";
+import {
     readMapEntries,
     readSetValues
 } from "./shared.js";
@@ -30,6 +37,7 @@ interface CachedFinalizedValue {
 interface FinalizeState {
     readonly pairs: WeakMap<object, WeakSet<object>>;
     readonly outputs: WeakMap<object, WeakMap<object, unknown>>;
+    readonly intersections: IntersectionFinalizeState;
 }
 
 /**
@@ -60,10 +68,14 @@ export function finalizeAcceptedValue<TValue>(
     if (!schemaNeedsFinalization(schema)) {
         return value;
     }
-    return finalizeValue(schema, value, {
+    const state: FinalizeState = {
         pairs: new WeakMap<object, WeakSet<object>>(),
-        outputs: new WeakMap<object, WeakMap<object, unknown>>()
-    }) as TValue;
+        outputs: new WeakMap<object, WeakMap<object, unknown>>(),
+        intersections: makeIntersectionFinalizeState()
+    };
+    const output = finalizeValue(schema, value, state) as TValue;
+    freezeIntersectionReadonlyOutputs(state.intersections);
+    return output;
 }
 
 /**
@@ -206,6 +218,39 @@ function finalizeValue(
     value: unknown,
     state: FinalizeState
 ): unknown {
+    switch (schema.tag) {
+        case SchemaTag.Readonly: {
+            const output = finalizeValue(schema.inner, value, state);
+            markIntersectionOutputReadonly(output, state.intersections);
+            return output;
+        }
+        case SchemaTag.Optional:
+        case SchemaTag.Undefinedable:
+            return value === undefined
+                ? value
+                : finalizeValue(schema.inner, value, state);
+        case SchemaTag.Nullable:
+            return value === null
+                ? value
+                : finalizeValue(schema.inner, value, state);
+        case SchemaTag.Brand:
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+        case SchemaTag.KeyedObject:
+        case SchemaTag.PropertyCount:
+        case SchemaTag.PropertyNames:
+        case SchemaTag.PatternProperties:
+        case SchemaTag.Refine:
+            return finalizeValue(schema.inner, value, state);
+        case SchemaTag.Lazy:
+            return finalizeValue(
+                resolveLazySchema(schema, new WeakSet<object>()),
+                value,
+                state
+            );
+        default:
+            break;
+    }
     const cached = readFinalizedOutput(schema, value, state);
     if (cached.found) {
         return cached.value;
@@ -214,11 +259,6 @@ function finalizeValue(
         return value;
     }
     switch (schema.tag) {
-        case SchemaTag.Readonly: {
-            const output = finalizeValue(schema.inner, value, state);
-            freezeObjectLike(output);
-            return output;
-        }
         case SchemaTag.Array:
             return finalizeArray(schema.item, value, state);
         case SchemaTag.Tuple:
@@ -239,34 +279,10 @@ function finalizeValue(
             return finalizeFirstMatching(schema.options, value, state);
         case SchemaTag.Xor:
             return finalizeFirstMatching(schema.options, value, state);
-        case SchemaTag.Intersection: {
-            const left = finalizeValue(schema.left, value, state);
-            return finalizeValue(schema.right, left, state);
-        }
-        case SchemaTag.Optional:
-        case SchemaTag.Undefinedable:
-            if (value !== undefined) {
-                return finalizeValue(schema.inner, value, state);
-            }
-            return value;
-        case SchemaTag.Nullable:
-            if (value !== null) {
-                return finalizeValue(schema.inner, value, state);
-            }
-            return value;
-        case SchemaTag.Brand:
-        case SchemaTag.Metadata:
-        case SchemaTag.Message:
-        case SchemaTag.KeyedObject:
-        case SchemaTag.PropertyCount:
-        case SchemaTag.PropertyNames:
-        case SchemaTag.PatternProperties:
-        case SchemaTag.Refine:
-            return finalizeValue(schema.inner, value, state);
+        case SchemaTag.Intersection:
+            return finalizeIntersection(schema, value, state);
         case SchemaTag.DiscriminatedUnion:
             return finalizeMatchingCase(schema.cases, value, state);
-        case SchemaTag.Lazy:
-            return finalizeValue(resolveLazySchema(schema, new WeakSet<object>()), value, state);
         case SchemaTag.Unknown:
         case SchemaTag.Never:
         case SchemaTag.String:
@@ -280,6 +296,23 @@ function finalizeValue(
         case SchemaTag.InstanceOf:
             return value;
     }
+}
+
+/**
+ * Each intersection arm observes the same accepted input. Output-affecting
+ * wrappers are merged afterward so one strip projection cannot erase fields
+ * produced by the other arm.
+ */
+function finalizeIntersection(
+    schema: Extract<Schema, { readonly tag: typeof SchemaTag.Intersection }>,
+    value: unknown,
+    state: FinalizeState
+): unknown {
+    const left = finalizeValue(schema.left, value, state);
+    const right = finalizeValue(schema.right, value, state);
+    const output = mergeIntersectionOutputs(left, right, state.intersections);
+    writeFinalizedOutput(schema, value, output, state);
+    return output;
 }
 
 /**
@@ -690,15 +723,6 @@ function finalizeMatchingCase(
         }
     }
     return value;
-}
-
-/**
- * @brief Freeze an object-like accepted value.
- */
-function freezeObjectLike(value: unknown): void {
-    if (isObjectLike(value) && !Object.isFrozen(value)) {
-        Object.freeze(value);
-    }
 }
 
 /**

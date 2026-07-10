@@ -40,6 +40,7 @@ const zodNativeEnum = zod.nativeEnum;
 const zodUnion = zod.union;
 const zodXor = zod.xor;
 const zodIntersection = zod.intersection;
+const zodObject = zod.object;
 const zodInstanceof = zod.instanceof;
 const zodKeyof = zod.keyof;
 const zodTimePrecision = zod.TimePrecision;
@@ -55,6 +56,7 @@ export {
     zodUnion as union,
     zodXor as xor,
     zodIntersection as intersection,
+    zodObject as object,
     zodInstanceof as instanceof,
     zodKeyof as keyof,
     zodTimePrecision as TimePrecision,

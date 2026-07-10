@@ -1,8 +1,6 @@
 /**
  * @file index.ts
  * @brief Public builder module aggregation.
- * @details This barrel keeps public import paths stable while implementation files remain
- * split by responsibility.
  */
 
 export {

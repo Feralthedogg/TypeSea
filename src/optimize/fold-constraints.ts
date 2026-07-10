@@ -1,8 +1,6 @@
 /**
  * @file fold-constraints.ts
  * @brief Boolean constraint canonicalization for pure predicate runs.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 
 import { NodeTag } from "../kind/index.js";
@@ -42,8 +40,6 @@ const TypeFactTag = {
 
 /**
  * @brief Closed numeric domain for type fact tags.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 type TypeFactTag = (typeof TypeFactTag)[keyof typeof TypeFactTag];
 
@@ -533,8 +529,6 @@ function keepStrongestLte(
 
 /**
  * @brief Detect a statically impossible string-length interval.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param slot Accumulated string bounds for one value node.
  * @returns True when minimum length exceeds maximum length.
  */
@@ -546,8 +540,6 @@ function hasImpossibleBounds(slot: StringBounds): boolean {
 
 /**
  * @brief Detect a statically impossible numeric interval.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param slot Accumulated numeric bounds for one value node.
  * @returns True when lower bound exceeds upper bound.
  */

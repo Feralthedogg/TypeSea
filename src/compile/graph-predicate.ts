@@ -58,19 +58,16 @@ interface GraphEmitState {
 }
 
 /**
- * @brief data slot.
- * @details Data slots carry aliases and descriptor-backed values across branch scopes so generated code can reuse proven reads without changing validation semantics.
+ * @brief Descriptor-backed value proven in one generated branch scope.
+ * @details The descriptor remains authoritative until a branch materializes its
+ * data value. Child branches clone slots so speculative reads cannot leak into
+ * sibling code paths.
  */
 interface DataSlot {
     readonly descriptor: string;
     value: string | undefined;
 }
 
-/**
- * @brief Allocate root emitter state for a predicate body.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- * @returns Empty state with no known branch facts.
- */
 function makeGraphEmitState(): GraphEmitState {
     return {
         chunks: [],
@@ -132,10 +129,6 @@ function makeFailureBranchEmitState(
     };
 }
 
-/**
- * @brief clone data slots.
- * @details Data slots carry aliases and descriptor-backed values across branch scopes so generated code can reuse proven reads without changing validation semantics.
- */
 function cloneDataSlots(slots: ReadonlyMap<string, DataSlot>): Map<string, DataSlot> {
     const cloned = new Map<string, DataSlot>();
     for (const [key, slot] of slots) {
@@ -223,10 +216,6 @@ export function emitGraphFunctions(context: EmitContext): string {
     return chunks.join("");
 }
 
-/**
- * @brief emit graph child function.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
 function emitGraphChildFunction(graph: Graph, context: EmitContext): string {
     const name = nextGraphFunctionName(context);
     const source: FunctionSource = {
@@ -238,10 +227,7 @@ function emitGraphChildFunction(graph: Graph, context: EmitContext): string {
     return name;
 }
 
-/**
- * @brief Execute next graph function name.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+/* Predicate and diagnostic emitters share one generated function namespace. */
 function nextGraphFunctionName(context: EmitContext): string {
     let index = context.functions.length;
     let name = `p${String(index)}`;
@@ -252,10 +238,6 @@ function nextGraphFunctionName(context: EmitContext): string {
     return name;
 }
 
-/**
- * @brief Check function name.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
 function hasFunctionName(context: EmitContext, name: string): boolean {
     for (let index = 0; index < context.functions.length; index += 1) {
         if (context.functions[index]?.name === name) {
@@ -270,26 +252,15 @@ function hasFunctionName(context: EmitContext, name: string): boolean {
     return false;
 }
 
-/**
- * @brief Check unsafe mode.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
 function isUnsafeMode(context: EmitContext): boolean {
     return context.mode !== "safe";
 }
 
-/**
- * @brief Check unchecked mode.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
 function isUncheckedMode(context: EmitContext): boolean {
     return context.mode === "unchecked";
 }
 
-/**
- * @brief emit graph body.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitGraphBody(
     graph: Graph,
     id: NodeId,
@@ -301,10 +272,7 @@ function emitGraphBody(
     return state.chunks.join("");
 }
 
-/**
- * @brief emit graph return.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitGraphReturn(
     graph: Graph,
     id: NodeId,
@@ -388,10 +356,7 @@ function emitGraphReturn(
     }
 }
 
-/**
- * @brief emit and return.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitAndReturn(
     graph: Graph,
     ids: readonly NodeId[],
@@ -408,10 +373,7 @@ function emitAndReturn(
     state.chunks.push("return true;");
 }
 
-/**
- * @brief emit false check.
- * @details Guard snippets keep the generated fast path straight-line while making early failure branches share the same source shape.
- */
+
 function emitFalseCheck(
     graph: Graph,
     id: NodeId,
@@ -539,16 +501,10 @@ function emitFalseCheck(
 }
 
 /**
- * @brief emit array every check.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- * @param graph Source graph that owns the array value node.
- * @param valueId Node id that produces the candidate array value.
- * @param item Source schema retained for sparse-hole policy.
- * @param itemGraph Optimized graph used for each validated slot.
- * @param value Root generated value expression.
- * @param context Shared code-generation context.
- * @param state Mutable graph emitter state.
- * @post Appends branch code to `state.chunks`.
+ * @brief Emit safe array validation without executing index accessors.
+ * @details A schema that rejects undefined must prove every logical index is an
+ * own data property. A schema that accepts undefined delegates to the
+ * present-index path so hostile sparse lengths do not force linear hole scans.
  */
 function emitArrayEveryCheck(
     graph: Graph,
@@ -620,15 +576,9 @@ function emitArrayEveryCheck(
 }
 
 /**
- * @brief emit present array every check.
+ * @brief Walk present array indexes when the item schema accepts undefined.
  * @details When holes are valid `undefined` values, only present own index slots
  * can fail validation or hide accessor code, so sparse arrays avoid hole scans.
- * @param itemGraph Optimized graph used for each present index.
- * @param itemConstant Precomputed constant result for the item graph.
- * @param arrayExpression Generated expression for the array value.
- * @param context Shared code-generation context.
- * @param state Mutable graph emitter state.
- * @post Appends a present-index loop to `state.chunks`.
  */
 function emitPresentArrayEveryCheck(
     itemGraph: Graph,
@@ -675,10 +625,7 @@ function emitPresentArrayEveryCheck(
     state.chunks.push("}");
 }
 
-/**
- * @brief Emit unsafe array every check.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitUnsafeArrayEveryCheck(
     graph: Graph,
     valueId: NodeId,
@@ -746,10 +693,7 @@ function emitArrayLengthChecks(
     }
 }
 
-/**
- * @brief emit tuple items check.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitTupleItemsCheck(
     graph: Graph,
     valueId: NodeId,
@@ -819,10 +763,7 @@ function emitTupleItemsCheck(
     }
 }
 
-/**
- * @brief Emit unsafe tuple items check.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitUnsafeTupleItemsCheck(
     graph: Graph,
     valueId: NodeId,
@@ -856,10 +797,7 @@ function emitUnsafeTupleItemsCheck(
     }
 }
 
-/**
- * @brief emit record every check.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitRecordEveryCheck(
     graph: Graph,
     valueId: NodeId,
@@ -910,10 +848,7 @@ function emitRecordEveryCheck(
     state.chunks.push("}");
 }
 
-/**
- * @brief Emit unsafe record every check.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitUnsafeRecordEveryCheck(
     graph: Graph,
     valueId: NodeId,
@@ -964,10 +899,7 @@ function emitUnsafeRecordEveryCheck(
     state.chunks.push("}");
 }
 
-/**
- * @brief emit strict keys check.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
- */
+
 function emitStrictKeysCheck(
     graph: Graph,
     object: NodeId,
@@ -1008,10 +940,7 @@ function emitStrictKeysCheck(
     );
 }
 
-/**
- * @brief emit or return.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitOrReturn(
     graph: Graph,
     ids: readonly NodeId[],
@@ -1034,10 +963,7 @@ function emitOrReturn(
     state.chunks.push(failStatement(state));
 }
 
-/**
- * @brief emit discriminant dispatch return.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitDiscriminantDispatchReturn(
     graph: Graph,
     node: DiscriminantDispatchNode,
@@ -1098,10 +1024,7 @@ function emitDiscriminantDispatchReturn(
     state.chunks.push(`default:${failStatement(state)}}`);
 }
 
-/**
- * @brief Emit unsafe discriminant dispatch return.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitUnsafeDiscriminantDispatchReturn(
     node: DiscriminantDispatchNode,
     objectExpression: string,
@@ -1138,10 +1061,7 @@ function emitUnsafeDiscriminantDispatchReturn(
     state.chunks.push(`default:${failStatement(state)}}`);
 }
 
-/**
- * @brief emit primitive union return.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitPrimitiveUnionReturn(
     graph: Graph,
     node: PrimitiveUnionNode,
@@ -1160,10 +1080,7 @@ function emitPrimitiveUnionReturn(
     emitPrimitiveUnionTail(node, subject, context, state, "return true;");
 }
 
-/**
- * @brief emit primitive union check.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitPrimitiveUnionCheck(
     graph: Graph,
     node: PrimitiveUnionNode,
@@ -1192,10 +1109,7 @@ function emitPrimitiveUnionCheck(
     state.chunks.push("}");
 }
 
-/**
- * @brief emit primitive union function.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitPrimitiveUnionFunction(
     node: PrimitiveUnionNode,
     context: EmitContext
@@ -1210,10 +1124,7 @@ function emitPrimitiveUnionFunction(
     return name;
 }
 
-/**
- * @brief emit primitive union body.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitPrimitiveUnionBody(
     node: PrimitiveUnionNode,
     value: string,
@@ -1224,10 +1135,7 @@ function emitPrimitiveUnionBody(
     return state.chunks.join("");
 }
 
-/**
- * @brief emit primitive union tail.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitPrimitiveUnionTail(
     node: PrimitiveUnionNode,
     value: string,
@@ -1297,10 +1205,7 @@ function emitPrimitiveUnionTail(
     state.chunks.push(failStatement(state));
 }
 
-/**
- * @brief emit union dispatch return.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitUnionDispatchReturn(
     graph: Graph,
     node: UnionDispatchNode,
@@ -1319,10 +1224,7 @@ function emitUnionDispatchReturn(
     emitUnionDispatchTail(node, subject, context, state);
 }
 
-/**
- * @brief emit union dispatch function.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitUnionDispatchFunction(
     node: UnionDispatchNode,
     context: EmitContext
@@ -1337,10 +1239,7 @@ function emitUnionDispatchFunction(
     return name;
 }
 
-/**
- * @brief emit union dispatch body.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitUnionDispatchBody(
     node: UnionDispatchNode,
     value: string,
@@ -1351,10 +1250,7 @@ function emitUnionDispatchBody(
     return state.chunks.join("");
 }
 
-/**
- * @brief emit union dispatch tail.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitUnionDispatchTail(
     node: UnionDispatchNode,
     value: string,
@@ -1405,7 +1301,7 @@ function emitUnionDispatchTail(
 }
 
 /**
- * @brief emit presence dispatch return.
+ * @brief Inline presence dispatch at a predicate return boundary.
  * @details Presence dispatch keeps source union order but avoids entering object
  * branches whose required key is absent.
  */
@@ -1428,7 +1324,7 @@ function emitPresenceDispatchReturn(
 }
 
 /**
- * @brief emit presence dispatch check.
+ * @brief Inline presence dispatch inside a fallible parent branch.
  * @details Nested presence dispatch uses a success label so failure still
  * behaves like an ordinary predicate check.
  */
@@ -1461,7 +1357,7 @@ function emitPresenceDispatchCheck(
 }
 
 /**
- * @brief emit presence dispatch function.
+ * @brief Materialize presence dispatch for expression-mode callers.
  * @details Expression-mode callers use a generated helper while return/check
  * paths inline the same branch-gated loop.
  */
@@ -1482,7 +1378,7 @@ function emitPresenceDispatchFunction(
 }
 
 /**
- * @brief emit presence dispatch tail.
+ * @brief Preserve source union order while gating impossible object branches.
  * @details Branches remain in declaration order. A key gate can only skip a
  * branch after lowering proved that branch cannot accept objects missing that
  * own data field.
@@ -1550,10 +1446,7 @@ function emitPresenceDispatchTail(
     state.chunks.push(failStatement(state));
 }
 
-/**
- * @brief emit string and check.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitStringAndCheck(
     graph: Graph,
     ids: readonly NodeId[],
@@ -1577,10 +1470,7 @@ function emitStringAndCheck(
     return true;
 }
 
-/**
- * @brief emit known string and plan.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
- */
+
 function emitKnownStringAndPlan(
     plan: StringAndPlan,
     subject: string,
@@ -1596,7 +1486,6 @@ function emitKnownStringAndPlan(
 
 /**
  * @brief Execute push string plan failures.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function pushStringPlanFailures(
     plan: StringAndPlan,
@@ -1705,10 +1594,7 @@ function readSameStringValue(
     return current === undefined || current === next ? next : undefined;
 }
 
-/**
- * @brief emit number and check.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitNumberAndCheck(
     graph: Graph,
     ids: readonly NodeId[],
@@ -1856,10 +1742,7 @@ function readFiniteNumberConst(
         : undefined;
 }
 
-/**
- * @brief finite number literal expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function finiteNumberLiteralExpression(value: number): string {
     if (Object.is(value, -0)) {
         return "-0";
@@ -1867,10 +1750,6 @@ function finiteNumberLiteralExpression(value: number): string {
     return String(value);
 }
 
-/**
- * @brief next union mask run.
- * @details Run and mask helpers group adjacent dispatch domains so emitted union code stays compact and predictable for V8.
- */
 function nextUnionMaskRun(
     node: UnionDispatchNode,
     start: number,
@@ -1883,10 +1762,6 @@ function nextUnionMaskRun(
     return index;
 }
 
-/**
- * @brief next primitive union mask run.
- * @details Run and mask helpers group adjacent dispatch domains so emitted union code stays compact and predictable for V8.
- */
 function nextPrimitiveUnionMaskRun(
     node: PrimitiveUnionNode,
     start: number,
@@ -1899,10 +1774,6 @@ function nextPrimitiveUnionMaskRun(
     return index;
 }
 
-/**
- * @brief primitive union mask expression.
- * @details Run and mask helpers group adjacent dispatch domains so emitted union code stays compact and predictable for V8.
- */
 function primitiveUnionMaskExpression(
     mask: number,
     value: string,
@@ -1942,10 +1813,6 @@ function primitiveUnionMaskExpression(
     return `(${parts.join("||")})`;
 }
 
-/**
- * @brief union mask expression.
- * @details Run and mask helpers group adjacent dispatch domains so emitted union code stays compact and predictable for V8.
- */
 function unionMaskExpression(mask: number, value: string, type: string): string {
     const parts: string[] = [];
     if ((mask & 1) !== 0) {
@@ -1990,10 +1857,7 @@ function unionMaskExpression(mask: number, value: string, type: string): string 
     return `(${parts.join("||")})`;
 }
 
-/**
- * @brief emit graph expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function emitGraphExpression(
     graph: Graph,
     id: NodeId,
@@ -2206,10 +2070,7 @@ function emitGraphExpression(
     }
 }
 
-/**
- * @brief emit object shape function.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitObjectShapeFunction(
     node: ObjectShapeNode,
     context: EmitContext
@@ -2224,10 +2085,7 @@ function emitObjectShapeFunction(
     return name;
 }
 
-/**
- * @brief emit object shape body.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitObjectShapeBody(
     node: ObjectShapeNode,
     value: string,
@@ -2250,10 +2108,7 @@ function emitObjectShapeBody(
     return state.chunks.join("");
 }
 
-/**
- * @brief emit object shape check.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitObjectShapeCheck(
     graph: Graph,
     node: ObjectShapeNode,
@@ -2282,10 +2137,7 @@ function emitObjectShapeCheck(
     }
 }
 
-/**
- * @brief Emit early strict key count.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitEarlyStrictKeyCount(
     node: ObjectShapeNode,
     objectExpression: string,
@@ -2402,10 +2254,7 @@ function emitUnsafeObjectShapeCatchall(
     state.chunks.push("}");
 }
 
-/**
- * @brief emit object shape entries.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitObjectShapeEntries(
     node: ObjectShapeNode,
     objectExpression: string,
@@ -2718,10 +2567,7 @@ function objectEntriesContainSchemaCheck(
     return false;
 }
 
-/**
- * @brief Emit unsafe object shape entries.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitUnsafeObjectShapeEntries(
     node: ObjectShapeNode,
     objectExpression: string,
@@ -2785,10 +2631,7 @@ function emitUnsafeObjectShapeEntries(
     }
 }
 
-/**
- * @brief emit object shape strict keys.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
- */
+
 function emitObjectShapeStrictKeys(
     node: ObjectShapeNode,
     objectExpression: string,
@@ -2832,10 +2675,7 @@ function emitObjectShapeStrictKeys(
     );
 }
 
-/**
- * @brief Emit unsafe strict key loop.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitUnsafeStrictKeyLoop(
     objectExpression: string,
     keys: readonly string[],
@@ -2850,10 +2690,7 @@ function emitUnsafeStrictKeyLoop(
     );
 }
 
-/**
- * @brief emit boolean fold expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function emitBooleanFoldExpression(
     graph: Graph,
     ids: readonly NodeId[],
@@ -2877,10 +2714,7 @@ function emitBooleanFoldExpression(
     return `(${parts.join(operator)})`;
 }
 
-/**
- * @brief emit equals expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function emitEqualsExpression(
     graph: Graph,
     left: NodeId,
@@ -2914,10 +2748,7 @@ function emitEqualsExpression(
     )},${emitGraphExpression(graph, right, value, context, state)})`;
 }
 
-/**
- * @brief literal equals expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function literalEqualsExpression(
     subject: string,
     literal: LiteralValue,
@@ -2948,10 +2779,6 @@ function literalEqualsExpression(
     }
 }
 
-/**
- * @brief emit data slot for expression.
- * @details Data slots carry aliases and descriptor-backed values across branch scopes so generated code can reuse proven reads without changing validation semantics.
- */
 function emitDataSlotForExpression(
     object: NodeId,
     key: string,
@@ -2978,10 +2805,7 @@ function emitDataSlotForExpression(
     return slot;
 }
 
-/**
- * @brief emit data value slot.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitDataValueSlot(
     graph: Graph,
     object: NodeId,
@@ -3008,10 +2832,6 @@ function emitDataValueSlot(
     return emitDataSlotValue(cacheKey, slot, state);
 }
 
-/**
- * @brief emit data slot value.
- * @details Data slots carry aliases and descriptor-backed values across branch scopes so generated code can reuse proven reads without changing validation semantics.
- */
 function emitDataSlotValue(
     cacheKey: string,
     slot: DataSlot,
@@ -3030,10 +2850,6 @@ function emitDataSlotValue(
     return localValue;
 }
 
-/**
- * @brief seed data slot.
- * @details Data slots carry aliases and descriptor-backed values across branch scopes so generated code can reuse proven reads without changing validation semantics.
- */
 function seedDataSlot(
     state: GraphEmitState,
     object: NodeId,
@@ -3054,10 +2870,7 @@ function seedDataSlot(
     }
 }
 
-/**
- * @brief emit has data check.
- * @details Emission is isolated here so optimized graph nodes lower to stable JavaScript shapes across safe, unsafe, and unchecked modes.
- */
+
 function emitHasDataCheck(
     graph: Graph,
     object: NodeId,
@@ -3089,7 +2902,6 @@ function emitHasDataCheck(
 
 /**
  * @brief Emit an expression that tests for an own data descriptor.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
  * @param graph Graph being emitted.
  * @param object Node id for the object expression.
  * @param key Property key being checked.
@@ -3123,10 +2935,7 @@ function hasDataExpression(
     return `(${slot.descriptor}!==undefined&&h.call(${slot.descriptor},"value"))`;
 }
 
-/**
- * @brief unary predicate expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function unaryPredicateExpression(
     graph: Graph,
     subjectId: NodeId,
@@ -3143,10 +2952,7 @@ function unaryPredicateExpression(
     return emit(subject);
 }
 
-/**
- * @brief number predicate expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function numberPredicateExpression(
     graph: Graph,
     subjectId: NodeId,
@@ -3161,10 +2967,7 @@ function numberPredicateExpression(
     return finiteNumberExpression(subject, state);
 }
 
-/**
- * @brief emit number guard.
- * @details Guard snippets keep the generated fast path straight-line while making early failure branches share the same source shape.
- */
+
 function emitNumberGuard(value: string, state: GraphEmitState): void {
     if (isKnownPredicate(NodeTag.IsNumber, value, state)) {
         return;
@@ -3174,10 +2977,7 @@ function emitNumberGuard(value: string, state: GraphEmitState): void {
     markKnownTypeof("number", value, state);
 }
 
-/**
- * @brief emit predicate guard.
- * @details Guard snippets keep the generated fast path straight-line while making early failure branches share the same source shape.
- */
+
 function emitPredicateGuard(
     tag: number,
     value: string,
@@ -3191,10 +2991,7 @@ function emitPredicateGuard(
     markKnownPredicate(tag, value, state);
 }
 
-/**
- * @brief unary predicate check expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function unaryPredicateCheckExpression(tag: number, value: string): string {
     switch (tag) {
         case NodeTag.IsString:
@@ -3242,10 +3039,7 @@ function isKnownPredicateNode(
     return subject !== undefined && isKnownPredicate(node.tag, subject, state);
 }
 
-/**
- * @brief mark union mask refinement.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
- */
+
 function markUnionMaskRefinement(
     mask: number,
     value: string,
@@ -3284,10 +3078,7 @@ function markUnionMaskRefinement(
     }
 }
 
-/**
- * @brief mark known predicate.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
- */
+
 function markKnownPredicate(
     tag: number,
     value: string,
@@ -3302,7 +3093,6 @@ function markKnownPredicate(
 
 /**
  * @brief Query the branch fact table for a proven predicate.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
  * @param tag Predicate node tag.
  * @param value JavaScript subject expression.
  * @param state Current branch state.
@@ -3334,18 +3124,12 @@ function isKnownPredicateTag(tag: number): boolean {
         tag === NodeTag.IsNull;
 }
 
-/**
- * @brief predicate key.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
- */
+
 function predicateKey(tag: number, value: string): string {
     return `${String(tag)}:${value}`;
 }
 
-/**
- * @brief mark known predicate typeof.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
- */
+
 function markKnownPredicateTypeof(
     tag: number,
     value: string,
@@ -3375,10 +3159,7 @@ function markKnownPredicateTypeof(
     }
 }
 
-/**
- * @brief mark known typeof.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
- */
+
 function markKnownTypeof(
     type: string,
     value: string,
@@ -3389,7 +3170,6 @@ function markKnownTypeof(
 
 /**
  * @brief Query branch facts for a proven typeof result.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
  * @param type Expected typeof string.
  * @param value JavaScript subject expression.
  * @param state Optional branch state.
@@ -3403,18 +3183,11 @@ function isKnownTypeof(
     return state?.knownTypeofs.has(typeofKey(type, value)) === true;
 }
 
-/**
- * @brief typeof key.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
- */
+
 function typeofKey(type: string, value: string): string {
     return `${type}:${value}`;
 }
 
-/**
- * @brief data slot key.
- * @details Data slots carry aliases and descriptor-backed values across branch scopes so generated code can reuse proven reads without changing validation semantics.
- */
 function dataSlotKey(object: NodeId, key: string, objectExpression: string): string {
     return `${String(object)}:${key}:${objectExpression}`;
 }
@@ -3437,10 +3210,7 @@ function isKnownLiteralDataSlot(
     return Object.is(state.dataLiterals.get(cacheKey), schema.value);
 }
 
-/**
- * @brief emit array guard.
- * @details Guard snippets keep the generated fast path straight-line while making early failure branches share the same source shape.
- */
+
 function emitArrayGuard(value: string, state: GraphEmitState): void {
     if (isKnownPredicate(NodeTag.IsArray, value, state)) {
         return;
@@ -3449,10 +3219,7 @@ function emitArrayGuard(value: string, state: GraphEmitState): void {
     markKnownPredicate(NodeTag.IsArray, value, state);
 }
 
-/**
- * @brief emit object guard.
- * @details Guard snippets keep the generated fast path straight-line while making early failure branches share the same source shape.
- */
+
 function emitObjectGuard(value: string, state: GraphEmitState): void {
     const statement = objectGuardStatement(value, state);
     if (statement.length !== 0) {
@@ -3462,7 +3229,6 @@ function emitObjectGuard(value: string, state: GraphEmitState): void {
 
 /**
  * @brief Build the object guard statement for a subject expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
  * @param value JavaScript subject expression.
  * @param state Current branch state.
  * @returns Empty string when object-ness is already known, otherwise a guard.
@@ -3477,14 +3243,13 @@ function objectGuardStatement(value: string, state: GraphEmitState): string {
 
 /**
  * @brief Build the object rejection predicate used by generated graph checks.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function objectRejectExpression(value: string): string {
     return `typeof ${value}!=="object"||${value}===null||Array.isArray(${value})`;
 }
 
 /**
- * @brief emit subject alias.
+ * @brief Reuse SSA-like locals and alias only compound subject expressions.
  * @details Sea-of-Nodes lowering often hands codegen an existing local. Reusing
  * that identifier keeps the generated predicate closer to V8's preferred SSA
  * shape; only compound expressions need a one-shot alias.
@@ -3541,20 +3306,14 @@ function isIdentifierPart(code: number): boolean {
     return isIdentifierStart(code) || (code >= 48 && code <= 57);
 }
 
-/**
- * @brief fail statement.
- * @details Guard snippets keep the generated fast path straight-line while making early failure branches share the same source shape.
- */
+
 function failStatement(state: GraphEmitState): string {
     return state.failureLabel === undefined
         ? "return false;"
         : `break ${state.failureLabel};`;
 }
 
-/**
- * @brief Read graph result boolean.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function readGraphResultBoolean(graph: Graph): boolean | undefined {
     const result = graph.nodes[graph.result];
     if (result?.tag !== NodeTag.Return) {
@@ -3640,17 +3399,13 @@ function objectRequiredKeyMustRejectUndefined(
     return false;
 }
 
-/**
- * @brief mark known object.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
- */
+
 function markKnownObject(value: string, state: GraphEmitState): void {
     state.knownObjects.add(value);
 }
 
 /**
  * @brief Query branch facts for a proven plain object guard.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
  * @param value JavaScript subject expression.
  * @param state Current branch state.
  * @returns True when object guard emission can be skipped.
@@ -3660,7 +3415,7 @@ function isKnownObject(value: string, state: GraphEmitState): boolean {
 }
 
 /**
- * @brief find param node.
+ * @brief Resolve a child graph's local parameter without assuming node ids.
  * @details Parameter discovery is kept local to graph emission so child graphs can be inlined without assuming a global node id.
  */
 function findParamNode(graph: Graph): NodeId | undefined {
@@ -3697,10 +3452,7 @@ function hasAllRequiredKeys(
     return true;
 }
 
-/**
- * @brief key membership expression.
- * @details Branch fact tables let later emitters reuse proven predicates and avoid redundant guards while keeping failure paths explicit.
- */
+
 function keyMembershipExpression(
     key: string,
     keys: readonly string[],
@@ -3721,7 +3473,6 @@ function keyMembershipExpression(
 
 /**
  * @brief Build inline key membership checks for unsafe literal keys.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function unsafeKeyMembershipExpression(
     key: string,
@@ -3742,7 +3493,6 @@ function unsafeKeyMembershipExpression(
 
 /**
  * @brief Build a direct property read for unsafe and unchecked modes.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function unsafePropertyReadExpression(
     objectExpression: string,
@@ -3756,7 +3506,6 @@ function unsafePropertyReadExpression(
 
 /**
  * @brief Check ascii identifier name.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function isAsciiIdentifierName(value: string): boolean {
     return /^[A-Za-z_$][0-9A-Za-z_$]*$/u.test(value);
@@ -3764,7 +3513,6 @@ function isAsciiIdentifierName(value: string): boolean {
 
 /**
  * @brief Escape a string literal for direct insertion into generated source.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function unsafeStringLiteralExpression(value: string): string {
     return JSON.stringify(value)
@@ -3772,10 +3520,7 @@ function unsafeStringLiteralExpression(value: string): string {
         .replace(/\u2029/gu, "\\u2029");
 }
 
-/**
- * @brief finite number expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function finiteNumberExpression(
     value: string,
     state: GraphEmitState | undefined
@@ -3786,10 +3531,7 @@ function finiteNumberExpression(
     return `(typeof ${value}==="number"&&Number.isFinite(${value}))`;
 }
 
-/**
- * @brief regex expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function regexExpression(
     value: string,
     regex: RegExp,
@@ -3805,7 +3547,6 @@ function regexExpression(
 
 /**
  * @brief Detect regular expressions whose stateful flags require lastIndex reset.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function regexNeedsLastIndexReset(regex: RegExp): boolean {
     return regex.global || regex.sticky;
@@ -3865,10 +3606,7 @@ function arrayLengthPredicateParts(
     return parts;
 }
 
-/**
- * @brief emit tuple items expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function emitTupleItemsExpression(
     value: string,
     itemGraphs: readonly Graph[],
@@ -3887,10 +3625,7 @@ function emitTupleItemsExpression(
     return `(${parts.join("&&")})`;
 }
 
-/**
- * @brief emit discriminant dispatch expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function emitDiscriminantDispatchExpression(
     value: string,
     node: DiscriminantDispatchNode,
@@ -3910,10 +3645,7 @@ function emitDiscriminantDispatchExpression(
     return `dj(${value},${stringRef(context, node.key)},${keyset},${functions.join(",")})`;
 }
 
-/**
- * @brief literal expression.
- * @details Expression helpers centralize escaping, side-table references, and JavaScript corner cases so runtime and AOT output stay byte-for-byte consistent.
- */
+
 function literalExpression(value: LiteralValue, context: EmitContext): string {
     if (value === true) {
         return "true";

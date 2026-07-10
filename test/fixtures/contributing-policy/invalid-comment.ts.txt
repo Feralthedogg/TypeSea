@@ -1,0 +1,3 @@
+const beforeComment = 1;
+/* unterminated multiline comment with fake syntax:
+function phantomFunction<T>(value: T): T { return value; }

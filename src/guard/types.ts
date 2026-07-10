@@ -1,8 +1,6 @@
 /**
  * @file types.ts
  * @brief Public guard type contracts.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  */
 
 import type { CheckResult, Issue, PathSegment } from "../issue/index.js";
@@ -46,8 +44,6 @@ export type Presence = "required" | "optional" | "exactOptional";
 
 /**
  * @brief Runtime value accepted by a guard after presence is applied.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  */
 export type RuntimeValue<TValue, TPresence extends Presence> =
     TPresence extends "optional" ? TValue | undefined : TValue;
@@ -302,16 +298,12 @@ export type Infer<TGuard> =
 
 /**
  * @brief Extract the raw value type carried by a guard.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  */
 export type GuardValue<TGuard> =
     TGuard extends { readonly [TypeSymbol]: infer TValue } ? TValue : never;
 
 /**
  * @brief Extract the presence mode carried by a guard.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  */
 export type GuardPresence<TGuard> =
     TGuard extends {

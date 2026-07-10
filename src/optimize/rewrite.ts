@@ -1,8 +1,6 @@
 /**
  * @file rewrite.ts
  * @brief Node dependency rewrite utilities.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 
 import type {

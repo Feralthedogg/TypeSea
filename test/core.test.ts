@@ -1091,6 +1091,136 @@ describe("TypeSea core guards", () => {
         }
     });
 
+    test("merges independently finalized intersection outputs", () => {
+        const Profile = t.intersect(
+            t.object({ id: t.string }).strip(),
+            t.object({ age: t.number }).strip()
+        );
+        const FastProfile = compile(Profile, { name: "finalizedIntersection" });
+        const guards: readonly Guard<unknown>[] = [Profile, FastProfile];
+
+        for (let index = 0; index < guards.length; index += 1) {
+            const guard = guards[index];
+            if (guard === undefined) {
+                continue;
+            }
+            const result = guard.check({ id: "u1", age: 42, extra: true });
+
+            expect(result).toEqual({
+                ok: true,
+                value: { id: "u1", age: 42 }
+            });
+            if (result.ok) {
+                expect(guard.is(result.value)).toBe(true);
+            }
+        }
+
+        const timestamp = new Date(0);
+        const dateProjections = [
+            t.intersect(t.object({}).strip(), t.date),
+            t.intersect(t.date, t.object({}).strip())
+        ] as const;
+        for (let index = 0; index < dateProjections.length; index += 1) {
+            const DateProjection = dateProjections[index];
+            if (DateProjection === undefined) {
+                continue;
+            }
+            const dateResult = DateProjection.check(timestamp);
+            expect(dateResult.ok).toBe(true);
+            if (dateResult.ok) {
+                expect(dateResult.value).toBe(timestamp);
+                expect(DateProjection.is(dateResult.value)).toBe(true);
+            }
+        }
+    });
+
+    test("merges cyclic intersection projections without breaking aliases", () => {
+        let Left: Guard<unknown> = t.unknown;
+        let Right: Guard<unknown> = t.unknown;
+        Left = t.lazy(() => t.object({
+            left: t.string,
+            next: t.optional(Left)
+        }).strip());
+        Right = t.lazy(() => t.object({
+            right: t.number,
+            next: t.optional(Right)
+        }).strip());
+        const Combined = t.intersect(Left, Right);
+        const input: Record<string, unknown> = {
+            left: "ok",
+            right: 1,
+            extra: true
+        };
+        input["next"] = input;
+
+        const result = Combined.check(input);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+            const output = result.value as Record<string, unknown>;
+            expect(output).toMatchObject({ left: "ok", right: 1 });
+            expect(output["next"]).toBe(output);
+            expect(Object.prototype.hasOwnProperty.call(output, "extra")).toBe(false);
+            expect(Combined.is(output)).toBe(true);
+        }
+    });
+
+    test("preserves sanitized aliases through recursive lazy outputs", () => {
+        let Node: Guard<unknown> = t.unknown;
+        Node = t.lazy(() => t.object({
+            id: t.string,
+            next: t.optional(Node)
+        }).strip());
+        const FastNode = compile(Node, { name: "recursiveStripOutput" });
+        const guards: readonly Guard<unknown>[] = [Node, FastNode];
+
+        for (let index = 0; index < guards.length; index += 1) {
+            const guard = guards[index];
+            if (guard === undefined) {
+                continue;
+            }
+            const input: Record<string, unknown> = {
+                id: "root",
+                extra: true
+            };
+            input["next"] = input;
+            const result = guard.check(input);
+
+            expect(result.ok).toBe(true);
+            if (result.ok) {
+                const output = result.value as Record<string, unknown>;
+                expect(Object.prototype.hasOwnProperty.call(output, "extra")).toBe(false);
+                expect(output["next"]).toBe(output);
+            }
+        }
+    });
+
+    test("defers readonly freezing until recursive strip outputs are complete", () => {
+        let Node: Guard<unknown> = t.unknown;
+        Node = t.lazy(() => t.object({
+            next: t.optional(Node)
+        }).strip().readonly());
+        const FastNode = compile(Node, { name: "recursiveReadonlyStripOutput" });
+        const guards: readonly Guard<unknown>[] = [Node, FastNode];
+
+        for (let index = 0; index < guards.length; index += 1) {
+            const guard = guards[index];
+            if (guard === undefined) {
+                continue;
+            }
+            const input: Record<string, unknown> = { extra: true };
+            input["next"] = input;
+            const result = guard.check(input);
+
+            expect(result.ok).toBe(true);
+            if (result.ok) {
+                const output = result.value as Record<string, unknown>;
+                expect(output["next"]).toBe(output);
+                expect(Object.prototype.hasOwnProperty.call(output, "extra")).toBe(false);
+                expect(Object.isFrozen(output)).toBe(true);
+            }
+        }
+    });
+
     test("supports additional Zod-style string formats", () => {
         const formats = [
             [t.email(), "ada@example.com", "not-an-email"],

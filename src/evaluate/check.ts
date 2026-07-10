@@ -1,8 +1,6 @@
 /**
  * @file check.ts
  * @brief Diagnostic schema interpreter dispatcher.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  */
 
 import { KeyRuleTag, SchemaTag } from "../kind/index.js";
@@ -52,8 +50,6 @@ import {
 
 /**
  * @brief check schema.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param schema Schema used to validate the input.
  * @param value Candidate runtime value.
  * @returns Frozen success or diagnostic failure result.
@@ -102,8 +98,6 @@ export function checkSchema<TValue>(
 
 /**
  * @brief collect issues.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param schema Schema node being diagnosed.
  * @param value Candidate runtime value.
  * @param path Mutable path stack shared by recursive diagnostic calls.
@@ -142,9 +136,7 @@ function collectIssues(
 }
 
 /**
- * @brief collect issues inner.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
+ * @brief Dispatch diagnostics after recursion admission has been established.
  * @param schema Schema node being diagnosed after entry admission.
  * @param value Candidate runtime value.
  * @param path Mutable path stack shared by recursive diagnostic calls.

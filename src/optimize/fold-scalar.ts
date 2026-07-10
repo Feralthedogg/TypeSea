@@ -1,8 +1,6 @@
 /**
  * @file fold-scalar.ts
  * @brief Constant folding for scalar graph nodes.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 
 import { NodeTag } from "../kind/index.js";

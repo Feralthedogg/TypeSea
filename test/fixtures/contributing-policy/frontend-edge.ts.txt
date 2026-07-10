@@ -1,0 +1,168 @@
+class Base {}
+
+function mixin<T extends typeof Base>(base: T): T {
+    return base;
+}
+
+declare function computed(): PropertyKey;
+declare function callbackCall(): void;
+declare function defaultCall(): number;
+declare function direct(): void;
+declare function fieldCall(): number;
+declare function initializer(): number;
+declare function localInit(): number;
+declare function methodCall(): void;
+declare function nestedMethodCall(): void;
+declare function staticCall(): number;
+
+class Child extends mixin(Base) {
+    public field = fieldCall();
+    public callback = (): void => callbackCall();
+    public static staticField = staticCall();
+
+    public method(): void {
+        methodCall();
+    }
+}
+
+function staticCycle(): void {
+    class Cyclic {
+        static {
+            staticCycle();
+        }
+    }
+    void Cyclic;
+}
+
+function objectCycle(): PropertyKey {
+    const value = {
+        [objectCycle()](): void {}
+    };
+    void value;
+    return "cycle";
+}
+
+function objectComputedClassCycle(): PropertyKey {
+    const value = {
+        [String(class InnerComputed {
+            static {
+                objectComputedClassCycle();
+            }
+        })](): void {}
+    };
+    void value;
+    return "cycle";
+}
+
+function recursiveTag(strings: TemplateStringsArray): string {
+    void strings;
+    return recursiveTag`again`;
+}
+
+const taggedResult = recursiveTag`start`;
+
+class DerivedChild extends Child {}
+
+const ChildAlias = Child;
+class AliasedDerived extends ChildAlias {}
+
+function makeUnknownBase(): new () => Base {
+    return Base;
+}
+
+class FactoryDerived extends makeUnknownBase() {}
+
+class AccessorLoop {
+    public get value(): number {
+        const { value } = this;
+        return value;
+    }
+
+    public set value(next: number) {
+        this.value = next;
+        ({ value: this.value } = { value: next });
+        [this.value] = [next];
+        for (this.value of [next]) {
+            break;
+        }
+    }
+}
+
+function recursiveDecorator<T extends Function>(
+    value: T,
+    context: ClassDecoratorContext
+): void {
+    @recursiveDecorator
+    class Inner {}
+    void value;
+    void context;
+    void Inner;
+}
+
+@recursiveDecorator
+class DecoratedOuter {}
+
+const typedDecorator: ClassDecorator = (value): void => {
+    void value;
+};
+
+@typedDecorator
+class TypedDecorated {}
+
+function decoratorFactory(): ClassDecorator {
+    return (): void => {};
+}
+
+@decoratorFactory()
+class FactoryDecorated {}
+
+const Expression = class extends mixin(Base) {
+    public [computed()](): void {}
+    public value = initializer();
+
+    public nestedMethod(): void {
+        nestedMethodCall();
+    }
+};
+
+function owner(defaultValue = defaultCall()): number {
+    class Local extends mixin(Base) {
+        public value = localInit();
+    }
+    direct();
+    return defaultValue + new Local().value;
+}
+
+const source = { a: 1, nested: { b: "sea" } };
+const { a, nested: { b } } = source;
+
+class Overloaded {
+    public constructor(value: string);
+    public constructor(value: number);
+    public constructor(public readonly value: string | number) {}
+}
+
+const overloadInstance = new Overloaded(1);
+const childInstance = new Child();
+const derivedInstance = new DerivedChild();
+
+export const edgeEvidence = {
+    Child,
+    AccessorLoop,
+    AliasedDerived,
+    DerivedChild,
+    DecoratedOuter,
+    Expression,
+    FactoryDerived,
+    a,
+    b,
+    childInstance,
+    derivedInstance,
+    overloadInstance,
+    objectCycle,
+    objectComputedClassCycle,
+    owner,
+    recursiveTag,
+    taggedResult,
+    staticCycle
+};

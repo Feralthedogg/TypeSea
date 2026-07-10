@@ -1,8 +1,6 @@
 /**
  * @file index.ts
  * @brief Public IR module aggregation.
- * @details This barrel keeps public import paths stable while implementation files remain
- * split by responsibility.
  */
 
 export { GraphBuilder } from "./builder.js";

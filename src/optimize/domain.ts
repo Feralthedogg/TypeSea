@@ -1,8 +1,6 @@
 /**
  * @file domain.ts
  * @brief Validation-domain specialization for dispatch child graphs.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 
 import { NodeTag } from "../kind/index.js";
@@ -35,8 +33,6 @@ const DomainMask = {
 
 /**
  * @brief Node shape that carries a single validated value edge.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 interface ValueNode {
     readonly value: NodeId;
@@ -44,8 +40,6 @@ interface ValueNode {
 
 /**
  * @brief Node shape that carries the numeric left operand used by bounds checks.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 interface NumericNode {
     readonly left: NodeId;
@@ -54,8 +48,6 @@ interface NumericNode {
 
 /**
  * @brief Container guard implied by an iteration node over the same value.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 interface IterationDomain {
     readonly value: NodeId;
@@ -95,7 +87,6 @@ export function specializeDomains(graph: Graph): Graph {
 
 /**
  * @brief Execute specialize child domains.
- * @details Optimizer helpers preserve graph equivalence while reducing redundant validation work.
  */
 function specializeChildDomains(
     node: GraphNode,
@@ -243,8 +234,6 @@ function specializeIterationDomains(
 
 /**
  * @brief Collect domains implied by iteration nodes inside one boolean fold.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param values Operand ids from an And/Or-like fold.
  * @param nodes Graph node table used to inspect operands.
  * @returns Iteration domains visible from the operand list.
@@ -273,8 +262,6 @@ function collectIterationDomains(
 
 /**
  * @brief Test whether a boolean operand is redundant due to an iteration domain.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param value Candidate guard node id.
  * @param nodes Graph node table used to inspect the candidate.
  * @param domains Domains collected from sibling iteration nodes.
@@ -300,8 +287,6 @@ function isIterationDomainGuard(
 
 /**
  * @brief Read the guard implied by an iteration node.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Candidate graph node.
  * @returns Array/Object guard implied by the node, or undefined.
  */
@@ -325,8 +310,6 @@ function readIterationDomain(node: GraphNode): IterationDomain | undefined {
 
 /**
  * @brief Test whether a node is a plain container guard over one value edge.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Candidate graph node.
  * @returns True for array/object guard nodes.
  */
@@ -340,8 +323,6 @@ function isContainerGuardNode(
 
 /**
  * @brief Recursively specialize every graph in a closed graph list.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param graphs Child graph list.
  * @returns Original list when no child changed, otherwise a rewritten list.
  */
@@ -362,8 +343,6 @@ function specializeGraphArray(graphs: readonly Graph[]): readonly Graph[] {
 
 /**
  * @brief Specialize child graphs using the dispatch mask assigned to each arm.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param graphs Child graph list.
  * @param masks Primitive-domain mask per graph.
  * @returns Original list when no child changed, otherwise a rewritten list.
@@ -393,8 +372,6 @@ function specializeGraphsForMasks(
 
 /**
  * @brief Specialize object-shape entry graphs without touching entry metadata.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param entries Object-shape entries.
  * @returns Original entry list when no graph changed, otherwise a rewritten list.
  */
@@ -426,8 +403,6 @@ function specializeObjectShapeEntries(
 
 /**
  * @brief Specialize and clean a graph for one known primitive-domain mask.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param graph Child graph to specialize.
  * @param mask Primitive-domain mask proven by the dispatch parent.
  * @returns Optimized graph for the narrowed domain.
@@ -442,8 +417,6 @@ function optimizeGraphForMask(graph: Graph, mask: number): Graph {
 
 /**
  * @brief Rewrite one graph under a known input-domain mask.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param graph Graph whose root parameter has the supplied mask.
  * @param mask Primitive-domain mask for the graph parameter.
  * @returns Original graph when no node changed, otherwise a rewritten graph.
@@ -501,8 +474,6 @@ function specializeGraphForMask(graph: Graph, mask: number): Graph {
 
 /**
  * @brief Specialize a single graph node against a primitive-domain mask.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Node with dependencies already rewritten through current aliases.
  * @param nodes Mutable graph node table used for constants.
  * @param aliases Alias table updated by replacement folds.
@@ -560,8 +531,6 @@ function specializeNodeForMask(
 
 /**
  * @brief Specialize a unary type guard.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Guard node whose value edge may point at the root parameter.
  * @param nodes Mutable graph node table used for constants.
  * @param aliases Alias table updated by replacement folds.
@@ -598,8 +567,6 @@ function specializeUnaryType(
 
 /**
  * @brief Specialize number and integer guards.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Numeric guard node.
  * @param nodes Mutable graph node table used for constants.
  * @param aliases Alias table updated by replacement folds.
@@ -620,8 +587,6 @@ function specializeNumericType(
 
 /**
  * @brief Specialize string-only scalar checks.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node String check node.
  * @param nodes Mutable graph node table used for constants.
  * @param aliases Alias table updated by replacement folds.
@@ -642,8 +607,6 @@ function specializeStringDomain(
 
 /**
  * @brief Specialize numeric bound checks.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Numeric bound node.
  * @param nodes Mutable graph node table used for constants.
  * @param aliases Alias table updated by replacement folds.
@@ -688,8 +651,6 @@ function readOrderedCompareDomain(
 
 /**
  * @brief Specialize equality checks against a known primitive domain.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Equality node.
  * @param nodes Mutable graph node table used for constants.
  * @param aliases Alias table updated by replacement folds.
@@ -717,8 +678,6 @@ function specializeEqualityDomain(
 
 /**
  * @brief Specialize container-value nodes against a known primitive domain.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Node that may carry a `value` edge.
  * @param nodes Mutable graph node table used for constants.
  * @param aliases Alias table updated by replacement folds.
@@ -744,8 +703,6 @@ function specializeValueDomain(
 
 /**
  * @brief Test whether a node id names the root graph parameter.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param nodes Graph node table.
  * @param id Candidate node id.
  * @returns True when the id points at a Param node.
@@ -756,8 +713,6 @@ function isParamNode(nodes: readonly GraphNode[], id: NodeId): boolean {
 
 /**
  * @brief Convert a literal value into its primitive-domain mask bit.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param value Literal value carried by an Equals node.
  * @returns Domain mask bit for the literal's runtime type.
  */

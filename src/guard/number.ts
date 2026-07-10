@@ -1,8 +1,6 @@
 /**
  * @file number.ts
  * @brief Number guard implementation.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  */
 
 import { NumberCheckTag, SchemaTag } from "../kind/index.js";

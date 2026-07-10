@@ -1,8 +1,6 @@
 /**
  * @file index.ts
  * @brief Public graph optimizer pipeline.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 
 import {

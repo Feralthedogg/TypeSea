@@ -1,8 +1,6 @@
 /**
  * @file optimize-remap.ts
  * @brief Dense node-id remapping helpers for graph compaction.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 
 import type {

@@ -1,8 +1,6 @@
 /**
  * @file base.ts
  * @brief Base guard implementation.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  */
 
 import { PresenceTag, SchemaTag } from "../kind/index.js";
@@ -153,8 +151,6 @@ export class BaseGuard<
 
     /**
      * @brief Construct a schema-backed guard.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @param schema Runtime schema owned by the guard.
      * @post The schema slot is frozen and the receiver is registered for fast checks.
      */
@@ -275,8 +271,6 @@ export class BaseGuard<
 
     /**
      * @brief Test whether a value satisfies this guard.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @param value Candidate runtime value.
      * @returns True when the value is accepted by the guard schema.
      */
@@ -293,8 +287,6 @@ export class BaseGuard<
 
     /**
      * @brief Validate a value and return explicit diagnostics.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @param value Candidate runtime value.
      * @returns Result carrying the value on success or frozen issues on failure.
      */
@@ -354,8 +346,6 @@ export class BaseGuard<
 
     /**
      * @brief Validate a value and keep only the first diagnostic.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @param value Candidate runtime value.
      * @returns Result carrying the value on success or one frozen issue on failure.
      */
@@ -618,8 +608,6 @@ export class BaseGuard<
 
     /**
      * @brief Validate a value and throw TypeSeaAssertionError on failure.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @param value Candidate runtime value.
      * @throws TypeSeaAssertionError when validation fails.
      */
@@ -639,8 +627,6 @@ export class BaseGuard<
 
     /**
      * @brief Return the optimized validation graph for introspection.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @returns Sea-of-Nodes graph derived from the guard schema.
      */
     public graph(this: unknown): Graph {
@@ -814,8 +800,6 @@ export class BaseGuard<
 
     /**
      * @brief Mark this guard as optional in object shapes.
-     * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
-     * existing guard instance.
      * @returns Fresh guard whose runtime value also allows absent object keys.
      */
     public optional(): BaseGuard<TValue, "optional"> {
@@ -840,8 +824,6 @@ export class BaseGuard<
 
     /**
      * @brief Allow the explicit undefined value.
-     * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
-     * existing guard instance.
      * @returns Fresh guard wrapping this schema in Undefinedable.
      */
     public undefinedable(): BaseGuard<TValue | undefined, TPresence> {
@@ -853,8 +835,6 @@ export class BaseGuard<
 
     /**
      * @brief Allow the explicit null value.
-     * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
-     * existing guard instance.
      * @returns Fresh guard wrapping this schema in Nullable.
      */
     public nullable(): BaseGuard<TValue | null, TPresence> {
@@ -883,8 +863,6 @@ export class BaseGuard<
 
     /**
      * @brief Build an array guard using this guard as the item schema.
-     * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
-     * existing guard instance.
      * @returns Fresh array guard.
      */
     public array(): ArrayGuard<RuntimeValue<TValue, TPresence>> {
@@ -901,8 +879,6 @@ export class BaseGuard<
 
     /**
      * @brief Attach a compile-time brand without changing runtime validation.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @returns Fresh branded guard with the same runtime schema.
      */
     public brand<TBrand extends string>(): BaseGuard<
@@ -918,8 +894,6 @@ export class BaseGuard<
 
     /**
      * @brief Append a user refinement predicate after this guard succeeds.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @param predicate Function that must return the boolean literal true.
      * @param name Diagnostic name for refinement failure.
      * @returns Fresh refined guard.
@@ -1114,8 +1088,6 @@ export class BaseGuard<
 
     /**
      * @brief Build a union of this guard and another guard.
-     * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
-     * existing guard instance.
      * @param other Right-hand guard.
      * @returns Fresh union guard preserving both runtime schemas.
      */
@@ -1132,8 +1104,6 @@ export class BaseGuard<
 
     /**
      * @brief Build an intersection of this guard and another guard.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @param other Right-hand guard.
      * @returns Fresh intersection guard requiring both schemas to pass.
      */

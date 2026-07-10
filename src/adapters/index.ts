@@ -31,29 +31,21 @@ import { isSchemaValue } from "../schema/index.js";
 
 /**
  * @brief sync adapter source.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export type SyncAdapterSource = DecodeSource;
 
 /**
  * @brief infer sync adapter.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export type InferSyncAdapter<TSource> = InferDecoder<TSource>;
 
 /**
  * @brief infer adapter.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export type InferAdapter<TSource> = InferAsyncDecoder<TSource>;
 
 /**
  * @brief trpc parser.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export interface TrpcParser<TValue> {
     readonly parse: (value: unknown) => TValue;
@@ -61,8 +53,6 @@ export interface TrpcParser<TValue> {
 
 /**
  * @brief async trpc parser.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export interface AsyncTrpcParser<TValue> {
     readonly parseAsync: (value: unknown) => Promise<TValue>;
@@ -70,8 +60,6 @@ export interface AsyncTrpcParser<TValue> {
 
 /**
  * @brief fastify route schema.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export interface FastifyRouteSchema {
     readonly body?: JsonSchema;
@@ -83,8 +71,6 @@ export interface FastifyRouteSchema {
 
 /**
  * @brief fastify http part.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export type FastifyHttpPart =
     | "body"
@@ -94,8 +80,6 @@ export type FastifyHttpPart =
 
 /**
  * @brief fastify route schema options.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export interface FastifyRouteSchemaOptions {
     readonly part: FastifyHttpPart;
@@ -117,8 +101,6 @@ export interface FastifyRouteSchemaOptions {
 
 /**
  * @brief fastify validator route.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export interface FastifyValidatorRoute {
     readonly schema: unknown;
@@ -129,8 +111,6 @@ export interface FastifyValidatorRoute {
 
 /**
  * @brief fastify validation result.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export type FastifyValidationResult =
     | { readonly value: unknown }
@@ -138,15 +118,11 @@ export type FastifyValidationResult =
 
 /**
  * @brief fastify validator.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export type FastifyValidator = (value: unknown) => FastifyValidationResult;
 
 /**
  * @brief fastify validator compiler.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export type FastifyValidatorCompiler = (
     route: FastifyValidatorRoute
@@ -176,8 +152,6 @@ type FastifyCompilerSourceLookup = Readonly<
 
 /**
  * @brief react hook form field error.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export interface ReactHookFormFieldError {
     readonly type: string;
@@ -195,8 +169,6 @@ export interface ReactHookFormErrors {
 
 /**
  * @brief react hook form resolver result.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export interface ReactHookFormResolverResult<TValue> {
     readonly values: TValue | Readonly<Record<string, never>>;
@@ -205,8 +177,6 @@ export interface ReactHookFormResolverResult<TValue> {
 
 /**
  * @brief react hook form resolver.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export type ReactHookFormResolver<TValue> = (
     values: unknown,
@@ -216,8 +186,6 @@ export type ReactHookFormResolver<TValue> = (
 
 /**
  * @brief react hook form resolver options.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export interface ReactHookFormResolverOptions {
     readonly messages: Partial<IssueMessageOptions> | undefined;
@@ -225,8 +193,6 @@ export interface ReactHookFormResolverOptions {
 
 /**
  * @brief to trpc parser.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export function toTrpcParser<TSource extends SyncAdapterSource>(
     source: TSource
@@ -245,8 +211,6 @@ export function toTrpcParser<TSource extends SyncAdapterSource>(
 
 /**
  * @brief to async trpc parser.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export function toAsyncTrpcParser<TSource extends AsyncDecodeSource>(
     source: TSource
@@ -265,8 +229,6 @@ export function toAsyncTrpcParser<TSource extends AsyncDecodeSource>(
 
 /**
  * @brief to fastify route schema.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export function toFastifyRouteSchema(
     guard: Guard<unknown, Presence>,
@@ -287,8 +249,6 @@ export function toFastifyRouteSchema(
 
 /**
  * @brief to fastify validator compiler.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export function toFastifyValidatorCompiler(
     source: FastifyValidatorCompilerSource
@@ -312,8 +272,6 @@ export function toFastifyValidatorCompiler(
 
 /**
  * @brief to react hook form resolver.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  */
 export function toReactHookFormResolver<TSource extends AsyncDecodeSource>(
     source: TSource,
@@ -409,8 +367,6 @@ function readGuard(value: unknown, label: string): Guard<unknown, Presence> {
 
 /**
  * @brief Validate a source accepted by sync-only adapters.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  * @param source Candidate guard or decoder.
  * @param label Message prefix for TypeError diagnostics.
  */
@@ -568,8 +524,6 @@ function readAsyncAdapterSource(source: unknown, label: string): void {
 
 /**
  * @brief Resolve the Fastify route part used for JSON Schema output.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  * @param options Optional Fastify route schema options.
  * @returns The selected HTTP part, defaulting to body.
  */
@@ -618,8 +572,6 @@ function readFastifyJsonSchemaOptions(
 
 /**
  * @brief Normalize React Hook Form resolver options.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  * @param options Optional resolver options.
  * @returns Required options object used by the resolver.
  * @throws TypeError when options are not object-like.
@@ -731,7 +683,7 @@ function insertReactHookFormIssue(
 }
 
 /**
- * @brief react hook form path key.
+ * @brief Normalize one TypeSea path segment for React Hook Form traversal.
  * @details Converts one TypeSea path segment into the object key React Hook Form traverses.
  * @param segment Path segment from a TypeSea issue.
  * @returns Stable string key for object or array-index lookup.
@@ -741,7 +693,7 @@ function reactHookFormPathKey(segment: PathSegment): string {
 }
 
 /**
- * @brief freeze react hook form errors.
+ * @brief Publish the completed React Hook Form error tree as immutable data.
  * @details Recursively freezes the null-prototype tree after all issues have been inserted.
  * @param errors Mutable branch that becomes immutable before publication.
  * @returns Frozen React Hook Form error tree.
@@ -793,8 +745,6 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 
 /**
  * @brief Read one own data slot from an adapter input object.
- * @details Adapter shapes stay local so TypeSea diagnostics can be translated without
- * adding framework dependencies.
  * @param value Object being normalized.
  * @param key Field name or symbol.
  * @returns Stored field value, or undefined when absent.

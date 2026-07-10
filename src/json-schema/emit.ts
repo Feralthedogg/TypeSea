@@ -1,8 +1,6 @@
 /**
  * @file emit.ts
  * @brief TypeSea schema to JSON Schema emitter dispatcher.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  */
 
 import { KeyRuleTag, SchemaTag } from "../kind/index.js";

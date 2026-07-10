@@ -233,8 +233,6 @@ function copyPath(value: unknown): readonly PathSegment[] {
 
 /**
  * @brief Check whether a value is one of TypeSea's stable issue codes.
- * @details Issue helpers publish frozen diagnostics so adapters and callers cannot mutate
- * validation results later.
  * @param value Candidate issue code.
  * @returns True when the value belongs to the closed issue-code set.
  */
@@ -282,8 +280,6 @@ export function isIssueCodeValue(value: unknown): value is IssueCode {
 
 /**
  * @brief Accept optional text fields used by issue diagnostics.
- * @details Issue helpers publish frozen diagnostics so adapters and callers cannot mutate
- * validation results later.
  * @param value Candidate issue text field.
  * @returns True for string values and undefined.
  */
@@ -293,8 +289,6 @@ function isOptionalString(value: unknown): value is string | undefined {
 
 /**
  * @brief Check whether a value can be read as an issue-like record.
- * @details Issue helpers publish frozen diagnostics so adapters and callers cannot mutate
- * validation results later.
  * @param value Candidate runtime value.
  * @returns True for non-array object values.
  */
@@ -311,8 +305,6 @@ function hasOwn(value: object, key: string): boolean {
 
 /**
  * @brief Check whether a value is an array before indexed reads.
- * @details Issue helpers publish frozen diagnostics so adapters and callers cannot mutate
- * validation results later.
  * @param value Candidate runtime value.
  * @returns True when the value is an array.
  */

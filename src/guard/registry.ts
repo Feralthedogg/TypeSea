@@ -1,8 +1,6 @@
 /**
  * @file registry.ts
  * @brief Constructed guard receiver registry.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  */
 
 import type { BaseGuard } from "./base.js";
@@ -16,8 +14,6 @@ const constructedGuards = new WeakSet<object>();
 
 /**
  * @brief Mark a guard instance as constructor-owned.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  * @param value Guard instance created by TypeSea constructors.
  * @post The value can use the fast receiver validation path.
  */

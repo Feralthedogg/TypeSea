@@ -1,8 +1,6 @@
 /**
  * @file issue.ts
  * @brief Runtime validation issue construction.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  */
 
 import type { Issue, PathSegment } from "../issue/index.js";
@@ -10,8 +8,6 @@ import { makeIssue } from "../issue/index.js";
 
 /**
  * @brief Append one runtime validation issue.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param path Mutable path stack at the failing validation point.
  * @param issues Output issue buffer.
  * @param code Stable issue code.

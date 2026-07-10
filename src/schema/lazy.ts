@@ -1,8 +1,6 @@
 /**
  * @file schema/lazy.ts
  * @brief Lazy schema resolution.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  */
 
 import { SchemaTag } from "../kind/index.js";
@@ -12,8 +10,6 @@ import type { LazySchema, Schema } from "./types.js";
 
 /**
  * @brief resolve lazy schema.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  */
 export function resolveLazySchema(
     schema: LazySchema,

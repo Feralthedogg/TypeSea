@@ -12,8 +12,6 @@ import { err } from "../result/index.js";
 
 /**
  * @brief Built-in locale identifiers accepted by the message renderer.
- * @details Message helpers keep structured issues separate from human-readable formatting
- * until callers request text.
  */
 export type MessageLocale = "en" | "ko";
 
@@ -31,8 +29,6 @@ export interface IssueMessageContext {
 
 /**
  * @brief User supplied issue formatter callback.
- * @details Message helpers keep structured issues separate from human-readable formatting
- * until callers request text.
  * @param issue Frozen issue being rendered.
  * @param context Preformatted string fields for template authors.
  * @returns Final message text for that issue.
@@ -52,8 +48,6 @@ export type IssueMessageTemplate = string | IssueMessageFormatter;
 
 /**
  * @brief Partial mapping from TypeSea issue codes to render templates.
- * @details Message helpers keep structured issues separate from human-readable formatting
- * until callers request text.
  */
 export type IssueMessageCatalog = Partial<
     Readonly<Record<IssueCode, IssueMessageTemplate>>
@@ -266,8 +260,6 @@ interface MutableZodIssue {
 
 /**
  * @brief Freeze a user catalog after validating its keys and templates.
- * @details Message helpers keep structured issues separate from human-readable formatting
- * until callers request text.
  * @param catalog Partial message catalog supplied by the application.
  * @returns Frozen catalog that can be reused across validations.
  */
@@ -1491,8 +1483,6 @@ function readOptions(
 
 /**
  * @brief Validate and normalize the requested message locale.
- * @details Message helpers keep structured issues separate from human-readable formatting
- * until callers request text.
  * @param value Locale field from the public options object.
  * @returns Built-in locale identifier, defaulting to English.
  */
@@ -1566,8 +1556,6 @@ function copyCatalog(value: unknown): IssueMessageCatalog {
 
 /**
  * @brief Check whether a catalog value is an accepted template form.
- * @details Message helpers keep structured issues separate from human-readable formatting
- * until callers request text.
  * @param value Candidate catalog entry value.
  * @returns True for string templates or formatter functions.
  */

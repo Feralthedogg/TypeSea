@@ -40,6 +40,7 @@ import {
     stringRef
 } from "./context.js";
 import { stringLiteral } from "./names.js";
+import { numberMultipleOfExpression } from "./number.js";
 import { emitUnion } from "./union-preflight.js";
 import type { EmitContext, FunctionSource } from "./types.js";
 
@@ -656,7 +657,7 @@ function emitNumberFirst(
                 )}`);
                 break;
             case NumberCheckTag.MultipleOf:
-                parts.push(`if(${value}%${String(check.value)}!==0)${emitFirstIssue(
+                parts.push(`if(!${numberMultipleOfExpression(value, check.value)})${emitFirstIssue(
                     path,
                     "expected_multiple_of",
                     `multiple of ${String(check.value)}`,

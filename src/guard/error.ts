@@ -1,8 +1,6 @@
 /**
  * @file error.ts
  * @brief TypeSea assertion error.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  */
 
 import type { Issue } from "../issue/index.js";

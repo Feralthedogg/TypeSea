@@ -1,8 +1,6 @@
 /**
  * @file check-composite.ts
  * @brief Composite diagnostic schema interpreters.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  */
 
 import {
@@ -53,8 +51,6 @@ const EMPTY_ISSUES: readonly Issue[] = Object.freeze([]);
 
 /**
  * @brief issue collector.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  */
 export type IssueCollector = (
     schema: Schema,
@@ -66,8 +62,6 @@ export type IssueCollector = (
 
 /**
  * @brief collect array issues.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param item Schema applied to each logical array slot.
  * @param value Candidate value supplied by the caller.
  * @param path Mutable path stack reused by the diagnostic walker.
@@ -172,7 +166,7 @@ function collectArrayLengthIssues(
 }
 
 /**
- * @brief collect present array issues.
+ * @brief Diagnose only own indexes after undefined has admitted sparse holes.
  * @details Holes are equivalent to `undefined` when the item schema accepts it,
  * so only actual own index slots need descriptor checks and child validation.
  * @param item Schema applied to each present own index.
@@ -218,8 +212,6 @@ function collectPresentArrayIssues(
 
 /**
  * @brief collect tuple issues.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param items Tuple item schemas.
  * @param value Candidate runtime value.
  * @param path Mutable path stack reused by the diagnostic walker.
@@ -320,8 +312,6 @@ function readArrayIndexDataProperty(
 
 /**
  * @brief Read one canonical array index key for diagnostic collection.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param value Array being inspected.
  * @param key Canonical array index key.
  * @returns Data descriptor for elements, undefined for holes, and null for accessors.
@@ -345,8 +335,6 @@ function readArrayKeyDataProperty(
 
 /**
  * @brief collect record issues.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param item Schema applied to each own enumerable record value.
  * @param value Candidate runtime value.
  * @param path Mutable path stack reused by the diagnostic walker.
@@ -635,8 +623,6 @@ export function collectPropertyIssues(
 
 /**
  * @brief collect object issues.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param schema Object schema with entries and object mode.
  * @param value Candidate runtime value.
  * @param path Mutable path stack reused by the diagnostic walker.
@@ -753,8 +739,6 @@ function collectObjectCatchallIssues(
 
 /**
  * @brief collect discriminated union issues.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param key Discriminant property key.
  * @param cases Closed discriminated union cases.
  * @param value Candidate runtime value.
@@ -820,8 +804,6 @@ function isLiteralDiagnosticValue(value: unknown): value is LiteralValue {
 
 /**
  * @brief collect refine issues.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param inner Schema validated before the predicate runs.
  * @param predicate User predicate that must return true.
  * @param name Refinement name used in diagnostics.

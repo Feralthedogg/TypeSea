@@ -1,8 +1,6 @@
 /**
  * @file schema/index.ts
  * @brief Schema module aggregate.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  */
 
 export type {

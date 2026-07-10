@@ -2,10 +2,19 @@
 use strict;
 use warnings;
 
+use Cwd qw(abs_path);
+use Encode qw(FB_DEFAULT decode encode encode_utf8);
+use Fcntl qw(O_NOFOLLOW O_NONBLOCK O_RDONLY S_ISREG);
 use File::Find qw(find);
 use IO::Handle;
+use IO::Select;
 use IO::Socket::INET;
+use IPC::Open3 qw(open3);
 use JSON::PP qw(decode_json);
+use POSIX qw(WNOHANG);
+use Scalar::Util qw(looks_like_number);
+use Symbol qw(gensym);
+use Time::HiRes qw(time);
 
 my $show_notices = grep { $_ eq "--verbose" || $_ eq "-v" } @ARGV;
 my $strict_warnings = grep { $_ eq "--strict-warnings" } @ARGV;
@@ -24,8 +33,36 @@ my $history_path = read_arg_value("--history");
 my $write_history_path = read_arg_value("--write-history");
 my $new_code_base = read_arg_value("--new-code-base");
 my @new_code_files = read_arg_values("--new-code-file");
+my $color_option = read_arg_value("--color");
+my $no_color = has_arg("--no-color");
+my $color_mode = $no_color ? "never" : ($color_option // "auto");
+my $diagnostic_format = read_arg_value("--diagnostic-format") // "rich";
+my $diagnostic_context_lines = read_arg_value("--context-lines") // 1;
+my $diagnostic_max_flow_steps = read_arg_value("--max-flow-steps") // 6;
+my $explain_rule = read_arg_value("--explain");
+my $policy_workspace_root = abs_path(".") // ".";
+my %terminal_source_cache;
+my $terminal_source_cache_bytes = 0;
+my $terminal_source_read_budget_bytes = 64 * 1024 * 1024;
+my %terminal_sensitive_source_lines;
+my %terminal_sensitive_source_paths;
+my %terminal_character_width_cache;
+my %frontend_source_lines_cache;
+my $frontend_source_lines_cache_bytes = 0;
 my $declared_analyzer_rule_codes_cache;
 
+if (has_arg("--help") || has_arg("-h")) {
+    emit_usage();
+    exit 0;
+}
+validate_terminal_options();
+if (defined $explain_rule) {
+    emit_rule_explanation($explain_rule);
+    exit 0;
+}
+
+run_terminal_diagnostic_self_tests();
+run_typescript_frontend_adapter_self_tests();
 run_lexer_self_tests();
 run_function_ir_self_tests();
 run_source_suppression_self_tests();
@@ -61,6 +98,7 @@ run_proof_obligation_model_self_tests();
 run_defect_routing_model_self_tests();
 
 my $ir = build_policy_ir();
+index_terminal_sensitive_source_lines($ir->{secrets}{findings});
 my @diagnostics = analyze_policy_ir($ir);
 push @diagnostics, source_suppression_rule_diagnostics($ir->{source}{source_suppressions}, \@diagnostics);
 push @diagnostics, source_suppression_wildcard_diagnostics($ir->{source}{source_suppressions});
@@ -167,16 +205,18 @@ if ($serve_report) {
 } elsif ($json_report) {
     emit_json_report($ir, \@diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model);
 } else {
-    emit_quality_gate($quality_gate);
     emit_diagnostics(@diagnostics);
+    emit_quality_gate($quality_gate);
 }
 
 if ($quality_gate->{status} ne "passed" || ($strict_warnings && $warnings != 0)) {
-    print STDERR summary_line($errors, $warnings, $notices, "failed") if !$json_report && !$sarif_report;
+    emit_summary($errors, $warnings, $notices, "failed")
+        if !$json_report && !$sarif_report && !$html_report && !$serve_report;
     exit 1;
 }
 
-print summary_line($errors, $warnings, $notices, "ok") if !$json_report && !$sarif_report;
+emit_summary($errors, $warnings, $notices, "ok")
+    if !$json_report && !$sarif_report && !$html_report && !$serve_report;
 
 sub build_policy_ir {
     my $package = read_json("package.json");
@@ -185,6 +225,7 @@ sub build_policy_ir {
     my $benchmark = read_json("bench/results/latest.json");
     my $contributing = read_text("CONTRIBUTING.md");
     my $tests = test_ir();
+    my $typescript_frontend = typescript_frontend_ir();
 
     my $ir = {
         document => document_ir($contributing),
@@ -195,7 +236,7 @@ sub build_policy_ir {
         release_consistency => release_consistency_ir($package, $package_lock, $benchmark),
         tsconfig => tsconfig_ir($tsconfig),
         scripts => script_ir($package),
-        source => source_ir(),
+        source => source_ir($typescript_frontend),
         tests => $tests,
         test_evidence => test_evidence_ir($tests),
         benchmarks => benchmark_ir($benchmark),
@@ -217,6 +258,7 @@ sub analyze_policy_ir {
     push @out, analyze_v8_performance($ir);
     push @out, analyze_safe_mode_security($ir);
     push @out, analyze_compiler_architecture($ir);
+    push @out, analyze_typescript_frontend($ir);
     push @out, analyze_source_parse_health($ir);
     push @out, analyze_module_graph($ir);
     push @out, analyze_interprocedural_static_analysis($ir);
@@ -525,7 +567,17 @@ sub analyze_safe_mode_security {
             $first->{where},
             int($regex->{totalRedosRisks} // 0) .
                 " regex pattern(s) contain ReDoS risk heuristics",
-            flow_steps_from_regex_findings(\@findings)
+            flow_steps_from_regex_findings(\@findings),
+            {
+                primary_span => $first->{primary_span},
+                notes => [
+                    "The TypeScript AST identifies regex literals and RegExp constructors; the nested-quantifier risk model remains a conservative regex heuristic."
+                ],
+                suggestions => [
+                    "Replace nested unbounded quantifiers or overlapping quantified alternatives with a bounded or single-pass expression.",
+                    "Add a hostile long-string regression test that demonstrates linear behavior for the rewritten pattern."
+                ]
+            }
         );
     } else {
         push @out, diagnostic("notice", "security.redos-risk", "src", "regex literals and string constructors avoid known ReDoS risk heuristics");
@@ -665,36 +717,84 @@ sub analyze_interprocedural_static_analysis {
     my $functions = $analysis->{functions};
     my $graph = $analysis->{graph};
     my $abstract = $analysis->{abstract};
+    my $structural = object_or_empty($ir->{source}{structural_analysis});
+    my $ast_function_count = int($structural->{astFunctionCount} // 0);
+    my $ast_body_count = int($structural->{astBodyFunctionCount} // 0);
+    my $runtime_owner_count = int($structural->{runtimeOwnerCount} // 0);
+    my $analysis_function_count = int(
+        $structural->{analysisFunctionCount} // ($ast_body_count + $runtime_owner_count)
+    );
+    my $metric_count = int($structural->{tokenMetricFunctionCount} // 0);
+    my $neutral_count = int($structural->{neutralMetricFunctionCount} // 0);
 
-    if (@{$functions} < 200) {
+    if (@{$functions} != $analysis_function_count || int($structural->{structuralCoverageGap} // 0) != 0) {
         push @out, diagnostic(
-            "warning",
+            "error",
             "flow.function-ir",
             "src",
-            "function front-end parsed only " . scalar(@{$functions}) . " functions; static-analysis coverage may be under-parsed"
+            "AST-backed abstract graph models " . scalar(@{$functions}) .
+                "/$analysis_function_count executable functions/runtime owners; structural coverage is incomplete"
+        );
+    } elsif ($neutral_count != 0) {
+        push @out, diagnostic(
+            "error",
+            "flow.function-ir",
+            "src",
+            "AST-backed abstract graph models $analysis_function_count/$analysis_function_count executable functions/runtime owners; " .
+                "$metric_count retain bounded local metrics but $neutral_count region(s) failed local metric extraction"
         );
     } else {
         push @out, diagnostic(
             "notice",
             "flow.function-ir",
             "src",
-            "function front-end summarized " . scalar(@{$functions}) . " functions"
+            "AST-backed abstract graph models all $ast_body_count executable function bodies and " .
+                "$runtime_owner_count runtime owner(s) with local metric evidence; " .
+                ($ast_function_count - $ast_body_count) . " declaration-only overload/signature node(s) remain inventory-only"
         );
     }
 
-    if (@{$graph->{edges}} < 300) {
+    my $runtime_ownership_gap = int($structural->{runtimeOwnershipGap} // 0);
+    if ($runtime_ownership_gap != 0) {
+        my $sample = array_or_empty($structural->{runtimeOwnershipObligations})->[0] // {};
+        my $span = frontend_span_to_human($sample->{span}, $sample->{path} // "src");
+        $span->{label} = "implicit runtime call target is inconclusive";
+        push @out, diagnostic(
+            "error",
+            "flow.runtime-ownership",
+            ($span->{path} // "src") . ":" . ($span->{line} // 1) .
+                (defined $span->{column} ? ":" . $span->{column} : ""),
+            "$runtime_ownership_gap implicit runtime invocation(s) could not be linked to a project target",
+            {
+                primary_span => $span,
+                notes => [
+                    "Decorator application, accessor dispatch, and class initialization execute calls that are not always represented by a source CallExpression.",
+                    "The analyzer fails closed instead of treating an unresolved implicit invocation as side-effect free."
+                ],
+                suggestions => [
+                    "Use a directly declared decorator/accessor target, give the factory return value a concrete project implementation, or isolate the boundary behind a reviewed adapter.",
+                    "Rerun the TypeScript frontend and verify that the implicit call has a non-empty targetId."
+                ]
+            }
+        );
+    }
+
+    if (($graph->{authority} // "") ne "typescript-type-checker") {
         push @out, diagnostic(
             "warning",
             "flow.callgraph",
             "src",
-            "call graph resolved only " . scalar(@{$graph->{edges}}) . " edges; review parser precision"
+            "abstract-domain call graph fell back to legacy name resolution"
         );
     } else {
         push @out, diagnostic(
             "notice",
             "flow.callgraph",
             "src",
-            "call graph resolved " . scalar(@{$graph->{edges}}) . " function edges"
+            "TypeChecker resolved " . int($graph->{resolvedCallsites} // 0) .
+                " exact callsite(s) into " . int($graph->{resolvedRelationships} // scalar(@{$graph->{edges}})) .
+                " function relationship(s); " . int($graph->{overloadRedirects} // 0) .
+                " overload target(s) map to unique executable implementations"
         );
     }
 
@@ -705,7 +805,8 @@ sub analyze_interprocedural_static_analysis {
             "src",
             "function call graph contains " . $abstract->{recursion}{cycles} .
                 " recursive SCC(s); bounded=" . $abstract->{recursion}{boundedCycles} .
-                ", unbounded=" . $abstract->{recursion}{unboundedCycles}
+                ", unbounded=" . $abstract->{recursion}{unboundedCycles} .
+                ", indeterminate=" . int($abstract->{recursion}{indeterminateCycles} // 0)
         );
     } else {
         push @out, diagnostic("notice", "flow.recursion", "src", "function call graph is acyclic");
@@ -718,7 +819,8 @@ sub analyze_interprocedural_static_analysis {
         "recursion proof domain: admission_guards=" . $abstract->{recursion}{proofTotals}{admissionGuards} .
             ", cycle_guards=" . $abstract->{recursion}{proofTotals}{cycleGuards} .
             ", depth_guards=" . $abstract->{recursion}{proofTotals}{depthGuards} .
-            ", weak_guards=" . $abstract->{recursion}{proofTotals}{weakGuards}
+            ", weak_guards=" . $abstract->{recursion}{proofTotals}{weakGuards} .
+            ", unknown_members=" . int($abstract->{recursion}{proofTotals}{unknownMembers} // 0)
     );
 
     if ($abstract->{recursion}{unboundedCycles} != 0) {
@@ -730,6 +832,14 @@ sub analyze_interprocedural_static_analysis {
             $abstract->{recursion}{unboundedCycles} .
                 " recursive SCC(s) lack a cycle, depth, weak-map, or TypeSea admission proof",
             flow_steps_from_recursion_cycle($cycle)
+        );
+    } elsif (int($abstract->{recursion}{indeterminateCycles} // 0) != 0) {
+        push @out, diagnostic(
+            "notice",
+            "flow.recursion-gap",
+            "src",
+            int($abstract->{recursion}{indeterminateCycles}) .
+                " recursive SCC(s) remain indeterminate because at least one AST body lacks migrated local recursion metrics"
         );
     } else {
         push @out, diagnostic("notice", "flow.recursion-gap", "src", "all recursive SCCs carry bounded-recursion proof evidence");
@@ -1370,10 +1480,231 @@ sub analyze_interprocedural_static_analysis {
     return @out;
 }
 
+sub analyze_typescript_frontend {
+    my ($ir) = @_;
+    my @out;
+    my $frontend = object_or_empty($ir->{source}{typescript_frontend});
+    my $health = object_or_empty($frontend->{health});
+    if (!typescript_frontend_available($frontend)) {
+        return diagnostic(
+            "error",
+            "policy.ast-frontend",
+            "scripts/typescript-policy-bridge.mjs",
+            $health->{message} // "TypeScript Compiler API frontend is unavailable",
+            {
+                notes => [
+                    "The policy analyzer fails closed because silently reverting to text parsing would reintroduce false positives and false negatives."
+                ],
+                suggestions => [
+                    "Run `npm install`, then verify `node scripts/typescript-policy-bridge.mjs --root . --tsconfig tsconfig.json`.",
+                    "Fix the bridge or tsconfig error before relying on contributing-policy results."
+                ],
+                provenance => {
+                    engine => "typescript-compiler-api",
+                    authoritative => JSON::PP::false,
+                    fallbackUsed => JSON::PP::true
+                }
+            }
+        );
+    }
+
+    my @diagnostics = frontend_all_diagnostics($frontend);
+    for my $compiler_diag (@diagnostics) {
+        next if ref($compiler_diag) ne "HASH";
+        my $phase = lc($compiler_diag->{phase} // $compiler_diag->{source} // "semantic");
+        my $raw_category = $compiler_diag->{category} // $compiler_diag->{severity} // "error";
+        my $category = looks_like_number($raw_category)
+            ? (int($raw_category) == 1 ? "error" :
+                int($raw_category) == 0 ? "warning" :
+                int($raw_category) == 2 ? "suggestion" : "message")
+            : lc($raw_category);
+        my $severity = $category eq "error" ? "error" :
+            $category eq "warning" ? "warning" : "notice";
+        my $rule = $phase =~ /syntactic|syntax|parse/ ? "ts.syntax" :
+            $phase =~ /config|option|global/ ? "ts.config" :
+            $category =~ /suggest/ ? "ts.suggestion" : "ts.type-check";
+        my $wire_span = $compiler_diag->{span} // $compiler_diag->{range};
+        my $fallback_path = $compiler_diag->{path} // "tsconfig.json";
+        my $span = frontend_span_to_human($wire_span, $fallback_path);
+        $span->{label} = "TS" . ($compiler_diag->{code} // "") . " " . $phase . " diagnostic";
+        my @secondary = frontend_related_spans($compiler_diag, $fallback_path);
+        my @suggestions = @{array_or_empty($compiler_diag->{suggestions})};
+        push @suggestions, typescript_default_fix_suggestions($compiler_diag, $phase);
+        my %seen_suggestion;
+        @suggestions = grep {
+            my $text = ref($_) eq "HASH" ? ($_->{message} // $_->{label} // "") : ($_ // "");
+            $text ne "" && !$seen_suggestion{$text}++;
+        } @suggestions;
+        my $message = $compiler_diag->{message} // "TypeScript compiler diagnostic";
+        my $where = human_span_location($span);
+        push @out, diagnostic(
+            $severity,
+            $rule,
+            $where,
+            "TS" . ($compiler_diag->{code} // "?") . ": " . $message,
+            {
+                primary_span => $span,
+                secondary_spans => \@secondary,
+                notes => [
+                    "Reported by TypeScript " . ($frontend->{typescriptVersion} // "compiler") . " during the $phase phase.",
+                    "Types and call targets come from the TypeChecker; HM candidates never override a valid TypeScript result."
+                ],
+                suggestions => \@suggestions,
+                wire_span => $wire_span,
+                compiler => {
+                    name => "typescript",
+                    version => $frontend->{typescriptVersion},
+                    code => $compiler_diag->{code},
+                    phase => $phase,
+                    category => $category
+                },
+                provenance => {
+                    engine => "typescript-compiler-api",
+                    authoritative => JSON::PP::true,
+                    fallbackUsed => JSON::PP::false,
+                    rangeEncoding => "utf-16",
+                    endExclusive => JSON::PP::true
+                }
+            }
+        );
+    }
+
+    if (@diagnostics == 0) {
+        my $summary = object_or_empty($frontend->{summary});
+        push @out, diagnostic(
+            "notice",
+            "policy.ast-frontend",
+            "src",
+            "TypeScript " . ($frontend->{typescriptVersion} // "compiler") .
+                " parsed and type-checked " . int($summary->{fileCount} // scalar(@{$frontend->{files}})) .
+                " file(s) with exact UTF-16 source ranges",
+            {
+                notes => [
+                    "AST nodes, symbols, resolved signatures, and inferred types are now the structural source of truth.",
+                    "Token-derived local metrics are attached only to exact AST body matches; AST-only metric gaps stay explicit unknowns."
+                ],
+                provenance => {
+                    engine => "typescript-compiler-api",
+                    authoritative => JSON::PP::true,
+                    fallbackUsed => JSON::PP::false
+                }
+            }
+        );
+    }
+
+    my $structural = object_or_empty($ir->{source}{structural_analysis});
+    my $structural_gap = int($structural->{structuralCoverageGap} // $structural->{coverageGap} // 0);
+    my $coverage_level = $structural_gap == 0 ? "notice" : "error";
+    push @out, diagnostic(
+        $coverage_level,
+        "policy.ast-coverage",
+        "src",
+        "AST structural inventory contains " . int($structural->{astFunctionCount} // 0) .
+            " function-like node(s), including " . int($structural->{astBodyFunctionCount} // 0) .
+            " executable body/bodies and " . int($structural->{runtimeOwnerCount} // 0) .
+            " synthetic runtime owner(s); the abstract graph models " .
+            int($structural->{analysisFunctionCount} // 0) . " executable node(s) with structural gap $structural_gap",
+        {
+            notes => [
+                "Methods, constructors, accessors, nested callbacks, and expression-bodied arrows participate in the TypeChecker-resolved graph.",
+                int($structural->{legacyExactMatchCount} // 0) . " legacy body summaries matched for migration comparison; " .
+                    int($structural->{astSlicedMetricFunctionCount} // 0) . " bodies were analyzed inside exact AST bodySpan bounds; " .
+                    int($structural->{runtimeMetricOwnerCount} // 0) . " runtime owner(s) were analyzed inside exact execution spans; " .
+                    int($structural->{neutralMetricFunctionCount} // 0) . " extraction failure(s) remain explicit local-metric unknown."
+            ],
+            suggestions => [
+                "Migrate remaining local abstract-domain metrics to AST nodes; do not add regex exceptions for missing constructs."
+            ]
+        }
+    );
+    return @out;
+}
+
+sub frontend_all_diagnostics {
+    my ($frontend) = @_;
+    my @all = @{array_or_empty($frontend->{diagnostics})};
+    for my $file (@{array_or_empty($frontend->{files})}) {
+        next if ref($file) ne "HASH";
+        for my $diag (@{array_or_empty($file->{diagnostics})}) {
+            next if ref($diag) ne "HASH";
+            $diag->{path} = $file->{path} if !defined $diag->{path};
+            push @all, $diag;
+        }
+    }
+    my %seen;
+    return grep {
+        my $span = ref($_) eq "HASH" ? ($_->{span} // $_->{range} // {}) : {};
+        my $range = ref($span->{range}) eq "HASH" ? $span->{range} : $span;
+        my $start = ref($range->{start}) eq "HASH" ? $range->{start} : {};
+        my $key = join("\0",
+            $_->{phase} // "",
+            $_->{code} // "",
+            $_->{path} // $span->{path} // "",
+            $start->{offset} // "",
+            $_->{message} // ""
+        );
+        !$seen{$key}++;
+    } grep { ref($_) eq "HASH" } @all;
+}
+
+sub frontend_related_spans {
+    my ($diagnostic, $fallback_path) = @_;
+    my @related;
+    my $items = $diagnostic->{related};
+    $items = $diagnostic->{relatedInformation} if ref($items) ne "ARRAY";
+    for my $item (@{array_or_empty($items)}) {
+        next if ref($item) ne "HASH";
+        my $span = frontend_span_to_human(
+            $item->{span} // $item->{range},
+            $item->{path} // $fallback_path
+        );
+        $span->{label} = $item->{message} // "related TypeScript declaration";
+        push @related, $span;
+    }
+    return @related;
+}
+
+sub typescript_default_fix_suggestions {
+    my ($diagnostic, $phase) = @_;
+    my $code = looks_like_number($diagnostic->{code}) ? int($diagnostic->{code}) : 0;
+    return "Insert or close the token named by the compiler, then rerun the policy command; do not patch the parser with a regex exception."
+        if $phase =~ /syntactic|syntax|parse/;
+    return "Check the identifier spelling and import/export path, or add the missing declaration in the module that owns it."
+        if $code == 2304 || $code == 2305 || $code == 2459;
+    return "Compare the inferred source and target types, then narrow the value or correct the annotation instead of asserting through `any`."
+        if $code == 2322 || $code == 2345 || $code == 2352;
+    return "Add a dominating null/undefined guard, optional chaining, or a TypeSea validation step so control-flow narrowing proves this access."
+        if $code == 2531 || $code == 2532 || $code == 18047 || $code == 18048;
+    return "Add a concrete parameter type or a generic constraint; avoid `any` so downstream inference remains precise."
+        if $code == 7006 || $code == 7031;
+    return "Narrow the receiver to a type that owns this member, or update the interface and implementation together."
+        if $code == 2339;
+    return "Open the primary and related spans, inspect the TypeChecker result, and make the smallest source-level type correction."
+}
+
+sub human_span_location {
+    my ($span) = @_;
+    my $where = $span->{path} // "src";
+    $where .= ":" . $span->{line} if defined $span->{line};
+    $where .= ":" . $span->{column} if defined $span->{column};
+    $where .= "-" . $span->{end_column}
+        if defined $span->{column} && defined $span->{end_column} &&
+            (!defined $span->{end_line} || $span->{end_line} == $span->{line});
+    return $where;
+}
+
 sub analyze_source_parse_health {
     my ($ir) = @_;
     my @out;
     my $errors = $ir->{source}{lex_errors};
+    my @compiler_syntax_errors = grep {
+        my $phase = lc($_->{phase} // $_->{source} // "");
+        my $category = $_->{category} // $_->{severity} // "error";
+        my $is_error = looks_like_number($category)
+            ? int($category) == 1
+            : lc($category) eq "error";
+        $phase =~ /syntactic|syntax|parse/ && $is_error;
+    } frontend_all_diagnostics($ir->{source}{typescript_frontend});
     for my $error (@{$errors}) {
         push @out, diagnostic(
             "error",
@@ -1382,8 +1713,34 @@ sub analyze_source_parse_health {
             $error->{message}
         );
     }
-    if (@{$errors} == 0) {
-        push @out, diagnostic("notice", "lex.parse", "src", "TypeScript lexer completed without unterminated token errors");
+    if (@compiler_syntax_errors != 0) {
+        my $first = $compiler_syntax_errors[0];
+        my $wire_span = $first->{span} // $first->{range};
+        my $span = frontend_span_to_human($wire_span, $first->{path} // "src");
+        push @out, diagnostic(
+            "error",
+            "lex.parse",
+            human_span_location($span),
+            "TypeScript compiler parser reported " . scalar(@compiler_syntax_errors) .
+                " syntactic error(s); see the TS-coded diagnostics above",
+            {
+                primary_span => $span,
+                wire_span => $wire_span,
+                suggestions => [
+                    "Fix the first `ts.syntax` diagnostic and rerun; later parse errors may be recovery artifacts."
+                ]
+            }
+        );
+    } elsif (@{$errors} == 0) {
+        my $authority = $ir->{source}{structural_analysis}{authority} // "legacy-token-fallback";
+        push @out, diagnostic(
+            "notice",
+            "lex.parse",
+            "src",
+            $authority eq "typescript-compiler-api"
+                ? "TypeScript compiler parser completed without syntactic errors"
+                : "fallback TypeScript token scan completed without detected unterminated tokens"
+        );
     }
     my $invalid_suppressions = $ir->{source}{invalid_source_suppressions};
     for my $entry (@{$invalid_suppressions}) {
@@ -1552,6 +1909,27 @@ sub analyze_coding_style {
     } else {
         push @out, diagnostic("notice", "types.readonly", "src", "readonly declarations are present across schema and IR structures");
     }
+    my $inference = type_inference_domain_summary($ir->{source});
+    push @out, diagnostic(
+        "notice",
+        "types.inference-domain",
+        "src",
+        "type inference domain: facts=" . $inference->{facts} .
+            ", typescript_selected=" . $inference->{typescriptSelected} .
+            ", hm_candidates=" . $inference->{hmCandidates} .
+            ", hm_selected=" . $inference->{hmSelected} .
+            ", hm_conflicts=" . $inference->{hmConflicts} .
+            ", unsupported=" . $inference->{hmUnsupported},
+        {
+            notes => [
+                "TypeScript's structural TypeChecker remains authoritative for valid inferred or annotated types.",
+                "Algorithm-W candidates are local, non-blocking evidence only when the compiler result is error-derived any, unknown, or unavailable."
+            ],
+            suggestions => [
+                "Prefer a TypeScript annotation, generic constraint, or narrowing guard whenever an HM candidate is unsupported or conflicts."
+            ]
+        }
+    );
     my $type_escape = object_or_empty($ir->{source}{type_escape_domain});
     push @out, diagnostic(
         "notice",
@@ -1574,7 +1952,19 @@ sub analyze_coding_style {
             $first->{where},
             int($type_escape->{totalEscapes} // 0) .
                 " TypeScript type-safety escape hatch(es) remain budgeted across src",
-            flow_steps_from_type_escape_findings(\@findings)
+            flow_steps_from_type_escape_findings(\@findings),
+            {
+                primary_span => $first->{primary_span},
+                notes => [
+                    "This finding was identified from TypeScript AST node kinds, not text matching.",
+                    "The aggregate count includes every compiler-recognized escape hatch in src."
+                ],
+                suggestions => [
+                    "Replace `any` with `unknown`, then narrow it with a TypeSea validator or an explicit type guard.",
+                    "Replace non-null assertions with a dominating nullish check so the TypeScript control-flow checker can prove safety.",
+                    "Validate `JSON.parse` output before assigning it to a trusted application type."
+                ]
+            }
         );
     } else {
         push @out, diagnostic("notice", "types.unsafe-escape", "src", "source tree contains no TypeScript type-safety escape hatches");
@@ -2021,33 +2411,48 @@ sub analyze_policy_engine {
     } else {
         push @out, diagnostic("error", "policy.verbose", "scripts/contributing-policy.pl", "policy analyzer must expose notices through --verbose");
     }
-    if ($policy->{template_lexer_self_tests}) {
-        push @out, diagnostic("notice", "policy.template-lexer", "scripts/contributing-policy.pl", "nested template literal lexer self-tests are wired into the policy analyzer");
+    if ($policy->{typescript_compiler_frontend}) {
+        push @out, diagnostic("notice", "policy.compiler-frontend", "tools/analyzer/typescript-frontend.mjs", "TypeScript Program, AST, symbol, resolved-signature, and exact-span extraction are wired into the policy analyzer");
     } else {
-        push @out, diagnostic("error", "policy.template-lexer", "scripts/contributing-policy.pl", "policy analyzer must self-test nested template literal tokenization");
+        push @out, diagnostic("error", "policy.compiler-frontend", "tools/analyzer/typescript-frontend.mjs", "policy analyzer must use the TypeScript Compiler API as its structural source of truth");
+    }
+    if ($policy->{type_inference_frontend}) {
+        push @out, diagnostic("notice", "policy.type-inference", "tools/analyzer/typescript-frontend.mjs", "TypeChecker inference is authoritative and Algorithm-W inference is constrained to supplement-only candidates");
+    } else {
+        push @out, diagnostic("error", "policy.type-inference", "tools/analyzer/typescript-frontend.mjs", "policy analyzer must expose authoritative TypeChecker facts and explicitly bounded HM fallback provenance");
+    }
+    if ($policy->{language_server}) {
+        push @out, diagnostic("notice", "policy.lsp", "tools/analyzer/lsp.mjs", "stdio LSP compiler and local TypeSea policy diagnostics, hover, code actions, and UTF-16 editor ranges are available");
+    } else {
+        push @out, diagnostic("error", "policy.lsp", "tools/analyzer/lsp.mjs", "policy analyzer must expose editor diagnostics over a UTF-16-aware language server");
+    }
+    if ($policy->{template_lexer_self_tests}) {
+        push @out, diagnostic("notice", "policy.template-lexer", "test/contributing-policy-ast.test.ts", "nested template literal and parser-bait AST regression tests are wired into the policy analyzer");
+    } else {
+        push @out, diagnostic("error", "policy.template-lexer", "test/contributing-policy-ast.test.ts", "policy analyzer must self-test nested template literals through the TypeScript parser");
     }
     if ($policy->{import_ast_self_tests}) {
-        push @out, diagnostic("notice", "policy.import-ast", "scripts/contributing-policy.pl", "type-only import/export classification self-tests are wired into the policy analyzer");
+        push @out, diagnostic("notice", "policy.import-ast", "test/contributing-policy-ast.test.ts", "AST import/export classification and comment-bait rejection tests are wired into the policy analyzer");
     } else {
         push @out, diagnostic("error", "policy.import-ast", "scripts/contributing-policy.pl", "policy analyzer must self-test type-only import/export classification");
     }
     if ($policy->{type_named_value_self_tests}) {
-        push @out, diagnostic("notice", "policy.import-type-name", "scripts/contributing-policy.pl", "value imports named 'type' are covered by lexer self-tests");
+        push @out, diagnostic("notice", "policy.import-type-name", "test/contributing-policy-ast.test.ts", "type-only specifiers are classified from TypeScript import nodes");
     } else {
-        push @out, diagnostic("error", "policy.import-type-name", "scripts/contributing-policy.pl", "policy analyzer must self-test value imports named 'type'");
+        push @out, diagnostic("error", "policy.import-type-name", "test/contributing-policy-ast.test.ts", "policy analyzer must self-test type-only and value import specifiers through AST nodes");
     }
     if ($policy->{lex_error_self_tests}) {
-        push @out, diagnostic("notice", "policy.lex-errors", "scripts/contributing-policy.pl", "unterminated token diagnostics are covered by lexer self-tests");
+        push @out, diagnostic("notice", "policy.lex-errors", "test/contributing-policy-ast.test.ts", "malformed syntax and unterminated constructs are covered by compiler-parser tests");
     } else {
-        push @out, diagnostic("error", "policy.lex-errors", "scripts/contributing-policy.pl", "policy analyzer must self-test unterminated token diagnostics");
+        push @out, diagnostic("error", "policy.lex-errors", "test/contributing-policy-ast.test.ts", "policy analyzer must self-test exact compiler diagnostics for malformed syntax");
     }
     if ($policy->{dynamic_import_self_tests}) {
-        push @out, diagnostic("notice", "policy.dynamic-import", "scripts/contributing-policy.pl", "dynamic import graph extraction is covered by lexer self-tests");
+        push @out, diagnostic("notice", "policy.dynamic-import", "tools/analyzer/typescript-frontend.mjs", "dynamic import graph extraction uses CallExpression and ImportKeyword AST nodes");
     } else {
         push @out, diagnostic("error", "policy.dynamic-import", "scripts/contributing-policy.pl", "policy analyzer must self-test dynamic import graph extraction");
     }
     if ($policy->{semicolonless_import_self_tests}) {
-        push @out, diagnostic("notice", "policy.semicolonless-import", "scripts/contributing-policy.pl", "semicolonless import graph extraction is covered by lexer self-tests");
+        push @out, diagnostic("notice", "policy.semicolonless-import", "tools/analyzer/typescript-frontend.mjs", "static import graph extraction is independent of semicolon formatting");
     } else {
         push @out, diagnostic("error", "policy.semicolonless-import", "scripts/contributing-policy.pl", "policy analyzer must self-test semicolonless import graph extraction");
     }
@@ -2413,11 +2818,11 @@ sub contributing_requirement_rules {
         },
         {
             id => "diagnostic-error-warning-notice-levels",
-            codes => ["policy.severity", "policy.verbose", "policy.template-lexer", "policy.import-ast", "policy.import-type-name", "policy.lex-errors", "policy.dynamic-import", "policy.semicolonless-import", "policy.function-ir", "policy.clone-analysis", "policy.machine-report", "policy.dashboard", "policy.baseline", "policy.source-suppression", "policy.type-escape-domain", "policy.regex-safety-domain", "policy.secret-leak-domain", "policy.workflow-security-domain", "policy.package-lock-security-domain", "policy.package-license-domain", "policy.api-surface-domain", "policy.release-consistency-domain", "policy.test-evidence-domain", "policy.benchmark-evidence-domain", "policy.rule-metadata-domain", "policy.triage-ledger", "policy.waiver-model", "policy.review-governance-model", "policy.analysis-coverage", "policy.finding-provenance-model", "policy.finding-witness-model", "policy.finding-confidence-model", "policy.run-manifest", "policy.quality-gate", "policy.quality-profile-governance", "policy.rule-catalog", "policy.quality-model", "policy.component-model", "policy.root-cause-model", "policy.rule-health-model", "policy.ownership-model", "policy.defect-routing-model", "policy.remediation-plan", "policy.issue-aging", "policy.assurance-case", "policy.compliance-model", "policy.security-hotspot-model", "policy.security-exploitability-model", "policy.security-dataflow-model", "policy.path-feasibility-model", "policy.context-sensitivity-model", "policy.soundness-model", "policy.proof-obligation-model", "policy.defect-ledger", "policy.defect-delta", "policy.history-trend", "policy.new-code-gate", "policy.change-impact-model"]
+            codes => ["policy.severity", "policy.verbose", "policy.ast-frontend", "policy.ast-coverage", "policy.compiler-frontend", "policy.type-inference", "policy.lsp", "policy.template-lexer", "policy.import-ast", "policy.import-type-name", "policy.lex-errors", "policy.dynamic-import", "policy.semicolonless-import", "policy.function-ir", "policy.clone-analysis", "policy.machine-report", "policy.dashboard", "policy.baseline", "policy.source-suppression", "policy.type-escape-domain", "policy.regex-safety-domain", "policy.secret-leak-domain", "policy.workflow-security-domain", "policy.package-lock-security-domain", "policy.package-license-domain", "policy.api-surface-domain", "policy.release-consistency-domain", "policy.test-evidence-domain", "policy.benchmark-evidence-domain", "policy.rule-metadata-domain", "policy.triage-ledger", "policy.waiver-model", "policy.review-governance-model", "policy.analysis-coverage", "policy.finding-provenance-model", "policy.finding-witness-model", "policy.finding-confidence-model", "policy.run-manifest", "policy.quality-gate", "policy.quality-profile-governance", "policy.rule-catalog", "policy.quality-model", "policy.component-model", "policy.root-cause-model", "policy.rule-health-model", "policy.ownership-model", "policy.defect-routing-model", "policy.remediation-plan", "policy.issue-aging", "policy.assurance-case", "policy.compliance-model", "policy.security-hotspot-model", "policy.security-exploitability-model", "policy.security-dataflow-model", "policy.path-feasibility-model", "policy.context-sensitivity-model", "policy.soundness-model", "policy.proof-obligation-model", "policy.defect-ledger", "policy.defect-delta", "policy.history-trend", "policy.new-code-gate", "policy.change-impact-model"]
         },
         {
             id => "interprocedural-function-analysis",
-            codes => ["flow.function-ir", "flow.callgraph", "flow.recursion", "flow.recursion-domain", "flow.recursion-gap", "flow.cfg", "flow.unreachable", "flow.complexity", "flow.clone-domain", "flow.clone-gap", "flow.descriptor-proof", "flow.descriptor-dominance", "flow.abstract-domain", "flow.branch-state", "flow.branch-leak", "flow.loop-bound-domain", "flow.loop-bound-gap", "flow.range-domain", "flow.range-gap", "flow.index-domain", "flow.index-gap", "flow.mutation-domain", "flow.mutation-gap", "flow.memory-alias-domain", "flow.memory-alias-gap", "flow.key-safety-domain", "flow.key-safety-gap", "flow.result-state-domain", "flow.result-state-gap", "flow.freeze-state-domain", "flow.freeze-state-gap", "flow.variant-state-domain", "flow.variant-state-gap", "flow.generated-source-domain", "flow.generated-source-gap", "flow.exception-domain", "flow.exception-gap", "flow.lifecycle-domain", "flow.lifecycle-gap", "flow.lifecycle-fixpoint", "flow.lifecycle-path", "flow.async-domain", "flow.async-scheduling-gap", "flow.symbolic-domain", "flow.symbolic-path", "flow.symbolic-fixpoint", "flow.symbolic-caller-path", "flow.nullish-domain", "flow.nullish-gap", "flow.effect-domain", "flow.hot-loop-allocation", "flow.contract-domain", "flow.contract-gap", "flow.taint-fixpoint", "flow.dynamic-sink", "flow.tainted-path"]
+            codes => ["flow.function-ir", "flow.runtime-ownership", "flow.callgraph", "flow.recursion", "flow.recursion-domain", "flow.recursion-gap", "flow.cfg", "flow.unreachable", "flow.complexity", "flow.clone-domain", "flow.clone-gap", "flow.descriptor-proof", "flow.descriptor-dominance", "flow.abstract-domain", "flow.branch-state", "flow.branch-leak", "flow.loop-bound-domain", "flow.loop-bound-gap", "flow.range-domain", "flow.range-gap", "flow.index-domain", "flow.index-gap", "flow.mutation-domain", "flow.mutation-gap", "flow.memory-alias-domain", "flow.memory-alias-gap", "flow.key-safety-domain", "flow.key-safety-gap", "flow.result-state-domain", "flow.result-state-gap", "flow.freeze-state-domain", "flow.freeze-state-gap", "flow.variant-state-domain", "flow.variant-state-gap", "flow.generated-source-domain", "flow.generated-source-gap", "flow.exception-domain", "flow.exception-gap", "flow.lifecycle-domain", "flow.lifecycle-gap", "flow.lifecycle-fixpoint", "flow.lifecycle-path", "flow.async-domain", "flow.async-scheduling-gap", "flow.symbolic-domain", "flow.symbolic-path", "flow.symbolic-fixpoint", "flow.symbolic-caller-path", "flow.nullish-domain", "flow.nullish-gap", "flow.effect-domain", "flow.hot-loop-allocation", "flow.contract-domain", "flow.contract-gap", "flow.taint-fixpoint", "flow.dynamic-sink", "flow.tainted-path"]
         },
         {
             id => "meaningful-jsdoc-policy",
@@ -2425,7 +2830,7 @@ sub contributing_requirement_rules {
         },
         {
             id => "readonly-immutability",
-            codes => ["types.readonly", "types.escape-domain", "types.unsafe-escape"]
+            codes => ["types.readonly", "types.inference-domain", "types.escape-domain", "types.unsafe-escape", "ts.type-check"]
         },
         {
             id => "public-type-expectations",
@@ -2574,14 +2979,601 @@ sub script_ir {
     };
 }
 
+sub typescript_frontend_ir {
+    my $bridge = "scripts/typescript-policy-bridge.mjs";
+    return typescript_frontend_failure("bridge-missing", "TypeScript AST bridge '$bridge' is missing")
+        if !-f $bridge;
+
+    my $command = captured_command(
+        120,
+        64 * 1024 * 1024,
+        "node",
+        $bridge,
+        "--root",
+        $policy_workspace_root,
+        "--tsconfig",
+        "tsconfig.json",
+        "--scope",
+        "src",
+        "--compact"
+    );
+    if (!$command->{ok}) {
+        my $message = "TypeScript AST bridge failed";
+        $message .= " (exit $command->{exitCode})" if defined $command->{exitCode};
+        $message .= ": " . compact_frontend_error($command->{stderr})
+            if ($command->{stderr} // "") ne "";
+        $message .= ": " . ($command->{error} // "command failed")
+            if ($command->{stderr} // "") eq "";
+        return typescript_frontend_failure(
+            $command->{timedOut} ? "bridge-timeout" : "bridge-failed",
+            $message
+        );
+    }
+
+    my $payload;
+    my $decoded = eval {
+        $payload = decode_json($command->{stdout});
+        1;
+    };
+    return typescript_frontend_failure(
+        "invalid-json",
+        "TypeScript AST bridge returned invalid JSON: " . compact_frontend_error($@)
+    ) if !$decoded || ref($payload) ne "HASH";
+
+    my $contract_errors = validate_typescript_frontend_payload($payload);
+    if (@{$contract_errors} != 0) {
+        my $message = join("; ", @{$contract_errors}[0 .. min_index(5, $#{$contract_errors})]);
+        $message .= "; " . (@{$contract_errors} - 6) . " additional contract violation(s)"
+            if @{$contract_errors} > 6;
+        return typescript_frontend_failure(
+            "invalid-schema",
+            "TypeScript AST bridge contract validation failed: $message"
+        );
+    }
+
+    if (!exists $payload->{health}) {
+        $payload->{health} = {
+            status => "ready",
+            available => JSON::PP::true,
+            fileCount => scalar(@{$payload->{files}})
+        };
+    }
+    return $payload;
+}
+
+sub validate_typescript_frontend_payload {
+    my ($payload) = @_;
+    my @errors;
+    my %safe_path_cache;
+    my @expected = map { normalize_report_path($_) } source_files("src", qr/\.ts\z/);
+    my %expected = map { $_ => 1 } @expected;
+
+    frontend_contract_error(\@errors, "schemaVersion must be exactly 1")
+        if !frontend_contract_integer($payload->{schemaVersion}) || int($payload->{schemaVersion}) != 1;
+    frontend_contract_error(\@errors, "protocol must be 'typesea.typescript-frontend/v1'")
+        if ref($payload->{protocol}) || ($payload->{protocol} // "") ne "typesea.typescript-frontend/v1";
+    frontend_contract_error(\@errors, "typescriptVersion must be a non-empty scalar")
+        if ref($payload->{typescriptVersion}) || ($payload->{typescriptVersion} // "") eq "";
+
+    my $encoding = $payload->{rangeEncoding};
+    if (ref($encoding) ne "HASH") {
+        frontend_contract_error(\@errors, "rangeEncoding must be an object");
+    } else {
+        frontend_contract_error(\@errors, "rangeEncoding.name must be 'utf-16'")
+            if ref($encoding->{name}) || ($encoding->{name} // "") ne "utf-16";
+        frontend_contract_error(\@errors, "rangeEncoding.encoding must be 'utf-16'")
+            if ref($encoding->{encoding}) || ($encoding->{encoding} // "") ne "utf-16";
+        frontend_contract_error(\@errors, "rangeEncoding.lineBase must be 0")
+            if !frontend_contract_integer($encoding->{lineBase}) || int($encoding->{lineBase}) != 0;
+        frontend_contract_error(\@errors, "rangeEncoding.columnBase must be 0")
+            if !frontend_contract_integer($encoding->{columnBase}) || int($encoding->{columnBase}) != 0;
+        frontend_contract_error(\@errors, "rangeEncoding.endExclusive must be JSON true")
+            if !frontend_contract_json_true($encoding->{endExclusive});
+    }
+
+    for my $field (qw(project summary hm)) {
+        frontend_contract_error(\@errors, "$field must be an object")
+            if ref($payload->{$field}) ne "HASH";
+    }
+    frontend_contract_error(\@errors, "diagnostics must be an array")
+        if ref($payload->{diagnostics}) ne "ARRAY";
+    frontend_contract_error(\@errors, "files must be an array")
+        if ref($payload->{files}) ne "ARRAY";
+    if (ref($payload->{diagnostics}) eq "ARRAY") {
+        for my $index (0 .. $#{$payload->{diagnostics}}) {
+            frontend_contract_error(\@errors, "diagnostics[$index] must be an object")
+                if ref($payload->{diagnostics}[$index]) ne "HASH";
+        }
+    }
+
+    my $project = ref($payload->{project}) eq "HASH" ? $payload->{project} : {};
+    frontend_contract_error(\@errors, "project.root does not match the policy workspace")
+        if ref($project->{root}) || ($project->{root} // "") ne $policy_workspace_root;
+    frontend_contract_error(\@errors, "project.tsconfigPath must be 'tsconfig.json'")
+        if ref($project->{tsconfigPath}) || ($project->{tsconfigPath} // "") ne "tsconfig.json";
+    frontend_contract_error(\@errors, "project.authoritativeEngine must be 'typescript-program-type-checker'")
+        if ref($project->{authoritativeEngine}) ||
+            ($project->{authoritativeEngine} // "") ne "typescript-program-type-checker";
+    frontend_contract_error(\@errors, "project.detail must be 'policy'")
+        if ref($project->{detail}) || ($project->{detail} // "") ne "policy";
+    for my $field (qw(compilerOptions)) {
+        frontend_contract_error(\@errors, "project.$field must be an object")
+            if ref($project->{$field}) ne "HASH";
+    }
+    for my $field (qw(rootFileNames analyzedRootFileNames projectReferences outputRoots)) {
+        frontend_contract_error(\@errors, "project.$field must be an array")
+            if ref($project->{$field}) ne "ARRAY";
+    }
+    if (ref($project->{outputRoots}) ne "ARRAY" ||
+        @{$project->{outputRoots} // []} != 1 ||
+        ref($project->{outputRoots}[0]) ||
+        ($project->{outputRoots}[0] // "") ne "src") {
+        frontend_contract_error(\@errors, "project.outputRoots must contain only 'src'");
+    }
+
+    my $hm = ref($payload->{hm}) eq "HASH" ? $payload->{hm} : {};
+    frontend_contract_error(\@errors, "hm.mode must be 'supplement-only'")
+        if ref($hm->{mode}) || ($hm->{mode} // "") ne "supplement-only";
+    frontend_contract_error(\@errors, "hm.authoritative must remain JSON false")
+        if !frontend_contract_json_false($hm->{authoritative});
+    frontend_contract_error(\@errors, "hm.authority must remain the TypeScript Program/TypeChecker")
+        if ref($hm->{authority}) || ($hm->{authority} // "") ne "typescript-program-type-checker";
+    frontend_contract_error(\@errors, "hm.engine must be 'algorithm-w-supplement'")
+        if ref($hm->{engine}) || ($hm->{engine} // "") ne "algorithm-w-supplement";
+    frontend_contract_error(\@errors, "hm.stats must be an object")
+        if ref($hm->{stats}) ne "HASH";
+
+    my $health = $payload->{health};
+    if (exists $payload->{health}) {
+        if (ref($health) ne "HASH") {
+            frontend_contract_error(\@errors, "health must be an object when present");
+        } else {
+            frontend_contract_error(\@errors, "health.status must remain 'ready'")
+                if ref($health->{status}) || ($health->{status} // "") ne "ready";
+            frontend_contract_error(\@errors, "health.available must remain JSON true")
+                if !frontend_contract_json_true($health->{available});
+            frontend_contract_error(\@errors, "health.fileCount does not match files")
+                if exists $health->{fileCount} &&
+                    (!frontend_contract_integer($health->{fileCount}) ||
+                        int($health->{fileCount}) != scalar(@{$payload->{files} // []}));
+        }
+    }
+
+    my %seen;
+    if (ref($payload->{files}) eq "ARRAY") {
+        for my $index (0 .. $#{$payload->{files}}) {
+            my $file = $payload->{files}[$index];
+            if (ref($file) ne "HASH") {
+                frontend_contract_error(\@errors, "files[$index] must be an object");
+                next;
+            }
+            my $raw_path = $file->{path};
+            if (!frontend_contract_safe_repository_path($raw_path, \%safe_path_cache) ||
+                ref($raw_path) || normalize_report_path($raw_path // "") ne ($raw_path // "") ||
+                ($raw_path // "") !~ m{\Asrc/.+\.ts\z}) {
+                frontend_contract_error(\@errors, "files[$index].path is not a safe canonical src TypeScript path");
+                next;
+            }
+            frontend_contract_error(\@errors, "duplicate frontend file '$raw_path'")
+                if $seen{$raw_path}++;
+            frontend_contract_error(\@errors, "unexpected frontend file '$raw_path'")
+                if !$expected{$raw_path};
+
+            for my $field (qw(imports exports declarations functions runtimeOwners syntheticEdges nonRuntimeSpans topLevelCalls initializationCalls typeEscapes regexps typeFacts comments syntaxDiagnostics inferenceFacts inferenceDiagnostics)) {
+                if (ref($file->{$field}) ne "ARRAY") {
+                    frontend_contract_error(\@errors, "files[$index].$field must be an array");
+                    next;
+                }
+                for my $item_index (0 .. $#{$file->{$field}}) {
+                    frontend_contract_error(\@errors, "files[$index].$field\[$item_index] must be an object")
+                        if ref($file->{$field}[$item_index]) ne "HASH";
+                }
+            }
+            for my $field (qw(metrics inferenceStats inferenceEngine)) {
+                frontend_contract_error(\@errors, "files[$index].$field must be an object")
+                    if ref($file->{$field}) ne "HASH";
+            }
+            if (ref($file->{functions}) eq "ARRAY") {
+                for my $function_index (0 .. $#{$file->{functions}}) {
+                    my $function = $file->{functions}[$function_index];
+                    next if ref($function) ne "HASH";
+                    frontend_contract_error(\@errors, "files[$index].functions[$function_index].calls must be an array")
+                        if ref($function->{calls}) ne "ARRAY";
+                    frontend_contract_error(\@errors, "files[$index].functions[$function_index].parameters must be an array")
+                        if ref($function->{parameters}) ne "ARRAY";
+                }
+            }
+            if (ref($file->{runtimeOwners}) eq "ARRAY") {
+                for my $owner_index (0 .. $#{$file->{runtimeOwners}}) {
+                    my $owner = $file->{runtimeOwners}[$owner_index];
+                    next if ref($owner) ne "HASH";
+                    frontend_contract_error(\@errors, "files[$index].runtimeOwners[$owner_index].calls must be an array")
+                        if ref($owner->{calls}) ne "ARRAY";
+                    frontend_contract_error(\@errors, "files[$index].runtimeOwners[$owner_index].metricSpans must be an array")
+                        if ref($owner->{metricSpans}) ne "ARRAY";
+                }
+            }
+            my $file_span = $file->{span};
+            frontend_contract_error(\@errors, "files[$index].span.path must match files[$index].path")
+                if ref($file_span) ne "HASH" || ($file_span->{path} // "") ne $raw_path;
+        }
+        for my $path (@expected) {
+            frontend_contract_error(\@errors, "frontend omitted source file '$path'")
+                if !$seen{$path};
+        }
+    }
+
+    my $summary = ref($payload->{summary}) eq "HASH" ? $payload->{summary} : {};
+    frontend_contract_error(\@errors, "summary.files must equal the exact src TypeScript file count")
+        if !frontend_contract_integer($summary->{files}) ||
+            int($summary->{files} // -1) != scalar(@expected);
+    if (ref($project->{analyzedRootFileNames}) ne "ARRAY") {
+        frontend_contract_error(\@errors, "project.analyzedRootFileNames must be an array");
+    } else {
+        my %roots;
+        for my $root (@{$project->{analyzedRootFileNames}}) {
+            if (ref($root) || !exists $expected{$root // ""}) {
+                frontend_contract_error(\@errors, "project.analyzedRootFileNames contains an unexpected path");
+                next;
+            }
+            frontend_contract_error(\@errors, "project.analyzedRootFileNames contains duplicate '$root'")
+                if $roots{$root}++;
+        }
+        for my $path (@expected) {
+            frontend_contract_error(\@errors, "project.analyzedRootFileNames omitted '$path'")
+                if !$roots{$path};
+        }
+    }
+
+    validate_typescript_frontend_spans($payload, "payload", \@errors, \%safe_path_cache, 0);
+    return \@errors;
+}
+
+sub validate_typescript_frontend_spans {
+    my ($value, $label, $errors, $safe_path_cache, $depth) = @_;
+    if ($depth > 64) {
+        frontend_contract_error($errors, "$label exceeds the maximum contract nesting depth");
+        return;
+    }
+    if (ref($value) eq "ARRAY") {
+        for my $index (0 .. $#{$value}) {
+            validate_typescript_frontend_spans(
+                $value->[$index], "$label\[$index]", $errors, $safe_path_cache, $depth + 1
+            );
+        }
+        return;
+    }
+    return if ref($value) ne "HASH";
+    for my $key (keys %{$value}) {
+        my $child = $value->{$key};
+        my $child_label = "$label.$key";
+        if ($key eq "metricSpans") {
+            if (ref($child) ne "ARRAY") {
+                frontend_contract_error($errors, "$child_label must be an array of runtime metric regions");
+                next;
+            }
+            for my $index (0 .. $#{$child}) {
+                my $entry = $child->[$index];
+                if (ref($entry) ne "HASH" || ref($entry->{span}) ne "HASH") {
+                    frontend_contract_error($errors, "$child_label\[$index] must contain a canonical span");
+                    next;
+                }
+                frontend_contract_error($errors, "$child_label\[$index].role must be a non-empty scalar")
+                    if ref($entry->{role}) || ($entry->{role} // "") eq "";
+                validate_typescript_frontend_span(
+                    $entry->{span}, "$child_label\[$index].span", $errors, $safe_path_cache
+                );
+            }
+            next;
+        }
+        if ($key =~ /(?:[Ss]pan|[Rr]ange)s?\z/ && $key ne "rangeEncoding") {
+            next if !defined $child;
+            if ($key =~ /s\z/) {
+                if (ref($child) ne "ARRAY") {
+                    frontend_contract_error($errors, "$child_label must be an array of canonical spans");
+                    next;
+                }
+                for my $index (0 .. $#{$child}) {
+                    validate_typescript_frontend_span(
+                        $child->[$index], "$child_label\[$index]", $errors, $safe_path_cache
+                    );
+                }
+                next;
+            }
+            validate_typescript_frontend_span(
+                $child,
+                $child_label,
+                $errors,
+                $safe_path_cache,
+                $key =~ /[Rr]ange\z/ ? 1 : 0
+            );
+            next;
+        }
+        validate_typescript_frontend_spans($child, $child_label, $errors, $safe_path_cache, $depth + 1);
+    }
+}
+
+sub validate_typescript_frontend_span {
+    my ($span, $label, $errors, $safe_path_cache, $compact_range) = @_;
+    if (ref($span) ne "HASH") {
+        frontend_contract_error($errors, "$label must be a canonical span object");
+        return;
+    }
+    frontend_contract_error($errors, "$label.path is not a safe repository file")
+        if (!$compact_range || defined $span->{path}) &&
+            !frontend_contract_safe_repository_path($span->{path}, $safe_path_cache);
+    frontend_contract_error($errors, "$label.encoding must be 'utf-16'")
+        if ref($span->{encoding}) || ($span->{encoding} // "") ne "utf-16";
+    frontend_contract_error($errors, "$label.lineBase must be 0")
+        if (!$compact_range || exists $span->{lineBase}) &&
+            (!frontend_contract_integer($span->{lineBase}) || int($span->{lineBase}) != 0);
+    frontend_contract_error($errors, "$label.columnBase must be 0")
+        if (!$compact_range || exists $span->{columnBase}) &&
+            (!frontend_contract_integer($span->{columnBase}) || int($span->{columnBase}) != 0);
+    frontend_contract_error($errors, "$label.endExclusive must be JSON true")
+        if !frontend_contract_json_true($span->{endExclusive});
+    my $start = $span->{start};
+    my $end = $span->{end};
+    if (ref($start) ne "HASH" || ref($end) ne "HASH") {
+        frontend_contract_error($errors, "$label.start and $label.end must be position objects");
+        return;
+    }
+    for my $side ([start => $start], [end => $end]) {
+        my ($name, $position) = @{$side};
+        for my $field (qw(line character offset)) {
+            frontend_contract_error($errors, "$label.$name.$field must be a non-negative integer")
+                if !frontend_contract_integer($position->{$field}) || int($position->{$field}) < 0;
+        }
+    }
+    return if !frontend_contract_integer($start->{line}) ||
+        !frontend_contract_integer($start->{character}) ||
+        !frontend_contract_integer($start->{offset}) ||
+        !frontend_contract_integer($end->{line}) ||
+        !frontend_contract_integer($end->{character}) ||
+        !frontend_contract_integer($end->{offset});
+    frontend_contract_error($errors, "$label end precedes start")
+        if int($end->{offset}) < int($start->{offset}) ||
+            int($end->{line}) < int($start->{line}) ||
+            (int($end->{line}) == int($start->{line}) &&
+                int($end->{character}) < int($start->{character}));
+}
+
+sub frontend_contract_safe_repository_path {
+    my ($path, $cache) = @_;
+    return 0 if !defined $path || ref($path) || $path eq "";
+    return $cache->{$path} if exists $cache->{$path};
+    my $safe = $path eq normalize_report_path($path) &&
+        $path !~ m{//} &&
+        !grep { $_ eq "" || $_ eq "." || $_ eq ".." } split(m{/}, $path);
+    $safe = 0 if $safe && !defined terminal_source_path($path);
+    $cache->{$path} = $safe ? 1 : 0;
+    return $cache->{$path};
+}
+
+sub frontend_contract_integer {
+    my ($value) = @_;
+    return defined $value && !ref($value) && looks_like_number($value) && int($value) == $value;
+}
+
+sub frontend_contract_json_true {
+    my ($value) = @_;
+    return ref($value) eq "JSON::PP::Boolean" && $value ? 1 : 0;
+}
+
+sub frontend_contract_json_false {
+    my ($value) = @_;
+    return ref($value) eq "JSON::PP::Boolean" && !$value ? 1 : 0;
+}
+
+sub frontend_contract_error {
+    my ($errors, $message) = @_;
+    push @{$errors}, $message if @{$errors} < 64;
+}
+
+sub captured_command {
+    my ($timeout_seconds, $max_bytes, @command) = @_;
+    my ($stdin, $stdout);
+    my $stderr = gensym();
+    my $pid;
+    my $spawned = eval {
+        $pid = open3($stdin, $stdout, $stderr, @command);
+        1;
+    };
+    if (!$spawned) {
+        return {
+            ok => 0,
+            error => compact_frontend_error($@),
+            stdout => "",
+            stderr => ""
+        };
+    }
+
+    close $stdin;
+    binmode($stdout, ":raw");
+    binmode($stderr, ":raw");
+    my $selector = IO::Select->new($stdout, $stderr);
+    my $stdout_fileno = fileno($stdout);
+    my ($out, $err) = ("", "");
+    my $deadline = time() + $timeout_seconds;
+    my $timed_out = 0;
+    my $too_large = 0;
+
+    while ($selector->count != 0) {
+        if (time() > $deadline) {
+            $timed_out = 1;
+            last;
+        }
+        my @ready = $selector->can_read(1);
+        next if @ready == 0;
+        for my $handle (@ready) {
+            my $read = sysread($handle, my $chunk, 65536);
+            if (!defined $read || $read == 0) {
+                $selector->remove($handle);
+                close $handle;
+                next;
+            }
+            if (fileno($handle) == $stdout_fileno) {
+                $out .= $chunk;
+            } else {
+                $err .= $chunk;
+            }
+            if (length($out) + length($err) > $max_bytes) {
+                $too_large = 1;
+                last;
+            }
+        }
+        last if $too_large;
+    }
+
+    my $status;
+    my $reaped = 0;
+    if (!$timed_out && !$too_large) {
+        while (!$reaped) {
+            my $waited = waitpid($pid, WNOHANG);
+            if ($waited == $pid) {
+                $status = $?;
+                $reaped = 1;
+                last;
+            }
+            if ($waited == -1) {
+                $status = -1;
+                $reaped = 1;
+                last;
+            }
+            if (time() > $deadline) {
+                $timed_out = 1;
+                last;
+            }
+            select(undef, undef, undef, 0.02);
+        }
+    }
+
+    if (!$reaped && ($timed_out || $too_large)) {
+        for my $handle ($selector->handles) {
+            $selector->remove($handle);
+            close $handle;
+        }
+        kill "TERM", $pid;
+        my $term_deadline = time() + 2;
+        while (time() <= $term_deadline) {
+            my $waited = waitpid($pid, WNOHANG);
+            if ($waited == $pid) {
+                $status = $?;
+                $reaped = 1;
+                last;
+            }
+            if ($waited == -1) {
+                $status = -1;
+                $reaped = 1;
+                last;
+            }
+            select(undef, undef, undef, 0.02);
+        }
+        if (!$reaped) {
+            kill "KILL", $pid;
+            my $waited = waitpid($pid, 0);
+            $status = $waited == $pid ? $? : -1;
+            $reaped = 1;
+        }
+    }
+
+    $status = -1 if !defined $status;
+    my $exit_code = $status == -1 ? undef : ($status >> 8);
+    my $signal = $status == -1 ? undef : ($status & 127);
+    return {
+        ok => !$timed_out && !$too_large && defined($exit_code) && $exit_code == 0 &&
+            defined($signal) && $signal == 0 ? 1 : 0,
+        exitCode => $exit_code,
+        signal => $signal,
+        timedOut => $timed_out ? 1 : 0,
+        stdout => $out,
+        stderr => $err,
+        error => $timed_out ? "command timed out after $timeout_seconds second(s)" :
+            $too_large ? "command output exceeded $max_bytes bytes" :
+            defined($signal) && $signal != 0 ? "command terminated by signal $signal" : undef
+    };
+}
+
+sub compact_frontend_error {
+    my ($message) = @_;
+    $message = "" if !defined $message;
+    $message = decode("UTF-8", $message, FB_DEFAULT)
+        if !utf8::is_utf8($message) && $message =~ /[\x80-\xff]/;
+    $message =~ s/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/?/g;
+    $message =~ s/\s+/ /g;
+    $message =~ s/\A\s+|\s+\z//g;
+    return length($message) > 1000 ? substr($message, 0, 997) . "..." : $message;
+}
+
+sub typescript_frontend_failure {
+    my ($reason, $message) = @_;
+    return {
+        schemaVersion => 1,
+        protocol => "typesea.typescript-frontend/v1",
+        rangeEncoding => {
+            name => "utf-16",
+            encoding => "utf-16",
+            lineBase => 0,
+            columnBase => 0,
+            endExclusive => JSON::PP::true
+        },
+        files => [],
+        diagnostics => [],
+        summary => {},
+        health => {
+            status => "failed",
+            available => JSON::PP::false,
+            fallbackUsed => JSON::PP::true,
+            reason => $reason,
+            message => $message
+        }
+    };
+}
+
+sub typescript_frontend_available {
+    my ($frontend) = @_;
+    return 0 if ref($frontend) ne "HASH";
+    return 0 if ref($frontend->{health}) ne "HASH";
+    return 0 if ($frontend->{health}{status} // "") ne "ready";
+    return 0 if !frontend_contract_json_true($frontend->{health}{available});
+    return 0 if ($frontend->{protocol} // "") ne "typesea.typescript-frontend/v1";
+    return ref($frontend->{files}) eq "ARRAY" ? 1 : 0;
+}
+
+sub typescript_frontend_file_index {
+    my ($frontend) = @_;
+    my %index;
+    return \%index if !typescript_frontend_available($frontend);
+    for my $file (@{$frontend->{files}}) {
+        next if ref($file) ne "HASH";
+        my $path = normalize_report_path($file->{path} // "");
+        next if $path eq "";
+        $index{$path} = $file;
+    }
+    return \%index;
+}
+
 sub source_ir {
+    my ($typescript_frontend) = @_;
     my @files = source_files("src", qr/\.ts\z/);
+    my $frontend_available = typescript_frontend_available($typescript_frontend);
+    my $frontend_files = typescript_frontend_file_index($typescript_frontend);
     my @file_ir;
     my @bare_imports;
     my @unresolved_imports;
     my @import_edges;
     my @lex_errors;
+    my @legacy_lex_errors;
     my @functions;
+    my @ast_functions;
+    my @ast_runtime_owners;
+    my @ast_runtime_edges;
+    my @runtime_ownership_obligations;
+    my @ast_calls;
+    my @ast_type_facts;
+    my @hm_inference_facts;
+    my %ast_body_metrics;
+    my %runtime_owner_metrics;
     my @clone_blocks;
     my %source_suppressions;
     my @invalid_source_suppressions;
@@ -2660,21 +3652,106 @@ sub source_ir {
         push @invalid_source_suppressions, @{$file_invalid_suppressions};
         my $lex = lex_ts_source($source);
         for my $error (@{$lex->{errors}}) {
-            push @lex_errors, {
+            my $entry = {
                 path => $path,
                 line => $error->{line},
                 message => $error->{message}
             };
+            push @legacy_lex_errors, $entry;
+            push @lex_errors, $entry if !$frontend_available;
         }
         my @tokens = @{$lex->{tokens}};
-        my $file_type_escape_domain = build_type_escape_domain_summary($path, \@tokens, $source);
+        my $frontend_file = $frontend_files->{$path};
+        my $file_type_escape_domain = $frontend_available && ref($frontend_file) eq "HASH"
+            ? frontend_type_escape_domain_summary($path, $frontend_file)
+            : build_type_escape_domain_summary($path, \@tokens, $source);
         merge_type_escape_domain($type_escape_domain, $file_type_escape_domain);
-        my $file_regex_safety_domain = build_regex_safety_domain_summary($path, \@tokens);
+        my $file_regex_safety_domain = $frontend_available && ref($frontend_file) eq "HASH"
+            ? frontend_regex_safety_domain_summary($path, $frontend_file)
+            : build_regex_safety_domain_summary($path, \@tokens);
         merge_regex_safety_domain($regex_safety_domain, $file_regex_safety_domain);
         push @clone_blocks, @{clone_windows_for_file($path, \@tokens)};
-        my @imports = read_imports($path, \@tokens);
-        my @file_functions = read_function_summaries($path, \@tokens);
+        my @imports = $frontend_available && ref($frontend_file) eq "HASH"
+            ? frontend_imports($path, $frontend_file)
+            : read_imports($path, \@tokens);
+        # With the compiler frontend active, the legacy reader is retained only
+        # as a migration cross-check.  Avoid running its abstract domains a
+        # second time; the AST-owned body slices below are authoritative.
+        my @file_functions = read_function_summaries(
+            $path,
+            \@tokens,
+            $frontend_available ? 1 : 0
+        );
         push @functions, @file_functions;
+        if ($frontend_available && ref($frontend_file) eq "HASH") {
+            my $source_utf16 = encode("UTF-16LE", $source);
+            my $function_interval_index = build_ast_function_interval_index(
+                $frontend_file->{functions},
+                $frontend_file->{runtimeOwners},
+                $frontend_file->{nonRuntimeSpans}
+            );
+            for my $ast_function (@{array_or_empty($frontend_file->{functions})}) {
+                next if ref($ast_function) ne "HASH";
+                push @ast_functions, $ast_function;
+                if ($ast_function->{hasBody} && defined $ast_function->{id}) {
+                    my $metrics = ast_function_metric_summary_from_source(
+                        $path,
+                        $source_utf16,
+                        $ast_function,
+                        $function_interval_index
+                    );
+                    $ast_body_metrics{$ast_function->{id}} = $metrics
+                        if defined $metrics;
+                }
+                for my $call (@{array_or_empty($ast_function->{calls})}) {
+                    next if ref($call) ne "HASH";
+                    $call->{callerId} = $ast_function->{id} if !defined $call->{callerId};
+                    $call->{path} = $path if !defined $call->{path};
+                    push @ast_calls, $call;
+                }
+            }
+            for my $runtime_owner (@{array_or_empty($frontend_file->{runtimeOwners})}) {
+                next if ref($runtime_owner) ne "HASH" || !defined $runtime_owner->{id};
+                push @ast_runtime_owners, $runtime_owner;
+                my $metrics = runtime_owner_metric_summary_from_source(
+                    $path,
+                    $source_utf16,
+                    $runtime_owner,
+                    $function_interval_index
+                );
+                $runtime_owner_metrics{$runtime_owner->{id}} = $metrics
+                    if defined $metrics;
+                for my $call (@{array_or_empty($runtime_owner->{calls})}) {
+                    next if ref($call) ne "HASH";
+                    $call->{callerId} = $runtime_owner->{id} if !defined $call->{callerId};
+                    $call->{path} = $path if !defined $call->{path};
+                    if ($call->{inconclusiveRuntime}) {
+                        push @runtime_ownership_obligations, {
+                            %{$call},
+                            ownerId => $runtime_owner->{id},
+                            ownerName => $runtime_owner->{name},
+                            path => $path
+                        };
+                    }
+                    push @ast_calls, $call;
+                }
+            }
+            for my $edge (@{array_or_empty($frontend_file->{syntheticEdges})}) {
+                next if ref($edge) ne "HASH";
+                $edge->{path} = $path if !defined $edge->{path};
+                push @ast_runtime_edges, $edge;
+                push @ast_calls, {
+                    %{$edge},
+                    callerId => $edge->{from},
+                    targetId => $edge->{to},
+                    name => "<" . ($edge->{kind} // "runtime-edge") . ">",
+                    resolvedBy => "typescript-runtime-semantics"
+                };
+            }
+            push @ast_calls, @{array_or_empty($frontend_file->{calls})};
+            push @ast_type_facts, @{array_or_empty($frontend_file->{typeFacts})};
+            push @hm_inference_facts, @{array_or_empty($frontend_file->{inferenceFacts})};
+        }
         my $layer = source_layer($path);
         $modules_by_path{$path} = {
             path => $path,
@@ -2684,7 +3761,9 @@ sub source_ir {
             my $specifier = $import->{specifier};
             next if !defined $specifier;
             if ($specifier =~ m{\A\.\.?/}) {
-                my $resolved = resolve_import_path($path, $specifier);
+                my $resolved = $import->{resolved};
+                $resolved = resolve_import_path($path, $specifier)
+                    if !defined $resolved || $resolved eq "";
                 if (!defined $resolved) {
                     push @unresolved_imports, $import;
                     next;
@@ -2707,13 +3786,18 @@ sub source_ir {
 
         my $export_count = 0;
         my $documented_export_count = 0;
-        for my $declaration (@{read_public_declarations($lex)}) {
+        my $declarations = $frontend_available && ref($frontend_file) eq "HASH"
+            ? frontend_public_declarations($frontend_file)
+            : read_public_declarations($lex);
+        for my $declaration (@{$declarations}) {
             $export_count += 1;
             $documented_export_count += $declaration->{documented} ? 1 : 0;
         }
         $public_declarations += $export_count;
         $documented_public_declarations += $documented_export_count;
-        $readonly_refs += count_token_value(\@tokens, "readonly");
+        $readonly_refs += $frontend_available && ref($frontend_file) eq "HASH"
+            ? frontend_readonly_count($frontend_file)
+            : count_token_value(\@tokens, "readonly");
 
         if ($path =~ m{\Asrc/optimize/} && token_ir_mentions_any($lex, qw(fold peephole domain algebraic rewrite compact))) {
             $architecture{optimizer_mentions} += 1;
@@ -2779,7 +3863,15 @@ sub source_ir {
         push @file_ir, {
             path => $path,
             import_count => scalar(@imports),
-            function_count => scalar(@file_functions),
+            function_count => $frontend_available && ref($frontend_file) eq "HASH"
+                ? scalar(grep {
+                    ref($_) eq "HASH" && $_->{hasBody}
+                } @{array_or_empty($frontend_file->{functions})})
+                : scalar(@file_functions),
+            runtime_owner_count => $frontend_available && ref($frontend_file) eq "HASH"
+                ? scalar(@{array_or_empty($frontend_file->{runtimeOwners})})
+                : 0,
+            legacy_function_count => scalar(@file_functions),
             export_count => $export_count,
             documented_export_count => $documented_export_count,
             type_escape_count => $file_type_escape_domain->{totalEscapes},
@@ -2787,8 +3879,62 @@ sub source_ir {
         };
     }
 
-    my $function_graph = build_function_graph(\@functions);
-    my $abstract_state = build_function_abstract_state(\@functions, $function_graph);
+    my ($analysis_functions, $function_adapter, $overload_redirects) = $frontend_available
+        ? merge_ast_function_summaries(\@functions, \@ast_functions, \%ast_body_metrics)
+        : (
+            \@functions,
+            {
+                astFunctionCount => 0,
+                astBodyFunctionCount => 0,
+                astDeclarationOnlyCount => 0,
+                analysisFunctionCount => scalar(@functions),
+                tokenMetricFunctionCount => scalar(@functions),
+                legacyMetricFunctionCount => scalar(@functions),
+                legacyExactMatchCount => scalar(@functions),
+                astSlicedMetricFunctionCount => 0,
+                neutralMetricFunctionCount => 0,
+                orphanLegacyFunctionCount => 0,
+                ambiguousMetricMatchCount => 0,
+                structuralCoverageGap => 0,
+                overloadRedirectCount => 0
+            },
+            {}
+        );
+    if ($frontend_available) {
+        my @runtime_analysis;
+        my $runtime_unknown = 0;
+        for my $owner (@ast_runtime_owners) {
+            my $metrics = $runtime_owner_metrics{$owner->{id}};
+            $runtime_unknown += 1 if ref($metrics) ne "HASH";
+            push @runtime_analysis, adapt_runtime_owner_summary($owner, $metrics);
+        }
+        push @{$analysis_functions}, @runtime_analysis;
+        $function_adapter->{runtimeOwnerCount} = scalar(@runtime_analysis);
+        $function_adapter->{runtimeMetricOwnerCount} = scalar(@runtime_analysis) - $runtime_unknown;
+        $function_adapter->{runtimeUnknownOwnerCount} = $runtime_unknown;
+        $function_adapter->{analysisFunctionCount} += scalar(@runtime_analysis);
+        $function_adapter->{tokenMetricFunctionCount} += scalar(@runtime_analysis) - $runtime_unknown;
+        $function_adapter->{neutralMetricFunctionCount} += $runtime_unknown;
+        my $unattached = attach_runtime_edges_to_functions(
+            $analysis_functions,
+            \@ast_runtime_edges
+        );
+        $function_adapter->{unattachedRuntimeEdgeCount} = scalar(@{$unattached});
+        $function_adapter->{structuralCoverageGap} += scalar(@{$unattached});
+    }
+    my $function_graph = $frontend_available
+        ? build_function_graph(
+            $analysis_functions,
+            {
+                authority => "typescript-type-checker",
+                target_redirects => $overload_redirects
+            }
+        )
+        : build_function_graph($analysis_functions);
+    my @ast_graph_nodes = (@ast_functions, @ast_runtime_owners);
+    my $ast_function_graph = build_ast_function_graph(\@ast_graph_nodes, \@ast_calls, $frontend_available);
+    my $abstract_state = build_function_abstract_state($analysis_functions, $function_graph);
+    $abstract_state->{metric_coverage} = $function_adapter;
     $abstract_state->{clone_domain} = build_clone_domain(\@clone_blocks);
     my $ratio = $public_declarations == 0
         ? 1
@@ -2801,14 +3947,53 @@ sub source_ir {
         import_cycles => find_import_cycles(\@import_edges),
         layer_edges => \%layer_edges,
         lex_errors => \@lex_errors,
+        legacy_lex_errors => \@legacy_lex_errors,
+        typescript_frontend => $typescript_frontend,
+        structural_analysis => {
+            authority => $frontend_available ? "typescript-compiler-api" : "legacy-token-fallback",
+            rangeEncoding => $typescript_frontend->{rangeEncoding},
+            functions => \@ast_functions,
+            runtimeOwners => \@ast_runtime_owners,
+            runtimeEdges => \@ast_runtime_edges,
+            runtimeOwnershipObligations => \@runtime_ownership_obligations,
+            calls => \@ast_calls,
+            typeFacts => \@ast_type_facts,
+            inferenceFacts => \@hm_inference_facts,
+            graph => $ast_function_graph,
+            astFunctionCount => scalar(@ast_functions),
+            astCallCount => scalar(@{$ast_function_graph->{calls}}),
+            astResolvedCallEdges => scalar(@{$ast_function_graph->{edges}}),
+            legacyFunctionCount => scalar(@functions),
+            astBodyFunctionCount => $function_adapter->{astBodyFunctionCount},
+            astDeclarationOnlyCount => $function_adapter->{astDeclarationOnlyCount},
+            analysisFunctionCount => $function_adapter->{analysisFunctionCount},
+            tokenMetricFunctionCount => $function_adapter->{tokenMetricFunctionCount},
+            legacyMetricFunctionCount => $function_adapter->{legacyMetricFunctionCount},
+            legacyExactMatchCount => $function_adapter->{legacyExactMatchCount},
+            astSlicedMetricFunctionCount => $function_adapter->{astSlicedMetricFunctionCount},
+            neutralMetricFunctionCount => $function_adapter->{neutralMetricFunctionCount},
+            orphanLegacyFunctionCount => $function_adapter->{orphanLegacyFunctionCount},
+            ambiguousMetricMatchCount => $function_adapter->{ambiguousMetricMatchCount},
+            overloadRedirectCount => $function_adapter->{overloadRedirectCount},
+            runtimeOwnerCount => int($function_adapter->{runtimeOwnerCount} // 0),
+            runtimeMetricOwnerCount => int($function_adapter->{runtimeMetricOwnerCount} // 0),
+            runtimeUnknownOwnerCount => int($function_adapter->{runtimeUnknownOwnerCount} // 0),
+            unattachedRuntimeEdgeCount => int($function_adapter->{unattachedRuntimeEdgeCount} // 0),
+            runtimeOwnershipGap => scalar(@runtime_ownership_obligations),
+            structuralCoverageGap => $function_adapter->{structuralCoverageGap},
+            legacyMetricGap => $function_adapter->{neutralMetricFunctionCount},
+            coverageGap => $function_adapter->{structuralCoverageGap}
+        },
         source_suppressions => \%source_suppressions,
         invalid_source_suppressions => \@invalid_source_suppressions,
         type_escape_domain => $type_escape_domain,
         regex_safety_domain => $regex_safety_domain,
         function_analysis => {
-            functions => \@functions,
+            authority => $frontend_available ? "typescript-ast-with-explicit-local-metric-provenance" : "legacy-token-fallback",
+            functions => $analysis_functions,
             graph => $function_graph,
-            abstract => $abstract_state
+            abstract => $abstract_state,
+            adapter => $function_adapter
         },
         bare_imports => \@bare_imports,
         unresolved_imports => \@unresolved_imports,
@@ -2830,6 +4015,973 @@ sub source_ir {
     };
 }
 
+sub frontend_imports {
+    my ($path, $file) = @_;
+    my @imports;
+    for my $item (@{array_or_empty($file->{imports})}) {
+        next if ref($item) ne "HASH";
+        my $specifier = $item->{specifier} // $item->{moduleSpecifier};
+        next if !defined $specifier || ref($specifier);
+        my $span = frontend_span_to_human($item->{span} // $item->{range}, $path);
+        push @imports, {
+            path => $path,
+            line => $span->{line} // 1,
+            column => $span->{column},
+            end_column => $span->{end_column},
+            specifier => "$specifier",
+            type_only => ($item->{typeOnly} // $item->{type_only}) ? 1 : 0,
+            kind => $item->{kind} // "import",
+            resolved => frontend_repository_path($item->{resolved} // $item->{resolvedPath}),
+            span => $item->{span} // $item->{range},
+            primary_span => $span
+        };
+    }
+    return @imports;
+}
+
+sub frontend_repository_path {
+    my ($path) = @_;
+    return undef if !defined $path || ref($path) || $path eq "";
+    my $normalized = "$path";
+    $normalized =~ s{\\}{/}g;
+    my $root = $policy_workspace_root;
+    $root =~ s{\\}{/}g;
+    $normalized = substr($normalized, length($root) + 1)
+        if index($normalized, "$root/") == 0;
+    $normalized =~ s{\A\./}{};
+    return normalize_report_path($normalized);
+}
+
+sub frontend_public_declarations {
+    my ($file) = @_;
+    my @out;
+    for my $declaration (@{array_or_empty($file->{declarations})}) {
+        next if ref($declaration) ne "HASH";
+        my $is_public = exists $declaration->{exported}
+            ? $declaration->{exported}
+            : exists $declaration->{public}
+                ? $declaration->{public}
+                : 1;
+        next if !$is_public;
+        push @out, {
+            name => $declaration->{name} // "<anonymous>",
+            kind => $declaration->{kind} // "declaration",
+            documented => ($declaration->{documented} // $declaration->{hasJsDoc}) ? 1 : 0,
+            span => $declaration->{span} // $declaration->{range}
+        };
+    }
+    return \@out;
+}
+
+sub frontend_readonly_count {
+    my ($file) = @_;
+    return int($file->{readonlyCount})
+        if defined $file->{readonlyCount} && looks_like_number($file->{readonlyCount});
+    my $count = 0;
+    for my $fact (@{array_or_empty($file->{typeFacts})}) {
+        next if ref($fact) ne "HASH";
+        $count += 1 if ($fact->{kind} // "") eq "readonly";
+    }
+    return $count;
+}
+
+sub ast_function_metric_summary_from_source {
+    my ($path, $utf16, $function, $function_interval_index) = @_;
+    return undef if ref($function) ne "HASH" || ref($function->{bodySpan}) ne "HASH";
+    my $utf16_units = length($utf16) / 2;
+    my @tokens;
+    for my $parameter (@{array_or_empty($function->{parameters})}) {
+        next if ref($parameter) ne "HASH" || ref($parameter->{initializerSpan}) ne "HASH";
+        my $initializer_tokens = ast_metric_tokens_for_region(
+            $utf16,
+            $utf16_units,
+            $parameter->{initializerSpan},
+            $function,
+            $function_interval_index
+        );
+        return undef if !defined $initializer_tokens;
+        push @tokens, @{$initializer_tokens};
+    }
+    my $body_tokens = ast_metric_tokens_for_region(
+        $utf16,
+        $utf16_units,
+        $function->{bodySpan},
+        $function,
+        $function_interval_index
+    );
+    return undef if !defined $body_tokens;
+    if (@{$body_tokens} >= 2 && token_value($body_tokens, 0) eq "{" &&
+        token_value($body_tokens, scalar(@{$body_tokens}) - 1) eq "}") {
+        $body_tokens = [token_slice($body_tokens, 1, scalar(@{$body_tokens}) - 1)];
+    }
+    push @tokens, @{$body_tokens};
+    my ($params, $param_types) = adapt_ast_parameters($function->{parameters});
+    my $metrics = function_metrics(
+        $path,
+        $function->{name} // "<anonymous>",
+        $params,
+        $param_types,
+        \@tokens
+    );
+    return $metrics;
+}
+
+sub runtime_owner_metric_summary_from_source {
+    my ($path, $utf16, $owner, $function_interval_index) = @_;
+    return undef if ref($owner) ne "HASH" || ref($owner->{metricSpans}) ne "ARRAY";
+    my $utf16_units = length($utf16) / 2;
+    my @tokens;
+    for my $region (@{$owner->{metricSpans}}) {
+        return undef if ref($region) ne "HASH" || ref($region->{span}) ne "HASH";
+        my $region_tokens = ast_metric_tokens_for_region(
+            $utf16,
+            $utf16_units,
+            $region->{span},
+            $owner,
+            $function_interval_index,
+            1
+        );
+        return undef if !defined $region_tokens;
+        push @tokens, @{$region_tokens};
+    }
+    return function_metrics(
+        $path,
+        $owner->{name} // "<runtime-owner>",
+        [],
+        [],
+        \@tokens
+    );
+}
+
+sub ast_metric_tokens_for_region {
+    my ($utf16, $utf16_units, $span, $owner, $function_interval_index, $runtime_region) = @_;
+    my $bounds = frontend_span_wire_bounds($span);
+    return undef if !defined $bounds || $bounds->{startOffset} < 0 ||
+        $bounds->{endOffset} < $bounds->{startOffset} ||
+        $bounds->{endOffset} > $utf16_units;
+    my @nested_functions = $runtime_region
+        ? runtime_region_nested_function_intervals(
+            $bounds->{startOffset},
+            $bounds->{endOffset},
+            $function_interval_index
+        )
+        : direct_nested_function_intervals(
+            $bounds->{startOffset},
+            $bounds->{endOffset},
+            $owner->{id},
+            $function_interval_index
+        );
+    my @nested = nested_metric_exclusion_intervals(
+        $bounds->{startOffset},
+        $bounds->{endOffset},
+        \@nested_functions
+    );
+    for my $runtime (@{array_or_empty($function_interval_index->{runtimeRegions})}) {
+        next if ($runtime->{ownerId} // "") eq ($owner->{id} // "") ||
+            $runtime->{startOffset} < $bounds->{startOffset} ||
+            $runtime->{endOffset} > $bounds->{endOffset} ||
+            $runtime->{endOffset} <= $runtime->{startOffset};
+        push @nested, $runtime;
+    }
+    for my $non_runtime (@{array_or_empty($function_interval_index->{nonRuntimeRegions})}) {
+        next if $non_runtime->{startOffset} < $bounds->{startOffset} ||
+            $non_runtime->{endOffset} > $bounds->{endOffset} ||
+            $non_runtime->{endOffset} <= $non_runtime->{startOffset};
+        push @nested, $non_runtime;
+    }
+    @nested = merge_metric_exclusion_intervals(@nested);
+    my $cursor = $bounds->{startOffset};
+    my $region_utf16 = "";
+    for my $nested (@nested) {
+        $region_utf16 .= substr(
+            $utf16,
+            $cursor * 2,
+            ($nested->{startOffset} - $cursor) * 2
+        );
+        my $line_breaks = $nested->{endLine} > $nested->{startLine}
+            ? $nested->{endLine} - $nested->{startLine}
+            : 0;
+        $region_utf16 .= encode("UTF-16LE", "0" . ("\n" x $line_breaks));
+        $cursor = $nested->{endOffset};
+    }
+    $region_utf16 .= substr(
+        $utf16,
+        $cursor * 2,
+        ($bounds->{endOffset} - $cursor) * 2
+    );
+    my $text = decode("UTF-16LE", $region_utf16, FB_DEFAULT);
+    my $lex = lex_ts_source($text);
+    return undef if @{array_or_empty($lex->{errors})} != 0;
+    my @tokens = @{$lex->{tokens}};
+    for my $token (@tokens) {
+        $token->{line} += $bounds->{startLine} - 1;
+    }
+    return \@tokens;
+}
+
+sub frontend_span_wire_bounds {
+    my ($span) = @_;
+    return undef if ref($span) ne "HASH";
+    my $range = ref($span->{range}) eq "HASH" ? $span->{range} : $span;
+    my $start = ref($range->{start}) eq "HASH" ? $range->{start} : {};
+    my $end = ref($range->{end}) eq "HASH" ? $range->{end} : {};
+    return undef if !frontend_contract_integer($start->{offset}) ||
+        !frontend_contract_integer($end->{offset}) ||
+        !frontend_contract_integer($start->{line}) ||
+        !frontend_contract_integer($end->{line});
+    return {
+        startOffset => int($start->{offset}),
+        endOffset => int($end->{offset}),
+        startLine => int($start->{line}) + 1,
+        endLine => int($end->{line}) + 1
+    };
+}
+
+sub build_ast_function_interval_index {
+    my ($functions, $runtime_owners, $non_runtime_spans) = @_;
+    my @records;
+    for my $function (@{array_or_empty($functions)}) {
+        next if ref($function) ne "HASH" || !defined $function->{id};
+        my $bounds = frontend_span_wire_bounds($function->{span});
+        next if !defined $bounds || $bounds->{endOffset} <= $bounds->{startOffset};
+        push @records, {
+            %{$bounds},
+            id => $function->{id},
+            kind => $function->{kind} // "function-like",
+            hasBody => $function->{hasBody} ? 1 : 0,
+            bodySpan => $function->{bodySpan},
+            parameters => $function->{parameters},
+            nameSpan => $function->{nameSpan},
+            nameComputed => $function->{nameComputed} ? 1 : 0,
+            returnTypeSpan => $function->{returnTypeSpan},
+            typeParameters => $function->{typeParameters}
+        };
+    }
+    @records = sort {
+        $a->{startOffset} <=> $b->{startOffset} ||
+            $b->{endOffset} <=> $a->{endOffset} ||
+            $a->{id} cmp $b->{id}
+    } @records;
+    my %children;
+    my %parent_by_id;
+    my %record_by_id;
+    my @stack;
+    for my $record (@records) {
+        while (@stack != 0) {
+            my $candidate = $stack[-1];
+            my $strictly_contains =
+                $record->{startOffset} >= $candidate->{startOffset} &&
+                $record->{endOffset} <= $candidate->{endOffset} &&
+                ($record->{startOffset} > $candidate->{startOffset} ||
+                    $record->{endOffset} < $candidate->{endOffset});
+            last if $strictly_contains;
+            pop @stack;
+        }
+        if (@stack != 0) {
+            push @{$children{$stack[-1]{id}}}, $record;
+            $parent_by_id{$record->{id}} = $stack[-1]{id};
+        }
+        $record_by_id{$record->{id}} = $record;
+        push @stack, $record;
+    }
+    my @runtime_regions;
+    for my $owner (@{array_or_empty($runtime_owners)}) {
+        next if ref($owner) ne "HASH" || !defined $owner->{id};
+        for my $region (@{array_or_empty($owner->{metricSpans})}) {
+            next if ref($region) ne "HASH";
+            my $bounds = frontend_span_wire_bounds($region->{span});
+            next if !defined $bounds || $bounds->{endOffset} <= $bounds->{startOffset};
+            push @runtime_regions, {
+                %{$bounds},
+                ownerId => $owner->{id},
+                role => $region->{role} // "runtime-region"
+            };
+        }
+    }
+    @runtime_regions = sort {
+        $a->{startOffset} <=> $b->{startOffset} ||
+            $b->{endOffset} <=> $a->{endOffset} ||
+            $a->{ownerId} cmp $b->{ownerId}
+    } @runtime_regions;
+    my @non_runtime_regions = map { frontend_span_wire_bounds($_) }
+        @{array_or_empty($non_runtime_spans)};
+    @non_runtime_regions = grep {
+        defined $_ && $_->{endOffset} > $_->{startOffset}
+    } @non_runtime_regions;
+    @non_runtime_regions = merge_metric_exclusion_intervals(@non_runtime_regions);
+    return {
+        childrenByOwner => \%children,
+        parentById => \%parent_by_id,
+        recordById => \%record_by_id,
+        records => \@records,
+        runtimeRegions => \@runtime_regions,
+        nonRuntimeRegions => \@non_runtime_regions,
+        functionCount => scalar(@records)
+    };
+}
+
+sub direct_nested_function_intervals {
+    my ($start, $end, $owner_id, $function_interval_index) = @_;
+    my $children = ref($function_interval_index) eq "HASH"
+        ? $function_interval_index->{childrenByOwner}
+        : {};
+    return relevant_nested_function_intervals(
+        [@{array_or_empty($children->{$owner_id})}],
+        $start,
+        $end,
+        $children
+    );
+}
+
+sub runtime_region_nested_function_intervals {
+    my ($start, $end, $function_interval_index) = @_;
+    my $records = ref($function_interval_index) eq "HASH"
+        ? $function_interval_index->{records}
+        : [];
+    my $parents = ref($function_interval_index) eq "HASH"
+        ? $function_interval_index->{parentById}
+        : {};
+    my $by_id = ref($function_interval_index) eq "HASH"
+        ? $function_interval_index->{recordById}
+        : {};
+    my $children = ref($function_interval_index) eq "HASH"
+        ? $function_interval_index->{childrenByOwner}
+        : {};
+    my %contained = map {
+        $_->{id} => 1
+    } grep {
+        $_->{startOffset} >= $start &&
+            $_->{endOffset} <= $end &&
+            $_->{endOffset} > $_->{startOffset}
+    } @{array_or_empty($records)};
+    my @roots = map { $by_id->{$_} }
+        grep {
+            my $parent = $parents->{$_};
+            !defined $parent || !$contained{$parent}
+        } keys %contained;
+    return relevant_nested_function_intervals(\@roots, $start, $end, $children);
+}
+
+sub relevant_nested_function_intervals {
+    my ($roots, $start, $end, $children) = @_;
+    my @pending = @{$roots // []};
+    my @relevant;
+    while (@pending != 0) {
+        my $nested = shift @pending;
+        next if ref($nested) ne "HASH" ||
+            $nested->{startOffset} < $start ||
+            $nested->{endOffset} > $end ||
+            $nested->{endOffset} <= $nested->{startOffset};
+        push @relevant, $nested;
+
+        # A nested function body/default belongs to that function and will be
+        # masked as one interval.  Descendants inside those owned spans need no
+        # separate work.  Descendants inside a computed name or decorator do:
+        # those expressions execute in the enclosing runtime, while the nested
+        # closure body still must not leak into it.
+        my @owned_bounds = map { frontend_span_wire_bounds($_) }
+            nested_metric_owned_spans($nested);
+        @owned_bounds = grep { defined $_ } @owned_bounds;
+        for my $child (@{array_or_empty($children->{$nested->{id}})}) {
+            my $covered = grep {
+                $child->{startOffset} >= $_->{startOffset} &&
+                    $child->{endOffset} <= $_->{endOffset}
+            } @owned_bounds;
+            push @pending, $child if !$covered;
+        }
+    }
+    return sort {
+        $a->{startOffset} <=> $b->{startOffset} ||
+            $b->{endOffset} <=> $a->{endOffset}
+    } @relevant;
+}
+
+sub nested_metric_owned_spans {
+    my ($nested) = @_;
+    if (!$nested->{hasBody}) {
+        return ({
+            start => {
+                offset => $nested->{startOffset},
+                line => $nested->{startLine} - 1
+            },
+            end => {
+                offset => $nested->{endOffset},
+                line => $nested->{endLine} - 1
+            }
+        });
+    }
+    my @spans = ($nested->{bodySpan});
+    push @spans, map { $_->{span} }
+        grep { ref($_) eq "HASH" && ref($_->{span}) eq "HASH" }
+        @{array_or_empty($nested->{parameters})};
+    push @spans, $nested->{nameSpan}
+        if !$nested->{nameComputed} && ref($nested->{nameSpan}) eq "HASH";
+    push @spans, $nested->{returnTypeSpan}
+        if ref($nested->{returnTypeSpan}) eq "HASH";
+    push @spans, map { $_->{span} }
+        grep { ref($_) eq "HASH" && ref($_->{span}) eq "HASH" }
+        @{array_or_empty($nested->{typeParameters})};
+    return grep { ref($_) eq "HASH" } @spans;
+}
+
+sub nested_metric_exclusion_intervals {
+    my ($region_start, $region_end, $nested_functions) = @_;
+    my @intervals;
+    for my $nested (@{$nested_functions}) {
+        for my $span (nested_metric_owned_spans($nested)) {
+            my $bounds = frontend_span_wire_bounds($span);
+            next if !defined $bounds || $bounds->{startOffset} < $region_start ||
+                $bounds->{endOffset} > $region_end ||
+                $bounds->{endOffset} <= $bounds->{startOffset};
+            push @intervals, $bounds;
+        }
+    }
+    return merge_metric_exclusion_intervals(@intervals);
+}
+
+sub merge_metric_exclusion_intervals {
+    my (@intervals) = @_;
+    @intervals = sort {
+        $a->{startOffset} <=> $b->{startOffset} ||
+            $b->{endOffset} <=> $a->{endOffset}
+    } @intervals;
+    my @disjoint;
+    for my $interval (@intervals) {
+        next if @disjoint != 0 && $interval->{endOffset} <= $disjoint[-1]{endOffset};
+        if (@disjoint != 0 && $interval->{startOffset} < $disjoint[-1]{endOffset}) {
+            $disjoint[-1]{endOffset} = $interval->{endOffset};
+            $disjoint[-1]{endLine} = $interval->{endLine};
+            next;
+        }
+        push @disjoint, $interval;
+    }
+    return @disjoint;
+}
+
+sub merge_ast_function_summaries {
+    my ($legacy_functions, $ast_functions, $ast_body_metrics) = @_;
+    $ast_body_metrics = {} if ref($ast_body_metrics) ne "HASH";
+    my %legacy_by_key;
+    for my $index (0 .. $#{$legacy_functions // []}) {
+        my $legacy = $legacy_functions->[$index];
+        next if ref($legacy) ne "HASH";
+        push @{$legacy_by_key{legacy_function_match_key($legacy)}}, $index;
+    }
+
+    my %body_ids_by_symbol;
+    for my $function (@{$ast_functions // []}) {
+        next if ref($function) ne "HASH" || !$function->{hasBody};
+        my $symbol_id = $function->{symbolId};
+        next if !defined $symbol_id || ref($symbol_id) || $symbol_id eq "";
+        push @{$body_ids_by_symbol{$symbol_id}}, $function->{id}
+            if defined $function->{id} && !ref($function->{id});
+    }
+
+    my %target_redirects;
+    for my $function (@{$ast_functions // []}) {
+        next if ref($function) ne "HASH" || $function->{hasBody};
+        my $id = $function->{id};
+        my $symbol_id = $function->{symbolId};
+        next if !defined $id || ref($id) || !defined $symbol_id || ref($symbol_id);
+        my %unique = map { $_ => 1 } @{$body_ids_by_symbol{$symbol_id} // []};
+        my @implementations = sort keys %unique;
+        $target_redirects{$id} = $implementations[0] if @implementations == 1;
+    }
+
+    my @analysis;
+    my %used_legacy;
+    my $token_metric_count = 0;
+    my $legacy_metric_count = 0;
+    my $legacy_exact_match_count = 0;
+    my $ast_sliced_metric_count = 0;
+    my $neutral_metric_count = 0;
+    my $ambiguous_count = 0;
+    my $declaration_only_count = 0;
+    for my $function (@{$ast_functions // []}) {
+        next if ref($function) ne "HASH";
+        if (!$function->{hasBody}) {
+            $declaration_only_count += 1;
+            next;
+        }
+        my $key = ast_function_match_key($function);
+        my @available = grep { !$used_legacy{$_} } @{$legacy_by_key{$key} // []};
+        my $legacy;
+        my $sliced_metrics;
+        $ambiguous_count += 1 if @available > 1;
+        if (@available == 1) {
+            $legacy = $legacy_functions->[$available[0]];
+            $used_legacy{$available[0]} = 1;
+            $legacy_exact_match_count += 1;
+        }
+        if (defined $function->{id} && ref($ast_body_metrics->{$function->{id}}) eq "HASH") {
+            $sliced_metrics = $ast_body_metrics->{$function->{id}};
+            $token_metric_count += 1;
+            $ast_sliced_metric_count += 1;
+        } else {
+            $neutral_metric_count += 1;
+        }
+        push @analysis, adapt_ast_function_summary($function, $legacy, $sliced_metrics);
+    }
+
+    my $orphan_legacy_count = scalar(@{$legacy_functions // []}) - scalar(keys %used_legacy);
+    my $stats = {
+        astFunctionCount => scalar(@{$ast_functions // []}),
+        astBodyFunctionCount => scalar(@analysis),
+        astDeclarationOnlyCount => $declaration_only_count,
+        analysisFunctionCount => scalar(@analysis),
+        tokenMetricFunctionCount => $token_metric_count,
+        legacyMetricFunctionCount => $legacy_metric_count,
+        legacyExactMatchCount => $legacy_exact_match_count,
+        astSlicedMetricFunctionCount => $ast_sliced_metric_count,
+        neutralMetricFunctionCount => $neutral_metric_count,
+        orphanLegacyFunctionCount => $orphan_legacy_count,
+        ambiguousMetricMatchCount => $ambiguous_count,
+        structuralCoverageGap => 0,
+        overloadRedirectCount => scalar(keys %target_redirects)
+    };
+    return (\@analysis, $stats, \%target_redirects);
+}
+
+sub adapt_runtime_owner_summary {
+    my ($owner, $metrics) = @_;
+    my %pseudo = (
+        %{$owner},
+        bodySpan => $owner->{span},
+        exported => JSON::PP::false,
+        symbolId => $owner->{classSymbolId},
+        parameters => []
+    );
+    my $record = adapt_ast_function_summary(\%pseudo, undef, $metrics);
+    $record->{synthetic} = 1;
+    $record->{runtimeOwner} = 1;
+    $record->{executionPhase} = $owner->{executionPhase};
+    $record->{metricSpans} = $owner->{metricSpans};
+    $record->{explicitConstructorId} = $owner->{explicitConstructorId};
+    $record->{analysisBasis} = "typescript-ast-runtime-owner";
+    $record->{structuralAuthority} = "typescript-runtime-semantics";
+    $record->{localMetricAuthority} = "ast-runtime-region-token-abstract-domains";
+    return $record;
+}
+
+sub attach_runtime_edges_to_functions {
+    my ($functions, $runtime_edges) = @_;
+    my %by_id = map {
+        ref($_) eq "HASH" && defined $_->{id} ? ($_->{id} => $_) : ()
+    } @{$functions // []};
+    my @unattached;
+    for my $edge (@{$runtime_edges // []}) {
+        next if ref($edge) ne "HASH";
+        my $from = $edge->{from};
+        my $to = $edge->{to};
+        my $owner = defined $from ? $by_id{$from} : undef;
+        if (!defined $owner || !defined $to || !exists $by_id{$to}) {
+            push @unattached, $edge;
+            next;
+        }
+        my $span = frontend_span_to_human($edge->{span}, $owner->{path} // "src");
+        push @{$owner->{calls}}, {
+            id => $edge->{id},
+            name => "<" . ($edge->{kind} // "runtime-edge") . ">",
+            targetId => $to,
+            path => $span->{path},
+            line => $span->{line},
+            column => $span->{column},
+            end_line => $span->{end_line},
+            end_column => $span->{end_column},
+            start_offset => $span->{start_offset},
+            end_offset => $span->{end_offset},
+            span => $edge->{span},
+            arguments => [],
+            synthetic => 1,
+            edgeKind => $edge->{kind},
+            executionPhase => $edge->{executionPhase},
+            resolvedBy => "typescript-runtime-semantics"
+        };
+    }
+    return \@unattached;
+}
+
+sub legacy_function_match_key {
+    my ($function) = @_;
+    return join("\0",
+        normalize_report_path($function->{path} // ""),
+        $function->{name} // "<anonymous>",
+        int($function->{line} // 1),
+        int($function->{end_line} // $function->{line} // 1)
+    );
+}
+
+sub ast_function_match_key {
+    my ($function) = @_;
+    my $span = frontend_span_to_human($function->{span}, "src");
+    my $body = frontend_span_to_human($function->{bodySpan}, $span->{path} // "src");
+    return join("\0",
+        normalize_report_path($span->{path} // ""),
+        $function->{name} // "<anonymous>",
+        int($span->{line} // 1),
+        int($body->{end_line} // $span->{end_line} // $span->{line} // 1)
+    );
+}
+
+sub adapt_ast_function_summary {
+    my ($function, $legacy, $sliced_metrics) = @_;
+    my $span = frontend_span_to_human($function->{span}, "src");
+    my $body = frontend_span_to_human($function->{bodySpan}, $span->{path} // "src");
+    my ($params, $param_types) = adapt_ast_parameters($function->{parameters});
+    my $calls = adapt_ast_calls($function->{calls}, $span->{path});
+    my $metrics_available = ref($sliced_metrics) eq "HASH";
+    my %record = $metrics_available
+        ? %{$sliced_metrics}
+        : %{neutral_function_metric_summary()};
+    $record{id} = $function->{id};
+    $record{legacyId} = $legacy->{id} if defined $legacy && ref($legacy) eq "HASH";
+    $record{path} = $span->{path};
+    $record{name} = $function->{name} // "<anonymous>";
+    $record{qualifiedName} = $function->{qualifiedName};
+    $record{symbolId} = $function->{symbolId};
+    $record{kind} = $function->{kind} // "function-like";
+    $record{span} = $function->{span};
+    $record{bodySpan} = $function->{bodySpan};
+    $record{primary_span} = $span;
+    $record{line} = $span->{line} // 1;
+    $record{column} = $span->{column};
+    $record{end_line} = $body->{end_line} // $span->{end_line} // $record{line};
+    $record{end_column} = $body->{end_column} // $span->{end_column};
+    $record{start_offset} = $span->{start_offset};
+    $record{end_offset} = $body->{end_offset} // $span->{end_offset};
+    $record{hasBody} = 1;
+    $record{exported} = $function->{exported} ? 1 : 0;
+    $record{params} = $params;
+    $record{paramTypes} = $param_types;
+    $record{calls} = $calls;
+    $record{structuralAuthority} = "typescript-compiler-api";
+    $record{callAuthority} = "typescript-type-checker";
+    $record{localMetricsAvailable} = $metrics_available ? 1 : 0;
+    $record{localMetricAuthority} = $metrics_available
+        ? "ast-body-bounded-token-abstract-domains"
+        : "unavailable-neutral";
+    $record{analysisBasis} = $metrics_available
+        ? "typescript-ast-with-body-bounded-local-metrics"
+        : "typescript-ast-structural-only";
+    return \%record;
+}
+
+sub adapt_ast_parameters {
+    my ($parameters) = @_;
+    my (@names, @types);
+    for my $parameter (@{array_or_empty($parameters)}) {
+        next if ref($parameter) ne "HASH";
+        my $name = $parameter->{name} // "<pattern>";
+        my $type = $parameter->{declaredType} // $parameter->{inferredType} // "";
+        push @names, $name;
+        push @types, {
+            name => $name,
+            type => $type,
+            hostilePayload => is_symbolic_hostile_parameter_type($name, $type) ? 1 : 0,
+            optional => $parameter->{optional} ? 1 : 0,
+            rest => $parameter->{rest} ? 1 : 0
+        };
+    }
+    return (\@names, \@types);
+}
+
+sub adapt_ast_calls {
+    my ($calls, $fallback_path) = @_;
+    my @adapted;
+    for my $call (@{array_or_empty($calls)}) {
+        next if ref($call) ne "HASH";
+        my $wire_span = $call->{span} // $call->{range};
+        my $span = frontend_span_to_human($wire_span, $fallback_path // "src");
+        my $arguments = ref($call->{argumentIdentifiers}) eq "ARRAY"
+            ? $call->{argumentIdentifiers}
+            : array_or_empty($call->{arguments});
+        push @adapted, {
+            id => $call->{id},
+            name => $call->{name} // $call->{callee} // "<call>",
+            targetId => $call->{targetId} // $call->{resolvedTargetId},
+            symbolId => $call->{symbolId},
+            line => $span->{line} // 1,
+            column => $span->{column},
+            end_line => $span->{end_line},
+            end_column => $span->{end_column},
+            start_offset => $span->{start_offset},
+            end_offset => $span->{end_offset},
+            path => $span->{path},
+            span => $wire_span,
+            arguments => [grep { defined $_ && !ref($_) } @{$arguments}],
+            argumentTypes => $call->{argumentTypes},
+            authority => "typescript-type-checker"
+        };
+    }
+    return \@adapted;
+}
+
+sub neutral_function_metric_summary {
+    my $metrics = function_metrics(
+        "__ast_metric_unknown__",
+        "__unknown__",
+        [],
+        [],
+        []
+    );
+    $metrics->{complexity} = 0;
+    $metrics->{cfg} = {
+        blocks => 0,
+        edges => 0,
+        decisions => 0,
+        loops => 0,
+        exits => 0,
+        throws => 0,
+        maxDepth => 0,
+        unreachableStatements => 0
+    };
+    $metrics->{contract} = {
+        validator => 0,
+        sanitizer => 0,
+        descriptorFactory => 0,
+        dynamicBridge => 0,
+        sink => 0,
+        pureCandidate => 0,
+        contractlessSink => 0,
+        throwingPredicate => 0
+    };
+    $metrics->{recursion_proof} = {
+        admissionGuards => 0,
+        cycleGuards => 0,
+        depthGuards => 0,
+        weakGuards => 0,
+        hasProof => 0
+    };
+    return $metrics;
+}
+
+sub build_ast_function_graph {
+    my ($functions, $calls, $frontend_available) = @_;
+    my %known = map {
+        ref($_) eq "HASH" && defined $_->{id} ? ($_->{id} => 1) : ()
+    } @{$functions // []};
+    my (@normalized_calls, @edges, @unresolved);
+    my %seen;
+    for my $call (@{$calls // []}) {
+        next if ref($call) ne "HASH";
+        my $caller = $call->{callerId} // $call->{from};
+        my $target = $call->{targetId} // $call->{resolvedTargetId} // $call->{to};
+        $target = $call->{target}{id} if !defined $target && ref($call->{target}) eq "HASH";
+        my $wire_span = $call->{span} // $call->{range};
+        my $range = ref($wire_span) eq "HASH" && ref($wire_span->{range}) eq "HASH"
+            ? $wire_span->{range}
+            : $wire_span;
+        my $start = ref($range) eq "HASH" && ref($range->{start}) eq "HASH"
+            ? $range->{start}
+            : {};
+        my $key = join("\0",
+            $caller // "",
+            $target // "",
+            $call->{path} // "",
+            $start->{offset} // "",
+            $call->{callee} // $call->{name} // ""
+        );
+        next if $seen{$key}++;
+        push @normalized_calls, $call;
+        if (defined $caller && defined $target && $caller ne "" && $target ne "" &&
+            $known{$caller} && $known{$target}) {
+            my $span = frontend_span_to_human($wire_span, $call->{path} // "src");
+            push @edges, {
+                from => $caller,
+                to => $target,
+                path => $span->{path},
+                line => $span->{line},
+                column => $span->{column},
+                end_column => $span->{end_column},
+                name => $call->{callee} // $call->{name} // "<call>",
+                signature => $call->{signature},
+                resolvedBy => $call->{resolvedBy} // "typescript-type-checker",
+                span => $wire_span,
+                cross_file => $call->{crossFile} ? 1 : 0
+            };
+        } else {
+            push @unresolved, $call;
+        }
+    }
+    return {
+        authority => $frontend_available ? "typescript-type-checker" : "legacy-token-fallback",
+        calls => \@normalized_calls,
+        edges => \@edges,
+        unresolvedCalls => \@unresolved,
+        cycles => find_import_cycles(\@edges),
+        fan_in => function_fan_counts(\@edges, "to"),
+        fan_out => function_fan_counts(\@edges, "from")
+    };
+}
+
+sub frontend_type_escape_domain_summary {
+    my ($path, $file) = @_;
+    my $domain = empty_type_escape_domain();
+    $domain->{files} = 1;
+    my %message_by_kind = (
+        explicit_any => "explicit `any` weakens TypeSea's unknown-first boundary",
+        as_any => "`as any` bypasses TypeScript narrowing and must stay explicitly budgeted",
+        double_assertion => "double assertion crosses an unchecked type boundary",
+        non_null_assertion => "non-null assertion skips TypeScript nullish proof obligations",
+        unchecked_json_parse => "`JSON.parse` returns unknown data and should be paired with TypeSea validation",
+        ts_suppression => "TypeScript diagnostic suppression must be reviewed as a type-safety escape hatch"
+    );
+    my %kind_alias = (
+        any_keyword => "explicit_any",
+        explicitAny => "explicit_any",
+        asAny => "as_any",
+        doubleAssertion => "double_assertion",
+        nonNullAssertion => "non_null_assertion",
+        jsonParse => "unchecked_json_parse",
+        uncheckedJsonParse => "unchecked_json_parse",
+        tsSuppression => "ts_suppression"
+    );
+    for my $finding (@{array_or_empty($file->{typeEscapes})}) {
+        next if ref($finding) ne "HASH";
+        my $kind = $finding->{kind} // "";
+        $kind = $kind_alias{$kind} if exists $kind_alias{$kind};
+        next if !exists $message_by_kind{$kind};
+        my $wire_span = $finding->{span} // $finding->{range};
+        my $span = frontend_span_to_human($wire_span, $path);
+        add_type_escape_finding(
+            $domain,
+            $kind,
+            $path,
+            $span->{line} // 1,
+            $finding->{message} // $message_by_kind{$kind},
+            $span,
+            $wire_span
+        );
+    }
+    return $domain;
+}
+
+sub frontend_regex_safety_domain_summary {
+    my ($path, $file) = @_;
+    my $domain = empty_regex_safety_domain();
+    $domain->{files} = 1;
+    my $regexps = $file->{regexps};
+    $regexps = $file->{regularExpressions} if ref($regexps) ne "ARRAY";
+    for my $regexp (@{array_or_empty($regexps)}) {
+        next if ref($regexp) ne "HASH";
+        my $kind = $regexp->{kind} // $regexp->{origin} // "literal";
+        my $constructor = $kind =~ /constructor/i ? 1 : 0;
+        $domain->{$constructor ? "regexConstructors" : "regexLiterals"} += 1;
+        my $dynamic = $regexp->{dynamic} ? 1 : 0;
+        if ($constructor && $dynamic) {
+            $domain->{dynamicRegexConstructors} += 1;
+            next;
+        }
+        my $pattern = $regexp->{pattern} // $regexp->{source};
+        next if !defined $pattern || ref($pattern);
+        my $span = frontend_span_to_human($regexp->{span} // $regexp->{range}, $path);
+        analyze_regex_pattern(
+            $domain,
+            $path,
+            $span->{line} // 1,
+            "$pattern",
+            $regexp->{flags} // "",
+            $constructor ? "constructor" : "literal",
+            $span
+        );
+    }
+    return $domain;
+}
+
+sub frontend_span_to_human {
+    my ($span, $fallback_path) = @_;
+    return { path => $fallback_path } if ref($span) ne "HASH";
+    my $range = ref($span->{range}) eq "HASH" ? $span->{range} : $span;
+    my $start = ref($range->{start}) eq "HASH" ? $range->{start} : {};
+    my $end = ref($range->{end}) eq "HASH" ? $range->{end} : {};
+    my $line_base = defined $span->{lineBase} ? int($span->{lineBase}) :
+        defined $range->{lineBase} ? int($range->{lineBase}) : 0;
+    my $column_base = defined $span->{columnBase} ? int($span->{columnBase}) :
+        defined $range->{columnBase} ? int($range->{columnBase}) : 0;
+    my $path = frontend_repository_path($span->{path} // $range->{path}) // $fallback_path;
+    my $start_line_raw = $start->{line};
+    my $start_character_raw = defined $start->{character} ? $start->{character} : $start->{column};
+    my $end_line_raw = $end->{line};
+    my $end_character_raw = defined $end->{character} ? $end->{character} : $end->{column};
+    my $line = defined $start_line_raw ? int($start_line_raw) - $line_base + 1 : undef;
+    my $end_line = defined $end_line_raw ? int($end_line_raw) - $line_base + 1 : $line;
+    my $start_utf16 = defined $start_character_raw
+        ? int($start_character_raw) - $column_base
+        : undef;
+    my $end_utf16 = defined $end_character_raw
+        ? int($end_character_raw) - $column_base
+        : undef;
+    my $column = defined $start_utf16 && defined $line
+        ? utf16_character_to_source_column($path, $line, $start_utf16)
+        : undef;
+    my $end_column = defined $end_utf16 && defined $end_line
+        ? utf16_character_to_source_column($path, $end_line, $end_utf16)
+        : undef;
+    return {
+        path => $path,
+        line => $line,
+        column => $column,
+        end_line => $end_line,
+        end_column => $end_column,
+        start_offset => $start->{offset},
+        end_offset => $end->{offset},
+        wire_encoding => $span->{encoding} // $range->{encoding} // "utf-16",
+        wire_line => defined $start_line_raw ? int($start_line_raw) : undef,
+        wire_column => defined $start_character_raw ? int($start_character_raw) : undef,
+        wire_end_line => defined $end_line_raw ? int($end_line_raw) : undef,
+        wire_end_column => defined $end_character_raw ? int($end_character_raw) : undef,
+        end_exclusive => exists $span->{endExclusive} ? ($span->{endExclusive} ? 1 : 0) : 1
+    };
+}
+
+sub utf16_character_to_source_column {
+    my ($path, $line, $character) = @_;
+    $character = 0 if !defined $character || $character < 0;
+    my $raw = frontend_source_line($path, $line);
+    return $character + 1 if !defined $raw;
+    my $units = 0;
+    my $column = 1;
+    for my $char (split(//, $raw)) {
+        last if $units >= $character;
+        my $width = ord($char) > 0xffff ? 2 : 1;
+        last if $units + $width > $character;
+        $units += $width;
+        $column += 1;
+    }
+    return $column;
+}
+
+sub frontend_source_line {
+    my ($path, $line) = @_;
+    return undef if !defined $line || $line < 1;
+    my $normalized = normalize_report_path($path // "");
+    if (!exists $frontend_source_lines_cache{$normalized}) {
+        my $resolved = terminal_source_path($normalized);
+        if (!defined $resolved) {
+            $frontend_source_lines_cache{$normalized} = undef;
+            return undef;
+        }
+        my @stat = stat($resolved);
+        if (@stat == 0 || $stat[7] > 8 * 1024 * 1024 ||
+            $frontend_source_lines_cache_bytes + $stat[7] > 64 * 1024 * 1024) {
+            $frontend_source_lines_cache{$normalized} = undef;
+            return undef;
+        }
+        my $source = read_text($resolved);
+        my @lines = frontend_source_lines($source);
+        $frontend_source_lines_cache{$normalized} = \@lines;
+        $frontend_source_lines_cache_bytes += $stat[7];
+    }
+    my $lines = $frontend_source_lines_cache{$normalized};
+    return undef if ref($lines) ne "ARRAY" || $line > @{$lines};
+    return $lines->[$line - 1];
+}
+
+sub frontend_source_lines {
+    my ($source) = @_;
+    return split(/\r\n|\n|\r|\x{2028}|\x{2029}/, $source // "", -1);
+}
+
 sub empty_type_escape_domain {
     return {
         schemaVersion => 1,
@@ -2844,6 +4996,34 @@ sub empty_type_escape_domain {
         totalEscapes => 0,
         findings => []
     };
+}
+
+sub type_inference_domain_summary {
+    my ($source) = @_;
+    my @facts = @{array_or_empty($source->{structural_analysis}{inferenceFacts})};
+    my %summary = (
+        facts => scalar(@facts),
+        typescriptSelected => 0,
+        annotationSelected => 0,
+        hmCandidates => 0,
+        hmSelected => 0,
+        hmConflicts => 0,
+        hmUnsupported => 0
+    );
+    for my $fact (@facts) {
+        next if ref($fact) ne "HASH";
+        my $selected = object_or_empty($fact->{selected});
+        my $selected_source = lc($selected->{source} // "");
+        $summary{typescriptSelected} += 1 if $selected_source eq "typescript";
+        $summary{annotationSelected} += 1 if $selected_source eq "annotation";
+        $summary{hmSelected} += 1 if $selected_source eq "hm";
+        my $hm = object_or_empty($fact->{hm});
+        my $status = lc($hm->{status} // "");
+        $summary{hmCandidates} += 1 if $status eq "inferred";
+        $summary{hmConflicts} += 1 if $status =~ /conflict|occurs/;
+        $summary{hmUnsupported} += 1 if $status =~ /unsupported|budget|unavailable/;
+    }
+    return \%summary;
 }
 
 sub build_type_escape_domain_summary {
@@ -2933,7 +5113,7 @@ sub merge_type_escape_domain {
 }
 
 sub add_type_escape_finding {
-    my ($domain, $kind, $path, $line, $message) = @_;
+    my ($domain, $kind, $path, $line, $message, $primary_span, $wire_span) = @_;
     my %field_by_kind = (
         explicit_any => "explicitAny",
         as_any => "asAny",
@@ -2945,13 +5125,18 @@ sub add_type_escape_finding {
     my $field = $field_by_kind{$kind};
     $domain->{$field} += 1 if defined $field;
     $domain->{totalEscapes} += 1;
-    push @{$domain->{findings}}, {
+    my $finding = {
         kind => $kind,
         path => $path,
         line => $line,
-        where => "$path:$line",
+        where => ref($primary_span) eq "HASH"
+            ? human_span_location($primary_span)
+            : "$path:$line",
         message => $message
     };
+    $finding->{primary_span} = $primary_span if ref($primary_span) eq "HASH";
+    $finding->{wire_span} = $wire_span if ref($wire_span) eq "HASH";
+    push @{$domain->{findings}}, $finding;
 }
 
 sub is_explicit_any_token {
@@ -3102,7 +5287,7 @@ sub regexp_constructor_call_index {
 }
 
 sub analyze_regex_pattern {
-    my ($domain, $path, $line, $source, $flags, $origin) = @_;
+    my ($domain, $path, $line, $source, $flags, $origin, $primary_span) = @_;
     $domain->{totalRegexps} += 1;
     $domain->{statefulRegexps} += 1 if defined $flags && $flags =~ /[gy]/;
 
@@ -3115,7 +5300,8 @@ sub analyze_regex_pattern {
             $line,
             $origin,
             $source,
-            $risk->{message}
+            $risk->{message},
+            $primary_span
         );
     }
 }
@@ -3149,7 +5335,7 @@ sub regex_redos_risks {
 }
 
 sub add_regex_risk_finding {
-    my ($domain, $kind, $path, $line, $origin, $source, $message) = @_;
+    my ($domain, $kind, $path, $line, $origin, $source, $message, $primary_span) = @_;
     my %field_by_kind = (
         backreference => "backreferenceRisks",
         nested_unbounded_quantifier => "nestedQuantifierRisks",
@@ -3159,15 +5345,19 @@ sub add_regex_risk_finding {
     my $field = $field_by_kind{$kind};
     $domain->{$field} += 1 if defined $field;
     $domain->{totalRedosRisks} += 1;
-    push @{$domain->{findings}}, {
+    my $finding = {
         kind => $kind,
         path => $path,
         line => $line,
-        where => "$path:$line",
+        where => ref($primary_span) eq "HASH"
+            ? human_span_location($primary_span)
+            : "$path:$line",
         origin => $origin,
         source => $source,
         message => $message
     };
+    $finding->{primary_span} = $primary_span if ref($primary_span) eq "HASH";
+    push @{$domain->{findings}}, $finding;
 }
 
 sub normalize_regex_source_for_redos {
@@ -4642,6 +6832,27 @@ sub policy_script_ir {
     my $policy_source = -f "scripts/contributing-policy.pl"
         ? read_text("scripts/contributing-policy.pl")
         : "";
+    my $frontend_source = -f "tools/analyzer/typescript-frontend.mjs"
+        ? read_text("tools/analyzer/typescript-frontend.mjs")
+        : "";
+    my $bridge_source = -f "scripts/typescript-policy-bridge.mjs"
+        ? read_text("scripts/typescript-policy-bridge.mjs")
+        : "";
+    my $hm_source = -f "tools/analyzer/hm-inference.mjs"
+        ? read_text("tools/analyzer/hm-inference.mjs")
+        : "";
+    my $lsp_source = -f "tools/analyzer/lsp.mjs"
+        ? read_text("tools/analyzer/lsp.mjs")
+        : "";
+    my $ast_test_source = -f "test/contributing-policy-ast.test.ts"
+        ? read_text("test/contributing-policy-ast.test.ts")
+        : "";
+    my $ast_fixture_source = -f "test/fixtures/contributing-policy/ast-regression.ts.txt"
+        ? read_text("test/fixtures/contributing-policy/ast-regression.ts.txt")
+        : "";
+    my $invalid_fixture_source = -f "test/fixtures/contributing-policy/invalid-regression.ts.txt"
+        ? read_text("test/fixtures/contributing-policy/invalid-regression.ts.txt")
+        : "";
     return {
         source_policy => -f "scripts/source-policy.mjs" ? read_text("scripts/source-policy.mjs") : "",
         severity_levels => index($policy_source, '"error"') >= 0 &&
@@ -4649,18 +6860,41 @@ sub policy_script_ir {
             index($policy_source, '"notice"') >= 0,
         verbose_notices => index($policy_source, "--verbose") >= 0 &&
             index($policy_source, "show_notices") >= 0,
-        template_lexer_self_tests => index($policy_source, "run_lexer_self_tests") >= 0 &&
-            index($policy_source, "nested template literal lexer self-tests") >= 0,
-        import_ast_self_tests => index($policy_source, "assert_runtime_imports") >= 0 &&
-            index($policy_source, "type-only import/export classification") >= 0,
-        type_named_value_self_tests => index($policy_source, "type named value import classification") >= 0 &&
-            index($policy_source, "runtime-type.js") >= 0,
-        lex_error_self_tests => index($policy_source, "assert_lexer_errors") >= 0 &&
-            index($policy_source, "unterminated template interpolation") >= 0,
-        dynamic_import_self_tests => index($policy_source, "dynamic import graph extraction") >= 0 &&
-            index($policy_source, "import(\"./runtime.js\")") >= 0,
-        semicolonless_import_self_tests => index($policy_source, "semicolonless import graph extraction") >= 0 &&
-            index($policy_source, "import(\"./c.js\")") >= 0,
+        typescript_compiler_frontend => index($frontend_source, "createProgram") >= 0 &&
+            index($frontend_source, "getTypeChecker") >= 0 &&
+            index($frontend_source, "getResolvedSignature") >= 0 &&
+            index($frontend_source, "utf-16") >= 0 &&
+            index($bridge_source, "analyzeTypeScriptProject") >= 0 &&
+            index($policy_source, "typescript_frontend_ir") >= 0,
+        type_inference_frontend => index($frontend_source, "getTypeAtLocation") >= 0 &&
+            index($hm_source, "selectTypeAuthority") >= 0 &&
+            index($hm_source, "selected") >= 0 &&
+            index($hm_source, "unify") >= 0 &&
+            index($hm_source, "occurs") >= 0 &&
+            index($hm_source, "supplement") >= 0,
+        language_server => index($lsp_source, "createLanguageService") >= 0 &&
+            index($lsp_source, "publishDiagnostics") >= 0 &&
+            index($lsp_source, "textDocument/hover") >= 0 &&
+            index($lsp_source, "textDocument/codeAction") >= 0 &&
+            index($lsp_source, "types.unsafe-escape") >= 0 &&
+            index($lsp_source, "security.redos-risk") >= 0 &&
+            index($lsp_source, "collectAstPolicyDiagnostics") >= 0 &&
+            index($lsp_source, "utf-16") >= 0,
+        template_lexer_self_tests => index($frontend_source, "forEachChild") >= 0 &&
+            index($ast_fixture_source, "inner \${") >= 0 &&
+            index($ast_test_source, "nested syntax structurally") >= 0,
+        import_ast_self_tests => index($frontend_source, "isImportDeclaration") >= 0 &&
+            index($ast_fixture_source, "phantom.js") >= 0 &&
+            index($ast_test_source, "not.toContain(\"phantom.js\")") >= 0,
+        type_named_value_self_tests => index($frontend_source, "isTypeOnly") >= 0 &&
+            index($ast_fixture_source, "type Box") >= 0,
+        lex_error_self_tests => index($frontend_source, "getSyntacticDiagnostics") >= 0 &&
+            index($invalid_fixture_source, "const broken") >= 0 &&
+            index($ast_test_source, "malformed syntax") >= 0,
+        dynamic_import_self_tests => index($frontend_source, "ImportKeyword") >= 0 &&
+            index($frontend_source, "CallExpression") >= 0,
+        semicolonless_import_self_tests => index($frontend_source, "isImportDeclaration") >= 0 &&
+            index($frontend_source, "moduleSpecifier") >= 0,
         function_ir_self_tests => index($policy_source, "run_function_ir_self_tests") >= 0 &&
             index($policy_source, "build_function_graph") >= 0 &&
             index($policy_source, "build_function_abstract_state") >= 0,
@@ -4690,13 +6924,15 @@ sub policy_script_ir {
             index($policy_source, "source_declaration_span") >= 0 &&
             index($policy_source, "variable declaration suppression") >= 0 &&
             index($policy_source, "run_source_suppression_self_tests") >= 0,
-        type_escape_domain => index($policy_source, "build_type_escape_domain_summary") >= 0 &&
+        type_escape_domain => index($policy_source, "frontend_type_escape_domain_summary") >= 0 &&
+            index($frontend_source, "typeEscapes") >= 0 &&
             index($policy_source, "run_type_escape_domain_self_tests") >= 0 &&
             index($policy_source, "types.escape-domain") >= 0 &&
             index($policy_source, "types.unsafe-escape") >= 0 &&
             index($policy_source, "typeEscapeBudget") >= 0 &&
             index($policy_source, "Type escape") >= 0,
-        regex_safety_domain => index($policy_source, "build_regex_safety_domain_summary") >= 0 &&
+        regex_safety_domain => index($policy_source, "frontend_regex_safety_domain_summary") >= 0 &&
+            index($frontend_source, "regexps") >= 0 &&
             index($policy_source, "run_regex_safety_domain_self_tests") >= 0 &&
             index($policy_source, "security.regex-domain") >= 0 &&
             index($policy_source, "security.redos-risk") >= 0 &&
@@ -5373,6 +7609,111 @@ sub merge_lex_parts {
     push @{$tokens}, @{$part->{tokens}};
     push @{$strings}, @{$part->{strings}};
     push @{$jsdocs}, @{$part->{jsdocs}};
+}
+
+sub run_typescript_frontend_adapter_self_tests {
+    my $path = "test/fixtures/contributing-policy/ast-regression.ts.txt";
+    return if !-f $path;
+    my $wire = {
+        path => $path,
+        start => { line => 46, character => 35, offset => 1654 },
+        end => { line => 46, character => 41, offset => 1660 },
+        encoding => "utf-16",
+        lineBase => 0,
+        columnBase => 0,
+        endExclusive => JSON::PP::true
+    };
+    my $human = frontend_span_to_human($wire, $path);
+    die "TypeScript frontend adapter self-test failed: UTF-16 start column conversion drifted\n"
+        if ($human->{line} // 0) != 47 || ($human->{column} // 0) != 35;
+    die "TypeScript frontend adapter self-test failed: UTF-16 end column conversion drifted\n"
+        if ($human->{end_line} // 0) != 47 || ($human->{end_column} // 0) != 41;
+    my $source_line = terminal_source_line($path, $human->{line});
+    die "TypeScript frontend adapter self-test failed: converted source range drifted\n"
+        if !defined $source_line || substr(
+            $source_line,
+            $human->{column} - 1,
+            $human->{end_column} - $human->{column}
+        ) ne "input!";
+    my $diag = diagnostic(
+        "error",
+        "ts.type-check",
+        human_span_location($human),
+        "synthetic UTF-16 adapter check",
+        {
+            primary_span => $human,
+            wire_span => $wire
+        }
+    );
+    my $region = sarif_region_for_diagnostic($diag, 1);
+    die "TypeScript frontend adapter self-test failed: SARIF UTF-16 region drifted\n"
+        if ($region->{startLine} // 0) != 47 ||
+            ($region->{startColumn} // 0) != 36 ||
+            ($region->{endLine} // 0) != 47 ||
+            ($region->{endColumn} // 0) != 42;
+
+    my $thread_location = sarif_thread_location({
+        path => $path,
+        line => 1,
+        column => 1,
+        wire_line => 46,
+        wire_column => 35,
+        wire_end_line => 46,
+        wire_end_column => 41,
+        start_offset => 1654,
+        end_offset => 1660,
+        message => "synthetic flow range"
+    });
+    my $thread_region = $thread_location->{location}{physicalLocation}{region};
+    die "TypeScript frontend adapter self-test failed: SARIF flow lost wire UTF-16 coordinates\n"
+        if ($thread_region->{startLine} // 0) != 47 ||
+            ($thread_region->{startColumn} // 0) != 36 ||
+            ($thread_region->{endLine} // 0) != 47 ||
+            ($thread_region->{endColumn} // 0) != 42 ||
+            ($thread_region->{charOffset} // -1) != 1654 ||
+            ($thread_region->{charLength} // -1) != 6;
+
+    my @unicode_lines = frontend_source_lines(
+        "first" . chr(0x2028) . "second" . chr(0x2029) . "third"
+    );
+    die "TypeScript frontend adapter self-test failed: ECMAScript line separators drifted\n"
+        if @unicode_lines != 3 ||
+            $unicode_lines[0] ne "first" ||
+            $unicode_lines[1] ne "second" ||
+            $unicode_lines[2] ne "third";
+
+    my @span_errors;
+    my %safe_path_cache;
+    validate_typescript_frontend_span(
+        $wire,
+        "selftest.span",
+        \@span_errors,
+        \%safe_path_cache,
+        0
+    );
+    die "TypeScript frontend adapter self-test failed: valid canonical span was rejected\n"
+        if @span_errors != 0;
+    my %invalid_wire = (%{$wire}, encoding => "utf-8");
+    @span_errors = ();
+    validate_typescript_frontend_span(
+        \%invalid_wire,
+        "selftest.invalidSpan",
+        \@span_errors,
+        \%safe_path_cache,
+        0
+    );
+    die "TypeScript frontend adapter self-test failed: invalid range encoding was accepted\n"
+        if @span_errors == 0;
+
+    die "TypeScript frontend adapter self-test failed: degraded frontend was marked available\n"
+        if typescript_frontend_available({
+            protocol => "typesea.typescript-frontend/v1",
+            files => [],
+            health => {
+                status => "degraded",
+                available => JSON::PP::true
+            }
+        });
 }
 
 sub run_lexer_self_tests {
@@ -6061,6 +8402,13 @@ sub run_analysis_coverage_model_self_tests {
             invalid_source_suppressions => [],
             schema_tags => ["String"],
             node_tags => ["SchemaCheck"],
+            structural_analysis => {
+                authority => "typescript-compiler-api",
+                rangeEncoding => { encoding => "utf-16" },
+                astFunctionCount => 1,
+                calls => [{ callerId => "probe", targetId => "helper" }],
+                typeFacts => [{ name => "probe", selected => { source => "typescript" } }]
+            },
             function_analysis => {
                 functions => [{ name => "probe", path => "src/probe.ts", line => 1 }],
                 graph => {
@@ -7247,6 +9595,354 @@ sub run_function_ir_self_tests {
         die "function IR self-test failed: variant-state abstract domain was not summarized\n";
     }
 
+    my %legacy_by_name = map { $_->{name} => $_ } @functions;
+    my $wire_span = sub {
+        my ($path, $line, $end_line, $start_offset, $end_offset) = @_;
+        return {
+            path => $path,
+            start => { line => $line - 1, character => 0, offset => $start_offset },
+            end => { line => $end_line - 1, character => 1, offset => $end_offset },
+            encoding => "utf-16",
+            lineBase => 0,
+            columnBase => 0,
+            endExclusive => JSON::PP::true
+        };
+    };
+    my $self_path = "src/plan/function-ir-self-test.ts";
+    my $alpha_legacy = $legacy_by_name{alpha};
+    my $beta_legacy = $legacy_by_name{beta};
+    my @ast_functions = (
+        {
+            id => "ast-alpha",
+            symbolId => "symbol-alpha",
+            name => "alpha",
+            kind => "function",
+            hasBody => JSON::PP::true,
+            span => $wire_span->($self_path, $alpha_legacy->{line}, $alpha_legacy->{end_line}, 10, 90),
+            bodySpan => $wire_span->($self_path, $alpha_legacy->{line}, $alpha_legacy->{end_line}, 20, 90),
+            parameters => [{ name => "value", inferredType => "unknown" }],
+            calls => [
+                {
+                    id => "call-alpha-beta-1",
+                    name => "beta",
+                    targetId => "ast-beta-overload",
+                    argumentIdentifiers => ["value"],
+                    span => $wire_span->($self_path, $alpha_legacy->{line} + 1, $alpha_legacy->{line} + 1, 30, 34)
+                },
+                {
+                    id => "call-alpha-beta-2",
+                    name => "beta",
+                    targetId => "ast-beta-overload",
+                    argumentIdentifiers => ["value"],
+                    span => $wire_span->($self_path, $alpha_legacy->{line} + 2, $alpha_legacy->{line} + 2, 40, 44)
+                }
+            ]
+        },
+        {
+            id => "ast-beta-overload",
+            symbolId => "symbol-beta",
+            name => "beta",
+            kind => "function",
+            hasBody => JSON::PP::false,
+            span => $wire_span->($self_path, $beta_legacy->{line} - 1, $beta_legacy->{line} - 1, 91, 95),
+            bodySpan => undef,
+            parameters => []
+        },
+        {
+            id => "ast-beta",
+            symbolId => "symbol-beta",
+            name => "beta",
+            kind => "function",
+            hasBody => JSON::PP::true,
+            span => $wire_span->($self_path, $beta_legacy->{line}, $beta_legacy->{end_line}, 100, 180),
+            bodySpan => $wire_span->($self_path, $beta_legacy->{line}, $beta_legacy->{end_line}, 110, 180),
+            parameters => [{ name => "input", inferredType => "unknown" }],
+            calls => [{
+                id => "call-beta-alpha",
+                name => "alpha",
+                targetId => "ast-alpha",
+                argumentIdentifiers => ["input"],
+                span => $wire_span->($self_path, $beta_legacy->{line} + 1, $beta_legacy->{line} + 1, 120, 125)
+            }]
+        },
+        {
+            id => "ast-method",
+            symbolId => "symbol-method",
+            name => "methodOnly",
+            kind => "method",
+            hasBody => JSON::PP::true,
+            span => $wire_span->($self_path, 500, 503, 5000, 5060),
+            bodySpan => $wire_span->($self_path, 500, 503, 5010, 5060),
+            parameters => [{ name => "payload", inferredType => "unknown" }],
+            calls => [
+                {
+                    id => "call-method-self",
+                    name => "methodOnly",
+                    targetId => "ast-method",
+                    argumentIdentifiers => ["payload"],
+                    span => $wire_span->($self_path, 501, 501, 5020, 5030)
+                },
+                {
+                    id => "call-method-external",
+                    name => "external",
+                    argumentIdentifiers => ["payload"],
+                    span => $wire_span->($self_path, 502, 502, 5040, 5050)
+                }
+            ]
+        }
+    );
+    my ($ast_analysis, $adapter, $redirects) = merge_ast_function_summaries(
+        [$alpha_legacy, $beta_legacy],
+        \@ast_functions,
+        {
+            "ast-alpha" => $alpha_legacy,
+            "ast-beta" => $beta_legacy
+        }
+    );
+    die "function IR self-test failed: AST body inventory was not merged exactly\n"
+        if @{$ast_analysis} != 3 ||
+            $adapter->{tokenMetricFunctionCount} != 2 ||
+            $adapter->{astSlicedMetricFunctionCount} != 2 ||
+            $adapter->{legacyExactMatchCount} != 2 ||
+            $adapter->{neutralMetricFunctionCount} != 1 ||
+            $adapter->{astDeclarationOnlyCount} != 1 ||
+            $adapter->{structuralCoverageGap} != 0;
+    die "function IR self-test failed: overload signature did not map to its implementation\n"
+        if ($redirects->{"ast-beta-overload"} // "") ne "ast-beta";
+    my $exact_graph = build_function_graph(
+        $ast_analysis,
+        { authority => "typescript-type-checker", target_redirects => $redirects }
+    );
+    die "function IR self-test failed: exact callsites were not relationship-deduplicated\n"
+        if $exact_graph->{resolvedCallsites} != 4 ||
+            $exact_graph->{resolvedRelationships} != 3 ||
+            $exact_graph->{overloadRedirects} != 1 ||
+            @{$exact_graph->{unresolvedCalls}} != 1;
+    my ($unknown_function) = grep { !$_->{localMetricsAvailable} } @{$ast_analysis};
+    die "function IR self-test failed: neutral AST metrics were misclassified as a pure contract\n"
+        if !defined $unknown_function || $unknown_function->{contract}{pureCandidate};
+    my $exact_abstract = build_function_abstract_state($ast_analysis, $exact_graph);
+    die "function IR self-test failed: neutral metrics were not counted as unknown\n"
+        if $exact_abstract->{domains}{descriptor}{unknown} != 1 ||
+            $exact_abstract->{domains}{sink}{unknown} != 1;
+    die "function IR self-test failed: unknown recursive AST body was classified as unbounded\n"
+        if $exact_abstract->{recursion}{indeterminateCycles} == 0;
+
+    my $template_metric_source =
+        'function outer(value = eval("x")) { return `${(() => value)()}`; }';
+    my $outer_body_start = index($template_metric_source, "{");
+    my $outer_body_end = rindex($template_metric_source, "}") + 1;
+    my $default_start = index($template_metric_source, 'eval("x")');
+    my $default_end = $default_start + length('eval("x")');
+    my $arrow_start = index($template_metric_source, "() => value");
+    my $arrow_end = $arrow_start + length("() => value");
+    my $value_start = index($template_metric_source, "value", $arrow_start);
+    my @template_functions = (
+        {
+            id => "ast-template-outer",
+            kind => "function",
+            hasBody => JSON::PP::true,
+            name => "outer",
+            span => $wire_span->("src/template-metric-self-test.ts", 1, 1, 0, length($template_metric_source)),
+            bodySpan => $wire_span->("src/template-metric-self-test.ts", 1, 1, $outer_body_start, $outer_body_end),
+            parameters => [{
+                name => "value",
+                inferredType => "unknown",
+                initializerSpan => $wire_span->("src/template-metric-self-test.ts", 1, 1, $default_start, $default_end)
+            }]
+        },
+        {
+            id => "ast-template-arrow",
+            kind => "arrow",
+            hasBody => JSON::PP::true,
+            name => "<arrow>",
+            span => $wire_span->("src/template-metric-self-test.ts", 1, 1, $arrow_start, $arrow_end),
+            bodySpan => $wire_span->("src/template-metric-self-test.ts", 1, 1, $value_start, $value_start + length("value")),
+            parameters => []
+        }
+    );
+    my $template_index = build_ast_function_interval_index(\@template_functions);
+    my $template_metrics = ast_function_metric_summary_from_source(
+        "src/template-metric-self-test.ts",
+        encode("UTF-16LE", $template_metric_source),
+        $template_functions[0],
+        $template_index
+    );
+    die "function IR self-test failed: template-nested AST body metric extraction failed\n"
+        if !defined $template_metrics;
+    die "function IR self-test failed: default parameter dynamic sink was omitted\n"
+        if $template_metrics->{dynamic_code_sinks} == 0;
+    die "function IR self-test failed: nested closure allocation was omitted or treated as pure\n"
+        if $template_metrics->{effect}{closures} != 1 ||
+            $template_metrics->{contract}{pureCandidate};
+
+    my $computed_metric_source =
+        'function computedOuter(input) { class C { [String(() => eval(input))]() {} } return C; }';
+    my $computed_outer_body_start = index($computed_metric_source, "{");
+    my $computed_outer_body_end = rindex($computed_metric_source, "}") + 1;
+    my $computed_method_start = index($computed_metric_source, "[String(");
+    my $computed_name_end = index($computed_metric_source, "]", $computed_method_start) + 1;
+    my $computed_method_body_start = index($computed_metric_source, "{}", $computed_name_end);
+    my $computed_method_end = $computed_method_body_start + 2;
+    my $computed_arrow_start = index($computed_metric_source, "() => eval(input)");
+    my $computed_arrow_end = $computed_arrow_start + length("() => eval(input)");
+    my $computed_eval_start = index($computed_metric_source, "eval(input)", $computed_arrow_start);
+    my @computed_functions = (
+        {
+            id => "ast-computed-outer",
+            kind => "function",
+            hasBody => JSON::PP::true,
+            name => "computedOuter",
+            span => $wire_span->("src/computed-metric-self-test.ts", 1, 1, 0, length($computed_metric_source)),
+            bodySpan => $wire_span->("src/computed-metric-self-test.ts", 1, 1, $computed_outer_body_start, $computed_outer_body_end),
+            parameters => []
+        },
+        {
+            id => "ast-computed-method",
+            kind => "method",
+            hasBody => JSON::PP::true,
+            name => "[computed]",
+            nameComputed => JSON::PP::true,
+            span => $wire_span->("src/computed-metric-self-test.ts", 1, 1, $computed_method_start, $computed_method_end),
+            nameSpan => $wire_span->("src/computed-metric-self-test.ts", 1, 1, $computed_method_start, $computed_name_end),
+            bodySpan => $wire_span->("src/computed-metric-self-test.ts", 1, 1, $computed_method_body_start, $computed_method_end),
+            parameters => []
+        },
+        {
+            id => "ast-computed-arrow",
+            kind => "arrow",
+            hasBody => JSON::PP::true,
+            name => "<arrow>",
+            span => $wire_span->("src/computed-metric-self-test.ts", 1, 1, $computed_arrow_start, $computed_arrow_end),
+            bodySpan => $wire_span->("src/computed-metric-self-test.ts", 1, 1, $computed_eval_start, $computed_eval_start + length("eval(input)")),
+            parameters => []
+        }
+    );
+    my $computed_index = build_ast_function_interval_index(\@computed_functions);
+    my $computed_metrics = ast_function_metric_summary_from_source(
+        "src/computed-metric-self-test.ts",
+        encode("UTF-16LE", $computed_metric_source),
+        $computed_functions[0],
+        $computed_index
+    );
+    die "function IR self-test failed: computed-name metric extraction failed\n"
+        if !defined $computed_metrics;
+    die "function IR self-test failed: uninvoked computed-name closure body leaked into parent\n"
+        if $computed_metrics->{dynamic_code_sinks} != 0;
+    die "function IR self-test failed: computed-name closure allocation was omitted\n"
+        if $computed_metrics->{effect}{closures} != 1;
+
+    my $runtime_metric_source =
+        'function loopOwner() { for (;;) { class C { value = new Map(); callback = () => eval("later"); } break; } }';
+    my $runtime_outer_body_start = index($runtime_metric_source, "{");
+    my $runtime_outer_body_end = rindex($runtime_metric_source, "}") + 1;
+    my $runtime_map_start = index($runtime_metric_source, "new Map()");
+    my $runtime_arrow_start = index($runtime_metric_source, '() => eval("later")');
+    my $runtime_arrow_end = $runtime_arrow_start + length('() => eval("later")');
+    my $runtime_eval_start = index($runtime_metric_source, 'eval("later")', $runtime_arrow_start);
+    my @runtime_functions = (
+        {
+            id => "ast-runtime-loop-owner",
+            kind => "function",
+            hasBody => JSON::PP::true,
+            name => "loopOwner",
+            span => $wire_span->("src/runtime-metric-self-test.ts", 1, 1, 0, length($runtime_metric_source)),
+            bodySpan => $wire_span->("src/runtime-metric-self-test.ts", 1, 1, $runtime_outer_body_start, $runtime_outer_body_end),
+            parameters => []
+        },
+        {
+            id => "ast-runtime-field-arrow",
+            kind => "arrow",
+            hasBody => JSON::PP::true,
+            name => "callback",
+            span => $wire_span->("src/runtime-metric-self-test.ts", 1, 1, $runtime_arrow_start, $runtime_arrow_end),
+            bodySpan => $wire_span->("src/runtime-metric-self-test.ts", 1, 1, $runtime_eval_start, $runtime_eval_start + length('eval("later")')),
+            parameters => []
+        }
+    );
+    my $runtime_owner = {
+        id => "runtime-instance-owner",
+        kind => "class-instance-init",
+        hasBody => JSON::PP::true,
+        name => "C.<instance-init>",
+        span => $wire_span->("src/runtime-metric-self-test.ts", 1, 1, $runtime_map_start, $runtime_arrow_end),
+        parameters => [],
+        metricSpans => [
+            {
+                role => "instance-field-initializer",
+                span => $wire_span->("src/runtime-metric-self-test.ts", 1, 1, $runtime_map_start, $runtime_map_start + length("new Map()"))
+            },
+            {
+                role => "instance-field-initializer",
+                span => $wire_span->("src/runtime-metric-self-test.ts", 1, 1, $runtime_arrow_start, $runtime_arrow_end)
+            }
+        ]
+    };
+    my $runtime_index = build_ast_function_interval_index(
+        \@runtime_functions,
+        [$runtime_owner]
+    );
+    my $runtime_outer_metrics = ast_function_metric_summary_from_source(
+        "src/runtime-metric-self-test.ts",
+        encode("UTF-16LE", $runtime_metric_source),
+        $runtime_functions[0],
+        $runtime_index
+    );
+    my $runtime_instance_metrics = runtime_owner_metric_summary_from_source(
+        "src/runtime-metric-self-test.ts",
+        encode("UTF-16LE", $runtime_metric_source),
+        $runtime_owner,
+        $runtime_index
+    );
+    die "function IR self-test failed: foreign runtime metric extraction failed\n"
+        if !defined $runtime_outer_metrics || !defined $runtime_instance_metrics;
+    die "function IR self-test failed: instance initializer leaked into class-definition owner\n"
+        if $runtime_outer_metrics->{effect}{allocations} != 0 ||
+            $runtime_outer_metrics->{effect}{closures} != 0 ||
+            $runtime_outer_metrics->{dynamic_code_sinks} != 0;
+    die "function IR self-test failed: instance runtime owner lost allocation/closure ownership\n"
+        if $runtime_instance_metrics->{effect}{allocations} != 1 ||
+            $runtime_instance_metrics->{effect}{closures} != 1 ||
+            $runtime_instance_metrics->{dynamic_code_sinks} != 0;
+
+    my $type_only_metric_source =
+        'function harmless() { type Policy = { eval(source: string): unknown }; type Factory = new () => object; return 1; }';
+    my $type_only_body_start = index($type_only_metric_source, "{");
+    my $type_only_body_end = rindex($type_only_metric_source, "}") + 1;
+    my $policy_type_start = index($type_only_metric_source, "type Policy");
+    my $policy_type_end = index($type_only_metric_source, ";", $policy_type_start) + 1;
+    my $factory_type_start = index($type_only_metric_source, "type Factory");
+    my $factory_type_end = index($type_only_metric_source, ";", $factory_type_start) + 1;
+    my $type_only_function = {
+        id => "ast-type-only-harmless",
+        kind => "function",
+        hasBody => JSON::PP::true,
+        name => "harmless",
+        span => $wire_span->("src/type-only-metric-self-test.ts", 1, 1, 0, length($type_only_metric_source)),
+        bodySpan => $wire_span->("src/type-only-metric-self-test.ts", 1, 1, $type_only_body_start, $type_only_body_end),
+        parameters => []
+    };
+    my @type_only_spans = (
+        $wire_span->("src/type-only-metric-self-test.ts", 1, 1, $policy_type_start, $policy_type_end),
+        $wire_span->("src/type-only-metric-self-test.ts", 1, 1, $factory_type_start, $factory_type_end)
+    );
+    my $type_only_index = build_ast_function_interval_index(
+        [$type_only_function],
+        [],
+        \@type_only_spans
+    );
+    my $type_only_metrics = ast_function_metric_summary_from_source(
+        "src/type-only-metric-self-test.ts",
+        encode("UTF-16LE", $type_only_metric_source),
+        $type_only_function,
+        $type_only_index
+    );
+    die "function IR self-test failed: type-only metric extraction failed\n"
+        if !defined $type_only_metrics;
+    die "function IR self-test failed: type-only eval/construct signature leaked into runtime metrics\n"
+        if $type_only_metrics->{dynamic_code_sinks} != 0 ||
+            $type_only_metrics->{effect}{allocations} != 0;
+
     my $async_source = q~
         async function sequentialLoop(values, state) {
             for (const value of values) {
@@ -7809,12 +10505,17 @@ sub find_matching_open_paren_token {
 }
 
 sub read_function_summaries {
-    my ($path, $tokens) = @_;
+    my ($path, $tokens, $locations_only) = @_;
     my @functions;
     for (my $index = 0; $index < @{$tokens}; $index += 1) {
         my $value = token_value($tokens, $index);
         if ($value eq "function") {
-            my ($summary, $end) = read_function_declaration_summary($path, $tokens, $index);
+            my ($summary, $end) = read_function_declaration_summary(
+                $path,
+                $tokens,
+                $index,
+                $locations_only
+            );
             if (defined $summary) {
                 push @functions, $summary;
                 $index = $end;
@@ -7822,7 +10523,12 @@ sub read_function_summaries {
             next;
         }
         if ($value eq "=>") {
-            my ($summary, $end) = read_arrow_function_summary($path, $tokens, $index);
+            my ($summary, $end) = read_arrow_function_summary(
+                $path,
+                $tokens,
+                $index,
+                $locations_only
+            );
             if (defined $summary) {
                 push @functions, $summary;
                 $index = $end if $end > $index;
@@ -7833,7 +10539,7 @@ sub read_function_summaries {
 }
 
 sub read_function_declaration_summary {
-    my ($path, $tokens, $index) = @_;
+    my ($path, $tokens, $index, $locations_only) = @_;
     my $name_index = token_type($tokens, $index + 1) eq "id" ? $index + 1 : undef;
     my $name = defined $name_index ? token_value($tokens, $name_index) : "anonymous";
     my $params_open = find_token_value($tokens, "(", $index + 1, min_number($index + 16, scalar(@{$tokens})));
@@ -7844,11 +10550,22 @@ sub read_function_declaration_summary {
     return (undef, $index) if !defined $body_open;
     my $body_close = find_matching_brace_token($tokens, $body_open, scalar(@{$tokens}));
     return (undef, $index) if !defined $body_close;
+    my $exported = token_value($tokens, $index - 1) eq "export" ||
+        token_value($tokens, $index - 2) eq "export";
     return (
-        summarize_function_tokens(
+        $locations_only
+        ? summarize_function_location(
             $path,
             $name,
-            token_value($tokens, $index - 1) eq "export" || token_value($tokens, $index - 2) eq "export",
+            $exported,
+            $tokens,
+            $index,
+            $body_close
+        )
+        : summarize_function_tokens(
+            $path,
+            $name,
+            $exported,
             $tokens,
             $index,
             $params_open,
@@ -7861,7 +10578,7 @@ sub read_function_declaration_summary {
 }
 
 sub read_arrow_function_summary {
-    my ($path, $tokens, $arrow_index) = @_;
+    my ($path, $tokens, $arrow_index, $locations_only) = @_;
     my $body_open = token_value($tokens, $arrow_index + 1) eq "{"
         ? $arrow_index + 1
         : undef;
@@ -7906,11 +10623,22 @@ sub read_arrow_function_summary {
         $params_close = $arrow_index;
     }
 
+    my $exported = token_value($tokens, $assign_index - 2) eq "export" ||
+        token_value($tokens, $assign_index - 3) eq "export";
     return (
-        summarize_function_tokens(
+        $locations_only
+        ? summarize_function_location(
             $path,
             $name,
-            token_value($tokens, $assign_index - 2) eq "export" || token_value($tokens, $assign_index - 3) eq "export",
+            $exported,
+            $tokens,
+            $assign_index,
+            $body_close
+        )
+        : summarize_function_tokens(
+            $path,
+            $name,
+            $exported,
             $tokens,
             $assign_index,
             $params_open,
@@ -7920,6 +10648,20 @@ sub read_arrow_function_summary {
         ),
         $body_close
     );
+}
+
+sub summarize_function_location {
+    my ($path, $name, $exported, $tokens, $start, $body_close) = @_;
+    my $line = token_line($tokens, $start);
+    my $end_line = token_line($tokens, $body_close);
+    return {
+        id => function_id($path, $name, $line),
+        path => $path,
+        name => $name,
+        line => $line,
+        end_line => $end_line,
+        exported => $exported ? 1 : 0
+    };
 }
 
 sub summarize_function_tokens {
@@ -10213,15 +12955,18 @@ sub build_recursion_domain {
         depthGuards => 0,
         weakGuards => 0,
         proofedMembers => 0,
-        unprovedMembers => 0
+        unprovedMembers => 0,
+        unknownMembers => 0
     );
     my @bounded;
     my @unbounded;
+    my @indeterminate;
 
     for my $cycle (@{$graph->{cycles}}) {
         my @members = grep { defined $_ } map { $by_id{$_} } @{$cycle};
         my @summaries;
         my $proofed_members = 0;
+        my $unknown_members = 0;
         my %cycle_proofs = (
             admissionGuards => 0,
             cycleGuards => 0,
@@ -10231,30 +12976,37 @@ sub build_recursion_domain {
 
         for my $fn (@members) {
             my $proof = $fn->{recursion_proof};
-            my $has_proof = defined $proof && $proof->{hasProof} ? 1 : 0;
+            my $metrics_available = !exists $fn->{localMetricsAvailable} ||
+                $fn->{localMetricsAvailable} ? 1 : 0;
+            my $has_proof = $metrics_available && defined $proof && $proof->{hasProof} ? 1 : 0;
             $proofed_members += 1 if $has_proof;
+            $unknown_members += 1 if !$metrics_available;
             for my $key (qw(admissionGuards cycleGuards depthGuards weakGuards)) {
                 my $value = defined $proof ? ($proof->{$key} // 0) : 0;
                 $cycle_proofs{$key} += $value;
                 $totals{$key} += $value;
             }
-            push @summaries, recursion_member_summary($fn, $proof, $has_proof);
+            push @summaries, recursion_member_summary($fn, $proof, $has_proof, $metrics_available);
         }
 
-        my $unproved_members = scalar(@members) - $proofed_members;
+        my $unproved_members = scalar(@members) - $proofed_members - $unknown_members;
         $totals{proofedMembers} += $proofed_members;
         $totals{unprovedMembers} += $unproved_members;
+        $totals{unknownMembers} += $unknown_members;
 
         my $entry = {
             size => scalar(@members),
             where => @summaries != 0 ? $summaries[0]{where} : "src",
             proofedMembers => $proofed_members,
             unprovedMembers => $unproved_members,
+            unknownMembers => $unknown_members,
             proofs => \%cycle_proofs,
             members => \@summaries
         };
 
-        if ($proofed_members != 0) {
+        if ($unknown_members != 0) {
+            push @indeterminate, $entry;
+        } elsif ($proofed_members != 0) {
             push @bounded, $entry;
         } else {
             push @unbounded, $entry;
@@ -10265,14 +13017,16 @@ sub build_recursion_domain {
         cycles => scalar(@{$graph->{cycles}}),
         boundedCycles => scalar(@bounded),
         unboundedCycles => scalar(@unbounded),
+        indeterminateCycles => scalar(@indeterminate),
         proofTotals => \%totals,
         bounded => \@bounded,
-        unbounded => \@unbounded
+        unbounded => \@unbounded,
+        indeterminate => \@indeterminate
     };
 }
 
 sub recursion_member_summary {
-    my ($fn, $proof, $has_proof) = @_;
+    my ($fn, $proof, $has_proof, $metrics_available) = @_;
     return {
         id => $fn->{id},
         path => $fn->{path},
@@ -10280,6 +13034,7 @@ sub recursion_member_summary {
         where => $fn->{path} . ":" . $fn->{line},
         name => $fn->{name},
         hasProof => $has_proof,
+        localMetricsAvailable => $metrics_available ? 1 : 0,
         proofs => {
             admissionGuards => defined $proof ? ($proof->{admissionGuards} // 0) : 0,
             cycleGuards => defined $proof ? ($proof->{cycleGuards} // 0) : 0,
@@ -10718,7 +13473,6 @@ sub array_copy_call_at {
 sub nested_function_token_at {
     my ($tokens, $index) = @_;
     return 0 if token_value($tokens, $index) ne "function";
-    return 0 if $index == 0;
     return 1;
 }
 
@@ -11017,7 +13771,11 @@ sub token_sequence_at {
 }
 
 sub build_function_graph {
-    my ($functions) = @_;
+    my ($functions, $options) = @_;
+    $options = {} if ref($options) ne "HASH";
+    return build_typescript_function_graph($functions, $options)
+        if ($options->{authority} // "") eq "typescript-type-checker";
+
     my %by_name;
     my %by_file_name;
     for my $fn (@{$functions}) {
@@ -11053,7 +13811,127 @@ sub build_function_graph {
     }
 
     return {
+        authority => "legacy-token-name-resolution",
         edges => \@edges,
+        callsiteEdges => \@edges,
+        resolvedRelationships => scalar(@edges),
+        resolvedCallsites => scalar(@edges),
+        unresolvedCalls => [],
+        externalCalls => [],
+        overloadRedirects => 0,
+        cycles => find_import_cycles(\@edges),
+        fan_in => function_fan_counts(\@edges, "to"),
+        fan_out => function_fan_counts(\@edges, "from")
+    };
+}
+
+sub build_typescript_function_graph {
+    my ($functions, $options) = @_;
+    my %by_id = map {
+        defined $_->{id} && !ref($_->{id}) ? ($_->{id} => $_) : ()
+    } grep { ref($_) eq "HASH" } @{$functions // []};
+    my $redirects = ref($options->{target_redirects}) eq "HASH"
+        ? $options->{target_redirects}
+        : {};
+    my (@callsites, @unresolved, @external);
+    my %seen_callsite;
+    my %relationships;
+    my %used_redirects;
+
+    for my $function (@{$functions // []}) {
+        next if ref($function) ne "HASH" || !defined $function->{id};
+        for my $call (@{array_or_empty($function->{calls})}) {
+            next if ref($call) ne "HASH";
+            my $raw_target = $call->{targetId};
+            if (!defined $raw_target || ref($raw_target) || $raw_target eq "") {
+                push @unresolved, $call;
+                next;
+            }
+            my $target = $redirects->{$raw_target} // $raw_target;
+            $used_redirects{$raw_target} = 1 if $target ne $raw_target;
+            my $target_function = $by_id{$target};
+            if (!defined $target_function) {
+                push @external, {
+                    %{$call},
+                    from => $function->{id},
+                    unresolvedTargetId => $raw_target
+                };
+                next;
+            }
+            my $callsite_key = join("\0",
+                $function->{id},
+                $target,
+                $call->{path} // $function->{path} // "",
+                defined $call->{start_offset} ? $call->{start_offset} : ($call->{line} // ""),
+                $call->{id} // ""
+            );
+            next if $seen_callsite{$callsite_key}++;
+            my $edge = {
+                id => $call->{id},
+                from => $function->{id},
+                to => $target,
+                path => $call->{path} // $function->{path},
+                line => $call->{line},
+                column => $call->{column},
+                end_line => $call->{end_line},
+                end_column => $call->{end_column},
+                start_offset => $call->{start_offset},
+                end_offset => $call->{end_offset},
+                name => $call->{name},
+                arguments => $call->{arguments},
+                tainted_argument => call_carries_taint_candidate($function, $call),
+                cross_file => ($function->{path} // "") ne ($target_function->{path} // "") ? 1 : 0,
+                span => $call->{span},
+                authority => "typescript-type-checker",
+                overloadRedirected => $target ne $raw_target ? 1 : 0
+            };
+            push @callsites, $edge;
+
+            my $relationship_key = join("\0", $function->{id}, $target);
+            if (!exists $relationships{$relationship_key}) {
+                $relationships{$relationship_key} = {
+                    %{$edge},
+                    callsiteCount => 1,
+                    sampleSpans => defined $call->{span} ? [$call->{span}] : [],
+                    taintedSampleSpans => $edge->{tainted_argument} && defined $call->{span}
+                        ? [$call->{span}]
+                        : []
+                };
+            } else {
+                my $relationship = $relationships{$relationship_key};
+                $relationship->{callsiteCount} += 1;
+                if ($edge->{tainted_argument}) {
+                    if (!$relationship->{tainted_argument}) {
+                        for my $field (qw(path line column end_line end_column start_offset end_offset name arguments span)) {
+                            $relationship->{$field} = $edge->{$field};
+                        }
+                    }
+                    $relationship->{tainted_argument} = 1;
+                    if (defined $call->{span} && @{$relationship->{taintedSampleSpans}} < 3) {
+                        push @{$relationship->{taintedSampleSpans}}, $call->{span};
+                    }
+                }
+                if (defined $call->{span} && @{$relationship->{sampleSpans}} < 3) {
+                    push @{$relationship->{sampleSpans}}, $call->{span};
+                }
+            }
+        }
+    }
+
+    my @edges = sort {
+        $a->{from} cmp $b->{from} ||
+            $a->{to} cmp $b->{to}
+    } values %relationships;
+    return {
+        authority => "typescript-type-checker",
+        edges => \@edges,
+        callsiteEdges => \@callsites,
+        resolvedRelationships => scalar(@edges),
+        resolvedCallsites => scalar(@callsites),
+        unresolvedCalls => \@unresolved,
+        externalCalls => \@external,
+        overloadRedirects => scalar(keys %used_redirects),
+        availableOverloadRedirects => scalar(keys %{$redirects}),
         cycles => find_import_cycles(\@edges),
         fan_in => function_fan_counts(\@edges, "to"),
         fan_out => function_fan_counts(\@edges, "from")
@@ -12376,15 +15254,22 @@ sub abstract_domain_counts {
         proofed => 0,
         factory_proofed => 0,
         value_before_proof => 0,
-        missing_proof => 0
+        missing_proof => 0,
+        unknown => 0
     );
     my %sink = (
         none => 0,
         dynamic_code => 0,
         hostile_read => 0,
-        descriptor_value => 0
+        descriptor_value => 0,
+        unknown => 0
     );
     for my $fn (@{$functions}) {
+        if (exists $fn->{localMetricsAvailable} && !$fn->{localMetricsAvailable}) {
+            $descriptor{unknown} += 1;
+            $sink{unknown} += 1;
+            next;
+        }
         if ($fn->{descriptor_value_before_proof} != 0) {
             $descriptor{value_before_proof} += 1;
         } elsif ($fn->{descriptor_reads} == 0 && $fn->{descriptor_value_reads} == 0 && $fn->{descriptor_value_factory_proofs} == 0) {
@@ -12779,6 +15664,7 @@ sub read_json {
 sub read_arg_value {
     my ($name) = @_;
     for (my $index = 0; $index < @ARGV; $index += 1) {
+        return $1 if $ARGV[$index] =~ /\A\Q$name\E=(.*)\z/s;
         next if $ARGV[$index] ne $name;
         return $ARGV[$index + 1]
             if $index + 1 < @ARGV && $ARGV[$index + 1] !~ /\A--/;
@@ -12791,6 +15677,10 @@ sub read_arg_values {
     my ($name) = @_;
     my @values;
     for (my $index = 0; $index < @ARGV; $index += 1) {
+        if ($ARGV[$index] =~ /\A\Q$name\E=(.*)\z/s) {
+            push @values, $1;
+            next;
+        }
         next if $ARGV[$index] ne $name;
         next if $index + 1 >= @ARGV;
         next if $ARGV[$index + 1] =~ /\A--/;
@@ -12802,7 +15692,7 @@ sub read_arg_values {
 sub has_arg {
     my ($name) = @_;
     for my $arg (@ARGV) {
-        return 1 if $arg eq $name;
+        return 1 if $arg eq $name || $arg =~ /\A\Q$name\E=/;
     }
     return 0;
 }
@@ -12853,14 +15743,36 @@ sub count_direct_value_property_reads {
 }
 
 sub diagnostic {
-    my ($severity, $code, $where, $message, $flow) = @_;
-    return {
+    my ($severity, $code, $where, $message, $flow, $details) = @_;
+    if (ref($flow) eq "HASH" && !defined $details) {
+        $details = $flow;
+        $flow = $details->{flow};
+    }
+    my $diag = {
         severity => $severity,
         code => $code,
         where => $where,
         message => $message,
-        flow => defined $flow ? $flow : []
+        flow => ref($flow) eq "ARRAY" ? $flow : []
     };
+    if (ref($details) eq "HASH") {
+        $diag->{primary_span} = $details->{primary_span}
+            if ref($details->{primary_span}) eq "HASH";
+        $diag->{secondary_spans} = $details->{secondary_spans}
+            if ref($details->{secondary_spans}) eq "ARRAY";
+        $diag->{notes} = $details->{notes}
+            if ref($details->{notes}) eq "ARRAY";
+        $diag->{suggestions} = $details->{suggestions}
+            if ref($details->{suggestions}) eq "ARRAY";
+        $diag->{wire_span} = $details->{wire_span}
+            if ref($details->{wire_span}) eq "HASH";
+        $diag->{provenance} = $details->{provenance}
+            if ref($details->{provenance}) eq "HASH";
+        $diag->{compiler} = $details->{compiler}
+            if ref($details->{compiler}) eq "HASH";
+        $diag->{sensitive_source} = $details->{sensitive_source} ? 1 : 0;
+    }
+    return $diag;
 }
 
 sub budgeted_flow_severity {
@@ -12898,11 +15810,20 @@ sub flow_steps_from_type_escape_findings {
     my @steps;
     for my $finding (@{$findings // []}) {
         last if @steps >= 12;
-        push @steps, {
+        my $step = {
             path => $finding->{path},
             line => $finding->{line},
             message => ($finding->{kind} // "type_escape") . ": " . ($finding->{message} // "type-safety escape hatch")
         };
+        if (ref($finding->{primary_span}) eq "HASH") {
+            $step->{path} = $finding->{primary_span}{path}
+                if defined $finding->{primary_span}{path};
+            for my $field (qw(column end_line end_column wire_line wire_column wire_end_line wire_end_column start_offset end_offset)) {
+                $step->{$field} = $finding->{primary_span}{$field}
+                    if defined $finding->{primary_span}{$field};
+            }
+        }
+        push @steps, $step;
     }
     return \@steps;
 }
@@ -12914,13 +15835,22 @@ sub flow_steps_from_regex_findings {
         last if @steps >= 12;
         my $source = $finding->{source} // "";
         $source = substr($source, 0, 80) . "..." if length($source) > 83;
-        push @steps, {
+        my $step = {
             path => $finding->{path},
             line => $finding->{line},
             message => ($finding->{kind} // "regex_risk") . ": " .
                 ($finding->{message} // "regex risk") .
                 " /" . $source . "/"
         };
+        if (ref($finding->{primary_span}) eq "HASH") {
+            $step->{path} = $finding->{primary_span}{path}
+                if defined $finding->{primary_span}{path};
+            for my $field (qw(column end_line end_column wire_line wire_column wire_end_line wire_end_column start_offset end_offset)) {
+                $step->{$field} = $finding->{primary_span}{$field}
+                    if defined $finding->{primary_span}{$field};
+            }
+        }
+        push @steps, $step;
     }
     return \@steps;
 }
@@ -13589,10 +16519,10 @@ sub default_policy_profile {
         flowWarningBudget => 5,
         noticeBudget => 1_000,
         recursiveCycleBudget => 80,
-        unboundedRecursionBudget => 46,
+        unboundedRecursionBudget => 50,
         taintedSinkPathBudget => 12,
         branchLeakBudget => 0,
-        hotUnboundedLoopBudget => 10,
+        hotUnboundedLoopBudget => 12,
         rangeGapBudget => 0,
         indexGapBudget => 0,
         hostileMutationBudget => 0,
@@ -13602,10 +16532,10 @@ sub default_policy_profile {
         freezeMutationBudget => 0,
         variantSwitchGapBudget => 67,
         generatedSourceGapBudget => 36,
-        hotValidationThrowBudget => 128,
+        hotValidationThrowBudget => 140,
         lifecycleGapBudget => 0,
         interproceduralLifecycleGapBudget => 0,
-        asyncSchedulingGapBudget => 2,
+        asyncSchedulingGapBudget => 5,
         typeEscapeBudget => 20,
         redosRiskBudget => 4,
         secretLeakBudget => 0,
@@ -13625,7 +16555,7 @@ sub default_policy_profile {
         symbolicPathBudget => 8,
         interproceduralSymbolicPathBudget => 32,
         nullishGapBudget => 0,
-        hotLoopAllocationBudget => 32,
+        hotLoopAllocationBudget => 34,
         contractGapBudget => 0,
         duplicateBlockBudget => 2_000,
         technicalDebtBudget => 240,
@@ -13656,7 +16586,7 @@ sub default_policy_profile {
         exploitableSecurityBudget => 0,
         securityDataflowCriticalBudget => 0,
         pathFeasibilityUnknownBudget => 0,
-        contextSensitivityRiskBudget => 53,
+        contextSensitivityRiskBudget => 68,
         soundnessAssumptionBudget => 0,
         proofObligationBudget => 0,
         newCodeOpenBudget => 0,
@@ -15551,6 +18481,9 @@ sub analysis_coverage_model {
     my $cfg_blocks = int($cfg->{blocks} // 0);
     my $cfg_edges = int($cfg->{edges} // 0);
     my $cfg_decisions = int($cfg->{decisions} // 0);
+    my $structural = object_or_empty($source->{structural_analysis});
+    my $ast_functions = int($structural->{astFunctionCount} // 0);
+    my $ast_calls = int($structural->{astCallCount} // scalar(@{array_or_empty($structural->{calls})}));
 
     my @source_front_end_gaps = (
         analysis_coverage_diagnostic_gaps($diagnostics, ["lex.parse", "source.suppression-reason", "source.suppression-rule", "source.suppression-wildcard"])
@@ -15568,10 +18501,14 @@ sub analysis_coverage_model {
         if $source_files == 0;
     push @source_front_end_gaps, analysis_coverage_static_gap("coverage.modules", "src", "source files were found but no module entries were built")
         if $source_files != 0 && $modules == 0;
+    my @ast_front_end_gaps = analysis_coverage_diagnostic_gaps($diagnostics, ["policy.ast-frontend"]);
+    push @ast_front_end_gaps, analysis_coverage_static_gap("coverage.ast-functions", "src", "source files were found but the compiler AST function inventory is empty")
+        if $source_files != 0 && $ast_functions == 0;
 
     my @function_ir_gaps = analysis_coverage_diagnostic_gaps($diagnostics, [
         "policy.function-ir",
         "flow.function-ir",
+        "flow.runtime-ownership",
         "flow.callgraph",
         "flow.cfg"
     ]);
@@ -15591,6 +18528,9 @@ sub analysis_coverage_model {
     my @policy_gaps = analysis_coverage_diagnostic_gaps($diagnostics, [
         "policy.severity",
         "policy.verbose",
+        "policy.compiler-frontend",
+        "policy.type-inference",
+        "policy.lsp",
         "policy.template-lexer",
         "policy.import-ast",
         "policy.import-type-name",
@@ -15613,6 +18553,14 @@ sub analysis_coverage_model {
     my @abi_gaps = analysis_coverage_diagnostic_gaps($diagnostics, ["abi."]);
 
     my @dimensions = (
+        analysis_coverage_dimension("typescript-frontend", "TypeScript AST and TypeChecker", {
+            sourceFiles => $source_files,
+            astFunctions => $ast_functions,
+            astCalls => $ast_calls,
+            typeFacts => scalar(@{array_or_empty($structural->{typeFacts})}),
+            inferenceFacts => scalar(@{array_or_empty($structural->{inferenceFacts})}),
+            rangeEncoding => $structural->{rangeEncoding} // "utf-16"
+        }, \@ast_front_end_gaps),
         analysis_coverage_dimension("source-front-end", "Source front end", {
             sourceFiles => $source_files,
             modules => $modules,
@@ -15653,6 +18601,8 @@ sub analysis_coverage_model {
         modules => $modules,
         importEdges => $import_edges,
         analyzedFunctions => $functions,
+        astFunctions => $ast_functions,
+        astCalls => $ast_calls,
         callGraphEdges => $call_edges,
         cfgBlocks => $cfg_blocks,
         cfgEdges => $cfg_edges,
@@ -17350,11 +20300,16 @@ sub context_sensitivity_model {
     my @functions = @{array_or_empty($analysis->{functions})};
     my $graph = object_or_empty($analysis->{graph});
     my %by_id = map { $_->{id} => $_ } @functions;
-    my %incoming;
-    my %outgoing;
+    my %incoming_relationships;
     for my $edge (@{array_or_empty($graph->{edges})}) {
-        push @{$incoming{$edge->{to}}}, $edge;
-        push @{$outgoing{$edge->{from}}}, $edge;
+        push @{$incoming_relationships{$edge->{to}}}, $edge;
+    }
+    my %incoming_callsites;
+    my $callsites = ref($graph->{callsiteEdges}) eq "ARRAY"
+        ? $graph->{callsiteEdges}
+        : array_or_empty($graph->{edges});
+    for my $edge (@{$callsites}) {
+        push @{$incoming_callsites{$edge->{to}}}, $edge;
     }
 
     my @items;
@@ -17364,14 +20319,15 @@ sub context_sensitivity_model {
     for my $fn (@functions) {
         next if !context_sensitive_function($fn);
         $sensitive_functions += 1;
-        my @edges = @{array_or_empty($incoming{$fn->{id}})};
-        my $fan_in = scalar(@edges);
+        my @relationship_edges = @{array_or_empty($incoming_relationships{$fn->{id}})};
+        my @callsite_edges = @{array_or_empty($incoming_callsites{$fn->{id}})};
+        my $fan_in = scalar(@relationship_edges);
         $max_fan_in = $fan_in if $fan_in > $max_fan_in;
-        my $contexts = context_callsite_set(\@edges);
+        my $contexts = context_callsite_set(\@callsite_edges);
         my $distinct_callsites = scalar(keys %{$contexts});
         $merged_callsites += $distinct_callsites > 1 ? $distinct_callsites - 1 : 0;
         next if $distinct_callsites <= 1;
-        my $item = context_sensitivity_item($fn, \@edges, $distinct_callsites);
+        my $item = context_sensitivity_item($fn, \@callsite_edges, $distinct_callsites, $fan_in);
         push @items, $item if ($item->{riskScore} // 0) >= 40;
     }
 
@@ -17421,7 +20377,13 @@ sub context_callsite_set {
     my ($edges) = @_;
     my %contexts;
     for my $edge (@{array_or_empty($edges)}) {
-        my $key = ($edge->{from} // "") . ":" . ($edge->{line} // 0) . ":" . ($edge->{name} // "");
+        my $key = join(":",
+            $edge->{from} // "",
+            $edge->{path} // "",
+            defined $edge->{start_offset} ? $edge->{start_offset} : ($edge->{line} // 0),
+            $edge->{id} // "",
+            $edge->{name} // ""
+        );
         $contexts{$key} = 1;
     }
     return \%contexts;
@@ -17429,11 +20391,11 @@ sub context_callsite_set {
 
 
 sub context_sensitivity_item {
-    my ($fn, $edges, $distinct_callsites) = @_;
+    my ($fn, $edges, $distinct_callsites, $relationship_fan_in) = @_;
     my %callers = map { ($_->{from} // "") => 1 } @{$edges};
     my $cross_file = scalar(grep { $_->{cross_file} } @{$edges});
     my $tainted = scalar(grep { $_->{tainted_argument} } @{$edges});
-    my $fan_in = scalar(@{$edges});
+    my $fan_in = defined $relationship_fan_in ? $relationship_fan_in : scalar(@{$edges});
     my $score = 30 + min_number(30, $distinct_callsites * 6) + min_number(18, $cross_file * 4) + min_number(16, $tainted * 8);
     $score += 12 if int($fn->{dynamic_code_sinks} // 0) != 0;
     $score += 10 if int($fn->{source_taint_domain}{sourceTaintGaps} // 0) != 0;
@@ -17442,7 +20404,12 @@ sub context_sensitivity_item {
     my @samples = map {
         {
             caller => $_->{from},
+            path => $_->{path},
             line => $_->{line},
+            column => $_->{column},
+            endLine => $_->{end_line},
+            endColumn => $_->{end_column},
+            startOffset => $_->{start_offset},
             call => $_->{name},
             crossFile => $_->{cross_file} ? 1 : 0,
             taintedArgument => $_->{tainted_argument} ? 1 : 0
@@ -17523,9 +20490,9 @@ sub soundness_assumption_specs {
         {
             id => "SND-FE-001",
             domain => "front-end",
-            title => "TypeScript lexical boundaries are complete before policy analysis",
-            evidence => ["lex.parse", "policy.template-lexer", "policy.lex-errors", "policy.semicolonless-import"],
-            failCodes => ["lex.parse"]
+            title => "TypeScript Program, AST, TypeChecker, and exact source ranges are complete before policy analysis",
+            evidence => ["policy.ast-frontend", "policy.compiler-frontend", "policy.type-inference", "lex.parse", "ts.syntax", "ts.type-check"],
+            failCodes => ["policy.ast-frontend", "policy.compiler-frontend", "ts.syntax", "ts.type-check", "lex.parse"]
         },
         {
             id => "SND-GRAPH-001",
@@ -18414,12 +21381,14 @@ sub html_escape {
     return $text;
 }
 
-sub emit_quality_gate {
+sub emit_quality_gate_legacy {
     my ($quality_gate) = @_;
-    my $status = $quality_gate->{status};
+    my $status = terminal_safe_text($quality_gate->{status});
     my $label = $status eq "passed" ? "NOTICE" : "ERROR";
-    my $failed = @{$quality_gate->{failed}} == 0 ? "none" : join(", ", @{$quality_gate->{failed}});
-    my $line = "$label [quality.gate] profile=" . $quality_gate->{profile} .
+    my $failed = @{$quality_gate->{failed}} == 0
+        ? "none"
+        : join(", ", map { terminal_safe_text($_) } @{$quality_gate->{failed}});
+    my $line = "$label [quality.gate] profile=" . terminal_safe_text($quality_gate->{profile}) .
         " status=$status failed=$failed warnings=" .
         $quality_gate->{metrics}{warnings} . "/" . $quality_gate->{budgets}{warnings} .
         " flowWarnings=" . $quality_gate->{metrics}{flowWarnings} . "/" . $quality_gate->{budgets}{flowWarnings} .
@@ -18526,9 +21495,9 @@ sub emit_quality_gate {
         " identityChurnAvoided=" . ($quality_gate->{metrics}{identityChurnAvoided} // 0) .
         "\n";
     if ($status eq "passed") {
-        print STDOUT $line if $show_notices;
+        human_print(\*STDOUT, $line) if $show_notices;
     } else {
-        print STDERR $line;
+        human_print(\*STDERR, $line);
     }
 }
 
@@ -19717,8 +22686,15 @@ sub analysis_run_manifest {
     my $package = object_or_empty($ir->{package}{json});
     my $git = git_manifest();
     my $inputs = analysis_input_manifest($ir);
+    my $analyzer_components = {
+        policy => file_digest("scripts/contributing-policy.pl"),
+        bridge => file_digest("scripts/typescript-policy-bridge.mjs"),
+        typescriptFrontend => file_digest("tools/analyzer/typescript-frontend.mjs"),
+        hmInference => file_digest("tools/analyzer/hm-inference.mjs"),
+        languageServer => file_digest("tools/analyzer/lsp.mjs")
+    };
     my $digests = {
-        analyzer => file_digest("scripts/contributing-policy.pl"),
+        analyzer => stable_hex_hash(json_encoder()->encode($analyzer_components)),
         profile => stable_hex_hash(json_encoder()->encode($profile // {})),
         package => stable_hex_hash(json_encoder()->encode($package)),
         source => source_tree_digest(array_or_empty($ir->{source}{files})),
@@ -19730,7 +22706,7 @@ sub analysis_run_manifest {
     return {
         schemaVersion => 1,
         model => "TypeSea analysis run manifest",
-        basis => "package identity, policy profile, analyzer script, source tree, benchmark snapshot, and git revision reproducibility",
+        basis => "package identity, policy profile, compiler frontend and policy analyzer components, source tree, benchmark snapshot, and git revision reproducibility",
         status => @gaps == 0 ? "reproducible" : "gaps-present",
         generatedAt => iso_timestamp(time()),
         tool => {
@@ -19752,6 +22728,7 @@ sub analysis_run_manifest {
             total => scalar(@{$diagnostics // []}),
             digest => stable_hex_hash(join("\0", map { ($_->{fingerprint} // "") . ":" . ($_->{severity} // "") } @{$diagnostics // []}))
         },
+        analyzerComponents => $analyzer_components,
         digests => $digests,
         manifestGaps => scalar(@gaps),
         gapSet => \@gaps
@@ -19767,7 +22744,10 @@ sub analysis_input_manifest {
         benchmarkRows => scalar(keys %{object_or_empty($ir->{benchmarks}{rows_by_id})}),
         packageFiles => scalar(@{array_or_empty($ir->{package}{files})}),
         importEdges => scalar(@{array_or_empty($ir->{source}{import_edges})}),
-        functions => scalar(@{array_or_empty($ir->{source}{function_analysis}{functions})})
+        functions => scalar(@{array_or_empty($ir->{source}{function_analysis}{functions})}),
+        astFunctions => int($ir->{source}{structural_analysis}{astFunctionCount} // 0),
+        astResolvedCallEdges => int($ir->{source}{structural_analysis}{astResolvedCallEdges} // 0),
+        typescriptVersion => $ir->{source}{typescript_frontend}{typescriptVersion} // ""
     };
 }
 
@@ -20836,7 +23816,7 @@ sub changed_files_from_git_base {
 sub diagnostic_report_path {
     my ($diag) = @_;
     my $where = $diag->{where} // "";
-    $where =~ s/:\d+(?::\d+)?\z//;
+    $where =~ s/:\d+(?::\d+(?:-\d+)?)?\z//;
     return normalize_report_path($where);
 }
 
@@ -21572,6 +24552,60 @@ sub default_rule_metadata {
 sub specific_rule_metadata {
     my ($code) = @_;
     my %specific = (
+        "policy.ast-frontend" => {
+            category => "analyzer",
+            engine => "typescript-compiler-api",
+            precision => "high",
+            confidence => "high",
+            remediation => "restore-ast-frontend",
+            description => "The policy analyzer requires a healthy TypeScript Program and TypeChecker before structural analysis can proceed.",
+            remediationText => "Install project dependencies, fix the AST bridge or tsconfig failure, and rerun the policy command; text-parser fallback is intentionally fail-closed."
+        },
+        "policy.ast-coverage" => {
+            category => "analyzer",
+            engine => "ast-migration-accounting",
+            precision => "high",
+            confidence => "high",
+            remediation => "migrate-legacy-domain-adapter",
+            description => "AST inventory coverage is compared with legacy TypeSea-specific abstract-domain adapters.",
+            remediationText => "Move remaining domain facts to compiler AST nodes and symbols while keeping the policy gate and report contracts stable."
+        },
+        "ts.syntax" => {
+            category => "correctness",
+            engine => "typescript-parser",
+            precision => "high",
+            confidence => "high",
+            remediation => "fix-typescript-syntax",
+            description => "The TypeScript compiler parser found malformed source with an exact UTF-16 source range.",
+            remediationText => "Fix the first compiler-reported token or delimiter, rerun the analyzer, and then address any remaining recovery diagnostics."
+        },
+        "ts.type-check" => {
+            category => "type-safety",
+            engine => "typescript-type-checker",
+            precision => "high",
+            confidence => "high",
+            remediation => "fix-inferred-type-contract",
+            description => "The TypeScript TypeChecker found a semantic type error after symbol and generic resolution.",
+            remediationText => "Use the inferred source/target types and related declaration spans to narrow, annotate, import, or correct the source contract without asserting through any."
+        },
+        "ts.config" => {
+            category => "analyzer",
+            engine => "typescript-project-loader",
+            precision => "high",
+            confidence => "high",
+            remediation => "fix-tsconfig",
+            description => "The TypeScript compiler rejected project configuration or a global program invariant.",
+            remediationText => "Correct tsconfig paths/options or missing project inputs, then rebuild the Program before trusting downstream facts."
+        },
+        "ts.suggestion" => {
+            category => "type-safety",
+            engine => "typescript-language-service",
+            precision => "high",
+            confidence => "medium",
+            remediation => "review-compiler-suggestion",
+            description => "The TypeScript language service emitted a non-blocking source suggestion.",
+            remediationText => "Review the compiler suggestion and apply it when it improves type precision or removes dead and unreachable source."
+        },
         "flow.dynamic-sink" => {
             category => "security",
             engine => "taint-analysis",
@@ -21581,6 +24615,15 @@ sub specific_rule_metadata {
             cwe => "CWE-94",
             description => "Dynamic code execution must remain confined to approved TypeSea JIT/AOT bridges.",
             remediationText => "Move dynamic code generation behind the approved source bridge or prove side-table escaping before allowing it."
+        },
+        "flow.runtime-ownership" => {
+            category => "correctness",
+            engine => "typescript-runtime-semantics",
+            precision => "high",
+            confidence => "high",
+            remediation => "resolve-implicit-runtime-target",
+            description => "Implicit runtime calls from decorators, accessors, and class initialization must have an explicit execution owner and target.",
+            remediationText => "Use a directly resolvable project implementation or isolate the implicit runtime boundary behind a reviewed adapter; unresolved implicit calls fail closed."
         },
         "flow.generated-source-gap" => {
             category => "security",
@@ -21893,17 +24936,26 @@ sub specific_rule_metadata {
         },
         "types.escape-domain" => {
             category => "correctness",
-            engine => "type-escape-analysis",
-            precision => "medium",
+            engine => "typescript-ast-type-escape-analysis",
+            precision => "high",
             confidence => "high",
             remediation => "review-type-boundary",
             description => "TypeScript type-safety escape hatches are summarized as a first-class TypeSea soundness domain.",
             remediationText => "Review explicit any, double assertions, non-null assertions, JSON.parse boundaries, and TypeScript diagnostic suppressions before release."
         },
+        "types.inference-domain" => {
+            category => "type-safety",
+            engine => "typescript-type-checker-with-hm-supplement",
+            precision => "high",
+            confidence => "high",
+            remediation => "review-inference-provenance",
+            description => "Type inference facts record authoritative TypeScript results and separately labeled Algorithm-W supplement candidates.",
+            remediationText => "Keep TypeScript annotations, generics, narrowing, and structural types authoritative; use HM output only to explain checker gaps in the supported local expression subset."
+        },
         "types.unsafe-escape" => {
             category => "correctness",
-            engine => "type-escape-analysis",
-            precision => "medium",
+            engine => "typescript-ast-type-escape-analysis",
+            precision => "high",
             confidence => "high",
             remediation => "remove-or-justify-type-escape",
             description => "TypeScript type-safety escape hatches must remain inside an explicit budget.",
@@ -22235,12 +25287,12 @@ sub generated_specific_rule_metadata {
     if ($code =~ /\Alex\.(.+)\z/) {
         return {
             category => "analyzer",
-            engine => "typescript-lexer",
+            engine => "typescript-compiler-frontend",
             precision => "high",
             confidence => "high",
             remediation => "fix-source-front-end",
-            description => "Lexer rule '$label' protects source front-end tokenization before policy analysis.",
-            remediationText => "Fix malformed TypeScript input or extend the policy lexer so '$label' cannot silently corrupt analyzer state."
+            description => "Compiler front-end rule '$label' protects AST construction before policy analysis.",
+            remediationText => "Fix malformed TypeScript input or the Compiler API bridge so '$label' cannot silently corrupt analyzer state."
         };
     }
     if ($code =~ /\Atypes\.(.+)\z/) {
@@ -22325,10 +25377,12 @@ sub policy_summary {
         functions => scalar(@{$flow->{functions}}),
         callEdges => scalar(@{$flow->{graph}{edges}}),
         recursiveFunctionCycles => scalar(@{$flow->{graph}{cycles}}),
+        typescriptFrontend => typescript_frontend_report_summary($ir->{source}),
         recursionDomain => {
             cycles => $flow->{abstract}{recursion}{cycles},
             boundedCycles => $flow->{abstract}{recursion}{boundedCycles},
             unboundedCycles => $flow->{abstract}{recursion}{unboundedCycles},
+            indeterminateCycles => int($flow->{abstract}{recursion}{indeterminateCycles} // 0),
             proofTotals => $flow->{abstract}{recursion}{proofTotals},
             sampleUnbounded => [
                 map {
@@ -22437,9 +25491,64 @@ sub policy_summary {
     };
 }
 
+sub typescript_frontend_report_summary {
+    my ($source) = @_;
+    my $frontend = object_or_empty($source->{typescript_frontend});
+    my $structural = object_or_empty($source->{structural_analysis});
+    my $summary = object_or_empty($frontend->{summary});
+    my @diagnostics = frontend_all_diagnostics($frontend);
+    my $hm = object_or_empty($frontend->{hm});
+    my $available = typescript_frontend_available($frontend);
+    return {
+        schemaVersion => $frontend->{schemaVersion},
+        protocol => $frontend->{protocol},
+        typescriptVersion => $frontend->{typescriptVersion},
+        rangeEncoding => $frontend->{rangeEncoding},
+        health => object_or_empty($frontend->{health}),
+        project => {
+            root => ".",
+            tsconfigPath => $frontend->{project}{tsconfigPath} // "tsconfig.json",
+            authoritativeEngine => $available
+                ? ($frontend->{project}{authoritativeEngine} // "typescript-program-type-checker")
+                : "legacy-token-fallback",
+            rootFiles => scalar(@{array_or_empty($frontend->{project}{rootFileNames})})
+        },
+        files => scalar(@{array_or_empty($frontend->{files})}),
+        diagnostics => scalar(@diagnostics),
+        astFunctions => int($structural->{astFunctionCount} // 0),
+        astCalls => int($structural->{astCallCount} // scalar(@{array_or_empty($structural->{calls})})),
+        astResolvedCallEdges => int($structural->{astResolvedCallEdges} // 0),
+        runtimeOwners => int($structural->{runtimeOwnerCount} // 0),
+        runtimeMetricOwners => int($structural->{runtimeMetricOwnerCount} // 0),
+        runtimeEdges => scalar(@{array_or_empty($structural->{runtimeEdges})}),
+        nonRuntimeSpans => int($summary->{nonRuntimeSpanCount} // 0),
+        typeFacts => scalar(@{array_or_empty($structural->{typeFacts})}),
+        inferenceFacts => scalar(@{array_or_empty($structural->{inferenceFacts})}),
+        legacyAbstractFunctions => int($structural->{legacyFunctionCount} // 0),
+        astBodyFunctions => int($structural->{astBodyFunctionCount} // 0),
+        analysisFunctions => int($structural->{analysisFunctionCount} // 0),
+        tokenMetricFunctions => int($structural->{tokenMetricFunctionCount} // 0),
+        legacyMetricFunctions => int($structural->{legacyMetricFunctionCount} // 0),
+        legacyExactMatches => int($structural->{legacyExactMatchCount} // 0),
+        astSlicedMetricFunctions => int($structural->{astSlicedMetricFunctionCount} // 0),
+        unknownLocalMetricFunctions => int($structural->{neutralMetricFunctionCount} // 0),
+        overloadRedirects => int($structural->{overloadRedirectCount} // 0),
+        legacyAdapterGap => int($structural->{structuralCoverageGap} // $structural->{coverageGap} // 0),
+        legacyMetricGap => int($structural->{legacyMetricGap} // 0),
+        checkerAuthoritative => $available ? JSON::PP::true : JSON::PP::false,
+        fallbackUsed => $available ? JSON::PP::false : JSON::PP::true,
+        hmMode => $available ? ($hm->{mode} // "supplement-only") : "legacy-token-fallback",
+        hmCandidates => int($hm->{stats}{inferred} // $hm->{candidates} // $summary->{hmCandidates} // 0),
+        summary => $summary
+    };
+}
+
 sub sarif_result {
     my ($diag) = @_;
     my ($path, $line) = diagnostic_location($diag->{where});
+    my $human_span = diagnostic_human_span($diag);
+    $path = $human_span->{path} if defined $human_span->{path};
+    my $region = sarif_region_for_diagnostic($diag, $line);
     my $meta = rule_metadata($diag->{code});
     my $properties = rule_properties($meta);
     my $defect = defect_record($diag);
@@ -22482,9 +25591,7 @@ sub sarif_result {
                 artifactLocation => {
                     uri => $path
                 },
-                region => {
-                    startLine => $line
-                }
+                region => $region
             }
         }],
         partialFingerprints => {
@@ -22506,20 +25613,134 @@ sub sarif_result {
             }]
         }];
     }
+    if (@{$diag->{secondary_spans} // []} != 0) {
+        my $id = 0;
+        $result->{relatedLocations} = [map {
+            $id += 1;
+            sarif_related_location($_, $id)
+        } grep { ref($_) eq "HASH" } @{$diag->{secondary_spans}}];
+    }
     return $result;
+}
+
+sub sarif_region_for_diagnostic {
+    my ($diag, $fallback_line) = @_;
+    my $wire = $diag->{wire_span};
+    if (ref($wire) eq "HASH") {
+        my $range = ref($wire->{range}) eq "HASH" ? $wire->{range} : $wire;
+        my $start = ref($range->{start}) eq "HASH" ? $range->{start} : {};
+        my $end = ref($range->{end}) eq "HASH" ? $range->{end} : {};
+        my $line_base = defined $wire->{lineBase} ? int($wire->{lineBase}) :
+            defined $range->{lineBase} ? int($range->{lineBase}) : 0;
+        my $column_base = defined $wire->{columnBase} ? int($wire->{columnBase}) :
+            defined $range->{columnBase} ? int($range->{columnBase}) : 0;
+        my %region = (
+            startLine => defined $start->{line}
+                ? int($start->{line}) - $line_base + 1
+                : $fallback_line
+        );
+        my $start_character = defined $start->{character} ? $start->{character} : $start->{column};
+        my $end_character = defined $end->{character} ? $end->{character} : $end->{column};
+        $region{startColumn} = int($start_character) - $column_base + 1
+            if defined $start_character;
+        $region{endLine} = int($end->{line}) - $line_base + 1
+            if defined $end->{line};
+        $region{endColumn} = int($end_character) - $column_base + 1
+            if defined $end_character;
+        $region{charOffset} = int($start->{offset}) if defined $start->{offset};
+        $region{charLength} = int($end->{offset}) - int($start->{offset})
+            if defined $start->{offset} && defined $end->{offset} &&
+                int($end->{offset}) >= int($start->{offset});
+        return \%region;
+    }
+    my $span = diagnostic_human_span($diag);
+    my %region = (
+        startLine => defined $span->{wire_line}
+            ? int($span->{wire_line}) + 1
+            : ($span->{line} // $fallback_line)
+    );
+    $region{startColumn} = defined $span->{wire_column}
+        ? int($span->{wire_column}) + 1
+        : int($span->{column})
+            if defined $span->{wire_column} || defined $span->{column};
+    $region{endLine} = defined $span->{wire_end_line}
+        ? int($span->{wire_end_line}) + 1
+        : int($span->{end_line})
+            if defined $span->{wire_end_line} || defined $span->{end_line};
+    $region{endColumn} = defined $span->{wire_end_column}
+        ? int($span->{wire_end_column}) + 1
+        : int($span->{end_column})
+            if defined $span->{wire_end_column} || defined $span->{end_column};
+    $region{charOffset} = int($span->{start_offset}) if defined $span->{start_offset};
+    $region{charLength} = int($span->{end_offset}) - int($span->{start_offset})
+        if defined $span->{start_offset} && defined $span->{end_offset} &&
+            int($span->{end_offset}) >= int($span->{start_offset});
+    return \%region;
+}
+
+sub sarif_related_location {
+    my ($span, $id) = @_;
+    my %region = (
+        startLine => defined $span->{wire_line}
+            ? int($span->{wire_line}) + 1
+            : int($span->{line} // 1)
+    );
+    $region{startColumn} = defined $span->{wire_column}
+        ? int($span->{wire_column}) + 1
+        : int($span->{column})
+            if defined $span->{wire_column} || defined $span->{column};
+    $region{endLine} = defined $span->{wire_end_line}
+        ? int($span->{wire_end_line}) + 1
+        : int($span->{end_line})
+            if defined $span->{wire_end_line} || defined $span->{end_line};
+    $region{endColumn} = defined $span->{wire_end_column}
+        ? int($span->{wire_end_column}) + 1
+        : int($span->{end_column})
+            if defined $span->{wire_end_column} || defined $span->{end_column};
+    $region{charOffset} = int($span->{start_offset}) if defined $span->{start_offset};
+    $region{charLength} = int($span->{end_offset}) - int($span->{start_offset})
+        if defined $span->{start_offset} && defined $span->{end_offset} &&
+            int($span->{end_offset}) >= int($span->{start_offset});
+    return {
+        id => $id,
+        physicalLocation => {
+            artifactLocation => { uri => $span->{path} // "src" },
+            region => \%region
+        },
+        message => { text => $span->{label} // "related TypeScript location" }
+    };
 }
 
 sub sarif_thread_location {
     my ($step) = @_;
+    my %region = (
+        startLine => defined $step->{wire_line}
+            ? int($step->{wire_line}) + 1
+            : int($step->{line} // 1)
+    );
+    $region{startColumn} = defined $step->{wire_column}
+        ? int($step->{wire_column}) + 1
+        : int($step->{column})
+            if defined $step->{wire_column} || defined $step->{column};
+    $region{endLine} = defined $step->{wire_end_line}
+        ? int($step->{wire_end_line}) + 1
+        : int($step->{end_line})
+            if defined $step->{wire_end_line} || defined $step->{end_line};
+    $region{endColumn} = defined $step->{wire_end_column}
+        ? int($step->{wire_end_column}) + 1
+        : int($step->{end_column})
+            if defined $step->{wire_end_column} || defined $step->{end_column};
+    $region{charOffset} = int($step->{start_offset}) if defined $step->{start_offset};
+    $region{charLength} = int($step->{end_offset}) - int($step->{start_offset})
+        if defined $step->{start_offset} && defined $step->{end_offset} &&
+            int($step->{end_offset}) >= int($step->{start_offset});
     return {
         location => {
             physicalLocation => {
                 artifactLocation => {
-                    uri => $step->{path}
+                    uri => $step->{path} // "src"
                 },
-                region => {
-                    startLine => $step->{line}
-                }
+                region => \%region
             },
             message => {
                 text => $step->{message}
@@ -22530,6 +25751,9 @@ sub sarif_thread_location {
 
 sub diagnostic_location {
     my ($where) = @_;
+    if ($where =~ /\A(.+):(\d+):\d+(?:-\d+)?\z/) {
+        return ($1, int($2));
+    }
     if ($where =~ /\A(.+):(\d+)\z/) {
         return ($1, int($2));
     }
@@ -22553,21 +25777,1333 @@ sub json_encoder {
     return JSON::PP->new->canonical->pretty->utf8;
 }
 
+sub validate_cli_arguments {
+    my %flag_options = map { $_ => 1 } qw(
+        -h --help -v --verbose --strict-warnings --json --sarif --html --no-color
+    );
+    my %value_options = map { $_ => 1 } qw(
+        --baseline --write-baseline --triage --write-triage-template --profile
+        --compare-report --history --write-history --new-code-base --new-code-file
+        --color --diagnostic-format --context-lines --max-flow-steps --explain
+    );
+
+    for (my $index = 0; $index < @ARGV; $index += 1) {
+        my $arg = $ARGV[$index];
+        next if $flag_options{$arg};
+        if ($arg eq "--serve") {
+            if ($index + 1 < @ARGV && $ARGV[$index + 1] !~ /\A-/) {
+                my $port = $ARGV[++$index];
+                cli_option_error("invalid dashboard port '$port'", "choose an integer from 1 through 65535")
+                    if $port !~ /\A\d+\z/ || $port < 1 || $port > 65535;
+            }
+            next;
+        }
+        if ($arg =~ /\A([^=]+)=(.*)\z/s) {
+            my ($name, $value) = ($1, $2);
+            if ($name eq "--serve") {
+                cli_option_error("invalid dashboard port '$value'", "choose an integer from 1 through 65535")
+                    if $value !~ /\A\d+\z/ || $value < 1 || $value > 65535;
+                next;
+            }
+            if ($value_options{$name}) {
+                cli_option_error("$name requires a value", "pass it as '$name=VALUE'")
+                    if $value eq "";
+                next;
+            }
+            cli_option_error("$name does not take a value", "remove '=$value'")
+                if $flag_options{$name};
+            cli_option_error("unknown option '$name'", "check the spelling or remove this option");
+        }
+        if ($value_options{$arg}) {
+            if ($index + 1 >= @ARGV || $ARGV[$index + 1] =~ /\A--/ || $flag_options{$ARGV[$index + 1]}) {
+                cli_option_error("$arg requires a value", "pass it as '$arg=VALUE'");
+            }
+            $index += 1;
+            next;
+        }
+        cli_option_error("unknown option or argument '$arg'", "check the spelling or remove this argument");
+    }
+
+    my @report_modes;
+    push @report_modes, "--json" if $json_report;
+    push @report_modes, "--sarif" if $sarif_report;
+    push @report_modes, "--html" if $html_report;
+    push @report_modes, "--serve" if $serve_report;
+    if (@report_modes > 1) {
+        cli_option_error(
+            "conflicting report modes: " . join(", ", @report_modes),
+            "choose exactly one machine or dashboard report mode"
+        );
+    }
+    if (defined $explain_rule && @report_modes != 0) {
+        cli_option_error(
+            "--explain cannot be combined with $report_modes[0]",
+            "run --explain separately because it produces human-readable output"
+        );
+    }
+}
+
+sub validate_terminal_options {
+    validate_cli_arguments();
+    if (has_arg("--color") && !defined $color_option) {
+        cli_option_error("--color requires auto, always, or never", "try '--color=auto' or '--no-color'");
+    }
+    if ($no_color && defined $color_option) {
+        cli_option_error("--no-color conflicts with --color", "choose one color-control option");
+    }
+    if (defined $color_option && $color_option !~ /\A(?:auto|always|never)\z/) {
+        cli_option_error("invalid color mode '$color_option'", "expected one of: auto, always, never");
+    }
+    if ($color_mode !~ /\A(?:auto|always|never)\z/) {
+        cli_option_error("invalid color mode '$color_mode'", "expected one of: auto, always, never");
+    }
+    if (has_arg("--diagnostic-format") && !defined read_arg_value("--diagnostic-format")) {
+        cli_option_error("--diagnostic-format requires rich or short", "try '--diagnostic-format=rich'");
+    }
+    if ($diagnostic_format !~ /\A(?:rich|short)\z/) {
+        cli_option_error("invalid diagnostic format '$diagnostic_format'", "expected one of: rich, short");
+    }
+    if (has_arg("--context-lines") && !defined read_arg_value("--context-lines")) {
+        cli_option_error("--context-lines requires an integer", "choose a value from 0 through 5");
+    }
+    if ($diagnostic_context_lines !~ /\A\d+\z/ || $diagnostic_context_lines > 5) {
+        cli_option_error("invalid context line count '$diagnostic_context_lines'", "choose a value from 0 through 5");
+    }
+    if (has_arg("--max-flow-steps") && !defined read_arg_value("--max-flow-steps")) {
+        cli_option_error("--max-flow-steps requires an integer", "choose a value from 0 through 50");
+    }
+    if ($diagnostic_max_flow_steps !~ /\A\d+\z/ || $diagnostic_max_flow_steps > 50) {
+        cli_option_error("invalid flow-step limit '$diagnostic_max_flow_steps'", "choose a value from 0 through 50");
+    }
+    if (has_arg("--explain") && (!defined $explain_rule || $explain_rule eq "")) {
+        cli_option_error("--explain requires a rule code", "for example: --explain=security.secret-leak");
+    }
+    if (defined $explain_rule) {
+        my %known = map { $_ => 1 } declared_analyzer_rule_codes();
+        if (!$known{$explain_rule}) {
+            my ($domain) = split(/\./, $explain_rule, 2);
+            my @nearby = grep { index($_, "$domain.") == 0 } sort keys %known;
+            @nearby = @nearby[0 .. 2] if @nearby > 3;
+            my $help = @nearby != 0
+                ? "known rules in that domain include: " . join(", ", @nearby)
+                : "use a rule code shown by a diagnostic or in the JSON/SARIF rule catalog";
+            cli_option_error("unknown analyzer rule '$explain_rule'", $help);
+        }
+    }
+    $diagnostic_context_lines = int($diagnostic_context_lines);
+    $diagnostic_max_flow_steps = int($diagnostic_max_flow_steps);
+}
+
+sub cli_option_error {
+    my ($message, $help) = @_;
+    my $color = $color_mode =~ /\A(?:auto|always|never)\z/
+        ? terminal_color_enabled(\*STDERR)
+        : 0;
+    my $out = terminal_style($color, "red-bold", "error") . "[cli.option]: " .
+        terminal_safe_text($message) . "\n" .
+        "  " . terminal_style($color, "green-bold", "= help:") . " " .
+        terminal_safe_text($help) . "\n" .
+        "  " . terminal_style($color, "cyan-bold", "= hint:") .
+        " run with --help to see every supported option\n";
+    human_print(\*STDERR, $out);
+    exit 2;
+}
+
+sub emit_usage {
+    my $usage = <<'USAGE';
+TypeSea contributing policy analyzer
+
+Usage:
+  perl scripts/contributing-policy.pl [OPTIONS]
+
+Human diagnostics:
+  -v, --verbose                  Show notice-level evidence
+      --strict-warnings          Fail when any warning is emitted
+      --color MODE               Color mode: auto, always, or never
+      --no-color                 Alias for --color=never
+      --diagnostic-format MODE   Human format: rich (default) or short
+      --context-lines N          Source context lines on each side (0-5)
+      --max-flow-steps N         Maximum rendered trace steps (0-50)
+      --explain RULE             Explain one rule and its remediation
+  -h, --help                     Show this help
+
+Machine and dashboard reports:
+      --json                     Emit canonical JSON
+      --sarif                    Emit SARIF 2.1.0
+      --html                     Emit a self-contained HTML dashboard
+      --serve [PORT]             Serve the dashboard (default: 7331)
+
+Analysis inputs and governance:
+      --profile PATH
+      --baseline PATH
+      --write-baseline PATH
+      --triage PATH
+      --write-triage-template PATH
+      --compare-report PATH
+      --history PATH
+      --write-history PATH
+      --new-code-base REV
+      --new-code-file PATH       Repeat for multiple changed files
+
+Color is enabled automatically only for an interactive terminal. NO_COLOR and
+TERM=dumb disable automatic color. JSON, SARIF, HTML, and served reports never
+contain terminal escape sequences.
+USAGE
+    human_print(\*STDOUT, $usage);
+}
+
+sub emit_rule_explanation {
+    my ($code) = @_;
+    my $meta = rule_metadata($code);
+    my $color = terminal_color_enabled(\*STDOUT);
+    my $safe_code = terminal_safe_text($code);
+    my $out = terminal_style($color, "cyan-bold", "note") . "[" .
+        terminal_style($color, "bold", $safe_code) . "]: " .
+        terminal_safe_text($meta->{description}) . "\n";
+    $out .= "  " . terminal_style($color, "cyan-bold", "= category:") . " " .
+        terminal_safe_text($meta->{category}) . "\n";
+    $out .= "  " . terminal_style($color, "cyan-bold", "= engine:") . " " .
+        terminal_safe_text($meta->{engine}) . "\n";
+    $out .= "  " . terminal_style($color, "cyan-bold", "= confidence:") . " " .
+        terminal_safe_text($meta->{confidence}) .
+        " (precision: " . terminal_safe_text($meta->{precision}) . ")\n";
+    $out .= "  " . terminal_style($color, "cyan-bold", "= cwe:") . " " .
+        terminal_safe_text($meta->{cwe}) . "\n" if defined $meta->{cwe};
+    $out .= "  " . terminal_style($color, "green-bold", "= help:") . " " .
+        terminal_safe_text($meta->{remediationText}) . "\n";
+    human_print(\*STDOUT, $out);
+}
+
+sub resolve_terminal_color {
+    my ($mode, $is_tty, $term, $no_color_value, $force_value) = @_;
+    return 1 if $mode eq "always";
+    return 0 if $mode eq "never";
+    return 1 if defined $force_value && $force_value ne "" && $force_value ne "0";
+    return 0 if defined $no_color_value && $no_color_value ne "";
+    return 0 if defined $term && $term eq "dumb";
+    return $is_tty ? 1 : 0;
+}
+
+sub terminal_color_enabled {
+    my ($handle) = @_;
+    return 0 if $json_report || $sarif_report || $html_report || $serve_report;
+    my $fd = fileno($handle);
+    my $is_tty = defined $fd && -t $fd ? 1 : 0;
+    my $force = defined $ENV{CLICOLOR_FORCE} ? $ENV{CLICOLOR_FORCE} : $ENV{FORCE_COLOR};
+    return resolve_terminal_color(
+        $color_mode,
+        $is_tty,
+        $ENV{TERM},
+        $ENV{NO_COLOR},
+        $force
+    );
+}
+
+sub terminal_style {
+    my ($enabled, $style, $text) = @_;
+    return $text if !$enabled;
+    my %codes = (
+        bold => "1",
+        dim => "2",
+        blue => "34",
+        "blue-bold" => "1;34",
+        "cyan-bold" => "1;36",
+        "green-bold" => "1;32",
+        "red-bold" => "1;31",
+        "yellow-bold" => "1;33"
+    );
+    my $code = $codes{$style} // "0";
+    return "\e[${code}m$text\e[0m";
+}
+
+sub severity_terminal_style {
+    my ($severity) = @_;
+    return "red-bold" if $severity eq "error";
+    return "yellow-bold" if $severity eq "warning";
+    return "cyan-bold";
+}
+
+sub severity_terminal_name {
+    my ($severity) = @_;
+    return "error" if $severity eq "error";
+    return "warning" if $severity eq "warning";
+    return "note";
+}
+
+sub human_print {
+    my ($handle, $text) = @_;
+    my $bytes = utf8::is_utf8($text) ? encode_utf8($text) : $text;
+    binmode($handle, ":raw");
+    print {$handle} $bytes;
+}
+
+sub terminal_control_escape {
+    my ($codepoint) = @_;
+    return "\\n" if $codepoint == 10;
+    return "\\r" if $codepoint == 13;
+    return "\\t" if $codepoint == 9;
+    return sprintf("\\x%02X", $codepoint) if $codepoint <= 0xff;
+    return sprintf("\\u{%04X}", $codepoint);
+}
+
+sub terminal_safe_text {
+    my ($text) = @_;
+    $text = "" if !defined $text;
+    $text = "$text";
+    $text = decode("UTF-8", $text, FB_DEFAULT)
+        if !utf8::is_utf8($text) && $text =~ /[\x80-\xff]/;
+    $text =~ s/([\x00-\x1f\x7f-\x9f])/terminal_control_escape(ord($1))/ge;
+    $text =~ s/(\p{Cf}|[\x{2028}\x{2029}])/terminal_control_escape(ord($1))/ge;
+    return $text;
+}
+
+sub parse_human_location {
+    my ($where) = @_;
+    $where = "" if !defined $where;
+    return { path => $where } if defined terminal_source_path($where);
+    if ($where =~ /\A(.+):(\d+):(\d+)-(\d+)\z/s) {
+        return { path => $1, line => int($2), column => int($3), end_column => int($4) };
+    }
+    if ($where =~ /\A(.+):(\d+):(\d+)\z/s) {
+        return { path => $1, line => int($2), column => int($3) };
+    }
+    if ($where =~ /\A(.+):(\d+)\z/s) {
+        return { path => $1, line => int($2) };
+    }
+    return { path => $where };
+}
+
+sub diagnostic_human_span {
+    my ($diag) = @_;
+    my $parsed = parse_human_location($diag->{where});
+    my %span = %{$parsed};
+    if (ref($diag->{primary_span}) eq "HASH") {
+        for my $field (qw(path line column end_line end_column label start_offset end_offset wire_encoding wire_line wire_column wire_end_line wire_end_column end_exclusive)) {
+            $span{$field} = $diag->{primary_span}{$field}
+                if defined $diag->{primary_span}{$field};
+        }
+    }
+    $span{sensitive} = 1
+        if $diag->{sensitive_source} || ($diag->{code} // "") eq "security.secret-leak";
+    $span{suppress_source} = 1
+        if ($diag->{code} // "") =~ /\A(?:triage|profile)\./;
+    return \%span;
+}
+
+sub terminal_sensitive_source_key {
+    my ($path, $line) = @_;
+    return undef if !defined $path || !defined $line || $line !~ /\A\d+\z/ || $line < 1;
+    return normalize_report_path($path) . ":" . int($line);
+}
+
+sub index_terminal_sensitive_source_lines {
+    my ($findings) = @_;
+    %terminal_sensitive_source_lines = ();
+    %terminal_sensitive_source_paths = ();
+    for my $finding (@{$findings // []}) {
+        next if ref($finding) ne "HASH";
+        my $path = normalize_report_path($finding->{path} // "");
+        $terminal_sensitive_source_paths{$path} = 1 if $path ne "";
+        my $line = $finding->{line};
+        next if !defined $line || $line !~ /\A\d+\z/ || $line < 1;
+        my $first_line = $line > 5 ? $line - 5 : 1;
+        for my $nearby_line ($first_line .. ($line + 5)) {
+            my $key = terminal_sensitive_source_key($finding->{path}, $nearby_line);
+            $terminal_sensitive_source_lines{$key} = 1 if defined $key;
+        }
+    }
+}
+
+sub terminal_source_line_is_sensitive {
+    my ($path, $line) = @_;
+    return 1 if $terminal_sensitive_source_paths{normalize_report_path($path // "")};
+    my $key = terminal_sensitive_source_key($path, $line);
+    return defined $key && $terminal_sensitive_source_lines{$key} ? 1 : 0;
+}
+
+sub terminal_source_text_is_sensitive {
+    my ($path, $line, $text) = @_;
+    return 1 if terminal_source_line_is_sensitive($path, $line);
+    my $domain = build_secret_leak_domain_summary($path // "terminal-source", $text // "");
+    my $sensitive = int($domain->{totalLeaks} // 0) != 0 ? 1 : 0;
+    if (!$sensitive && ($text // "") =~ /(?:^|\s)([A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|private[_-]?key)[A-Za-z0-9_.-]*)\s*[:=]\s*["']?([^\s"']{8,})/i) {
+        $sensitive = !looks_like_secret_placeholder($2) ? 1 : 0;
+    }
+    if ($sensitive) {
+        my $normalized = normalize_report_path($path // "");
+        $terminal_sensitive_source_paths{$normalized} = 1 if $normalized ne "";
+    }
+    return $sensitive;
+}
+
+sub terminal_source_path {
+    my ($path) = @_;
+    return undef if !defined $path || $path eq "";
+    return undef if $path =~ /[\x00-\x1f\x7f]/;
+    return undef if $path =~ m{\A/} || $path =~ /\A[A-Za-z]:[\\\/]/;
+    return undef if $path =~ /\\/;
+    $path =~ s{\A\./}{};
+    return undef if grep { $_ eq ".." } split(m{/+}, $path);
+    my $cursor = $policy_workspace_root;
+    for my $component (grep { $_ ne "" && $_ ne "." } split(m{/+}, $path)) {
+        $cursor .= "/$component";
+        return undef if -l $cursor;
+    }
+    my $candidate = "$policy_workspace_root/$path";
+    return undef if -l $candidate || !-f $candidate;
+    my $resolved = abs_path($candidate);
+    return undef if !defined $resolved;
+    return undef if $resolved ne $policy_workspace_root &&
+        index($resolved, "$policy_workspace_root/") != 0;
+    return $resolved;
+}
+
+sub terminal_source_cache_key {
+    my ($path, $line) = @_;
+    return normalize_report_path($path) . "\0" . int($line);
+}
+
+sub store_terminal_source_cache_line {
+    my ($path, $line, $value) = @_;
+    my $key = terminal_source_cache_key($path, $line);
+    return if exists $terminal_source_cache{$key};
+    if (defined $value) {
+        my $bytes = length(encode_utf8($value));
+        $value = undef if $terminal_source_cache_bytes + $bytes > 4 * 1024 * 1024;
+        $terminal_source_cache_bytes += $bytes if defined $value;
+    }
+    $terminal_source_cache{$key} = $value;
+}
+
+sub cache_terminal_source_window {
+    my ($path, $first_line, $last_line) = @_;
+    $first_line = 1 if !defined $first_line || $first_line < 1;
+    $last_line = $first_line if !defined $last_line || $last_line < $first_line;
+    my @missing = grep {
+        !exists $terminal_source_cache{terminal_source_cache_key($path, $_)}
+    } ($first_line .. $last_line);
+    return if @missing == 0;
+
+    my $resolved = terminal_source_path($path);
+    my $handle;
+    if (!defined $resolved || !sysopen($handle, $resolved, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)) {
+        store_terminal_source_cache_line($path, $_, undef) for @missing;
+        return;
+    }
+    binmode($handle, ":raw");
+    my @stat = stat($handle);
+    my $post_open_path = abs_path($resolved);
+    my @post_open_stat = defined $post_open_path ? stat($post_open_path) : ();
+    my $post_open_inside = defined $post_open_path &&
+        ($post_open_path eq $policy_workspace_root ||
+            index($post_open_path, "$policy_workspace_root/") == 0);
+    if (@stat == 0 || !S_ISREG($stat[2]) || $stat[7] > 8 * 1024 * 1024 ||
+        !$post_open_inside || @post_open_stat == 0 ||
+        $post_open_stat[0] != $stat[0] || $post_open_stat[1] != $stat[1] ||
+        $terminal_source_read_budget_bytes < $stat[7]) {
+        close $handle;
+        store_terminal_source_cache_line($path, $_, undef) for @missing;
+        return;
+    }
+
+    my $content = "";
+    my $read_failed = 0;
+    my $read_limit = 8 * 1024 * 1024 + 1;
+    while (length($content) < $read_limit) {
+        my $remaining = $read_limit - length($content);
+        my $wanted = $remaining < 65536 ? $remaining : 65536;
+        my $read = sysread($handle, my $chunk, $wanted);
+        if (!defined $read) {
+            $read_failed = 1;
+            last;
+        }
+        last if $read == 0;
+        $content .= $chunk;
+    }
+    close $handle;
+    $terminal_source_read_budget_bytes -= length($content);
+
+    if (!$read_failed && length($content) <= 8 * 1024 * 1024) {
+        my $current_line = 1;
+        my $line_start = 0;
+        my $store_line = sub {
+            my ($line_number, $start, $end) = @_;
+            return if $line_number < $first_line || $line_number > $last_line;
+            my $length = $end - $start;
+            my $truncated = $length > 65536 ? 1 : 0;
+            $length = 65536 if $truncated;
+            my $bytes = substr($content, $start, $length);
+            $bytes .= " [line truncated]" if $truncated;
+            store_terminal_source_cache_line(
+                $path,
+                $line_number,
+                decode("UTF-8", $bytes, FB_DEFAULT)
+            );
+        };
+        while ($content =~ /\r\n|\n|\r/g) {
+            $store_line->($current_line, $line_start, $-[0]);
+            $current_line += 1;
+            $line_start = $+[0];
+            last if $current_line > $last_line;
+        }
+        $store_line->($current_line, $line_start, length($content))
+            if $current_line <= $last_line;
+    }
+    for my $wanted_line (@missing) {
+        my $key = terminal_source_cache_key($path, $wanted_line);
+        store_terminal_source_cache_line($path, $wanted_line, undef)
+            if !exists $terminal_source_cache{$key};
+    }
+}
+
+sub terminal_source_line {
+    my ($path, $line) = @_;
+    return undef if !defined $line || $line < 1;
+    my $key = terminal_source_cache_key($path, $line);
+    cache_terminal_source_window($path, $line, $line)
+        if !exists $terminal_source_cache{$key};
+    return $terminal_source_cache{$key};
+}
+
+sub terminal_character_cell_width {
+    my ($char) = @_;
+    my $codepoint = ord($char);
+    return $terminal_character_width_cache{$codepoint}
+        if exists $terminal_character_width_cache{$codepoint};
+    my $width = $char =~ /\p{M}/ ? 0 :
+        $char =~ /\p{East_Asian_Width=Wide}|\p{East_Asian_Width=Fullwidth}/ ? 2 : 1;
+    $terminal_character_width_cache{$codepoint} = $width;
+    return $width;
+}
+
+sub terminal_grapheme_cell_width {
+    my ($cluster) = @_;
+    return 0 if !defined $cluster || $cluster eq "" || $cluster !~ /\P{M}/;
+    return 2 if $cluster =~ /\p{Emoji_Presentation}|\p{Regional_Indicator}|[\x{fe0f}\x{20e3}]/;
+    my $width = 0;
+    for my $char (split(//, $cluster)) {
+        my $char_width = terminal_character_cell_width($char);
+        $width = $char_width if $char_width > $width;
+    }
+    return $width;
+}
+
+sub terminal_text_cell_width {
+    my ($text) = @_;
+    $text = "" if !defined $text;
+    my $width = 0;
+    $width += terminal_grapheme_cell_width($1) while $text =~ /(\X)/g;
+    return $width;
+}
+
+sub terminal_visible_source_char {
+    my ($char, $display_length) = @_;
+    my $codepoint = ord($char);
+    if ($char eq "\t") {
+        my $spaces = 4 - ($display_length % 4);
+        return " " x $spaces;
+    }
+    if ($codepoint < 32 || ($codepoint >= 127 && $codepoint <= 159) ||
+        $char =~ /\p{Cf}/ || $codepoint == 0x2028 || $codepoint == 0x2029) {
+        return terminal_control_escape($codepoint);
+    }
+    return $char;
+}
+
+sub prepare_terminal_source_line {
+    my ($raw, $column, $end_column) = @_;
+    $raw = "" if !defined $raw;
+    my $display = "";
+    my $display_width = 0;
+    my ($display_column, $display_end);
+    my $raw_column = 1;
+    while ($raw =~ /(\X)/g) {
+        my $cluster = $1;
+        my $cluster_columns = length($cluster);
+        my $cluster_end = $raw_column + $cluster_columns;
+        my $display_position = $display_width + 1;
+        $display_column = $display_position
+            if defined $column && $column >= $raw_column && $column < $cluster_end;
+        $display_end = $display_position
+            if defined $end_column && $end_column >= $raw_column && $end_column < $cluster_end;
+        my $visible_cluster = "";
+        for my $char (split(//, $cluster)) {
+            my $visible_width = terminal_text_cell_width($visible_cluster);
+            $visible_cluster .= terminal_visible_source_char(
+                $char,
+                $display_width + $visible_width
+            );
+        }
+        $display .= $visible_cluster;
+        $display_width += terminal_text_cell_width($visible_cluster);
+        $raw_column = $cluster_end;
+    }
+    my $after_end = $display_width + 1;
+    $display_column = $after_end
+        if defined $column && $column == $raw_column;
+    $display_end = $after_end
+        if defined $end_column && $end_column == $raw_column;
+
+    if (!defined $display_column) {
+        my $first = $display =~ /\S/
+            ? terminal_text_cell_width(substr($display, 0, $-[0])) + 1
+            : 1;
+        $display_column = $first;
+    }
+    $display_column = 1 if $display_column < 1;
+    $display_column = $display_width + 1
+        if $display_column > $display_width + 1;
+    $display_end = $display_column + 1 if !defined $display_end;
+    $display_end = $display_column + 1 if $display_end <= $display_column;
+    $display_end = $display_width + 1 if $display_end > $display_width + 1;
+    $display_end = $display_column + 1 if $display_end <= $display_column;
+    return ($display, $display_column, $display_end);
+}
+
+sub terminal_slice_by_cells {
+    my ($text, $wanted_start, $max_width) = @_;
+    my $cursor = 1;
+    my $started = 0;
+    my $actual_start = 1;
+    my $used = 0;
+    my $shown = "";
+    while ($text =~ /(\X)/g) {
+        my $cluster = $1;
+        my $width = terminal_grapheme_cell_width($cluster);
+        if (!$started) {
+            if ($width == 0 || $cursor + $width - 1 < $wanted_start) {
+                $cursor += $width;
+                next;
+            }
+            $started = 1;
+            $actual_start = $cursor;
+        }
+        last if $width > 0 && $used > 0 && $used + $width > $max_width;
+        $shown .= $cluster;
+        $used += $width;
+        $cursor += $width;
+    }
+    return ($shown, $actual_start, $used, $cursor <= terminal_text_cell_width($text));
+}
+
+sub crop_terminal_source_line {
+    my ($text, $column, $end_column, $available) = @_;
+    $available = 32 if !defined $available || $available < 32;
+    my $length = terminal_text_cell_width($text);
+    my $span = $end_column - $column;
+    $span = 1 if $span < 1;
+    return ($text, $column, $span) if $length <= $available;
+
+    my $window = $available - 6;
+    $window = 20 if $window < 20;
+    my $start = $column - int($window / 3);
+    $start = 1 if $start < 1;
+    $start = $length - $window + 1 if $start + $window - 1 > $length;
+    $start = 1 if $start < 1;
+    my ($slice, $actual_start, $used, $has_more) =
+        terminal_slice_by_cells($text, $start, $window);
+    my $prefix = $actual_start > 1 ? "..." : "";
+    my $suffix = $has_more ? "..." : "";
+    my $shown = $prefix . $slice . $suffix;
+    my $shown_width = terminal_text_cell_width($shown);
+    my $shown_column = terminal_text_cell_width($prefix) + $column - $actual_start + 1;
+    $shown_column = 1 if $shown_column < 1;
+    $shown_column = $shown_width + 1 if $shown_column > $shown_width + 1;
+    my $shown_span = $span;
+    $shown_span = $shown_width - $shown_column + 1
+        if $shown_column + $shown_span - 1 > $shown_width;
+    $shown_span = 1 if $shown_span < 1;
+    return ($shown, $shown_column, $shown_span);
+}
+
+sub terminal_output_width {
+    my ($options) = @_;
+    return int($options->{width})
+        if defined $options->{width} && $options->{width} =~ /\A\d+\z/;
+    my $width = $ENV{COLUMNS};
+    $width = 120 if !defined $width || $width !~ /\A\d+\z/;
+    $width = 60 if $width < 60;
+    $width = 240 if $width > 240;
+    return int($width);
+}
+
+sub render_source_frame {
+    my ($span, $label, $options) = @_;
+    my $color = $options->{color} ? 1 : 0;
+    my $marker = $options->{marker} // "-->";
+    my $severity_style = $options->{severity_style} // "cyan-bold";
+    my $path = $span->{path} // "<unknown>";
+    my $line = defined $span->{line} && $span->{line} =~ /\A\d+\z/
+        ? int($span->{line})
+        : undef;
+    my $column = defined $span->{column} && $span->{column} =~ /\A\d+\z/
+        ? int($span->{column})
+        : undef;
+    my $end_column = defined $span->{end_column} && $span->{end_column} =~ /\A\d+\z/
+        ? int($span->{end_column})
+        : undef;
+    my $end_line = defined $span->{end_line} && $span->{end_line} =~ /\A\d+\z/
+        ? int($span->{end_line})
+        : $line;
+    my $location = terminal_safe_text($path);
+    $location .= ":$line" if defined $line;
+    $location .= ":$column" if defined $column;
+    my $out = terminal_style($color, "blue-bold", "  $marker") . " " .
+        terminal_style($color, "bold", $location) . "\n";
+    return $out if !defined $line || $line < 1;
+    if ($span->{suppress_source}) {
+        $out .= "      " . terminal_style($color, "blue", "|") . " " .
+            terminal_style($color, "dim", "source preview disabled for governance input") . "\n";
+        return $out;
+    }
+
+    my $sensitive = $span->{sensitive} ? 1 : 0;
+    my $primary_sensitive = $sensitive || terminal_source_line_is_sensitive($path, $line);
+    my $context = $sensitive ? 0 : int($options->{context_lines} // 0);
+    my $loader = $options->{source_loader};
+    cache_terminal_source_window(
+        $path,
+        $line > $context ? $line - $context : 1,
+        $line + $context
+    ) if ref($loader) ne "CODE" && !$primary_sensitive;
+    my $load_line = sub {
+        my ($wanted_line) = @_;
+        return $loader->($path, $wanted_line) if ref($loader) eq "CODE";
+        return terminal_source_line($path, $wanted_line);
+    };
+    my $raw = $primary_sensitive
+        ? "[source line redacted: potential credential]"
+        : $load_line->($line);
+    if (!defined $raw) {
+        $out .= "      " . terminal_style($color, "blue", "|") . " " .
+            terminal_style($color, "dim", terminal_safe_text($label)) . "\n"
+            if defined $label && $label ne "" && $marker ne "-->";
+        return $out;
+    }
+    if (!$primary_sensitive && terminal_source_text_is_sensitive($path, $line, $raw)) {
+        $primary_sensitive = 1;
+        $raw = "[source line redacted: potential credential]";
+        $label = $marker eq "-->"
+            ? "reported location (source redacted: potential credential)"
+            : "related evidence redacted: potential credential";
+    }
+
+    my $column_out_of_range = defined $column && !$primary_sensitive &&
+        ($column < 1 || $column > length($raw) + 1);
+    if ($column_out_of_range) {
+        $label = $marker eq "-->"
+            ? "reported line (column $column is outside current source)"
+            : terminal_safe_text($label) . " (column $column is outside current source)";
+    }
+
+    my @rows;
+    my $frame_end_line = defined $end_line && $end_line > $line
+        ? min_number($end_line, $line + 4)
+        : $line;
+    for my $row_line (($line - $context) .. ($frame_end_line + $context)) {
+        next if $row_line < 1;
+        my $row_sensitive = $sensitive || terminal_source_line_is_sensitive($path, $row_line);
+        my $row_raw = $row_line == $line
+            ? $raw
+            : ($row_sensitive
+                ? "[source line redacted: potential credential]"
+                : $load_line->($row_line));
+        next if !defined $row_raw;
+        if (!$row_sensitive && terminal_source_text_is_sensitive($path, $row_line, $row_raw)) {
+            $row_sensitive = 1;
+            $row_raw = "[source line redacted: potential credential]";
+        }
+        push @rows, [$row_line, $row_raw, $row_sensitive];
+    }
+    my $gutter_width = length("" . ($frame_end_line + $context));
+    my $available = terminal_output_width($options) - $gutter_width - 5;
+    $available = 32 if $available < 32;
+    my $bar = terminal_style($color, "blue", "|");
+    $out .= " " . (" " x $gutter_width) . " $bar\n";
+
+    for my $row (@rows) {
+        my ($row_line, $row_raw, $row_sensitive) = @{$row};
+        my ($display, $display_column, $display_end) = prepare_terminal_source_line(
+            $row_raw,
+            $row_line == $line && !$row_sensitive && !$column_out_of_range ? $column : undef,
+            $row_line == $line && !$row_sensitive && !$column_out_of_range
+                ? (defined $end_line && $end_line > $line ? length($row_raw) + 1 : $end_column)
+                : undef
+        );
+        my ($shown, $shown_column, $shown_span) = crop_terminal_source_line(
+            $display,
+            $row_line == $line ? $display_column : 1,
+            $row_line == $line ? $display_end : 2,
+            $available
+        );
+        my $number = sprintf("%*d", $gutter_width, $row_line);
+        $out .= " " . terminal_style($color, "blue", $number) . " $bar " . $shown . "\n";
+        next if $row_line != $line;
+        my $caret = "^" x $shown_span;
+        my $safe_label = terminal_safe_text($label // "reported location");
+        $out .= " " . (" " x $gutter_width) . " $bar " .
+            (" " x ($shown_column - 1)) .
+            terminal_style($color, $severity_style, $caret) .
+            ($safe_label ne "" ? " " . terminal_style($color, $severity_style, $safe_label) : "") .
+            "\n";
+    }
+    return $out;
+}
+
+sub render_short_diagnostic {
+    my ($diag, $options) = @_;
+    my $color = $options->{color} ? 1 : 0;
+    my $severity = $diag->{severity} // "notice";
+    my $label = severity_label($severity);
+    return terminal_style($color, severity_terminal_style($severity), $label) .
+        " [" . terminal_style($color, "bold", terminal_safe_text($diag->{code})) . "] " .
+        terminal_safe_text($diag->{where}) . ": " .
+        terminal_safe_text($diag->{message}) . "\n";
+}
+
+sub render_diagnostic {
+    my ($diag, $options) = @_;
+    $options = {} if ref($options) ne "HASH";
+    return render_short_diagnostic($diag, $options)
+        if ($options->{format} // "rich") eq "short";
+
+    my $color = $options->{color} ? 1 : 0;
+    my $severity = $diag->{severity} // "notice";
+    my $severity_style = severity_terminal_style($severity);
+    my $severity_name = severity_terminal_name($severity);
+    my $code = terminal_safe_text($diag->{code});
+    my $message = terminal_safe_text($diag->{message});
+    my $meta = rule_metadata($diag->{code});
+    my $out = terminal_style($color, $severity_style, $severity_name) . "[" .
+        terminal_style($color, "bold", $code) . "]: " . $message . "\n";
+
+    my $span = diagnostic_human_span($diag);
+    my %frame_options = (
+        %{$options},
+        marker => "-->",
+        severity_style => $severity_style
+    );
+    my $primary_label = $span->{label} // (defined $span->{column}
+        ? "reported location"
+        : "reported line (exact column unavailable)");
+    $out .= render_source_frame($span, $primary_label, \%frame_options);
+
+    my @secondary = ref($diag->{secondary_spans}) eq "ARRAY"
+        ? @{$diag->{secondary_spans}}
+        : ();
+    for my $secondary (@secondary) {
+        next if ref($secondary) ne "HASH";
+        my %copy = %{$secondary};
+        my $secondary_sensitive = $span->{sensitive} ||
+            terminal_source_line_is_sensitive($copy{path}, $copy{line});
+        $copy{sensitive} = 1 if $secondary_sensitive;
+        my %secondary_options = (
+            %{$options},
+            marker => ":::",
+            context_lines => 0,
+            severity_style => $severity_style
+        );
+        $out .= render_source_frame(
+            \%copy,
+            $secondary_sensitive
+                ? "related evidence redacted: potential credential"
+                : ($copy{label} // "related location"),
+            \%secondary_options
+        );
+    }
+
+    my @flow = ref($diag->{flow}) eq "ARRAY" ? @{$diag->{flow}} : ();
+    my $limit = int($options->{max_flow_steps} // 0);
+    $limit = scalar(@flow) if $limit > @flow;
+    for (my $index = 0; $index < $limit; $index += 1) {
+        my $step = $flow[$index];
+        next if ref($step) ne "HASH";
+        my $flow_sensitive = $span->{sensitive} ||
+            terminal_source_line_is_sensitive($step->{path}, $step->{line});
+        my $flow_span = {
+            path => $step->{path} // "<unknown>",
+            line => $step->{line},
+            column => $step->{column},
+            end_line => $step->{end_line},
+            end_column => $step->{end_column},
+            sensitive => $flow_sensitive ? 1 : 0
+        };
+        my %flow_options = (
+            %{$options},
+            marker => ":::",
+            context_lines => 0,
+            severity_style => $severity_style
+        );
+        my $flow_message = $flow_sensitive
+            ? "potential credential evidence redacted"
+            : ($step->{message} // "related evidence");
+        my $flow_label = "trace " . ($index + 1) . ": " . $flow_message;
+        $flow_label .= " (exact column unavailable)" if !defined $step->{column};
+        $out .= render_source_frame($flow_span, $flow_label, \%flow_options);
+    }
+    if (@flow > $limit) {
+        $out .= "  " . terminal_style($color, "cyan-bold", "= trace:") . " " .
+            (@flow - $limit) . " additional step(s) omitted; rerun with --max-flow-steps=" .
+            scalar(@flow) . "\n";
+    }
+
+    $out .= "  " . terminal_style($color, "cyan-bold", "= reason:") . " " .
+        terminal_safe_text($meta->{description}) . "\n"
+        if defined $meta->{description} && $meta->{description} ne "";
+    $out .= "  " . terminal_style($color, "green-bold", "= help:") . " " .
+        terminal_safe_text($meta->{remediationText}) . "\n"
+        if defined $meta->{remediationText} && $meta->{remediationText} ne "";
+
+    for my $note (@{$diag->{notes} // []}) {
+        next if ref($note);
+        $out .= "  " . terminal_style($color, "cyan-bold", "= note:") . " " .
+            terminal_safe_text($note) . "\n";
+    }
+    for my $suggestion (@{$diag->{suggestions} // []}) {
+        my $text = ref($suggestion) eq "HASH"
+            ? ($suggestion->{message} // $suggestion->{label} // "")
+            : $suggestion;
+        next if !defined $text || ref($text) || $text eq "";
+        $out .= "  " . terminal_style($color, "green-bold", "= fix:") . " " .
+            terminal_safe_text($text) . "\n";
+    }
+
+    my @context = (
+        "category=" . terminal_safe_text($meta->{category}),
+        "engine=" . terminal_safe_text($meta->{engine}),
+        "precision=" . terminal_safe_text($meta->{precision}),
+        "confidence=" . terminal_safe_text($meta->{confidence})
+    );
+    push @context, "cwe=" . terminal_safe_text($meta->{cwe}) if defined $meta->{cwe};
+    $out .= "  " . terminal_style($color, "cyan-bold", "= context:") . " " .
+        join("; ", @context) . "\n";
+
+    if ($severity ne "notice" || $options->{verbose}) {
+        my $priority = triage_priority(triage_score($diag, $meta));
+        my @tracking = ("priority=$priority");
+        push @tracking, "owner=" . terminal_safe_text($diag->{owner})
+            if defined $diag->{owner};
+        push @tracking, "defect=" . defect_key($diag);
+        push @tracking, "fingerprint=" . terminal_safe_text($diag->{fingerprint})
+            if defined $diag->{fingerprint};
+        $out .= "  " . terminal_style($color, "cyan-bold", "= tracking:") . " " .
+            join("; ", @tracking) . "\n";
+    }
+    return $out . "\n";
+}
+
 sub emit_diagnostics {
     my (@diagnostics) = @_;
     for my $diag (@diagnostics) {
         next if diagnostic_quality_excluded($diag);
         next if $diag->{severity} eq "notice" && !$show_notices;
-        my $label = severity_label($diag->{severity});
-        my $line = "$label [$diag->{code}] $diag->{where}: $diag->{message}\n";
-        if ($diag->{severity} eq "error") {
-            print STDERR $line;
-        } elsif ($diag->{severity} eq "warning") {
-            print STDERR $line;
-        } else {
-            print STDOUT $line;
-        }
+        my $handle = $diag->{severity} eq "notice" ? \*STDOUT : \*STDERR;
+        my $block = render_diagnostic($diag, {
+            color => terminal_color_enabled($handle),
+            format => $diagnostic_format,
+            context_lines => $diagnostic_context_lines,
+            max_flow_steps => $diagnostic_max_flow_steps,
+            verbose => $show_notices ? 1 : 0
+        });
+        human_print($handle, $block);
     }
+}
+
+sub quality_gate_budget_overruns {
+    my ($quality_gate) = @_;
+    my @overruns;
+    for my $metric (sort keys %{$quality_gate->{budgets} // {}}) {
+        next if !exists $quality_gate->{metrics}{$metric};
+        my $value = $quality_gate->{metrics}{$metric};
+        my $budget = $quality_gate->{budgets}{$metric};
+        next if !defined $value || !defined $budget;
+        next if !looks_like_number($value) || !looks_like_number($budget);
+        next if $value <= $budget;
+        push @overruns, {
+            metric => $metric,
+            value => $value,
+            budget => $budget,
+            over => $value - $budget
+        };
+    }
+    return @overruns;
+}
+
+sub quality_gate_failure_metric_map {
+    return {
+        "error-budget" => "errors",
+        "warning-budget" => "warnings",
+        "flow-warning-budget" => "flowWarnings",
+        "notice-budget" => "notices",
+        "recursive-cycle-budget" => "recursiveCycles",
+        "unbounded-recursion-budget" => "unboundedRecursionCycles",
+        "tainted-sink-path-budget" => "taintedSinkPaths",
+        "branch-leak-budget" => "branchLeaks",
+        "hot-unbounded-loop-budget" => "hotUnboundedLoops",
+        "range-gap-budget" => "rangeGaps",
+        "index-gap-budget" => "indexGaps",
+        "hostile-mutation-budget" => "hostileMutations",
+        "memory-alias-gap-budget" => "memoryAliasGaps",
+        "key-safety-gap-budget" => "keySafetyGaps",
+        "result-state-gap-budget" => "resultStateGaps",
+        "freeze-mutation-budget" => "freezeMutations",
+        "variant-switch-gap-budget" => "variantSwitchGaps",
+        "generated-source-gap-budget" => "generatedSourceGaps",
+        "hot-validation-throw-budget" => "hotValidationThrows",
+        "lifecycle-gap-budget" => "lifecycleGaps",
+        "interprocedural-lifecycle-gap-budget" => "interproceduralLifecycleGaps",
+        "async-scheduling-gap-budget" => "asyncSchedulingGaps",
+        "type-escape-budget" => "typeEscapes",
+        "redos-risk-budget" => "redosRisks",
+        "secret-leak-budget" => "secretLeaks",
+        "workflow-high-risk-budget" => "workflowHighRiskFindings",
+        "workflow-mutable-action-budget" => "workflowMutableActionRefs",
+        "package-lock-risk-budget" => "packageLockRisks",
+        "package-lock-runtime-dependency-budget" => "packageLockRuntimeDependencies",
+        "license-risk-budget" => "licenseRisks",
+        "license-review-budget" => "licenseReviewItems",
+        "api-surface-drift-budget" => "apiSurfaceDrift",
+        "api-documentation-gap-budget" => "apiDocumentationGaps",
+        "release-consistency-risk-budget" => "releaseConsistencyRisks",
+        "test-evidence-gap-budget" => "testEvidenceGaps",
+        "benchmark-evidence-gap-budget" => "benchmarkEvidenceGaps",
+        "rule-metadata-gap-budget" => "ruleMetadataGaps",
+        "generic-rule-metadata-budget" => "genericRuleMetadataItems",
+        "symbolic-path-budget" => "symbolicPaths",
+        "interprocedural-symbolic-path-budget" => "interproceduralSymbolicPaths",
+        "nullish-gap-budget" => "nullishGaps",
+        "hot-loop-allocation-budget" => "hotLoopAllocations",
+        "contract-gap-budget" => "contractGaps",
+        "duplicate-block-budget" => "duplicateBlocks",
+        "technical-debt-budget" => "technicalDebtMinutes",
+        "unreachable-budget" => "unreachableStatements",
+        "new-defect-budget" => "newDefects",
+        "component-open-budget" => "maxComponentOpen",
+        "component-debt-budget" => "maxComponentDebtMinutes",
+        "root-cause-open-budget" => "openRootCauses",
+        "noisy-rule-budget" => "noisyRules",
+        "finding-provenance-gap-budget" => "findingProvenanceGaps",
+        "finding-witness-gap-budget" => "findingWitnessGaps",
+        "low-confidence-finding-budget" => "lowConfidenceFindings",
+        "run-manifest-gap-budget" => "runManifestGaps",
+        "unowned-open-budget" => "unownedOpen",
+        "unowned-diagnostic-budget" => "unownedDiagnostics",
+        "unrouted-defect-budget" => "unroutedDefects",
+        "expired-triage-budget" => "expiredTriage",
+        "invalid-triage-entry-budget" => "invalidTriageEntries",
+        "stale-waiver-budget" => "staleWaivers",
+        "expired-waiver-budget" => "expiredWaivers",
+        "wildcard-suppression-budget" => "wildcardSuppressions",
+        "review-decision-risk-budget" => "reviewDecisionRisks",
+        "analysis-coverage-gap-budget" => "analysisCoverageGaps",
+        "quality-profile-override-budget" => "qualityProfileRiskyOverrides",
+        "new-code-open-budget" => "newCodeOpen",
+        "new-code-debt-budget" => "newCodeDebtMinutes",
+        "change-impact-critical-budget" => "changeImpactCriticalFiles",
+        "change-impact-blast-radius-budget" => "changeImpactBlastRadiusPermille",
+        "history-open-regression-budget" => "historyOpenDelta",
+        "history-debt-regression-budget" => "historyDebtDelta",
+        "reopened-issue-budget" => "reopenedIssues",
+        "overdue-issue-budget" => "overdueIssues",
+        "max-issue-age-budget" => "maxIssueAgeDays",
+        "assurance-gap-budget" => "assuranceOpenClaims",
+        "compliance-control-budget" => "complianceFailedControls",
+        "security-hotspot-review-budget" => "unreviewedSecurityHotspots",
+        "exploitable-security-budget" => "exploitableSecurityFindings",
+        "security-dataflow-critical-budget" => "securityDataflowCriticalPaths",
+        "path-feasibility-unknown-budget" => "pathFeasibilityUnknownPaths",
+        "context-sensitivity-risk-budget" => "contextSensitivityRisks",
+        "soundness-assumption-budget" => "openSoundnessAssumptions",
+        "open-proof-obligation-budget" => "openProofObligations"
+    };
+}
+
+sub quality_gate_overrun_matches_failure {
+    my ($metric, $failed_checks) = @_;
+    my $mapping = quality_gate_failure_metric_map();
+    for my $failed (@{$failed_checks // []}) {
+        return 1 if defined $mapping->{$failed} && $mapping->{$failed} eq $metric;
+    }
+    return 0;
+}
+
+sub emit_quality_gate {
+    my ($quality_gate) = @_;
+    if ($diagnostic_format eq "short") {
+        my $status = $quality_gate->{status} // "failed";
+        return if $status eq "passed" && !$show_notices;
+        my $severity = $status eq "passed" ? "notice" : "error";
+        my $handle = $status eq "passed" ? \*STDOUT : \*STDERR;
+        my $color = terminal_color_enabled($handle);
+        my $failed = @{$quality_gate->{failed} // []} == 0
+            ? "none"
+            : join(",", map { terminal_safe_text($_) } @{$quality_gate->{failed}});
+        my $line = terminal_style(
+            $color,
+            severity_terminal_style($severity),
+            severity_label($severity)
+        ) . " [" . terminal_style($color, "bold", "quality.gate") . "] " .
+            "profile=" . terminal_safe_text($quality_gate->{profile} // "default") .
+            " status=" . terminal_safe_text($status) . " failed=$failed\n";
+        human_print($handle, $line);
+        return;
+    }
+    my $status = $quality_gate->{status} // "failed";
+    return if $status eq "passed" && !$show_notices;
+    my $severity = $status eq "passed" ? "notice" : "error";
+    my $handle = $status eq "passed" ? \*STDOUT : \*STDERR;
+    my $color = terminal_color_enabled($handle);
+    my $style = severity_terminal_style($severity);
+    my $name = severity_terminal_name($severity);
+    my $profile = terminal_safe_text($quality_gate->{profile} // "default");
+    my $message = $status eq "passed"
+        ? "contributing policy quality gate passed for profile '$profile'"
+        : "contributing policy quality gate failed for profile '$profile'";
+    my $out = terminal_style($color, $style, $name) . "[" .
+        terminal_style($color, "bold", "quality.gate") . "]: $message\n";
+
+    for my $failed (@{$quality_gate->{failed} // []}) {
+        $out .= "  " . terminal_style($color, "red-bold", "= failed:") . " " .
+            terminal_safe_text($failed) . "\n";
+    }
+    my @overruns = grep {
+        quality_gate_overrun_matches_failure($_->{metric}, $quality_gate->{failed})
+    } quality_gate_budget_overruns($quality_gate);
+    my $limit = $show_notices ? scalar(@overruns) : min_number(12, scalar(@overruns));
+    for (my $index = 0; $index < $limit; $index += 1) {
+        my $item = $overruns[$index];
+        $out .= "  " . terminal_style($color, "yellow-bold", "= budget:") . " " .
+            terminal_safe_text($item->{metric}) . "=" . $item->{value} . "/" . $item->{budget} .
+            " (exceeded by " . $item->{over} . ")\n";
+    }
+    if (@overruns > $limit) {
+        $out .= "  " . terminal_style($color, "cyan-bold", "= note:") . " " .
+            (@overruns - $limit) . " additional budget overrun(s) omitted; use --verbose\n";
+    }
+    if ($status eq "passed") {
+        $out .= "  " . terminal_style($color, "green-bold", "= result:") .
+            " all configured release budgets are satisfied\n";
+    } else {
+        $out .= "  " . terminal_style($color, "green-bold", "= help:") .
+            " Fix the diagnostics above. Change a budget only with reviewed, tracked rationale.\n";
+    }
+    human_print($handle, $out . "\n");
+}
+
+sub run_terminal_diagnostic_self_tests {
+    my $sample = diagnostic(
+        "error",
+        "deps.runtime",
+        "src/example.ts:12",
+        "runtime dependency violates the zero-dependency policy",
+        [{ path => "src/caller.ts", line => 4, message => "dependency enters here" }],
+        {
+            primary_span => {
+                path => "src/example.ts",
+                line => 12,
+                column => 7,
+                end_column => 14,
+                label => "external import"
+            }
+        }
+    );
+    $sample->{owner} = "tooling";
+    $sample->{fingerprint} = "TPC-selftest";
+    my $loader = sub {
+        my ($path, $line) = @_;
+        return "      import value from 'external';" if $path eq "src/example.ts" && $line == 12;
+        return "callDependency();" if $path eq "src/caller.ts" && $line == 4;
+        return undef;
+    };
+    my $plain = render_diagnostic($sample, {
+        color => 0,
+        format => "rich",
+        context_lines => 0,
+        max_flow_steps => 6,
+        width => 80,
+        source_loader => $loader
+    });
+    die "terminal diagnostic self-test failed: missing Rust-style header\n"
+        if index($plain, "error[deps.runtime]") < 0;
+    die "terminal diagnostic self-test failed: missing source location\n"
+        if index($plain, "--> src/example.ts:12:7") < 0;
+    die "terminal diagnostic self-test failed: missing source caret\n"
+        if index($plain, "^^^^^^^") < 0;
+    die "terminal diagnostic self-test failed: missing remediation\n"
+        if index($plain, "= help:") < 0 || index($plain, "= reason:") < 0;
+    die "terminal diagnostic self-test failed: missing flow trace\n"
+        if index($plain, "::: src/caller.ts:4") < 0 || index($plain, "trace 1:") < 0;
+
+    my $colored = render_diagnostic($sample, {
+        color => 1,
+        format => "rich",
+        context_lines => 0,
+        max_flow_steps => 6,
+        width => 80,
+        source_loader => $loader
+    });
+    my $stripped = $colored;
+    $stripped =~ s/\e\[[0-9;]*m//g;
+    die "terminal diagnostic self-test failed: color changed layout\n"
+        if $stripped ne $plain;
+    die "terminal diagnostic self-test failed: ANSI color missing\n"
+        if index($colored, "\e[1;31m") < 0;
+
+    my $injected = diagnostic(
+        "warning",
+        "deps.runtime",
+        "src/forged.ts:1",
+        "forged\e[31m heading\nnext" . chr(0x009b) . chr(0x061c)
+    );
+    my $safe = render_diagnostic($injected, {
+        color => 0,
+        format => "rich",
+        context_lines => 0,
+        max_flow_steps => 0,
+        source_loader => sub { return "value\e]8;;https://example.invalid\a"; }
+    });
+    die "terminal diagnostic self-test failed: control sequence injection\n"
+        if $safe =~ /\e|\a|\x{009b}|\x{061c}/ ||
+            index($safe, "\\x1B") < 0 ||
+            index($safe, "\\x9B") < 0 ||
+            index($safe, "\\u{061C}") < 0 ||
+            index($safe, "\\n") < 0;
+
+    my $secret = diagnostic(
+        "error",
+        "security.secret-leak",
+        "src/secret.ts:3",
+        "hardcoded secret-like value found",
+        [{ path => "src/secret.ts", line => 3, message => "token abcd...wxyz" }]
+    );
+    my $secret_render = render_diagnostic($secret, {
+        color => 0,
+        format => "rich",
+        context_lines => 2,
+        max_flow_steps => 1,
+        source_loader => sub { return "TOP_SECRET_SHOULD_NEVER_RENDER"; }
+    });
+    die "terminal diagnostic self-test failed: secret source was disclosed\n"
+        if index($secret_render, "TOP_SECRET_SHOULD_NEVER_RENDER") >= 0 ||
+            index($secret_render, "abcd...wxyz") >= 0;
+    die "terminal diagnostic self-test failed: secret redaction marker missing\n"
+        if index($secret_render, "source line redacted") < 0;
+
+    index_terminal_sensitive_source_lines([{ path => "src/shared.ts", line => 8 }]);
+    my $overlap = diagnostic(
+        "warning",
+        "deps.runtime",
+        "src/shared.ts:7",
+        "unrelated diagnostic beside a credential",
+        [{ path => "src/shared.ts", line => 8, message => "RAW_SECRET_IN_RELATED_TRACE" }]
+    );
+    my $overlap_render = render_diagnostic($overlap, {
+        color => 0,
+        format => "rich",
+        context_lines => 1,
+        max_flow_steps => 1,
+        source_loader => sub { return "NEIGHBORING_SECRET_MUST_STAY_HIDDEN"; }
+    });
+    die "terminal diagnostic self-test failed: overlapping secret context was disclosed\n"
+        if index($overlap_render, "NEIGHBORING_SECRET_MUST_STAY_HIDDEN") >= 0 ||
+            index($overlap_render, "RAW_SECRET_IN_RELATED_TRACE") >= 0;
+    my $dynamic_secret = "sk-" . ("A" x 32);
+    my $unindexed_secret = diagnostic(
+        "warning",
+        "security.redos-risk",
+        "src/unindexed-secret.ts:1",
+        "regex requires review",
+        [{
+            path => "src/unindexed-secret.ts",
+            line => 1,
+            message => "regex /$dynamic_secret.*foo.*bar/"
+        }]
+    );
+    my $unindexed_render = render_diagnostic($unindexed_secret, {
+        color => 0,
+        format => "rich",
+        context_lines => 0,
+        max_flow_steps => 1,
+        source_loader => sub { return "const key = '$dynamic_secret';"; }
+    });
+    die "terminal diagnostic self-test failed: on-demand secret scrub failed\n"
+        if index($unindexed_render, $dynamic_secret) >= 0;
+
+    my $span = parse_human_location("src/space name.ts:12:7-15");
+    die "terminal diagnostic self-test failed: span parser\n"
+        if ($span->{path} // "") ne "src/space name.ts" ||
+            ($span->{line} // 0) != 12 ||
+            ($span->{column} // 0) != 7 ||
+            ($span->{end_column} // 0) != 15;
+    die "terminal diagnostic self-test failed: NO_COLOR precedence\n"
+        if resolve_terminal_color("auto", 1, "xterm", "1", undef) != 0;
+    die "terminal diagnostic self-test failed: explicit color precedence\n"
+        if resolve_terminal_color("always", 0, "dumb", "1", undef) != 1;
+    die "terminal diagnostic self-test failed: non-TTY auto color\n"
+        if resolve_terminal_color("auto", 0, "xterm", undef, undef) != 0;
+    die "terminal diagnostic self-test failed: active budget mapping\n"
+        if !quality_gate_overrun_matches_failure("assuranceOpenClaims", ["assurance-gap-budget"]);
+    die "terminal diagnostic self-test failed: inactive budget mapping\n"
+        if quality_gate_overrun_matches_failure("changeImpactCriticalFiles", ["error-budget"]);
+    my ($wide_line, $wide_column) = prepare_terminal_source_line(
+        chr(0xd55c) . chr(0xae00) . "\tvalue",
+        4,
+        5
+    );
+    die "terminal diagnostic self-test failed: wide-character caret alignment\n"
+        if $wide_column != 9 || terminal_text_cell_width($wide_line) != 13;
+    die "terminal diagnostic self-test failed: combining-mark width\n"
+        if terminal_text_cell_width("e" . chr(0x0301)) != 1;
+    my ($emoji_line, $emoji_column) = prepare_terminal_source_line(
+        chr(0x1f44d) . chr(0x1f3fd) . "X",
+        3,
+        4
+    );
+    die "terminal diagnostic self-test failed: emoji grapheme width\n"
+        if $emoji_column != 3 || terminal_text_cell_width($emoji_line) != 3;
+    die "terminal diagnostic self-test failed: emoji variation width\n"
+        if terminal_text_cell_width(chr(0x2708) . chr(0xfe0f) . "X") != 3;
+    my ($cropped_eol, $cropped_eol_column) = crop_terminal_source_line(
+        "x" x 100,
+        101,
+        102,
+        40
+    );
+    die "terminal diagnostic self-test failed: cropped end-of-line caret\n"
+        if $cropped_eol_column != terminal_text_cell_width($cropped_eol) + 1;
+    my $out_of_range = diagnostic(
+        "error",
+        "deps.runtime",
+        "src/outdated.ts:1",
+        "stale source span",
+        undef,
+        { primary_span => { path => "src/outdated.ts", line => 1, column => 99 } }
+    );
+    my $out_of_range_render = render_diagnostic($out_of_range, {
+        color => 0,
+        format => "rich",
+        context_lines => 0,
+        max_flow_steps => 0,
+        source_loader => sub { return "short line"; }
+    });
+    die "terminal diagnostic self-test failed: stale column was not disclosed\n"
+        if index($out_of_range_render, "column 99 is outside current source") < 0;
+    my $governance = diagnostic(
+        "error",
+        "triage.ledger",
+        ".env:1",
+        "triage ledger must be a JSON object"
+    );
+    my $governance_render = render_diagnostic($governance, {
+        color => 0,
+        format => "rich",
+        context_lines => 1,
+        max_flow_steps => 0,
+        source_loader => sub { return "API_KEY=GOVERNANCE_SECRET_MUST_NOT_RENDER"; }
+    });
+    die "terminal diagnostic self-test failed: governance input source was disclosed\n"
+        if index($governance_render, "GOVERNANCE_SECRET_MUST_NOT_RENDER") >= 0 ||
+            index($governance_render, "source preview disabled") < 0;
 }
 
 sub severity_label {
@@ -22598,7 +27134,33 @@ sub count_suppressed {
 
 sub summary_line {
     my ($errors, $warnings, $notices, $status) = @_;
-    return "contributing policy $status ($errors errors, $warnings warnings, $notices notices)\n";
+    if ($status eq "failed") {
+        return "error: policy analysis failed; $errors " . plural_word($errors, "error") .
+            "; $warnings " . plural_word($warnings, "warning") .
+            "; $notices " . plural_word($notices, "notice") . " recorded\n";
+    }
+    return "Finished policy analysis: $errors " . plural_word($errors, "error") .
+        "; $warnings " . plural_word($warnings, "warning") .
+        "; $notices " . plural_word($notices, "notice") . "\n";
+}
+
+sub plural_word {
+    my ($count, $word) = @_;
+    return $word if $count == 1;
+    return $word . "s";
+}
+
+sub emit_summary {
+    my ($errors, $warnings, $notices, $status) = @_;
+    my $handle = $status eq "failed" ? \*STDERR : \*STDOUT;
+    my $color = terminal_color_enabled($handle);
+    my $line = summary_line($errors, $warnings, $notices, $status);
+    if ($status eq "failed") {
+        $line =~ s/\Aerror/terminal_style($color, "red-bold", "error")/e;
+    } else {
+        $line =~ s/\AFinished/terminal_style($color, "green-bold", "Finished")/e;
+    }
+    human_print($handle, $line);
 }
 
 sub format_hz {

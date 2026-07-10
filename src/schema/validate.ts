@@ -1,8 +1,6 @@
 /**
  * @file schema/validate.ts
  * @brief Runtime validators for direct schema objects.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  */
 
 import {
@@ -68,8 +66,6 @@ interface SchemaValidationState {
 
 /**
  * @brief Validate one schema node with cycle protection.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  * @param value Candidate node.
  * @param state Recursion state shared by the root validation pass.
  * @returns True when this node and its reachable children are well-formed.
@@ -545,8 +541,6 @@ function isStringChecks(value: unknown): value is readonly StringCheck[] {
 
 /**
  * @brief Validate the check vector attached to a number schema.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  * @param value Candidate check vector.
  * @returns True when all numeric bounds are finite and tag-compatible.
  */
@@ -766,8 +760,6 @@ function hasLaterMime(values: readonly string[], value: string, start: number): 
 
 /**
  * @brief Validate a dense vector of child schemas.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  * @param value Candidate schema vector.
  * @param state Recursion state shared with the parent node.
  * @returns True when every vector slot is a valid schema.
@@ -881,8 +873,6 @@ function isDiscriminatedUnionSchemaValue(
 
 /**
  * @brief Prove that one case schema requires the requested discriminant value.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  * @param schema Case schema after structural validation.
  * @param key Discriminant property name.
  * @param literal Required literal value for this case.
@@ -941,8 +931,6 @@ function unwrapCaseObjectSchema(
 
 /**
  * @brief Check whether a schema forces one exact literal.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  * @param schema Property schema.
  * @param literal Required literal value.
  * @returns True when the schema cannot accept a different discriminant value.

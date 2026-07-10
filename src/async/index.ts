@@ -34,8 +34,6 @@ type AsyncDefaultInput<TValue> = TValue | (() => TValue);
 
 /**
  * @brief Private runner slot for async decoder instances.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  */
 const AsyncDecoderRunSymbol = Symbol("TypeSea.asyncDecoder.run");
 const PromiseDecoderInnerSymbol = Symbol("TypeSea.promiseDecoder.inner");
@@ -45,8 +43,6 @@ const SyncPromiseParseMessage =
 
 /**
  * @brief Real async decoder instances tracked without extending object lifetime.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  */
 const constructedAsyncDecoders = new WeakSet<object>();
 
@@ -765,8 +761,6 @@ export class PromiseAsyncDecoder<TValue> extends BaseAsyncDecoder<TValue> {
 
 /**
  * @brief Wrap a guard, decoder, or async decoder as an async decoder pipeline.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  */
 export function asyncDecoder<TValue, TPresence extends Presence>(
     source: Guard<TValue, TPresence>
@@ -811,8 +805,6 @@ export function safeDecodeAsync<TSource extends AsyncDecodeSource>(
 
 /**
  * @brief Build an async decoder and append an async refinement.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  */
 export function asyncRefine<TValue, TPresence extends Presence>(
     source: Guard<TValue, TPresence>,
@@ -842,8 +834,6 @@ export function asyncRefine(
 
 /**
  * @brief Build an async decoder and append an async mapper.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  */
 export function asyncTransform<TValue, TPresence extends Presence, TNext>(
     source: Guard<TValue, TPresence>,
@@ -917,8 +907,6 @@ export function isAsyncDecoderValue(
 
 /**
  * @brief Construct an async decoder from a guard, decoder, or async decoder.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param source Source pipeline element.
  * @returns Async decoder wrapping the normalized runner.
  */
@@ -1007,8 +995,6 @@ function readAsyncDecodeSourceRunner<TValue>(
 
 /**
  * @brief Read the private runner from a constructed async decoder.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Candidate async decoder object.
  * @param label Message prefix for TypeError diagnostics.
  * @returns Stored async decode runner.
@@ -1026,8 +1012,6 @@ function readAsyncDecoderRunner<TValue>(
 
 /**
  * @brief Test async decoder identity through the private registry.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Candidate async decoder.
  * @returns True when TypeSea constructed the instance.
  */
@@ -1039,8 +1023,6 @@ function isConstructedAsyncDecoder(
 
 /**
  * @brief Normalize a guard-like source used in an async decode pipeline.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Candidate guard-like source.
  * @param label Message prefix for TypeError diagnostics.
  * @returns Frozen schema used by the promise-wrapped check runner.
@@ -1059,8 +1041,6 @@ function readGuardSchema(value: unknown, label: string): Schema {
 
 /**
  * @brief Build a single-issue failure for an async refinement.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param name Diagnostic refinement name.
  * @param value Runtime value rejected by the predicate.
  * @returns Failure result with a root-level refinement issue.
@@ -1076,8 +1056,6 @@ function failRefinement<TValue>(
 
 /**
  * @brief Produce the compact runtime type label used in async decoder issues.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Runtime value.
  * @returns Stable diagnostic type name.
  */
@@ -1102,8 +1080,6 @@ function actualType(value: unknown): string {
 
 /**
  * @brief Accept only the literal boolean success value from async predicates.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Predicate return value.
  * @returns True only for `true`.
  */
@@ -1113,8 +1089,6 @@ function isStrictTrue(value: unknown): boolean {
 
 /**
  * @brief Define one immutable async decoder instance slot.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param target Async decoder instance.
  * @param key Public key or private symbol.
  * @param value Stored field value.
@@ -1136,8 +1110,6 @@ function defineReadonlyProperty(
 
 /**
  * @brief Accept objects that can carry async decoder or guard fields.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Candidate object.
  * @returns True for non-array objects.
  */
@@ -1154,8 +1126,6 @@ function isObjectLike(value: unknown): value is object {
 
 /**
  * @brief Read one own data slot from an async decode source.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Object being normalized.
  * @param key Field name or symbol.
  * @returns Stored field value, or undefined when absent.

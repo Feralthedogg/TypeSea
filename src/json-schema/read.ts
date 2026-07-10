@@ -1,8 +1,6 @@
 /**
  * @file read.ts
  * @brief Input normalization for JSON Schema export.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  */
 
 import {
@@ -50,16 +48,12 @@ export const JSON_SCHEMA_DRAFT_04_ID = "http://json-schema.org/draft-04/schema#"
 
 /**
  * @brief draft 07 schema id.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  * @invariant The value is the default dialect marker for TypeSea JSON Schema output.
  */
 export const JSON_SCHEMA_DRAFT_07_ID = "http://json-schema.org/draft-07/schema#";
 
 /**
  * @brief draft 2020 12 schema id.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  * @invariant The value selects the `prefixItems` tuple keyword set.
  */
 export const JSON_SCHEMA_2020_12_ID = "https://json-schema.org/draft/2020-12/schema";
@@ -81,8 +75,6 @@ export function readJsonSchemaGuardSchema(guard: unknown): Schema {
 
 /**
  * @brief Validate and freeze a direct schema export input.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  * @param schema Candidate TypeSea schema.
  * @returns Frozen schema tree safe for traversal by emitters.
  * @throws TypeError when the schema shape is malformed.
@@ -156,8 +148,6 @@ export function readJsonSchemaOptions(options: unknown): ResolvedJsonSchemaOptio
 
 /**
  * @brief Normalize the requested JSON Schema dialect.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  * @param value Candidate dialect option.
  * @param target Candidate target alias option.
  * @param schemaId Schema id used as a compatibility hint.
@@ -330,8 +320,6 @@ function readJsonSchemaMetadata(
 
 /**
  * @brief Infer the dialect from a well-known schema id marker.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  * @param schemaId Candidate schema id.
  * @returns A known draft when the id names one, otherwise draft-07.
  */
@@ -350,8 +338,6 @@ function inferJsonSchemaDialect(schemaId: unknown): JsonSchemaDialect {
 
 /**
  * @brief Accept option records before descriptor-based reads.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  * @param value Candidate options or guard object.
  * @returns True for non-array objects.
  */
@@ -368,8 +354,6 @@ function isObjectLike(value: unknown): value is object {
 
 /**
  * @brief Read one own data option without consulting prototypes.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  * @param value Object being normalized.
  * @param key Field name or symbol.
  * @returns Stored field value, or undefined when absent.

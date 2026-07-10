@@ -1,8 +1,6 @@
 /**
  * @file freeze.ts
  * @brief Immutable graph finalization.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
  */
 
 import { NodeTag } from "../kind/index.js";
@@ -12,8 +10,6 @@ import type { Graph, GraphNode, RegexNode } from "./types.js";
 
 /**
  * @brief freeze graph.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
  */
 export function freezeGraph(graph: Graph): Graph {
     for (let index = 0; index < graph.nodes.length; index += 1) {
@@ -28,8 +24,6 @@ export function freezeGraph(graph: Graph): Graph {
 
 /**
  * @brief freeze graph node.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
  */
 function freezeGraphNode(node: GraphNode): void {
     Object.freeze(node.deps);
@@ -139,11 +133,6 @@ function freezeGraphNode(node: GraphNode): void {
     Object.freeze(node);
 }
 
-/**
- * @brief freeze regex node.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
- */
 function freezeRegexNode(node: RegexNode): void {
     const regex = node.regex;
     if (!isPlainRegExp(regex)) {
@@ -166,11 +155,6 @@ function freezeRegexNode(node: RegexNode): void {
     });
 }
 
-/**
- * @brief clone graph reg exp.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
- */
 function cloneGraphRegExp(regex: RegExp): RegExp {
     const cloned = new RegExp(regex.source, regex.flags);
     Object.preventExtensions(cloned);

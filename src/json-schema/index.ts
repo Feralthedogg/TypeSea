@@ -1,8 +1,6 @@
 /**
  * @file index.ts
  * @brief Public JSON Schema export module.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  */
 
 import { isAsyncDecoderValue, type AsyncDecoder } from "../async/index.js";

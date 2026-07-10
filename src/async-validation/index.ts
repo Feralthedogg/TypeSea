@@ -55,6 +55,7 @@ import {
     isArrayIndexKey,
     isArrayValue,
     isDataPropertyDescriptor,
+    isNumberMultipleOf,
     isPlainRecord,
     isValidDateObject,
     ordinaryHasInstance,
@@ -678,7 +679,7 @@ function isNumberSchema(
                 }
                 break;
             case NumberCheckTag.MultipleOf:
-                if (value % check.value !== 0) {
+                if (!isNumberMultipleOf(value, check.value)) {
                     return false;
                 }
                 break;

@@ -1,8 +1,6 @@
 /**
  * @file types.ts
  * @brief Optimized validation plan contracts.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  */
 
 import type { Graph } from "../ir/index.js";

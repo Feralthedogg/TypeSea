@@ -1,8 +1,6 @@
 /**
  * @file state.ts
  * @brief Recursive validation state for cyclic input graphs.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  */
 
 import type { Schema } from "../schema/index.js";
@@ -19,8 +17,6 @@ export type ValidationEnterResult =
 
 /**
  * @brief default max validation depth.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @invariant The value stays below the V8 stack depth that recursive lazy schemas can exhaust.
  */
 export const DEFAULT_MAX_VALIDATION_DEPTH = 256;
@@ -87,8 +83,6 @@ export function makeValidationState(): ValidationState {
 
 /**
  * @brief enter validation.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param schema Schema being entered.
  * @param value Candidate runtime value.
  * @param state Shared validation state.
@@ -132,8 +126,6 @@ export function enterValidation(
 
 /**
  * @brief leave validation.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param schema Schema leaving validation.
  * @param value Candidate runtime value.
  * @param state Shared validation state.
@@ -157,8 +149,6 @@ export function leaveValidation(
 
 /**
  * @brief Test whether a value can participate in object graph cycles.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param value Candidate runtime value.
  * @returns True for objects and functions that can participate in cycles.
  */

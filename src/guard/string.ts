@@ -1,8 +1,6 @@
 /**
  * @file string.ts
  * @brief String guard implementation.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
  */
 
 import { SchemaTag, StringCheckTag } from "../kind/index.js";
@@ -255,8 +253,6 @@ export class StringGuard<
 
     /**
      * @brief Add a minimum string length.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @param value Non-negative integer lower length bound.
      * @returns Fresh StringGuard with an appended min check.
      */
@@ -280,8 +276,6 @@ export class StringGuard<
 
     /**
      * @brief Add a maximum string length.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @param value Non-negative integer upper length bound.
      * @returns Fresh StringGuard with an appended max check.
      */
@@ -354,21 +348,19 @@ export class StringGuard<
 
     /**
      * @brief Add a regular expression check.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @param pattern Plain RegExp instance to clone into the schema.
-     * @param name Diagnostic name for pattern failures.
+     * @param name Optional diagnostic name for pattern failures.
      * @returns Fresh StringGuard with an appended regex check.
      */
     public regex(
         pattern: RegExp,
-        name: string,
+        name?: string,
         options?: CheckMessageInput
     ): StringGuard<TPresence> {
         if (!isPlainRegExp(pattern)) {
             throw new TypeError("regex pattern must be a plain RegExp");
         }
-        if (typeof name !== "string") {
+        if (name !== undefined && typeof name !== "string") {
             throw new TypeError("regex name must be a string");
         }
         const schema = readStringMethodSchema(this, "string regex receiver");
@@ -385,7 +377,7 @@ export class StringGuard<
                 {
                     tag: StringCheckTag.Regex,
                     regex: new RegExp(pattern.source, pattern.flags),
-                    name,
+                    name: name ?? "regex",
                     message
                 }
             ]
@@ -449,8 +441,6 @@ export class StringGuard<
 
     /**
      * @brief Add the built-in UUID string check.
- * @details Guard helpers build new immutable schema wrappers so fluent APIs never mutate an
- * existing guard instance.
      * @returns Fresh StringGuard with an appended uuid check.
      */
     public uuid(options?: StringUuidInput): StringGuard<TPresence> {

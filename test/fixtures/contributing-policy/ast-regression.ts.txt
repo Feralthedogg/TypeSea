@@ -1,0 +1,56 @@
+import { boxed, type Box } from "./box.js";
+
+/*
+ * These are parser bait, not program facts:
+ * import { phantom } from "./phantom.js";
+ * function phantomFunction<T>(value: T): T { return value; }
+ * phantomReceiver.phantomCall(`ignored ${nested}`);
+ */
+
+export type Deep<T extends Record<string, unknown>> = Promise<ReadonlyArray<{
+    [K in keyof T]: `${Extract<K, string>}:${T[K] extends string ? T[K] : never}`;
+}>>;
+
+export class Vessel {
+    public constructor(public readonly name: string) {}
+
+    public sail(distance: number): string {
+        return `${this.name}:${String(distance)}`;
+    }
+}
+
+export function identity<T>(value: T): T {
+    return value;
+}
+
+export const tuple = <const T extends readonly unknown[]>(...items: T): T => items;
+
+export function exerciseCalls(): string {
+    const localBox = boxed({ id: 42 as const });
+    const localVessel = new Vessel("local");
+    const inferredLocal = localBox.get();
+    return localVessel.sail(identity(tuple(inferredLocal.id).length));
+}
+
+const typedBox: Box<{ readonly id: 42 }> = boxed({ id: 42 as const });
+const vessel = new Vessel("TypeSea");
+const nestedParentheses = (((value: number): number => ((value + 1))))(1);
+const methodResult = vessel.sail(identity(tuple(1, 2).length));
+const templateResult = `literal phantomReceiver.phantomCall() ${((): string => {
+    const braces = /[{}()]/u;
+    return `inner ${braces.test("}") ? vessel.sail(nestedParentheses) : "no"}`;
+})()}`;
+const maybe: { readonly value: number } | undefined = { value: 1 };
+const postfixValue = maybe!.value;
+
+declare const input: { readonly value: number } | undefined;
+const ocean = "🌊"; const target = input!.value;
+
+export const inferred = typedBox.get();
+export const evidence = {
+    methodResult,
+    ocean,
+    postfixValue,
+    target,
+    templateResult
+} satisfies Readonly<Record<string, unknown>>;

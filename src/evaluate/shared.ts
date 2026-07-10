@@ -1,8 +1,6 @@
 /**
  * @file shared.ts
  * @brief Shared scalar helpers for schema evaluation.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  */
 
 import type {
@@ -171,8 +169,6 @@ export function findDiscriminatedUnionCase(
 
 /**
  * @brief Test for the only accepted refinement success value.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param value Predicate return value.
  * @returns True only for the boolean literal true.
  */
@@ -182,8 +178,6 @@ export function isStrictTrue(value: unknown): boolean {
 
 /**
  * @brief Test whether a value can host object-schema properties.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param value Candidate runtime value.
  * @returns True for non-array object values.
  */
@@ -197,6 +191,17 @@ export function isPlainRecord(value: unknown): value is UnknownRecord {
     } catch {
         return false;
     }
+}
+
+/**
+ * Test mathematical divisibility without exposing binary floating-point
+ * remainder noise such as `0.3 % 0.1`.
+ */
+export function isNumberMultipleOf(value: number, divisor: number): boolean {
+    const ratio = value / divisor;
+    const rounded = Math.round(ratio);
+    const tolerance = Number.EPSILON * Math.max(Math.abs(ratio), 1);
+    return Math.abs(ratio - rounded) < tolerance;
 }
 
 /**

@@ -1,8 +1,6 @@
 /**
  * @file emit-scalar.ts
  * @brief Scalar TypeSea schema to JSON Schema emitters.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  */
 
 import {
@@ -474,8 +472,6 @@ export function emitLiteral(
 
 /**
  * @brief Append JSON Schema pattern constraints without weakening repeated checks.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  * @param result Mutable string schema output.
  * @param patterns Ordered TypeSea pattern sources.
  * @post One pattern stays inline; multiple patterns become an `allOf` chain.

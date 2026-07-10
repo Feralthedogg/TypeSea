@@ -1,8 +1,6 @@
 /**
  * @file validate.ts
  * @brief Runtime validation for graph objects.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  */
 
 import {
@@ -45,8 +43,6 @@ const missingDataProperty = Symbol("typesea.ir.missingDataProperty");
 
 /**
  * @brief Allocate traversal state for one root graph validation.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @returns Empty active and completed graph sets.
  */
 function makeGraphValidationState(): GraphValidationState {
@@ -58,8 +54,6 @@ function makeGraphValidationState(): GraphValidationState {
 
 /**
  * @brief Validate one graph object and its nested child graphs.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate graph object.
  * @param state Shared recursion state.
  * @returns True when entry/result ids and every arena node are valid.
@@ -335,8 +329,6 @@ function isArrayChecks(value: unknown): boolean {
 
 /**
  * @brief Validate payloads for dependency-free nodes.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate node record.
  * @param deps Dependency vector already read from the node.
  * @returns True when the leaf payload matches Start, Param, or Const.
@@ -364,8 +356,6 @@ function isLeafNodeValue(
 
 /**
  * @brief Validate a node whose named edge mirrors one dependency.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate node record.
  * @param deps Dependency vector from the same node.
  * @param field Named edge field that must equal deps[0].
@@ -386,8 +376,6 @@ function isSingleDepNode(
 
 /**
  * @brief Validate a node whose named edges mirror two dependencies.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate node record.
  * @param deps Dependency vector from the same node.
  * @param leftField First named edge field.
@@ -413,8 +401,6 @@ function isTwoDepNode(
 
 /**
  * @brief Validate a graph-local arena index.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate node id.
  * @param nodeCount Total arena size.
  * @returns True when the id is an integer inside the arena.
@@ -428,8 +414,6 @@ function isNodeId(value: unknown, nodeCount: number): value is NodeId {
 
 /**
  * @brief Validate a dense dependency vector.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate dependency list.
  * @param nodeCount Total arena size for every dependency.
  * @returns True when every dependency points inside the arena.
@@ -451,8 +435,6 @@ function isNodeIdArray(
 
 /**
  * @brief Compare two dependency vectors without allocating.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param left First dependency vector.
  * @param right Second dependency vector.
  * @returns True when both vectors contain the same node ids in the same order.
@@ -525,8 +507,6 @@ function hasDependencyCycle(nodes: readonly GraphNode[]): boolean {
 
 /**
  * @brief Validate a dense vector of graph-owned strings.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate string vector.
  * @returns True when every slot is a string.
  */
@@ -562,8 +542,6 @@ function isOptionalStringArray(value: unknown): value is readonly (string | unde
 
 /**
  * @brief Validate a dense vector of embedded schema payloads.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate schema vector.
  * @returns True when every slot is accepted by schema validation.
  */
@@ -581,8 +559,6 @@ function isSchemaArray(value: unknown): value is readonly unknown[] {
 
 /**
  * @brief Validate tuple item schemas and lowered child graphs as parallel arrays.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
  * @param value Candidate TupleItems node.
  * @param state Shared recursion state for child graphs.
  * @returns True when item schemas and item graphs have the same arity.
@@ -600,8 +576,6 @@ function isTupleItemGraphsAligned(
 
 /**
  * @brief Validate the dispatch table for discriminated-union graph nodes.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
  * @param value Candidate DiscriminantDispatch node.
  * @param state Shared recursion state for child graphs.
  * @returns True when literal, schema, graph, and lookup vectors agree.
@@ -626,8 +600,6 @@ function isDiscriminantDispatchNode(
 
 /**
  * @brief Validate object-shape payload redundancy.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate ObjectShape node.
  * @param state Shared recursion state for property graphs.
  * @returns True when entries, keys, mode, and all-required metadata agree.
@@ -656,8 +628,6 @@ function isObjectShapePayload(
 
 /**
  * @brief Validate general union-dispatch payload vectors.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate UnionDispatch node.
  * @param state Shared recursion state for option graphs.
  * @returns True when options, graphs, and masks have matching lengths.
@@ -701,8 +671,6 @@ function isPresenceDispatchNode(
 
 /**
  * @brief Validate primitive-only union dispatch metadata.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate PrimitiveUnion node.
  * @param state Shared recursion state for option graphs.
  * @returns True when primitive masks line up with option graphs.
@@ -720,8 +688,6 @@ function isPrimitiveUnionNode(
 
 /**
  * @brief Validate object property entries carried by an ObjectShape node.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
  * @param value Candidate entry vector.
  * @param state Shared recursion state for entry graphs.
  * @returns True when each entry owns key, schema, graph, and presence metadata.
@@ -750,8 +716,6 @@ function isObjectShapeEntries(
 
 /**
  * @brief Validate a dense vector of child graphs.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate child graph vector.
  * @param state Shared recursion state.
  * @returns True when every slot is a valid graph.
@@ -773,8 +737,6 @@ function isGraphArray(
 
 /**
  * @brief Check that object-shape entries preserve key vector order.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param entries ObjectShape entries.
  * @param keys Parallel key vector emitted by lowering.
  * @returns True when each entry key matches the same index in `keys`.
@@ -815,8 +777,6 @@ function objectShapeAllRequired(entries: readonly unknown[]): boolean {
 
 /**
  * @brief Validate the closed presence tag set used by object entries.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
  * @param value Candidate presence marker.
  * @returns True for required or optional.
  */
@@ -826,8 +786,6 @@ function isPresenceTag(value: unknown): value is PresenceTag {
 
 /**
  * @brief Validate the closed object-mode tag set.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate object mode.
  * @returns True for passthrough or strict mode.
  */
@@ -862,8 +820,6 @@ function isUnionMaskArray(value: unknown): value is readonly number[] {
 
 /**
  * @brief Validate masks restricted to primitive root kinds.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate mask vector.
  * @returns True when no object/function bits are present.
  */
@@ -882,8 +838,6 @@ function isPrimitiveUnionMaskArray(value: unknown): value is readonly number[] {
 
 /**
  * @brief Validate literal-to-case-index lookup metadata.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate lookup table.
  * @param literals Parallel literal vector.
  * @returns True when the table maps each literal to its vector index.
@@ -911,8 +865,6 @@ function isDiscriminantLookup(
 
 /**
  * @brief Accept a graph metadata record with data-only own fields.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate record.
  * @returns True when no accessor fields or arrays are present.
  */
@@ -925,8 +877,6 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 
 /**
  * @brief Accept a dense graph metadata vector.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate vector.
  * @returns True when it has no accessors, inherited slots, or holes.
  */
@@ -938,8 +888,6 @@ function isUnknownArray(value: unknown): value is readonly unknown[] {
 
 /**
  * @brief Reject accessor descriptors before graph internals read fields.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
  * @param value Object whose own descriptor table is inspected.
  * @returns True when every own property is backed by a data slot.
  */
@@ -991,8 +939,6 @@ function hasOnlyArrayDataProperties(value: readonly unknown[]): boolean {
 
 /**
  * @brief Require all array indexes to be own data slots.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate graph vector.
  * @returns True when each index from 0 to length - 1 exists as data.
  */
@@ -1026,8 +972,6 @@ function isArrayIndexKey(key: string, length: number): boolean {
 
 /**
  * @brief Read one own data slot from graph metadata.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Object being validated.
  * @param key Field name or symbol to read.
  * @returns Stored value or the missing-data sentinel.
@@ -1046,8 +990,6 @@ function readOwnDataProperty(
 
 /**
  * @brief Test for the graph metadata missing-data sentinel.
- * @details Graph validation protects optimizer and compiler passes before they assume dense
- * node ids and valid dependency edges.
  * @param value Candidate value returned by readOwnDataProperty.
  * @returns True when the field was absent or not a data descriptor.
  */

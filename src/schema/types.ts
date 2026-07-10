@@ -1,8 +1,6 @@
 /**
  * @file schema/types.ts
  * @brief Schema tags and structural TypeSea schema records.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  */
 
 import {
@@ -443,8 +441,6 @@ export interface NullableSchema {
 
 /**
  * @brief Tagged union schema whose cases share one discriminant key.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  */
 export interface DiscriminatedUnionSchema {
     readonly tag: typeof SchemaTag.DiscriminatedUnion;
@@ -579,8 +575,6 @@ export interface RefineSchema {
 
 /**
  * @brief UUID pattern shared by interpreter and generated validators.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  */
 export const UUID_PATTERN =
     /^(?:00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/iu;

@@ -111,8 +111,6 @@ const CodecEncodeSymbol = Symbol("TypeSea.codec.encode");
 
 /**
  * @brief Real decoder instances tracked without extending object lifetime.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  */
 const constructedDecoders = new WeakSet<object>();
 
@@ -545,8 +543,6 @@ export class BaseCodec<TEncoded, TDecoded>
 
 /**
  * @brief Wrap a guard or decoder as a synchronous decoder pipeline.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  */
 export function decoder<TValue, TPresence extends Presence>(
     source: Guard<TValue, TPresence>
@@ -855,8 +851,6 @@ function makeDecoder(source: DecodeSource): BaseDecoder<unknown> {
 
 /**
  * @brief Build a decoder and append a synchronous mapper.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  */
 export function transform<TValue, TPresence extends Presence, TNext>(
     source: Guard<TValue, TPresence>,
@@ -2531,8 +2525,6 @@ function readCoerceOption(
 
 /**
  * @brief Primitive coercion decoders with explicit failure issues.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  */
 export const coerce = Object.freeze({
     string: coerceString,
@@ -3538,8 +3530,6 @@ function defineOutputProperty(
 
 /**
  * @brief Test decoder identity through the private registry.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Candidate decoder.
  * @returns True when TypeSea constructed the decoder instance.
  */
@@ -4482,8 +4472,6 @@ function readDecodeSourceRunner<TValue>(
 
 /**
  * @brief Read the private runner from a constructed decoder.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Candidate decoder object.
  * @param label Message prefix for TypeError diagnostics.
  * @returns Stored decode runner.
@@ -4538,8 +4526,6 @@ function readGuardSchema(value: unknown, label: string): Schema {
 
 /**
  * @brief Build a frozen success Result for decoder transforms.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Decoded value.
  * @returns Frozen ok result.
  */
@@ -4647,8 +4633,6 @@ function copyTransformIssuePath(value: unknown): readonly PathSegment[] {
 
 /**
  * @brief Build a frozen single-issue failure Result.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param code Issue code.
  * @param expected Expected value description.
  * @param value Runtime value that failed validation.
@@ -4666,8 +4650,6 @@ function fail<TValue>(
 
 /**
  * @brief Produce the compact runtime type label used in decoder issues.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Runtime value.
  * @returns Stable diagnostic type name.
  */
@@ -4695,8 +4677,6 @@ function actualType(value: unknown): string {
 
 /**
  * @brief Define one immutable decoder instance slot.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param target Decoder instance.
  * @param key Public key or private symbol.
  * @param value Stored field value.
@@ -4718,8 +4698,6 @@ function defineReadonlyProperty(
 
 /**
  * @brief Accept objects that can carry decoder or guard fields.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Candidate object.
  * @returns True for non-array objects.
  */
@@ -4736,8 +4714,6 @@ function isObjectLike(value: unknown): value is object {
 
 /**
  * @brief Read one own data slot from a decode source.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  * @param value Object being normalized.
  * @param key Field name or symbol.
  * @returns Stored field value, or undefined when absent.
@@ -4756,8 +4732,6 @@ function readOwnDataProperty(
 
 /**
  * @brief Reused finite-number schema for string-to-number coercion.
- * @details Decoder helpers keep validation failures explicit in Result values while
- * preserving the original input value.
  */
 const numberSchema = Object.freeze({
     tag: SchemaTag.Number,

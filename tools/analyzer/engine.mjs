@@ -13,6 +13,15 @@ const FUNCTION_COMPLEXITY_LIMIT = 85;
 const HIGH_FUNCTION_CALL_OUT_LIMIT = 24;
 const GENERATED_ABI_HELPERS = ["h", "gp", "l", "r", "k", "u", "d", "m", "mf", "sk"];
 const DEFAULT_PROFILE_PATH = "tools/analyzer/profile.json";
+const TYPESCRIPT_FRONTEND_PATH = "./typescript-frontend.mjs";
+const TYPESCRIPT_FRONTEND_SCHEMA_VERSION = 1;
+const TYPESCRIPT_FRONTEND_PROTOCOL = "typesea.typescript-frontend/v1";
+const PUBLIC_FRONTEND_DIAGNOSTIC_LIMIT = 64;
+const PUBLIC_FRONTEND_FACT_LIMIT = 8;
+const PUBLIC_FUNCTION_LIMIT = 256;
+const PUBLIC_CALL_GRAPH_NODE_LIMIT = 256;
+const PUBLIC_CALL_GRAPH_EDGE_LIMIT = 512;
+const PUBLIC_CALL_GRAPH_CYCLE_LIMIT = 64;
 
 const DEFAULT_PROFILE = {
     name: "TypeSea default static-analysis profile",
@@ -32,6 +41,10 @@ const RULE_CATALOG = [
     rule("generated-artifact-import", "info", "graph", "Generated artifact imports are tracked outside the source graph.", "medium", "high", "Release and dist verification"),
     rule("layer-boundary", "warning", "architecture", "Runtime imports must not cross forbidden compiler layers.", "medium", "high", "Compiler layer architecture"),
     rule("lexical-error", "error", "lexer", "Source must lex without unterminated token states.", "high", "high", "Parser front-end"),
+    rule("typescript-syntax-error", "error", "compiler", "TypeScript source must parse without syntax errors.", "high", "high", "TypeScript compiler front-end"),
+    rule("typescript-type-error", "error", "types", "TypeScript source must satisfy the configured type system.", "high", "high", "TypeScript TypeChecker"),
+    rule("typescript-frontend-unavailable", "error", "compiler", "TypeScript AST analysis must fail closed when the compiler front-end is unavailable or invalid.", "high", "high", "Analyzer front-end health"),
+    rule("runtime-ownership-inconclusive", "error", "compiler", "Implicit decorator, accessor, or initialization calls must resolve to an execution owner and target.", "high", "high", "TypeScript runtime semantics"),
     rule("large-file", "warning", "maintainability", "Large modules should be split by responsibility.", "medium", "high", "Maintainability"),
     rule("todo-comment", "info", "maintainability", "TODO/FIXME/HACK comments are tracked as review debt.", "low", "high", "Maintainability"),
     rule("missing-public-jsdoc", "info", "documentation", "Exported public declarations should carry durable API documentation.", "low", "medium", "Public API documentation"),
@@ -101,8 +114,12 @@ const DIRECTORY_LAYERS = new Set([
 export async function analyzeProject(options = {}) {
     const root = resolve(options.root ?? process.cwd());
     const roots = options.roots ?? DEFAULT_ROOTS;
-    const profile = await readProfile(root, options.profilePath);
-    const paths = await collectSourceFiles(root, roots);
+    const [profile, paths, frontend] = await Promise.all([
+        readProfile(root, options.profilePath),
+        collectSourceFiles(root, roots),
+        loadTypeScriptFrontend(root, roots, options)
+    ]);
+    const frontendFiles = frontend.status === "ready" ? indexFrontendFiles(frontend.result) : new Map();
     const fileAnalyses = [];
     const modules = new Map();
 
@@ -113,7 +130,7 @@ export async function analyzeProject(options = {}) {
         }
         const absolutePath = join(root, path);
         const source = await readFile(absolutePath, "utf8");
-        const file = analyzeFile(path, source);
+        const file = analyzeFile(path, source, frontendFiles.get(path));
         fileAnalyses.push(file);
         modules.set(path, {
             path,
@@ -128,6 +145,7 @@ export async function analyzeProject(options = {}) {
     const findings = applyProfile(enrichFindings([
         ...edgeResult.findings,
         ...analyzeFileFindings(fileAnalyses),
+        ...analyzeFrontendFindings(frontend),
         ...analyzeGraphFindings(graph),
         ...analyzeFunctionFindings(functionIndex, callGraph),
         ...analyzeTypeSeaRules(fileAnalyses)
@@ -143,6 +161,7 @@ export async function analyzeProject(options = {}) {
         generatedAt: new Date().toISOString(),
         root,
         roots,
+        frontend: publicFrontend(frontend),
         profile: publicProfile(profile),
         summary,
         qualityGate,
@@ -151,18 +170,21 @@ export async function analyzeProject(options = {}) {
         hotspots,
         findings: sortFindings(findings),
         graph,
-        callGraph,
+        callGraph: publicCallGraph(callGraph, functionIndex),
         functions: publicFunctions(functionIndex),
         files: fileAnalyses.map(publicFileSummary)
     };
 }
 
-export function analyzeFile(path, source) {
+export function analyzeFile(path, source, frontendFile = undefined) {
     const lexer = lexSource(source);
     const lines = countLines(source);
-    const declarations = readDeclarations(lexer);
-    const functions = readFunctions(path, lexer);
-    const imports = readImports(path, lexer.tokens);
+    const legacyDeclarations = readDeclarations(lexer);
+    const legacyFunctions = readFunctions(path, lexer);
+    const legacyImports = readImports(path, lexer.tokens);
+    const declarations = frontendDeclarations(frontendFile, legacyDeclarations);
+    const functions = frontendFunctions(path, source, frontendFile, legacyFunctions);
+    const imports = frontendImports(path, frontendFile, legacyImports);
     const exports = declarations.filter((entry) => entry.exported);
     const comments = lexer.comments;
     const todoCount = comments.filter((comment) => /TODO|FIXME|HACK/u.test(comment.text)).length;
@@ -182,8 +204,33 @@ export function analyzeFile(path, source) {
         exports,
         comments,
         todoCount,
-        lexicalErrors: lexer.errors
+        lexicalErrors: lexer.errors,
+        analysisBasis: frontendFile === undefined ? "legacy-token-heuristic" : "typescript-ast",
+        frontend: frontendFile
     };
+}
+
+/**
+ * Analyze one open document without project-global import, ABI, or tag-coverage
+ * rules. This is the editor-safe subset used by the language server.
+ */
+export function analyzeDocument(path, source, frontendFile = undefined) {
+    const file = analyzeFile(path, source, frontendFile);
+    const functionIndex = buildFunctionIndex([file]);
+    const callGraph = buildCallGraph(functionIndex);
+    const findings = enrichFindings([
+        ...analyzeFileFindings([file]),
+        ...analyzeFunctionFindings(functionIndex, callGraph),
+        ...analyzeDynamicCodeSinks([file]),
+        ...analyzeSafeModeAccess([file]),
+        ...analyzeComplexity([file]),
+        ...analyzeThrowUsage([file])
+    ]).map((item) => ({
+        ...item,
+        fingerprint: issueFingerprint(item),
+        suppressed: false
+    }));
+    return sortFindings(findings);
 }
 
 export function toSarif(analysis) {
@@ -231,6 +278,7 @@ function summarize(files, graph, findings, functionIndex, callGraph) {
 
     return {
         files: files.length,
+        astFiles: files.filter((file) => file.analysisBasis === "typescript-ast").length,
         lines: sum(files, "lines"),
         tokens: sum(files, "tokenCount"),
         runtimeEdges: graph.edges.filter((edge) => !edge.typeOnly).length,
@@ -331,8 +379,10 @@ function computeHotspots(files, findings) {
 }
 
 function publicFileSummary(file) {
+    const frontend = file.frontend;
     return {
         path: file.path,
+        analysisBasis: file.analysisBasis,
         layer: file.layer,
         extension: file.extension,
         lines: file.lines,
@@ -344,7 +394,21 @@ function publicFileSummary(file) {
         imports: file.imports.length,
         exports: file.exports.length,
         declarations: file.declarations.length,
-        todos: file.todoCount
+        todos: file.todoCount,
+        ast: frontend === undefined
+            ? undefined
+            : {
+                diagnostics: arrayLength(frontend.diagnostics ?? frontend.syntaxDiagnostics),
+                calls: readNumber(frontend.metrics?.calls, arrayLength(frontend.calls ?? frontend.topLevelCalls)),
+                typeFacts: readNumber(frontend.metrics?.typeFacts, arrayLength(frontend.typeFacts)),
+                typeEscapes: readNumber(frontend.metrics?.typeEscapes, arrayLength(frontend.typeEscapes)),
+                regexps: readNumber(frontend.metrics?.regexps, arrayLength(frontend.regexps ?? frontend.regexes)),
+                inferenceFacts: readNumber(frontend.metrics?.inferenceFacts, arrayLength(frontend.inferenceFacts)),
+                inferenceDiagnostics: readNumber(frontend.metrics?.inferenceDiagnostics, arrayLength(frontend.inferenceDiagnostics)),
+                inferenceEngine: frontend.inferenceEngine,
+                readonlyCount: readNumber(frontend.readonlyCount, 0),
+                summary: frontend.summary ?? frontend.metrics
+            }
     };
 }
 
@@ -371,6 +435,8 @@ function sarifRule(ruleEntry) {
 }
 
 function sarifResult(item) {
+    const region = sarifRegion(item);
+    const relatedLocations = sarifRelatedLocations(item.typescript?.relatedInformation);
     return {
         ruleId: item.rule,
         level: sarifLevel(item.severity),
@@ -382,11 +448,10 @@ function sarifResult(item) {
                 artifactLocation: {
                     uri: item.path
                 },
-                region: {
-                    startLine: item.line
-                }
+                region
             }
         }],
+        relatedLocations: relatedLocations.length === 0 ? undefined : relatedLocations,
         partialFingerprints: {
             primaryLocationLineHash: item.fingerprint,
             typeSeaFingerprint: item.fingerprint
@@ -399,9 +464,7 @@ function sarifResult(item) {
                             artifactLocation: {
                                 uri: step.path
                             },
-                            region: {
-                                startLine: step.line
-                            }
+                            region: sarifRegion(step)
                         },
                         message: {
                             text: step.message
@@ -415,9 +478,56 @@ function sarifResult(item) {
             category: item.category,
             precision: item.precision,
             confidence: item.confidence,
-            domain: item.domain
+            domain: item.domain,
+            analysisBasis: item.analysisBasis,
+            typescriptCode: item.typescript?.code,
+            typescriptPhase: item.typescript?.phase
         }
     };
+}
+
+function sarifRelatedLocations(values) {
+    if (!Array.isArray(values)) {
+        return [];
+    }
+    return values.flatMap((entry, index) => {
+        if (!isRecord(entry) || frontendFactRange(entry) === undefined) {
+            return [];
+        }
+        const location = normalizeFindingLocation(entry);
+        const path = entry.path ?? entry.file ?? entry.fileName ?? location.span?.path;
+        if (typeof path !== "string") {
+            return [];
+        }
+        return [{
+            id: index + 1,
+            physicalLocation: {
+                artifactLocation: {
+                    uri: path
+                },
+                region: sarifRegion(location)
+            },
+            message: {
+                text: frontendDiagnosticMessage(entry)
+            }
+        }];
+    });
+}
+
+function sarifRegion(item) {
+    const region = {
+        startLine: positiveInteger(item.line, 1)
+    };
+    if (positiveIntegerOrUndefined(item.column) !== undefined) {
+        region.startColumn = item.column;
+    }
+    if (positiveIntegerOrUndefined(item.endLine) !== undefined) {
+        region.endLine = item.endLine;
+    }
+    if (positiveIntegerOrUndefined(item.endColumn) !== undefined) {
+        region.endColumn = item.endColumn;
+    }
+    return region;
 }
 
 function sarifLevel(severity) {
@@ -428,6 +538,440 @@ function sarifLevel(severity) {
         return "warning";
     }
     return "note";
+}
+
+async function loadTypeScriptFrontend(root, roots, options) {
+    if (options.typescriptFrontend === false || options.frontend === false) {
+        return frontendState("disabled", undefined, [], undefined);
+    }
+    const injected = options.typescriptFrontendResult ?? options.frontendResult;
+    if (injected !== undefined) {
+        const issues = validateFrontendResult(injected);
+        return frontendState(issues.length === 0 ? "ready" : "degraded", injected, issues, undefined);
+    }
+    try {
+        const module = await import(TYPESCRIPT_FRONTEND_PATH);
+        if (typeof module.analyzeTypeScriptProject !== "function") {
+            return frontendState("unavailable", undefined, ["missing analyzeTypeScriptProject export"], undefined);
+        }
+        const result = await module.analyzeTypeScriptProject({
+            cwd: root,
+            tsconfigPath: options.tsconfigPath,
+            includeSourceText: false,
+            outputRoots: roots,
+            detail: options.frontendDetail ?? "analyzer"
+        });
+        const issues = validateFrontendResult(result);
+        return frontendState(issues.length === 0 ? "ready" : "degraded", result, issues, undefined);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return frontendState("unavailable", undefined, [], message);
+    }
+}
+
+function frontendState(status, result, validationIssues, error) {
+    return {
+        status,
+        result,
+        validationIssues,
+        error
+    };
+}
+
+function validateFrontendResult(result) {
+    const issues = [];
+    if (!isRecord(result)) {
+        return ["front-end result is not an object"];
+    }
+    if (result.schemaVersion !== TYPESCRIPT_FRONTEND_SCHEMA_VERSION) {
+        issues.push(`unsupported schemaVersion ${String(result.schemaVersion)}; expected ${String(TYPESCRIPT_FRONTEND_SCHEMA_VERSION)}`);
+    }
+    if (result.protocol !== TYPESCRIPT_FRONTEND_PROTOCOL) {
+        issues.push(`protocol must be '${TYPESCRIPT_FRONTEND_PROTOCOL}'`);
+    }
+    if (!Array.isArray(result.files)) {
+        issues.push("files must be an array");
+    }
+    issues.push(...validateRangeEncoding(result.rangeEncoding));
+    return issues;
+}
+
+function validateRangeEncoding(value) {
+    if (!isRecord(value)) {
+        return ["rangeEncoding must describe UTF-16, zero-based, end-exclusive positions"];
+    }
+    const issues = [];
+    if (value.encoding !== "utf-16" || value.name !== "utf-16") {
+        issues.push("rangeEncoding name and encoding must both be 'utf-16'");
+    }
+    if (value.lineBase !== 0 || value.columnBase !== 0) {
+        issues.push("rangeEncoding lineBase and columnBase must be zero");
+    }
+    if (value.endExclusive !== true) {
+        issues.push("rangeEncoding.endExclusive must be true");
+    }
+    return issues;
+}
+
+function publicFrontend(frontend) {
+    const result = frontend.result;
+    const allDiagnostics = Array.isArray(result?.diagnostics) ? result.diagnostics : [];
+    const diagnostics = allDiagnostics
+        .slice(0, PUBLIC_FRONTEND_DIAGNOSTIC_LIMIT)
+        .map(compactFrontendDiagnostic);
+    return {
+        status: frontend.status,
+        authoritative: frontend.status === "ready",
+        health: {
+            validationIssues: frontend.validationIssues,
+            error: frontend.error
+        },
+        manifest: result === undefined
+            ? undefined
+            : {
+                schemaVersion: result.schemaVersion,
+                protocol: result.protocol,
+                typescriptVersion: result.typescriptVersion,
+                rangeEncoding: result.rangeEncoding
+        },
+        project: result?.project,
+        summary: result?.summary,
+        diagnostics,
+        files: Array.isArray(result?.files) ? result.files.map(compactFrontendFile) : [],
+        hm: result?.hm,
+        omitted: {
+            diagnostics: Math.max(0, allDiagnostics.length - diagnostics.length)
+        }
+    };
+}
+
+function compactFrontendFile(file) {
+    const allTypeFacts = Array.isArray(file?.typeFacts) ? file.typeFacts : [];
+    const allInferenceFacts = Array.isArray(file?.inferenceFacts) ? file.inferenceFacts : [];
+    const allInferenceDiagnostics = Array.isArray(file?.inferenceDiagnostics) ? file.inferenceDiagnostics : [];
+    const allTypeEscapes = Array.isArray(file?.typeEscapes) ? file.typeEscapes : [];
+    const typeFacts = prioritizedSample(allTypeFacts, isPublishedTypeFact, PUBLIC_FRONTEND_FACT_LIMIT)
+        .map(compactTypeFact);
+    const inferenceFacts = prioritizedSample(allInferenceFacts, isActionableInferenceFact, PUBLIC_FRONTEND_FACT_LIMIT)
+        .map(compactInferenceFact);
+    const inferenceDiagnostics = allInferenceDiagnostics
+        .slice(0, PUBLIC_FRONTEND_FACT_LIMIT)
+        .map(compactFrontendDiagnostic);
+    const typeEscapes = allTypeEscapes
+        .slice(0, PUBLIC_FRONTEND_FACT_LIMIT)
+        .map(compactTypeEscape);
+    return {
+        path: file?.path,
+        span: file?.span,
+        metrics: file?.metrics ?? file?.summary,
+        readonlyCount: file?.readonlyCount,
+        typeEscapes,
+        typeFacts,
+        inferenceFacts,
+        inferenceDiagnostics,
+        inferenceStats: file?.inferenceStats,
+        inferenceEngine: file?.inferenceEngine,
+        omitted: {
+            imports: arrayLength(file?.imports),
+            exports: arrayLength(file?.exports),
+            declarations: arrayLength(file?.declarations),
+            functions: arrayLength(file?.functions),
+            calls: arrayLength(file?.topLevelCalls ?? file?.calls),
+            regexps: arrayLength(file?.regexps ?? file?.regexes),
+            typeEscapes: Math.max(0, allTypeEscapes.length - typeEscapes.length),
+            typeFacts: Math.max(0, allTypeFacts.length - typeFacts.length),
+            inferenceFacts: Math.max(0, allInferenceFacts.length - inferenceFacts.length),
+            inferenceDiagnostics: Math.max(0, allInferenceDiagnostics.length - inferenceDiagnostics.length)
+        }
+    };
+}
+
+function prioritizedSample(values, predicate, limit) {
+    const preferred = [];
+    const remaining = [];
+    for (let index = 0; index < values.length; index += 1) {
+        const value = values[index];
+        (predicate(value) ? preferred : remaining).push(value);
+    }
+    return [...preferred, ...remaining].slice(0, limit);
+}
+
+function compactTypeFact(fact) {
+    if (!isRecord(fact)) {
+        return fact;
+    }
+    return {
+        id: fact.id,
+        kind: fact.kind,
+        name: fact.name,
+        symbolId: fact.symbolId,
+        declaredType: fact.declaredType,
+        inferredType: fact.inferredType,
+        typeFlags: fact.typeFlags,
+        span: fact.span
+    };
+}
+
+function isActionableInferenceFact(fact) {
+    if (!isRecord(fact)) {
+        return false;
+    }
+    const hmStatus = isRecord(fact.hm) ? fact.hm.status : undefined;
+    const selectedTrust = isRecord(fact.selected) ? fact.selected.trust : undefined;
+    const typeScriptStatus = isRecord(fact.typescript) ? fact.typescript.status : undefined;
+    return hmStatus !== "inferred" || selectedTrust === "degraded" || typeScriptStatus === "error-derived";
+}
+
+function compactInferenceFact(fact) {
+    if (!isRecord(fact)) {
+        return fact;
+    }
+    return {
+        id: fact.id,
+        name: fact.name,
+        kind: fact.kind,
+        range: fact.range,
+        declarationRange: fact.declarationRange,
+        annotation: compactInferenceAuthority(fact.annotation),
+        typescript: compactInferenceAuthority(fact.typescript),
+        hm: compactInferenceAuthority(fact.hm),
+        selected: compactInferenceAuthority(fact.selected),
+        valueRestriction: compactValueRestriction(fact.valueRestriction)
+    };
+}
+
+function compactInferenceAuthority(value) {
+    if (!isRecord(value)) {
+        return value;
+    }
+    return {
+        status: value.status,
+        valid: value.valid,
+        display: value.display,
+        trust: value.trust,
+        confidence: value.confidence,
+        code: value.code,
+        message: value.message,
+        reason: value.reason,
+        source: value.source,
+        diagnosticCodes: value.diagnosticCodes,
+        range: value.range,
+        provenance: isRecord(value.provenance)
+            ? {
+                engine: value.provenance.engine,
+                role: value.provenance.role,
+                authoritative: value.provenance.authoritative,
+                algorithm: value.provenance.algorithm
+            }
+            : undefined
+    };
+}
+
+function compactValueRestriction(value) {
+    if (!isRecord(value)) {
+        return value;
+    }
+    return {
+        eligible: value.eligible,
+        expansive: value.expansive,
+        mutable: value.mutable,
+        reason: value.reason
+    };
+}
+
+function compactTypeEscape(value) {
+    if (!isRecord(value)) {
+        return value;
+    }
+    return {
+        kind: value.kind,
+        message: value.message,
+        directive: value.directive,
+        sourceType: value.sourceType,
+        expressionType: value.expressionType,
+        intermediateType: value.intermediateType,
+        resultType: value.resultType,
+        span: value.span
+    };
+}
+
+function compactFrontendDiagnostic(value) {
+    if (!isRecord(value)) {
+        return value;
+    }
+    return {
+        phase: value.phase,
+        category: value.category,
+        severity: value.severity,
+        code: value.code,
+        message: value.message,
+        origin: value.origin,
+        authoritative: value.authoritative,
+        span: value.span,
+        range: value.range
+    };
+}
+
+function isPublishedTypeFact(fact) {
+    if (!isRecord(fact)) {
+        return false;
+    }
+    if (typeof fact.declaredType === "string" && typeof fact.inferredType === "string" &&
+        fact.declaredType !== fact.inferredType) {
+        return true;
+    }
+    const flags = fact.typeFlags;
+    return isRecord(flags) && (flags.any === true || flags.unknown === true || flags.never === true);
+}
+
+function indexFrontendFiles(result) {
+    const out = new Map();
+    if (!Array.isArray(result?.files)) {
+        return out;
+    }
+    const projectRoot = frontendProjectRoot(result);
+    for (let index = 0; index < result.files.length; index += 1) {
+        const file = result.files[index];
+        if (!isRecord(file) || typeof file.path !== "string") {
+            continue;
+        }
+        const path = normalizeFrontendPath(file.path, projectRoot);
+        if (path.length !== 0 && !out.has(path)) {
+            out.set(path, file);
+        }
+    }
+    return out;
+}
+
+function frontendProjectRoot(result) {
+    const project = result?.project;
+    if (!isRecord(project)) {
+        return undefined;
+    }
+    const root = project.root ?? project.cwd ?? project.rootDir;
+    return typeof root === "string" ? root : undefined;
+}
+
+function normalizeFrontendPath(path, projectRoot) {
+    if (projectRoot !== undefined && path.startsWith("/")) {
+        return relative(resolve(projectRoot), resolve(path)).replaceAll("\\", "/");
+    }
+    return normalize(path).replaceAll("\\", "/").replace(/^\.\//u, "");
+}
+
+function analyzeFrontendFindings(frontend) {
+    const findings = [];
+    if (frontend.status === "disabled") {
+        findings.push({
+            ...finding("info", "compiler", "typescript-frontend-unavailable", "tsconfig.json", 1, "TypeScript AST front-end was explicitly disabled for this analyzer run."),
+            analysisBasis: "frontend-health"
+        });
+    }
+    if (frontend.status === "unavailable" || frontend.status === "degraded") {
+        const validationDetail = frontend.validationIssues.join("; ");
+        const detail = frontend.error ?? (validationDetail.length === 0 ? "unknown front-end failure" : validationDetail);
+        findings.push({
+            ...finding("error", "compiler", "typescript-frontend-unavailable", "tsconfig.json", 1, `TypeScript AST front-end is ${frontend.status}: ${detail}`),
+            analysisBasis: "frontend-health"
+        });
+    }
+    const diagnostics = frontend.status === "ready" ? frontendDiagnostics(frontend.result) : [];
+    const seen = new Set();
+    for (let index = 0; index < diagnostics.length; index += 1) {
+        const diagnostic = diagnostics[index];
+        if (!isRecord(diagnostic)) {
+            continue;
+        }
+        const path = frontendDiagnosticPath(diagnostic);
+        const phase = frontendDiagnosticPhase(diagnostic);
+        const code = diagnostic.code;
+        const message = frontendDiagnosticMessage(diagnostic);
+        const range = frontendFactRange(diagnostic);
+        const key = `${String(code)}\0${path}\0${JSON.stringify(range)}\0${message}`;
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        const ruleId = /syntactic|syntax|parse/iu.test(phase) ? "typescript-syntax-error" : "typescript-type-error";
+        const codeLabel = code === undefined ? "TypeScript" : `TS${String(code)}`;
+        findings.push({
+            ...finding(frontendDiagnosticSeverity(diagnostic.category), ruleId === "typescript-syntax-error" ? "compiler" : "types", ruleId, path, range ?? 1, `${codeLabel}: ${message}`),
+            analysisBasis: "typescript-compiler",
+            typescript: {
+                code,
+                phase,
+                category: diagnostic.category,
+                relatedInformation: diagnostic.relatedInformation ?? diagnostic.related ?? [],
+                suggestions: diagnostic.suggestions ?? []
+            }
+        });
+    }
+    if (frontend.status === "ready") {
+        for (const file of Array.isArray(frontend.result?.files) ? frontend.result.files : []) {
+            if (!isRecord(file)) continue;
+            for (const owner of Array.isArray(file.runtimeOwners) ? file.runtimeOwners : []) {
+                if (!isRecord(owner)) continue;
+                for (const call of Array.isArray(owner.calls) ? owner.calls : []) {
+                    if (!isRecord(call) || call.inconclusiveRuntime !== true) continue;
+                    findings.push({
+                        ...finding(
+                            "error",
+                            "compiler",
+                            "runtime-ownership-inconclusive",
+                            typeof file.path === "string" ? file.path : "tsconfig.json",
+                            frontendFactRange(call) ?? 1,
+                            `Implicit runtime call ${frontendCallName(call)} in ${frontendFactName(owner, "runtime owner")} has no resolvable project target.`
+                        ),
+                        analysisBasis: "typescript-runtime-semantics",
+                        remediation: "Use a directly resolvable implementation or isolate the decorator/accessor factory behind a reviewed adapter."
+                    });
+                }
+            }
+        }
+    }
+    return findings;
+}
+
+function frontendDiagnostics(result) {
+    if (Array.isArray(result?.diagnostics)) {
+        return result.diagnostics;
+    }
+    if (!Array.isArray(result?.files)) {
+        return [];
+    }
+    return result.files.flatMap((file) => Array.isArray(file?.diagnostics) ? file.diagnostics : []);
+}
+
+function frontendDiagnosticPath(diagnostic) {
+    const span = frontendFactRange(diagnostic);
+    const path = diagnostic.path ?? diagnostic.file ?? diagnostic.fileName ?? span?.path;
+    return typeof path === "string" ? normalizeFrontendPath(path, undefined) : "tsconfig.json";
+}
+
+function frontendDiagnosticPhase(diagnostic) {
+    const phase = diagnostic.phase ?? diagnostic.kind ?? diagnostic.source;
+    return typeof phase === "string" ? phase : "semantic";
+}
+
+function frontendDiagnosticMessage(diagnostic) {
+    const value = diagnostic.message ?? diagnostic.messageText ?? diagnostic.text;
+    if (typeof value === "string") {
+        return value;
+    }
+    if (Array.isArray(value)) {
+        return value.map(String).join("\n");
+    }
+    return String(value ?? "Unknown TypeScript diagnostic");
+}
+
+function frontendDiagnosticSeverity(category) {
+    if (category === "warning" || category === 0) {
+        return "warning";
+    }
+    if (category === "error" || category === 1) {
+        return "error";
+    }
+    return "info";
 }
 
 async function collectSourceFiles(root, roots) {
@@ -571,7 +1115,7 @@ function resolveEdges(root, files, modules) {
             }
             if (!isRelativeSpecifier(entry.specifier)) {
                 if (file.path.startsWith("src/") && !entry.typeOnly) {
-                    findings.push(finding("error", "dependency", "runtime-bare-import", file.path, entry.line, `Runtime source import '${entry.specifier}' is not relative or node: builtin.`));
+                    findings.push(finding("error", "dependency", "runtime-bare-import", file.path, factLocation(entry), `Runtime source import '${entry.specifier}' is not relative or node: builtin.`));
                 }
                 continue;
             }
@@ -580,10 +1124,10 @@ function resolveEdges(root, files, modules) {
             if (resolved === undefined) {
                 const generated = resolveExistingImport(root, file.path, entry.specifier);
                 if (generated !== undefined) {
-                    findings.push(finding("info", "graph", "generated-artifact-import", file.path, entry.line, `Relative import '${entry.specifier}' resolves to '${generated}', which is outside the scanned source graph.`));
+                    findings.push(finding("info", "graph", "generated-artifact-import", file.path, factLocation(entry), `Relative import '${entry.specifier}' resolves to '${generated}', which is outside the scanned source graph.`));
                     continue;
                 }
-                findings.push(finding("error", "graph", "unresolved-import", file.path, entry.line, `Relative import '${entry.specifier}' does not resolve to a scanned source file.`));
+                findings.push(finding("error", "graph", "unresolved-import", file.path, factLocation(entry), `Relative import '${entry.specifier}' does not resolve to a scanned source file.`));
                 continue;
             }
 
@@ -597,6 +1141,9 @@ function resolveEdges(root, files, modules) {
                 to: resolved,
                 specifier: entry.specifier,
                 line: entry.line,
+                column: entry.column,
+                span: entry.span,
+                analysisBasis: entry.analysisBasis ?? "legacy-token-heuristic",
                 kind: entry.kind,
                 typeOnly: entry.typeOnly,
                 fromLayer: file.layer,
@@ -605,7 +1152,7 @@ function resolveEdges(root, files, modules) {
             edges.push(edge);
 
             if (!entry.typeOnly && forbiddenLayerEdge(edge.fromLayer, edge.toLayer)) {
-                findings.push(finding("warning", "architecture", "layer-boundary", file.path, entry.line, `Runtime import from layer '${edge.fromLayer}' to '${edge.toLayer}' should be reviewed.`));
+                findings.push(finding("warning", "architecture", "layer-boundary", file.path, factLocation(entry), `Runtime import from layer '${edge.fromLayer}' to '${edge.toLayer}' should be reviewed.`));
             }
         }
     }
@@ -668,10 +1215,12 @@ function analyzeFileFindings(files) {
         if (file === undefined) {
             continue;
         }
-        for (let errorIndex = 0; errorIndex < file.lexicalErrors.length; errorIndex += 1) {
-            const error = file.lexicalErrors[errorIndex];
-            if (error !== undefined) {
-                findings.push(finding("error", "lexer", "lexical-error", file.path, error.line, error.message));
+        if (file.analysisBasis !== "typescript-ast") {
+            for (let errorIndex = 0; errorIndex < file.lexicalErrors.length; errorIndex += 1) {
+                const error = file.lexicalErrors[errorIndex];
+                if (error !== undefined) {
+                    findings.push(finding("error", "lexer", "lexical-error", file.path, factLocation(error), error.message));
+                }
             }
         }
         if (file.lines > LARGE_FILE_LINE_LIMIT) {
@@ -680,27 +1229,61 @@ function analyzeFileFindings(files) {
         if (file.todoCount > 0) {
             findings.push(finding("info", "maintainability", "todo-comment", file.path, 1, `File contains ${String(file.todoCount)} TODO/FIXME/HACK comment(s).`));
         }
-        for (let declIndex = 0; declIndex < file.declarations.length; declIndex += 1) {
-            const declaration = file.declarations[declIndex];
-            if (declaration === undefined || !declaration.exported) {
+        const publicDeclarations = coalescePublicDeclarations(file);
+        for (let declIndex = 0; declIndex < publicDeclarations.length; declIndex += 1) {
+            const declaration = publicDeclarations[declIndex];
+            if (declaration === undefined) {
                 continue;
             }
             if (!declaration.documented && isPublicDocumentationCandidate(declaration)) {
-                findings.push(finding("info", "documentation", "missing-public-jsdoc", file.path, declaration.line, `Exported ${declaration.kind} '${declaration.name}' is missing nearby JSDoc.`));
+                findings.push(finding("info", "documentation", "missing-public-jsdoc", file.path, factLocation(declaration), `Exported ${declaration.kind} '${declaration.name}' is missing nearby JSDoc.`));
             }
             const previous = exportedNames.get(declaration.name);
-            if (previous !== undefined && declaration.name !== "default") {
-                findings.push(finding("info", "api", "duplicate-export-name", file.path, declaration.line, `Export name '${declaration.name}' also appears in ${previous.path}:${String(previous.line)}.`));
+            const identity = publicDeclarationIdentity(file.path, declaration);
+            if (previous !== undefined && previous.identity !== identity && declaration.name !== "default") {
+                findings.push(finding("info", "api", "duplicate-export-name", file.path, factLocation(declaration), `Export name '${declaration.name}' also appears in ${previous.path}:${String(previous.line)}.`));
             } else {
                 exportedNames.set(declaration.name, {
                     path: file.path,
-                    line: declaration.line
+                    line: declaration.line,
+                    identity
                 });
             }
         }
     }
 
     return findings;
+}
+
+function coalescePublicDeclarations(file) {
+    const grouped = new Map();
+    for (let index = 0; index < file.declarations.length; index += 1) {
+        const declaration = file.declarations[index];
+        if (declaration === undefined || !declaration.exported) {
+            continue;
+        }
+        const key = publicDeclarationIdentity(file.path, declaration);
+        const previous = grouped.get(key);
+        if (previous === undefined) {
+            grouped.set(key, declaration);
+            continue;
+        }
+        if (!previous.documented && declaration.documented) {
+            grouped.set(key, {
+                ...previous,
+                documented: true
+            });
+        }
+    }
+    return [...grouped.values()];
+}
+
+function publicDeclarationIdentity(path, declaration) {
+    const symbolId = declaration.symbolId ?? declaration.targetSymbolId;
+    if (typeof symbolId === "string" && symbolId.length !== 0) {
+        return `${path}\0symbol:${symbolId}`;
+    }
+    return `${path}\0declaration:${declaration.kind}\0${declaration.name}`;
 }
 
 function analyzeGraphFindings(graph) {
@@ -1074,6 +1657,433 @@ function readFunctions(path, lexer) {
     return functions;
 }
 
+function frontendImports(path, frontendFile, fallback) {
+    if (!hasArrayProperty(frontendFile, "imports")) {
+        return fallback;
+    }
+    const imports = [];
+    for (let index = 0; index < frontendFile.imports.length; index += 1) {
+        const entry = frontendFile.imports[index];
+        if (!isRecord(entry)) {
+            continue;
+        }
+        const specifier = entry.specifier ?? entry.moduleSpecifier ?? entry.source;
+        if (typeof specifier !== "string") {
+            continue;
+        }
+        const span = frontendFactRange(entry);
+        imports.push({
+            ...entry,
+            path,
+            line: frontendFactLine(entry, 1),
+            column: frontendFactColumn(entry),
+            specifier,
+            kind: typeof entry.kind === "string" ? entry.kind : "static",
+            typeOnly: entry.typeOnly === true || entry.isTypeOnly === true,
+            span,
+            analysisBasis: "typescript-ast"
+        });
+    }
+    return imports;
+}
+
+function frontendDeclarations(frontendFile, fallback) {
+    if (!hasArrayProperty(frontendFile, "declarations")) {
+        return fallback;
+    }
+    const exportedNames = frontendExportNames(frontendFile.exports);
+    const declarations = [];
+    for (let index = 0; index < frontendFile.declarations.length; index += 1) {
+        const entry = frontendFile.declarations[index];
+        if (!isRecord(entry)) {
+            continue;
+        }
+        const name = frontendFactName(entry, "default");
+        const span = frontendFactRange(entry);
+        declarations.push({
+            ...entry,
+            kind: normalizeDeclarationKind(entry.kind ?? entry.syntaxKind ?? entry.declarationKind),
+            name,
+            line: frontendFactLine(entry, 1),
+            column: frontendFactColumn(entry),
+            exported: frontendDeclarationIsExported(entry, name, exportedNames),
+            documented: entry.documented === true || entry.hasJsDoc === true || entry.jsDoc === true || arrayLength(entry.jsDoc) > 0,
+            span,
+            analysisBasis: "typescript-ast"
+        });
+    }
+    return declarations;
+}
+
+function frontendDeclarationIsExported(entry, name, exportedNames) {
+    if (typeof entry.exported === "boolean") {
+        return entry.exported;
+    }
+    if (typeof entry.isExported === "boolean") {
+        return entry.isExported;
+    }
+    return exportedNames.has(name);
+}
+
+function frontendExportNames(exports) {
+    const names = new Set();
+    if (!Array.isArray(exports)) {
+        return names;
+    }
+    for (let index = 0; index < exports.length; index += 1) {
+        const entry = exports[index];
+        if (typeof entry === "string") {
+            names.add(entry);
+            continue;
+        }
+        if (isRecord(entry)) {
+            if (entry.exported === false || entry.isExported === false) {
+                continue;
+            }
+            names.add(frontendFactName(entry, "default"));
+        }
+    }
+    return names;
+}
+
+function normalizeDeclarationKind(value) {
+    if (typeof value !== "string") {
+        return "declaration";
+    }
+    const kind = value.replace(/Declaration$/u, "").toLowerCase();
+    if (kind === "variable") {
+        return "const";
+    }
+    if (kind === "method" || kind === "arrowfunction" || kind === "functionexpression") {
+        return "function";
+    }
+    return kind;
+}
+
+function frontendFunctions(path, source, frontendFile, fallback) {
+    if (!hasArrayProperty(frontendFile, "functions")) {
+        return fallback;
+    }
+    const entries = [
+        ...frontendFile.functions,
+        ...(Array.isArray(frontendFile.runtimeOwners) ? frontendFile.runtimeOwners : [])
+    ];
+    const functions = [];
+    for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (!isRecord(entry)) {
+            continue;
+        }
+        const runtimeOwner = entry.runtimeOwner === true ||
+            (entry.synthetic === true && typeof entry.kind === "string" &&
+                (entry.kind.endsWith("-init") || entry.kind === "implicit-constructor"));
+        const name = frontendFactName(entry, "anonymous");
+        const span = frontendFactRange(entry);
+        const bodySpan = frontendFactRange(entry.bodySpan ?? entry.bodyRange) ?? span;
+        const line = frontendFactLine(entry, 1);
+        const column = frontendFactColumn(entry);
+        const legacy = matchLegacyFunction(fallback, name, line);
+        const calls = frontendFunctionCalls(entry, frontendFile, span, legacy?.calls ?? []);
+        const metrics = metricsForFrontendEntry(
+            source,
+            entry,
+            frontendFile,
+            bodySpan,
+            legacy?.metrics
+        );
+        const id = frontendFunctionId(path, entry, name, line, column);
+        functions.push({
+            ...entry,
+            id,
+            path,
+            name,
+            kind: typeof entry.kind === "string" ? entry.kind : "function",
+            line,
+            column,
+            endLine: frontendFactEndLine(entry, legacy?.endLine ?? line),
+            endColumn: frontendFactEndColumn(entry),
+            params: frontendParameterNames(entry.parameters ?? entry.params),
+            exported: entry.exported === true || entry.isExported === true,
+            calls,
+            metrics,
+            returnType: entry.returnType ?? entry.type?.returnType,
+            returnTypeText: frontendTypeText(entry.returnType ?? entry.type?.returnType),
+            signature: typeof entry.signature === "string" ? entry.signature : undefined,
+            typeParameters: Array.isArray(entry.typeParameters) ? entry.typeParameters : [],
+            inference: entry.inference ?? entry.typeInfo ?? entry.type,
+            span,
+            analysisBasis: runtimeOwner ? "typescript-ast-runtime-owner" : "typescript-ast"
+        });
+    }
+    const byId = new Map(functions.map((fn) => [fn.id, fn]));
+    for (const edge of Array.isArray(frontendFile.syntheticEdges) ? frontendFile.syntheticEdges : []) {
+        if (!isRecord(edge) || typeof edge.from !== "string" || typeof edge.to !== "string") continue;
+        const owner = byId.get(edge.from);
+        if (owner === undefined || !byId.has(edge.to)) continue;
+        const span = frontendFactRange(edge);
+        owner.calls.push({
+            ...edge,
+            id: typeof edge.id === "string" ? edge.id : `runtime-edge:${edge.from}:${edge.to}`,
+            name: `<${typeof edge.kind === "string" ? edge.kind : "runtime-edge"}>`,
+            targetId: edge.to,
+            line: frontendFactLine(edge, owner.line),
+            column: frontendFactColumn(edge),
+            span,
+            analysisBasis: "typescript-ast"
+        });
+    }
+    return functions;
+}
+
+function matchLegacyFunction(functions, name, line) {
+    let nearest = undefined;
+    let distance = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < functions.length; index += 1) {
+        const candidate = functions[index];
+        if (candidate === undefined || candidate.name !== name) {
+            continue;
+        }
+        const nextDistance = Math.abs(candidate.line - line);
+        if (nextDistance < distance) {
+            nearest = candidate;
+            distance = nextDistance;
+        }
+    }
+    return distance <= 2 ? nearest : undefined;
+}
+
+function frontendFunctionCalls(entry, frontendFile, functionSpan, fallback) {
+    const direct = Array.isArray(entry.calls)
+        ? entry.calls
+        : matchingFrontendCalls(entry, frontendFile.calls, functionSpan, frontendFile.functions);
+    if (!Array.isArray(direct)) {
+        return fallback;
+    }
+    const calls = [];
+    for (let index = 0; index < direct.length; index += 1) {
+        const call = direct[index];
+        if (!isRecord(call)) {
+            continue;
+        }
+        const span = frontendFactRange(call);
+        calls.push({
+            ...call,
+            name: frontendCallName(call),
+            line: frontendFactLine(call, frontendFactLine(entry, 1)),
+            column: frontendFactColumn(call),
+            targetId: frontendCallTargetId(call),
+            span,
+            analysisBasis: "typescript-ast"
+        });
+    }
+    return calls;
+}
+
+function matchingFrontendCalls(entry, calls, functionSpan, functions) {
+    if (!Array.isArray(calls)) {
+        return undefined;
+    }
+    const ids = new Set([entry.id, entry.symbolId, entry.functionId].filter((value) => typeof value === "string"));
+    return calls.filter((call) => {
+        if (!isRecord(call)) {
+            return false;
+        }
+        const caller = call.callerId ?? call.enclosingFunctionId ?? call.functionId;
+        if (typeof caller === "string") {
+            return ids.has(caller);
+        }
+        const callSpan = frontendFactRange(call);
+        return rangeContains(functionSpan, callSpan) && innermostFrontendFunction(functions, callSpan) === entry;
+    });
+}
+
+function innermostFrontendFunction(functions, callSpan) {
+    let best = undefined;
+    let bestSize = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < functions.length; index += 1) {
+        const candidate = functions[index];
+        if (!isRecord(candidate)) {
+            continue;
+        }
+        const span = frontendFactRange(candidate);
+        if (!rangeContains(span, callSpan)) {
+            continue;
+        }
+        const size = frontendRangeSize(span);
+        if (size < bestSize) {
+            best = candidate;
+            bestSize = size;
+        }
+    }
+    return best;
+}
+
+function frontendRangeSize(span) {
+    if (Number.isInteger(span?.start.offset) && Number.isInteger(span?.end.offset)) {
+        return span.end.offset - span.start.offset;
+    }
+    return (span.end.line - span.start.line) * 1_000_000 + span.end.column - span.start.column;
+}
+
+function frontendCallName(call) {
+    const value = call.name ?? call.calleeName ?? call.expression ?? call.callee;
+    if (typeof value === "string") {
+        return value;
+    }
+    if (isRecord(value)) {
+        return frontendFactName(value, "anonymous-call");
+    }
+    return "anonymous-call";
+}
+
+function frontendCallTargetId(call) {
+    const target = call.targetId ?? call.targetFunctionId ?? call.resolvedTargetId ?? call.symbolId ?? call.target;
+    if (typeof target === "string") {
+        return target;
+    }
+    if (isRecord(target)) {
+        const id = target.id ?? target.functionId ?? target.symbolId;
+        return typeof id === "string" ? id : undefined;
+    }
+    return undefined;
+}
+
+function frontendFunctionId(path, entry, name, line, column) {
+    const value = entry.id ?? entry.functionId ?? entry.symbolId;
+    if (typeof value === "string" && value.length !== 0) {
+        return value;
+    }
+    const suffix = column === undefined ? "" : `:${String(column)}`;
+    return `${functionId(path, name, line)}${suffix}`;
+}
+
+function frontendParameterNames(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.map((entry) => typeof entry === "string" ? entry : frontendFactName(entry, "parameter"));
+}
+
+function frontendTypeText(value) {
+    if (typeof value === "string") {
+        return value;
+    }
+    if (isRecord(value)) {
+        const text = value.text ?? value.display ?? value.type;
+        return typeof text === "string" ? text : undefined;
+    }
+    return undefined;
+}
+
+function metricsForFrontendEntry(source, entry, frontendFile, bodySpan, fallback) {
+    const regions = Array.isArray(entry.metricSpans)
+        ? entry.metricSpans.map((region) => frontendFactRange(region?.span ?? region)).filter(Boolean)
+        : [
+            ...(Array.isArray(entry.parameters)
+                ? entry.parameters.map((parameter) => frontendFactRange(parameter?.initializerSpan)).filter(Boolean)
+                : []),
+            bodySpan
+        ].filter(Boolean);
+    if (regions.length === 0) {
+        return functionMetrics([]);
+    }
+    const exclusions = frontendMetricExclusions(frontendFile, entry.id);
+    const tokens = [];
+    for (const region of regions) {
+        const fragment = sourceTextForRangeWithExclusions(source, region, exclusions);
+        if (fragment === undefined) {
+            return fallback ?? functionMetrics([]);
+        }
+        tokens.push(...lexSource(fragment).tokens);
+    }
+    return functionMetrics(tokens);
+}
+
+function frontendMetricExclusions(frontendFile, ownerId) {
+    const spans = [];
+    for (const span of Array.isArray(frontendFile.nonRuntimeSpans) ? frontendFile.nonRuntimeSpans : []) {
+        const normalized = frontendFactRange(span);
+        if (normalized !== undefined) spans.push(normalized);
+    }
+    for (const owner of Array.isArray(frontendFile.runtimeOwners) ? frontendFile.runtimeOwners : []) {
+        if (!isRecord(owner) || owner.id === ownerId) continue;
+        for (const region of Array.isArray(owner.metricSpans) ? owner.metricSpans : []) {
+            const normalized = frontendFactRange(region?.span ?? region);
+            if (normalized !== undefined) spans.push(normalized);
+        }
+    }
+    for (const fn of Array.isArray(frontendFile.functions) ? frontendFile.functions : []) {
+        if (!isRecord(fn) || fn.id === ownerId) continue;
+        const owned = [fn.bodySpan, fn.returnTypeSpan];
+        if (fn.nameComputed !== true) owned.push(fn.nameSpan);
+        for (const parameter of Array.isArray(fn.parameters) ? fn.parameters : []) {
+            if (isRecord(parameter)) owned.push(parameter.span);
+        }
+        for (const parameter of Array.isArray(fn.typeParameters) ? fn.typeParameters : []) {
+            if (isRecord(parameter)) owned.push(parameter.span);
+        }
+        for (const value of owned) {
+            const normalized = frontendFactRange(value);
+            if (normalized !== undefined) spans.push(normalized);
+        }
+    }
+    return spans;
+}
+
+function sourceTextForRangeWithExclusions(source, region, exclusions) {
+    const start = sourceOffset(source, region.start);
+    const end = sourceOffset(source, region.end);
+    if (start === undefined || end === undefined || end < start) return undefined;
+    const contained = [];
+    for (const span of exclusions) {
+        const exclusionStart = sourceOffset(source, span.start);
+        const exclusionEnd = sourceOffset(source, span.end);
+        if (exclusionStart === undefined || exclusionEnd === undefined ||
+            exclusionStart < start || exclusionEnd > end || exclusionEnd <= exclusionStart) {
+            continue;
+        }
+        contained.push({ start: exclusionStart, end: exclusionEnd });
+    }
+    contained.sort((left, right) => left.start - right.start || right.end - left.end);
+    const disjoint = [];
+    for (const interval of contained) {
+        const previous = disjoint.at(-1);
+        if (previous !== undefined && interval.end <= previous.end) continue;
+        if (previous !== undefined && interval.start < previous.end) {
+            previous.end = interval.end;
+            continue;
+        }
+        disjoint.push(interval);
+    }
+    let cursor = start;
+    let fragment = "";
+    for (const interval of disjoint) {
+        fragment += source.slice(cursor, interval.start);
+        const removed = source.slice(interval.start, interval.end);
+        fragment += `0${"\n".repeat((removed.match(/\n/gu) ?? []).length)}`;
+        cursor = interval.end;
+    }
+    return fragment + source.slice(cursor, end);
+}
+
+function sourceOffset(source, position) {
+    if (Number.isInteger(position?.offset) && position.offset >= 0 && position.offset <= source.length) {
+        return position.offset;
+    }
+    if (!Number.isInteger(position?.line) || !Number.isInteger(position?.column) || position.line < 0 || position.column < 0) {
+        return undefined;
+    }
+    let offset = 0;
+    for (let line = 0; line < position.line; line += 1) {
+        const newline = source.indexOf("\n", offset);
+        if (newline === -1) {
+            return undefined;
+        }
+        offset = newline + 1;
+    }
+    return Math.min(source.length, offset + position.column);
+}
+
 function buildFunctionIndex(files) {
     const functions = [];
     const byName = new Map();
@@ -1118,17 +2128,21 @@ function buildCallGraph(functionIndex) {
         const seen = new Set();
         for (let callIndex = 0; callIndex < fn.calls.length; callIndex += 1) {
             const call = fn.calls[callIndex];
-            if (call === undefined || seen.has(call.name)) {
+            const callKey = call?.targetId ?? call?.name;
+            if (call === undefined || callKey === undefined || seen.has(callKey)) {
                 continue;
             }
-            seen.add(call.name);
+            seen.add(callKey);
+            const directTarget = typeof call.targetId === "string" ? functionIndex.byId.get(call.targetId) : undefined;
             const sameFileTargets = functionIndex.byFileName.get(`${fn.path}\0${call.name}`) ?? [];
             const globalTargets = functionIndex.byName.get(call.name) ?? [];
-            const targets = sameFileTargets.length !== 0
-                ? sameFileTargets
-                : globalTargets.length === 1
-                    ? globalTargets
-                    : [];
+            const targets = call.analysisBasis === "typescript-ast"
+                ? directTarget === undefined ? [] : [directTarget]
+                : sameFileTargets.length !== 0
+                    ? sameFileTargets
+                    : globalTargets.length === 1
+                        ? globalTargets
+                        : [];
             for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
                 const target = targets[targetIndex];
                 if (target === undefined) {
@@ -1139,6 +2153,10 @@ function buildCallGraph(functionIndex) {
                     to: target.id,
                     name: call.name,
                     line: call.line,
+                    column: call.column,
+                    endLine: call.span === undefined ? undefined : call.span.end.line + 1,
+                    endColumn: call.span === undefined ? undefined : call.span.end.column + 1,
+                    analysisBasis: call.analysisBasis ?? fn.analysisBasis,
                     crossFile: fn.path !== target.path
                 });
             }
@@ -1146,7 +2164,7 @@ function buildCallGraph(functionIndex) {
     }
     const cycles = findFunctionCycles(functionIndex.functions, edges);
     return {
-        nodes: functionIndex.functions.map(publicFunction),
+        nodes: functionIndex.functions.map(publicCallGraphNode),
         edges,
         cycles,
         fanIn: functionFanCounts(edges, "to"),
@@ -1155,19 +2173,97 @@ function buildCallGraph(functionIndex) {
 }
 
 function publicFunctions(functionIndex) {
-    return functionIndex.functions.map(publicFunction);
+    return [...functionIndex.functions]
+        .sort(comparePublicFunctionPriority)
+        .slice(0, PUBLIC_FUNCTION_LIMIT)
+        .map(publicFunction);
 }
 
-function publicFunction(fn) {
+function publicCallGraph(callGraph, functionIndex) {
+    const nodes = callGraph.nodes.slice(0, PUBLIC_CALL_GRAPH_NODE_LIMIT);
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const edges = callGraph.edges
+        .filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to))
+        .slice(0, PUBLIC_CALL_GRAPH_EDGE_LIMIT)
+        .map(publicCallGraphEdge);
+    const cycles = callGraph.cycles.slice(0, PUBLIC_CALL_GRAPH_CYCLE_LIMIT);
+    return {
+        nodeCount: functionIndex.functions.length,
+        edgeCount: callGraph.edges.length,
+        cycleCount: callGraph.cycles.length,
+        nodes,
+        edges,
+        cycles,
+        fanIn: callGraph.fanIn,
+        fanOut: callGraph.fanOut,
+        omitted: {
+            nodes: Math.max(0, functionIndex.functions.length - nodes.length),
+            edges: Math.max(0, callGraph.edges.length - edges.length),
+            cycles: Math.max(0, callGraph.cycles.length - cycles.length)
+        }
+    };
+}
+
+function publicCallGraphNode(fn) {
     return {
         id: fn.id,
         path: fn.path,
         name: fn.name,
         line: fn.line,
+        column: fn.column,
+        exported: fn.exported,
+        analysisBasis: fn.analysisBasis ?? "legacy-token-heuristic"
+    };
+}
+
+function publicCallGraphEdge(edge) {
+    return {
+        from: edge.from,
+        to: edge.to,
+        name: edge.name,
+        line: edge.line,
+        column: edge.column,
+        endLine: edge.endLine,
+        endColumn: edge.endColumn,
+        analysisBasis: edge.analysisBasis,
+        crossFile: edge.crossFile
+    };
+}
+
+function comparePublicFunctionPriority(left, right) {
+    return right.metrics.complexity - left.metrics.complexity ||
+        right.calls.length - left.calls.length ||
+        left.path.localeCompare(right.path) ||
+        left.line - right.line ||
+        left.name.localeCompare(right.name);
+}
+
+function publicFunction(fn) {
+    const parameters = compactFunctionParameters(fn.parameters);
+    const typeParameters = compactFunctionTypeParameters(fn.typeParameters);
+    return {
+        id: fn.id,
+        path: fn.path,
+        name: fn.name,
+        kind: fn.kind,
+        line: fn.line,
+        column: fn.column,
         endLine: fn.endLine,
+        endColumn: fn.endColumn,
         params: fn.params,
+        parameters,
+        parameterCount: arrayLength(fn.parameters ?? fn.params),
         exported: fn.exported,
         calls: fn.calls.length,
+        declaredReturnType: fn.declaredReturnType,
+        returnType: fn.returnType,
+        returnTypeText: fn.returnTypeText,
+        signature: fn.signature,
+        typeParameters,
+        typeParameterCount: arrayLength(fn.typeParameters),
+        inference: compactInferenceAuthority(fn.inference),
+        span: fn.span,
+        analysisBasis: fn.analysisBasis ?? "legacy-token-heuristic",
         complexity: fn.metrics.complexity,
         descriptorReads: fn.metrics.descriptorReads,
         descriptorValueReads: fn.metrics.descriptorValueReads,
@@ -1178,6 +2274,41 @@ function publicFunction(fn) {
     };
 }
 
+function compactFunctionParameters(value) {
+    if (!Array.isArray(value)) {
+        return undefined;
+    }
+    return value.slice(0, 24).map((parameter) => {
+        if (!isRecord(parameter)) {
+            return parameter;
+        }
+        return {
+            name: parameter.name,
+            declaredType: parameter.declaredType,
+            inferredType: parameter.inferredType,
+            optional: parameter.optional,
+            rest: parameter.rest,
+            hasDefault: parameter.hasDefault
+        };
+    });
+}
+
+function compactFunctionTypeParameters(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.slice(0, 16).map((parameter) => {
+        if (!isRecord(parameter)) {
+            return parameter;
+        }
+        return {
+            name: parameter.name,
+            constraint: parameter.constraint,
+            default: parameter.default
+        };
+    });
+}
+
 function analyzeFunctionFindings(functionIndex, callGraph) {
     const findings = [];
     for (let index = 0; index < functionIndex.functions.length; index += 1) {
@@ -1186,16 +2317,22 @@ function analyzeFunctionFindings(functionIndex, callGraph) {
             continue;
         }
         if (fn.metrics.complexity > FUNCTION_COMPLEXITY_LIMIT) {
-            findings.push(finding("warning", "maintainability", "high-function-complexity", fn.path, fn.line, `Function '${fn.name}' has complexity ${String(fn.metrics.complexity)}, above ${String(FUNCTION_COMPLEXITY_LIMIT)}.`));
+            const complexityFinding = finding(fn.analysisBasis === "typescript-ast" ? "info" : "warning", "maintainability", "high-function-complexity", fn.path, factLocation(fn), `Function '${fn.name}' has complexity ${String(fn.metrics.complexity)}, above ${String(FUNCTION_COMPLEXITY_LIMIT)}.`);
+            findings.push({
+                ...complexityFinding,
+                analysisBasis: fn.analysisBasis === "typescript-ast"
+                    ? "typescript-ast-span+legacy-token-metric"
+                    : complexityFinding.analysisBasis
+            });
         }
         if (fn.calls.length > HIGH_FUNCTION_CALL_OUT_LIMIT) {
-            findings.push(finding("info", "maintainability", "high-function-call-out", fn.path, fn.line, `Function '${fn.name}' calls ${String(fn.calls.length)} sites; review orchestration responsibility.`));
+            findings.push(finding("info", "maintainability", "high-function-call-out", fn.path, factLocation(fn), `Function '${fn.name}' calls ${String(fn.calls.length)} sites; review orchestration responsibility.`));
         }
         if (isSafeModePath(fn.path) &&
             fn.metrics.descriptorReads !== 0 &&
             fn.metrics.descriptorValueReads !== 0 &&
             fn.metrics.valueProofs === 0) {
-            findings.push(finding("warning", "security", "function-descriptor-without-value-proof", fn.path, fn.line, `Function '${fn.name}' reads descriptor.value without a local value-slot proof summary.`));
+            findings.push(finding("warning", "security", "function-descriptor-without-value-proof", fn.path, factLocation(fn), `Function '${fn.name}' reads descriptor.value without a local value-slot proof summary.`));
         }
     }
     for (let index = 0; index < callGraph.cycles.length; index += 1) {
@@ -1204,7 +2341,7 @@ function analyzeFunctionFindings(functionIndex, callGraph) {
             continue;
         }
         const first = functionIndex.byId.get(cycle[0]);
-        findings.push(finding("warning", "reliability", "recursive-call-cycle", first?.path ?? "src", first?.line ?? 1, `Recursive function cycle detected: ${cycle.join(" -> ")}.`));
+        findings.push(finding("warning", "reliability", "recursive-call-cycle", first?.path ?? "src", first === undefined ? 1 : factLocation(first), `Recursive function cycle detected: ${cycle.join(" -> ")}.`));
     }
     return findings;
 }
@@ -2433,7 +3570,12 @@ function enrichFindings(findings) {
 }
 
 function issueFingerprint(item) {
-    return stableHash(`${item.rule}\0${item.path}\0${String(item.line)}\0${item.message}`);
+    const hasExactColumn = frontendFactRange(item) !== undefined ||
+        positiveIntegerOrUndefined(item.column) !== undefined;
+    const location = hasExactColumn
+        ? `${String(item.line)}\0${String(item.column)}`
+        : String(item.line);
+    return stableHash(`${item.rule}\0${item.path}\0${location}\0${item.message}`);
 }
 
 function stableHash(value) {
@@ -2445,8 +3587,19 @@ function stableHash(value) {
     return `TSA-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
-function finding(severity, category, rule, path, line, message, flow = []) {
+function finding(severity, category, rule, path, locationValue, message, flow = []) {
     const meta = RULE_INDEX.get(rule);
+    const location = normalizeFindingLocation(locationValue);
+    const normalizedFlow = flow.length === 0
+        ? [{
+            path,
+            ...location,
+            message
+        }]
+        : flow.map((step) => ({
+            ...step,
+            ...normalizeFindingLocation(step)
+        }));
     return {
         severity,
         category,
@@ -2456,16 +3609,137 @@ function finding(severity, category, rule, path, line, message, flow = []) {
         confidence: meta?.confidence ?? "medium",
         domain: meta?.domain ?? category,
         path,
-        line,
+        ...location,
+        analysisBasis: location.span === undefined ? "legacy-token-heuristic" : "typescript-ast",
         message,
-        flow: flow.length === 0
-            ? [{
-                path,
-                line,
-                message
-            }]
-            : flow
+        flow: normalizedFlow
     };
+}
+
+function normalizeFindingLocation(value) {
+    const span = frontendFactRange(value);
+    if (span !== undefined) {
+        return {
+            line: span.start.line + 1,
+            column: span.start.column + 1,
+            endLine: span.end.line + 1,
+            endColumn: span.end.column + 1,
+            span
+        };
+    }
+    if (isRecord(value)) {
+        return {
+            line: positiveInteger(value.line, 1),
+            column: positiveIntegerOrUndefined(value.column),
+            endLine: positiveIntegerOrUndefined(value.endLine),
+            endColumn: positiveIntegerOrUndefined(value.endColumn)
+        };
+    }
+    return {
+        line: positiveInteger(value, 1)
+    };
+}
+
+function factLocation(fact) {
+    return isRecord(fact) ? fact : 1;
+}
+
+function frontendFactRange(value) {
+    if (!isRecord(value)) {
+        return undefined;
+    }
+    const nestedLocation = isRecord(value.location) ? value.location.range ?? value.location.span : undefined;
+    const candidate = value.start !== undefined && value.end !== undefined
+        ? value
+        : value.span ?? value.range ?? nestedLocation;
+    if (!isRecord(candidate)) {
+        return undefined;
+    }
+    const start = frontendPosition(candidate.start, candidate.startLine, candidate.startColumn, candidate.startOffset);
+    const end = frontendPosition(candidate.end, candidate.endLine, candidate.endColumn, candidate.endOffset);
+    if (start === undefined || end === undefined || comparePositions(start, end) > 0) {
+        return undefined;
+    }
+    const path = candidate.path ?? value.path;
+    return {
+        path: typeof path === "string" ? path : undefined,
+        start,
+        end,
+        encoding: candidate.encoding ?? value.encoding ?? "utf-16",
+        lineBase: 0,
+        columnBase: 0,
+        endExclusive: true
+    };
+}
+
+function frontendPosition(value, flatLine, flatColumn, flatOffset) {
+    const position = isRecord(value) ? value : {};
+    const line = position.line ?? flatLine;
+    const column = position.column ?? position.character ?? flatColumn;
+    const offset = position.offset ?? flatOffset;
+    if (!Number.isInteger(line) || line < 0 || !Number.isInteger(column) || column < 0) {
+        return undefined;
+    }
+    return Number.isInteger(offset) && offset >= 0
+        ? { line, character: column, column, offset }
+        : { line, character: column, column };
+}
+
+function comparePositions(left, right) {
+    return left.line - right.line || left.column - right.column;
+}
+
+function rangeContains(outer, inner) {
+    return outer !== undefined &&
+        inner !== undefined &&
+        comparePositions(outer.start, inner.start) <= 0 &&
+        comparePositions(outer.end, inner.end) >= 0;
+}
+
+function frontendFactLine(value, fallback) {
+    const span = frontendFactRange(value);
+    if (span !== undefined) {
+        return span.start.line + 1;
+    }
+    return isRecord(value) ? positiveInteger(value.line, fallback) : fallback;
+}
+
+function frontendFactColumn(value) {
+    const span = frontendFactRange(value);
+    if (span !== undefined) {
+        return span.start.column + 1;
+    }
+    return isRecord(value) ? positiveIntegerOrUndefined(value.column) : undefined;
+}
+
+function frontendFactEndLine(value, fallback) {
+    const span = frontendFactRange(value);
+    if (span !== undefined) {
+        return span.end.line + 1;
+    }
+    return isRecord(value) ? positiveInteger(value.endLine, fallback) : fallback;
+}
+
+function frontendFactEndColumn(value) {
+    const span = frontendFactRange(value);
+    if (span !== undefined) {
+        return span.end.column + 1;
+    }
+    return isRecord(value) ? positiveIntegerOrUndefined(value.endColumn) : undefined;
+}
+
+function frontendFactName(value, fallback) {
+    if (!isRecord(value)) {
+        return fallback;
+    }
+    const name = value.name ?? value.displayName ?? value.localName ?? value.exportedName;
+    if (typeof name === "string" && name.length !== 0) {
+        return name;
+    }
+    if (isRecord(name) && typeof name.text === "string") {
+        return name.text;
+    }
+    return fallback;
 }
 
 function sortFindings(findings) {
@@ -2483,7 +3757,7 @@ function sortFindings(findings) {
         if (pathDiff !== 0) {
             return pathDiff;
         }
-        return left.line - right.line;
+        return left.line - right.line || (left.column ?? 1) - (right.column ?? 1);
     });
 }
 
@@ -2580,6 +3854,26 @@ function tokenType(tokens, index) {
 
 function tokenLine(tokens, index) {
     return tokens[index]?.line ?? 1;
+}
+
+function isRecord(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasArrayProperty(value, key) {
+    return isRecord(value) && Object.prototype.hasOwnProperty.call(value, key) && Array.isArray(value[key]);
+}
+
+function arrayLength(value) {
+    return Array.isArray(value) ? value.length : 0;
+}
+
+function positiveInteger(value, fallback) {
+    return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function positiveIntegerOrUndefined(value) {
+    return Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 function sortByName(left, right) {

@@ -1,8 +1,6 @@
 /**
  * @file schema/literal.ts
  * @brief Literal-value boundary checks.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  */
 
 import type { LiteralValue } from "./types.js";

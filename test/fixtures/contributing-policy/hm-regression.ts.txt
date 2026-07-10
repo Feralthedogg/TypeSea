@@ -1,0 +1,46 @@
+const identity = value => value;
+const numberIdentity = identity(1);
+const stringIdentity = identity("sea");
+
+const shadowed = value => value;
+const beforeShadow = shadowed(true);
+{
+    const shadowed = value => ({ value });
+    const insideShadow = shadowed("inner");
+    insideShadow.value;
+}
+const afterShadow = shadowed(2);
+
+const occursCheck = value => value(value);
+
+let mutableIdentity = value => value;
+const firstMutable = mutableIdentity(1);
+const secondMutable = mutableIdentity("two");
+
+const mutableRecord = { map: value => value };
+const firstRecord = mutableRecord.map(1);
+const secondRecord = mutableRecord.map("two");
+
+const annotationWins: string = 1;
+const validUnknown: unknown = 1;
+const explicitEscape: any = 1;
+
+type Fancy<T> = {
+    [K in keyof T as `get${Capitalize<string & K>}`]: () => T[K];
+};
+declare const fancy: Fancy<{ readonly name: string }>;
+const unsupportedButTyped = fancy.getName?.();
+
+void numberIdentity;
+void stringIdentity;
+void beforeShadow;
+void afterShadow;
+void occursCheck;
+void firstMutable;
+void secondMutable;
+void firstRecord;
+void secondRecord;
+void annotationWins;
+void validUnknown;
+void explicitEscape;
+void unsupportedButTyped;

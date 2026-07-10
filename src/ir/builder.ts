@@ -1,8 +1,6 @@
 /**
  * @file builder.ts
  * @brief Dense graph builder with structural node interning.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
  */
 
 import { NodeTag, PresenceTag, type ObjectModeTag } from "../kind/index.js";

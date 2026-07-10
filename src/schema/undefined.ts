@@ -1,8 +1,6 @@
 /**
  * @file undefined.ts
  * @brief Conservative undefined-acceptance analysis for schema slots.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  */
 
 import { PresenceTag, SchemaTag } from "../kind/index.js";
@@ -163,8 +161,6 @@ export function objectEntryCanBeOmitted(entry: ObjectEntry): boolean {
 
 /**
  * @brief Return whether at least one schema in a closed array may accept undefined.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  * @param schemas Closed schema list owned by a union-like node.
  * @returns True when one member admits undefined without evaluating input data.
  */

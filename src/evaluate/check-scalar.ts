@@ -1,8 +1,6 @@
 /**
  * @file check-scalar.ts
  * @brief Scalar diagnostic schema interpreters.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  */
 
 import {
@@ -30,6 +28,7 @@ import {
 import { pushIssue } from "./issue.js";
 import {
     actualType,
+    isNumberMultipleOf,
     isValidDateObject,
     readDateTime,
     readFileInfo
@@ -37,8 +36,6 @@ import {
 
 /**
  * @brief collect string issues.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param schema String schema with scalar checks.
  * @param value Candidate runtime value.
  * @param path Current diagnostic path.
@@ -408,8 +405,6 @@ function fileMimeMatches(type: string, patterns: readonly string[]): boolean {
 
 /**
  * @brief collect number issues.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  * @param schema Number schema with scalar checks.
  * @param value Candidate runtime value.
  * @param path Current diagnostic path.
@@ -491,7 +486,7 @@ export function collectNumberIssues(
                 }
                 break;
             case NumberCheckTag.MultipleOf:
-                if (value % check.value !== 0) {
+                if (!isNumberMultipleOf(value, check.value)) {
                     pushIssue(
                         path,
                         issues,

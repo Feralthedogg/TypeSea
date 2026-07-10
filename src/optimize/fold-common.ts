@@ -1,8 +1,6 @@
 /**
  * @file fold-common.ts
  * @brief Shared constant-folding helpers.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 
 import { NodeTag } from "../kind/index.js";
@@ -63,8 +61,6 @@ export function ensureConst(
 
 /**
  * @brief Probe a node id for an IR constant without conflating misses.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param nodes Graph node table being optimized.
  * @param id Node id to inspect.
  * @returns Const probe result with an explicit found bit.
@@ -85,8 +81,6 @@ export function readConst(nodes: readonly GraphNode[], id: NodeId): ConstRead {
 
 /**
  * @brief Return a fold result that keeps the node in place.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Node after local payload edits.
  * @returns Fold result without an alias replacement.
  */
@@ -99,8 +93,6 @@ export function keep(node: GraphNode): FoldResult {
 
 /**
  * @brief Return a fold result that aliases this node to another node id.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param node Original node retained for pass bookkeeping.
  * @param replacement Node id that should replace references to `node`.
  * @returns Fold result carrying the alias replacement.

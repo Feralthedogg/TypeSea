@@ -38,6 +38,28 @@ interface ParityCase {
 }
 
 describe("typesea/zod entrypoint", () => {
+    test("accepts Zod-style regex calls without a diagnostic name", () => {
+        const sea = TypeSeaZod.string().regex(/^x$/u);
+        const zod = ActualZod.string().regex(/^x$/u);
+
+        expect(sea.safeParse("x").success).toBe(zod.safeParse("x").success);
+        expect(sea.safeParse("y").success).toBe(zod.safeParse("y").success);
+    });
+
+    test("merges Zod-style intersection parse outputs", () => {
+        const sea = TypeSeaZod.intersection(
+            TypeSeaZod.object({ id: TypeSeaZod.string() }),
+            TypeSeaZod.object({ age: TypeSeaZod.number() })
+        );
+        const zod = ActualZod.intersection(
+            ActualZod.object({ id: ActualZod.string() }),
+            ActualZod.object({ age: ActualZod.number() })
+        );
+        const input = { id: "u1", age: 42, extra: true };
+
+        expect(sea.safeParse(input)).toEqual(zod.safeParse(input));
+    });
+
     test("exposes Zod v3 package-alias subpath", () => {
         expect(TypeSeaZodV3.getParsedType(NaN)).toBe(ActualZodV3.ZodParsedType.nan);
         expect(TypeSeaZodV3.getParsedType(new Map())).toBe(ActualZodV3.ZodParsedType.map);

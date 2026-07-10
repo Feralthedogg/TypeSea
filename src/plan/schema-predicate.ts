@@ -1,8 +1,6 @@
 /**
  * @file schema-predicate.ts
  * @brief Schema-specialized predicate kernels for validation plans.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  */
 
 import {
@@ -43,6 +41,7 @@ import {
     isArrayIndexKey,
     isArrayValue,
     isDataPropertyDescriptor,
+    isNumberMultipleOf,
     isValidDateObject,
     isPlainRecord,
     ordinaryHasInstance,
@@ -65,8 +64,6 @@ const EMPTY_ISSUES: readonly Issue[] = Object.freeze([]);
 
 /**
  * @brief child predicate runner.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  */
 export type ChildPredicateRunner = (
     schema: Schema,
@@ -76,8 +73,6 @@ export type ChildPredicateRunner = (
 
 /**
  * @brief execute schema kernel.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  */
 export function executeSchemaKernel(
     schema: Schema,
@@ -506,8 +501,6 @@ function isStringSchema(
 
 /**
  * @brief Execute a number schema against one runtime value.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param schema Number schema with normalized checks.
  * @param value Candidate runtime value.
  * @returns True when the value is finite and satisfies every numeric check.
@@ -552,7 +545,7 @@ function isNumberSchema(
                 }
                 break;
             case NumberCheckTag.MultipleOf:
-                if (value % check.value !== 0) {
+                if (!isNumberMultipleOf(value, check.value)) {
                     return false;
                 }
                 break;
@@ -706,8 +699,6 @@ function isFileMime(type: string, patterns: readonly string[]): boolean {
 
 /**
  * @brief Execute array validation with sparse-slot semantics.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param item Schema applied to each logical array slot.
  * @param value Candidate value supplied by the caller.
  * @param state Shared recursion and cycle state.
@@ -815,8 +806,6 @@ function isPresentArraySchema(
 
 /**
  * @brief Execute fixed-arity tuple validation.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param items Schema for each tuple index.
  * @param value Candidate runtime value.
  * @param state Shared recursion and cycle state.
@@ -863,8 +852,6 @@ function isTupleSchema(
 
 /**
  * @brief Read one tuple or dense-array index through a descriptor.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param value Array being inspected.
  * @param index Numeric index.
  * @returns Data descriptor, undefined for a hole, or null for an accessor slot.
@@ -878,8 +865,6 @@ function readArrayIndexDataProperty(
 
 /**
  * @brief Read one canonical array index key without executing accessors.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param value Array being inspected.
  * @param key Canonical array index key.
  * @returns Data descriptor, undefined for a hole, or null for an accessor slot.
@@ -1217,8 +1202,6 @@ function validateObjectCatchall(
 
 /**
  * @brief Execute a general union by probing options in order.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param options Union option schemas.
  * @param value Candidate runtime value.
  * @param state Shared recursion and cycle state.
@@ -1264,8 +1247,6 @@ function isXorSchema(
 
 /**
  * @brief Execute a discriminated union through its tag field.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param key Discriminant property name.
  * @param cases Closed case table.
  * @param value Candidate runtime value.

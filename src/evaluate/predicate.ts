@@ -1,8 +1,6 @@
 /**
  * @file predicate.ts
  * @brief Compatibility entry points for IR-backed predicate execution.
- * @details Interpreter helpers keep safe descriptor-based reads and diagnostic collection
- * aligned with compiled behavior.
  */
 
 import {

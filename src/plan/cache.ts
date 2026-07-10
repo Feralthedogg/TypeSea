@@ -1,8 +1,6 @@
 /**
  * @file cache.ts
  * @brief Validation plan cache.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  */
 
 import { lowerSchema } from "../lower/index.js";
@@ -66,8 +64,6 @@ export function schemaRequiresTracking(schema: Schema): boolean {
 
 /**
  * @brief Walk a schema tree looking for lazy recursion boundaries.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param schema Current schema node.
  * @param seen Schema identities already visited in this walk.
  * @returns True when a reachable node can re-enter validation recursively.
@@ -263,8 +259,6 @@ function patternPropertiesRequireTracking(
 
 /**
  * @brief Scan a vector of child schemas for recursion tracking needs.
- * @details Plan helpers keep schema-specialized execution aligned with optimized IR while
- * preserving interpreter parity.
  * @param schemas Child schema vector.
  * @param seen Schema identities already visited in this walk.
  * @returns True when at least one child requires active-pair tracking.

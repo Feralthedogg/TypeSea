@@ -1,8 +1,6 @@
 /**
  * @file issue.ts
  * @brief JSON Schema export issue construction.
- * @details JSON Schema helpers emit only representations that preserve TypeSea semantics or
- * report a structured export issue.
  */
 
 import type { PathSegment } from "../issue/index.js";

@@ -294,7 +294,17 @@ interface CompileScanTemplateFrame {
     readonly kind: "template";
 }
 
-type CompileScanFrame = CompileScanCodeFrame | CompileScanTemplateFrame;
+interface CompileScanJsxFrame {
+    readonly kind: "jsx";
+    depth: number;
+    mode: "tag" | "text";
+    closing: boolean;
+}
+
+type CompileScanFrame =
+    | CompileScanCodeFrame
+    | CompileScanTemplateFrame
+    | CompileScanJsxFrame;
 
 const MAX_TEMPLATE_SCAN_DEPTH = 64;
 
@@ -328,7 +338,7 @@ export function createTypeSeaRollupPlugin(
             if (!state.transformCompileCached || !isTransformableModule(id)) {
                 return null;
             }
-            return transformCompileCachedCalls(code, state);
+            return transformCompileCachedCalls(code, state, isJsxModule(id));
         }
     });
 }
@@ -390,7 +400,11 @@ export function createTypeSeaEsbuildPlugin(
                     },
                     async (args): Promise<TypeSeaEsbuildLoadResult> => {
                         const source = await readEsbuildSource(state, args.path);
-                        const transformed = transformCompileCachedCalls(source, state);
+                        const transformed = transformCompileCachedCalls(
+                            source,
+                            state,
+                            isJsxModule(args.path)
+                        );
                         return {
                             contents: transformed?.code ?? source,
                             loader: readEsbuildLoader(args.path)
@@ -512,13 +526,14 @@ function readEsbuildLoader(path: string): TypeSeaEsbuildLoader {
  */
 function transformCompileCachedCalls(
     code: string,
-    state: AotPluginState
+    state: AotPluginState,
+    jsx: boolean
 ): TypeSeaTransformResult | null {
     const bindings = readCompileCachedBindings(code);
     if (bindings.functions.size === 0 && bindings.namespaces.size === 0) {
         return null;
     }
-    const replacements = findCompileCachedCalls(code, state, bindings);
+    const replacements = findCompileCachedCalls(code, state, bindings, jsx);
     if (replacements.length === 0) {
         return null;
     }
@@ -535,8 +550,9 @@ function transformCompileCachedCalls(
         cursor = replacement.end;
     }
     chunks.push(code.slice(cursor));
+    const transformed = chunks.join("");
     return {
-        code: imports + chunks.join(""),
+        code: insertAotImports(transformed, imports),
         map: null
     };
 }
@@ -551,7 +567,8 @@ function transformCompileCachedCalls(
 function findCompileCachedCalls(
     code: string,
     state: AotPluginState,
-    bindings: CompileCachedBindings
+    bindings: CompileCachedBindings,
+    jsx: boolean
 ): CompileCachedMatch[] {
     const matches: CompileCachedMatch[] = [];
     const frames: CompileScanFrame[] = [{
@@ -568,6 +585,10 @@ function findCompileCachedCalls(
             break;
         }
         const current = code.charCodeAt(index);
+        if (frame.kind === "jsx") {
+            index = advanceJsxScanFrame(code, index, frame, frames);
+            continue;
+        }
         if (frame.kind === "template") {
             if (current === 92) {
                 index += 2;
@@ -611,6 +632,20 @@ function findCompileCachedCalls(
         }
         if (current === 47 && code.charCodeAt(index + 1) === 42) {
             index = skipBlockComment(code, index + 2);
+            continue;
+        }
+        if (current === 47 && isRegularExpressionStart(code, index)) {
+            index = skipRegularExpression(code, index);
+            continue;
+        }
+        if (jsx && current === 60 && isLikelyJsxStart(code, index)) {
+            frames.push({
+                kind: "jsx",
+                depth: 1,
+                mode: "tag",
+                closing: false
+            });
+            index += 1;
             continue;
         }
         if (current === 123) {
@@ -660,6 +695,75 @@ function findCompileCachedCalls(
     return matches;
 }
 
+/** Advance one JSX tag or text token while exposing expression braces as code. */
+function advanceJsxScanFrame(
+    code: string,
+    index: number,
+    frame: CompileScanJsxFrame,
+    frames: CompileScanFrame[]
+): number {
+    const current = code.charCodeAt(index);
+    if (frame.mode === "text") {
+        if (current === 123) {
+            pushJsxExpressionFrame(frames);
+            return index + 1;
+        }
+        if (current !== 60) {
+            return index + 1;
+        }
+        if (code.charCodeAt(index + 1) === 47) {
+            frame.mode = "tag";
+            frame.closing = true;
+            return index + 2;
+        }
+        frame.depth += 1;
+        frame.mode = "tag";
+        frame.closing = false;
+        return index + 1;
+    }
+    if (current === 34 || current === 39) {
+        return skipString(code, index);
+    }
+    if (current === 123) {
+        pushJsxExpressionFrame(frames);
+        return index + 1;
+    }
+    if (current === 47 && code.charCodeAt(index + 1) === 62) {
+        frame.depth -= 1;
+        closeJsxScanFrame(frame, frames);
+        return index + 2;
+    }
+    if (current === 62) {
+        if (frame.closing) {
+            frame.depth -= 1;
+        }
+        closeJsxScanFrame(frame, frames);
+        return index + 1;
+    }
+    return index + 1;
+}
+
+function pushJsxExpressionFrame(frames: CompileScanFrame[]): void {
+    frames.push({
+        kind: "code",
+        braceBlocks: [],
+        blockDepth: 0,
+        stopAtClosingBrace: true
+    });
+}
+
+function closeJsxScanFrame(
+    frame: CompileScanJsxFrame,
+    frames: CompileScanFrame[]
+): void {
+    if (frame.depth === 0) {
+        frames.pop();
+        return;
+    }
+    frame.mode = "text";
+    frame.closing = false;
+}
+
 /**
  * @brief Distinguish expression object braces from statement blocks.
  * @param code Complete module source.
@@ -693,6 +797,47 @@ function isExpressionBrace(code: string, start: number): boolean {
         token === 126;
 }
 
+/** Recognize statement positions immediately following control conditions. */
+function followsControlCondition(code: string, close: number): boolean {
+    let depth = 1;
+    let index = close - 1;
+    while (index >= 0) {
+        const current = code.charCodeAt(index);
+        if (current === 41) {
+            depth += 1;
+        } else if (current === 40) {
+            depth -= 1;
+            if (depth === 0) {
+                break;
+            }
+        }
+        index -= 1;
+    }
+    if (index < 0) {
+        return false;
+    }
+    const keywordEnd = previousCodeIndex(code, index - 1);
+    if (keywordEnd < 0 || !isIdentifierPartCode(code.charCodeAt(keywordEnd))) {
+        return false;
+    }
+    let keywordStart = keywordEnd;
+    while (keywordStart > 0 &&
+        isIdentifierPartCode(code.charCodeAt(keywordStart - 1))) {
+        keywordStart -= 1;
+    }
+    switch (code.slice(keywordStart, keywordEnd + 1)) {
+        case "cat" + "ch":
+        case "for":
+        case "if":
+        case "switch":
+        case "while":
+        case "with":
+            return true;
+        default:
+            return false;
+    }
+}
+
 /**
  * @brief Find the previous non-whitespace source offset.
  */
@@ -706,6 +851,147 @@ function previousCodeIndex(code: string, start: number): number {
         index -= 1;
     }
     return -1;
+}
+
+/**
+ * Recognize JSX only where JavaScript grammar permits a fresh expression.
+ * Ambiguous generic-arrow prefixes remain ordinary TypeScript code.
+ */
+function isLikelyJsxStart(code: string, start: number): boolean {
+    const next = code.charCodeAt(start + 1);
+    if (next !== 62 && !isIdentifierStartCode(next)) {
+        return false;
+    }
+    if (isIdentifierStartCode(next)) {
+        const tag = readIdentifier(code, start + 1);
+        const afterTag = tag === undefined ? start + 1 : skipWhitespace(code, tag.end);
+        if (code.charCodeAt(afterTag) === 44 ||
+            code.charCodeAt(afterTag) === 61 ||
+            identifierAt(code, afterTag, "extends")) {
+            return false;
+        }
+        if (code.charCodeAt(afterTag) === 62 &&
+            code.charCodeAt(skipTrivia(code, afterTag + 1)) === 40) {
+            return false;
+        }
+    }
+    const previous = previousCodeIndex(code, start - 1);
+    if (previous < 0) {
+        return true;
+    }
+    const token = code.charCodeAt(previous);
+    if (token === 33 || token === 38 || token === 40 || token === 44 ||
+        token === 58 || token === 59 || token === 61 || token === 63 ||
+        token === 91 || token === 123 || token === 124) {
+        return true;
+    }
+    if (token === 62 && code.charCodeAt(previous - 1) === 61) {
+        return true;
+    }
+    if (!isIdentifierPartCode(token)) {
+        return false;
+    }
+    let wordStart = previous;
+    while (wordStart > 0 && isIdentifierPartCode(code.charCodeAt(wordStart - 1))) {
+        wordStart -= 1;
+    }
+    switch (code.slice(wordStart, previous + 1)) {
+        case "await":
+        case "case":
+        case "return":
+        case "throw":
+        case "yield":
+            return true;
+        default:
+            return false;
+    }
+}
+
+/** Determine whether a slash begins a regular-expression literal. */
+function isRegularExpressionStart(code: string, start: number): boolean {
+    const next = code.charCodeAt(start + 1);
+    if (next === 47 || next === 42) {
+        return false;
+    }
+    const lineStart = code.lastIndexOf("\n", start - 1) + 1;
+    if (skipWhitespace(code, lineStart) === start) {
+        return true;
+    }
+    const previous = previousCodeIndex(code, start - 1);
+    if (previous < 0) {
+        return true;
+    }
+    const token = code.charCodeAt(previous);
+    if (token === 41 && followsControlCondition(code, previous)) {
+        return true;
+    }
+    if (token === 33 || token === 37 || token === 38 || token === 40 ||
+        token === 42 || token === 43 || token === 44 || token === 45 ||
+        token === 58 || token === 59 || token === 60 || token === 61 ||
+        token === 62 || token === 63 || token === 91 || token === 94 ||
+        token === 123 || token === 124 || token === 126) {
+        return true;
+    }
+    if (!isIdentifierPartCode(token)) {
+        return false;
+    }
+    let wordStart = previous;
+    while (wordStart > 0 && isIdentifierPartCode(code.charCodeAt(wordStart - 1))) {
+        wordStart -= 1;
+    }
+    switch (code.slice(wordStart, previous + 1)) {
+        case "await":
+        case "case":
+        case "delete":
+        case "do":
+        case "else":
+        case "in":
+        case "instanceof":
+        case "of":
+        case "return":
+        case "throw":
+        case "typeof":
+        case "void":
+        case "yield":
+            return true;
+        default:
+            return false;
+    }
+}
+
+/** Skip a regular-expression body, character classes, escapes, and flags. */
+function skipRegularExpression(code: string, start: number): number {
+    let index = start + 1;
+    let characterClass = false;
+    while (index < code.length) {
+        const current = code.charCodeAt(index);
+        if (current === 10 || current === 13) {
+            return start + 1;
+        }
+        if (current === 92) {
+            index += 2;
+            continue;
+        }
+        if (current === 91) {
+            characterClass = true;
+            index += 1;
+            continue;
+        }
+        if (current === 93 && characterClass) {
+            characterClass = false;
+            index += 1;
+            continue;
+        }
+        if (current === 47 && !characterClass) {
+            index += 1;
+            while (index < code.length && isIdentifierPartCode(code.charCodeAt(index))) {
+                index += 1;
+            }
+            return index;
+        }
+        index += 1;
+    }
+    return start + 1;
 }
 
 /**
@@ -1092,6 +1378,10 @@ function findMatchingParen(code: string, open: number): number | undefined {
             index = skipBlockComment(code, index + 2);
             continue;
         }
+        if (current === 47 && isRegularExpressionStart(code, index)) {
+            index = skipRegularExpression(code, index);
+            continue;
+        }
         if (current === 40) {
             depth += 1;
         }
@@ -1170,6 +1460,66 @@ function makeAotImports(matches: readonly CompileCachedMatch[]): string {
     return chunks.join("");
 }
 
+/** Preserve executable preambles before adding generated module imports. */
+function insertAotImports(code: string, imports: string): string {
+    const insertion = findAotImportInsertionPoint(code);
+    const prefix = code.slice(0, insertion);
+    const separator = insertion > 0 &&
+        code.charCodeAt(insertion - 1) !== 10 &&
+        code.charCodeAt(insertion - 1) !== 13
+        ? "\n"
+        : "";
+    return `${prefix}${separator}${imports}${code.slice(insertion)}`;
+}
+
+/** Find the first offset after a shebang and directive prologue. */
+function findAotImportInsertionPoint(code: string): number {
+    let cursor = 0;
+    if (code.startsWith("#!")) {
+        const newline = code.indexOf("\n");
+        cursor = newline < 0 ? code.length : newline + 1;
+    }
+    for (;;) {
+        const statement = skipTrivia(code, cursor);
+        const directive = readStringLiteral(code, statement);
+        if (directive === undefined) {
+            return statement;
+        }
+        const end = readDirectiveEnd(code, directive.end);
+        if (end === undefined) {
+            return statement;
+        }
+        cursor = end;
+    }
+}
+
+/** Read the terminator of one directive-prologue string expression. */
+function readDirectiveEnd(code: string, start: number): number | undefined {
+    let index = start;
+    for (;;) {
+        while (code.charCodeAt(index) === 9 || code.charCodeAt(index) === 32) {
+            index += 1;
+        }
+        if (code.charCodeAt(index) !== 47 || code.charCodeAt(index + 1) !== 42) {
+            break;
+        }
+        index = skipBlockComment(code, index + 2);
+    }
+    if (code.charCodeAt(index) === 59) {
+        return index + 1;
+    }
+    if (index >= code.length ||
+        code.charCodeAt(index) === 10 ||
+        code.charCodeAt(index) === 13) {
+        return start;
+    }
+    if (code.charCodeAt(index) === 47 && code.charCodeAt(index + 1) === 47) {
+        const newline = skipLineComment(code, index + 2);
+        return newline < code.length ? newline + 1 : newline;
+    }
+    return undefined;
+}
+
 /**
  * @brief Make a stable local import binding for one entry id.
  */
@@ -1183,7 +1533,7 @@ function makeAotImportName(id: string): string {
             output += id[index] ?? "";
             continue;
         }
-        output += "_";
+        output += `_${code.toString(16)}_`;
     }
     return output;
 }
@@ -1207,6 +1557,10 @@ function isTransformableModule(id: string): boolean {
         id.endsWith(".cts") ||
         id.endsWith(".mjs") ||
         id.endsWith(".cjs");
+}
+
+function isJsxModule(id: string): boolean {
+    return id.endsWith(".tsx") || id.endsWith(".jsx");
 }
 
 /**
@@ -1260,6 +1614,9 @@ function skipNonCode(code: string, start: number): number {
     }
     if (current === 47 && code.charCodeAt(start + 1) === 42) {
         return skipBlockComment(code, start + 2);
+    }
+    if (current === 47 && isRegularExpressionStart(code, start)) {
+        return skipRegularExpression(code, start);
     }
     return start;
 }

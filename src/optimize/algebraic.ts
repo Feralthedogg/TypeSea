@@ -1,8 +1,6 @@
 /**
  * @file algebraic.ts
  * @brief Boolean algebra simplification for validation predicates.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  */
 
 import { NodeTag } from "../kind/index.js";
@@ -33,8 +31,6 @@ export interface AlgebraicFold {
 
 /**
  * @brief Flatten nested boolean folds of the same kind.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param values Input operand ids.
  * @param nodes Graph node table used to inspect nested folds.
  * @param tag Boolean fold kind to flatten.
@@ -67,8 +63,6 @@ export function flattenBooleanValues(
 
 /**
  * @brief Simplify operands of an And fold.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param values Input operand ids.
  * @param nodes Graph node table used to inspect nested complement forms.
  * @returns Simplification result with contradiction status and kept operands.
@@ -119,8 +113,6 @@ export function simplifyAndValues(
 
 /**
  * @brief Simplify operands of an Or fold.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param values Input operand ids.
  * @param nodes Graph node table used to inspect nested complement forms.
  * @returns Simplification result with tautology status and kept operands.
@@ -171,8 +163,6 @@ export function simplifyOrValues(
 
 /**
  * @brief Recursively append flattened operands.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param output Destination operand list.
  * @param values Source operand ids.
  * @param nodes Graph node table used to inspect nested folds.
@@ -200,8 +190,6 @@ function appendFlattenedBooleanValues(
 
 /**
  * @brief Test And absorption for `a && (a || b)`.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param value Candidate operand id.
  * @param nodes Graph node table.
  * @param seen Operands already kept by the parent And.
@@ -221,8 +209,6 @@ function isAbsorbedAndValue(
 
 /**
  * @brief Test Or absorption for `a || (a && b)`.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param value Candidate operand id.
  * @param nodes Graph node table.
  * @param seen Operands already kept by the parent Or.
@@ -242,8 +228,6 @@ function isAbsorbedOrValue(
 
 /**
  * @brief Test whether a nested fold contains an operand already kept.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param values Nested fold operand ids.
  * @param seen Parent fold operands already kept.
  * @returns True when the nested fold repeats a kept operand.
@@ -263,8 +247,6 @@ function containsSeenValue(
 
 /**
  * @brief Detect a positive/negative complement conflict.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param value Candidate operand id.
  * @param nodes Graph node table.
  * @param positive Complement-safe positive operands already seen.
@@ -286,8 +268,6 @@ function hasComplementConflict(
 
 /**
  * @brief Record a complement-safe operand in positive or negative form.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param value Candidate operand id.
  * @param nodes Graph node table.
  * @param positive Mutable set for positive operands.
@@ -313,8 +293,6 @@ function rememberComplementValue(
 
 /**
  * @brief Read the operand of a Not node.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param value Candidate node id.
  * @param nodes Graph node table.
  * @returns Inner node id for Not, otherwise undefined.
@@ -378,8 +356,6 @@ function isComplementSafe(
 
 /**
  * @brief Decide whether every value in a boolean fold is complement-safe.
- * @details Optimizer helpers preserve graph equivalence while shrinking redundant nodes
- * before code generation consumes the graph.
  * @param values Operand ids from a nested fold.
  * @param nodes Graph node table.
  * @returns True when the whole nested fold can participate in complement laws.

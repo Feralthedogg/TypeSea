@@ -1,0 +1,11 @@
+export interface Box<T> {
+    get(): T;
+}
+
+export function boxed<T>(value: T): Box<T> {
+    return {
+        get(): T {
+            return value;
+        }
+    };
+}

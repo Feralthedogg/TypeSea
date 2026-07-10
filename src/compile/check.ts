@@ -396,7 +396,7 @@ function emitDynamicCheck(
 }
 
 /**
- * @brief emit check call.
+ * @brief Route child diagnostics through the identity-cached function table.
  * @param schema Child schema to dispatch to.
  * @param value Generated expression for the child value.
  * @param path Generated expression for the mutable path stack.

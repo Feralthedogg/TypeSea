@@ -1,8 +1,6 @@
 /**
  * @file schema/common.ts
  * @brief Private schema shape predicates.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  */
 
 import type { ObjectKeyLookup } from "./types.js";
@@ -16,8 +14,6 @@ const missingDataProperty = Symbol("typesea.missingDataProperty");
 
 /**
  * @brief Test whether a schema field read observed the sentinel.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  * @param value Candidate field value returned by readOwnDataProperty.
  * @returns True when the caller must treat the schema field as absent.
  */
@@ -66,8 +62,6 @@ export function readOwnDataProperty(
 
 /**
  * @brief Accept object records suitable for schema metadata traversal.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  * @param value Candidate schema record.
  * @returns True for non-array objects whose own fields are all data slots.
  */
@@ -94,8 +88,6 @@ export function isUnknownArray(value: unknown): value is readonly unknown[] {
 
 /**
  * @brief Reject accessor descriptors before schema internals read fields.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  * @param value Object whose own descriptor table is inspected.
  * @returns True when every own property is backed by a data slot.
  */
@@ -147,8 +139,6 @@ function hasOnlyArrayDataProperties(value: readonly unknown[]): boolean {
 
 /**
  * @brief Require array indexes from 0 to length - 1 to be own data slots.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  * @param value Candidate schema vector.
  * @returns True when no sparse or prototype-backed index is present.
  */
@@ -180,8 +170,6 @@ export function isPlainRegExp(value: unknown): value is RegExp {
 
 /**
  * @brief Validate a dense vector of object shape keys.
- * @details Schema helpers enforce construction-time invariants before values reach
- * validation, compilation, or export.
  * @param value Candidate key vector.
  * @returns True when every slot is a string.
  */

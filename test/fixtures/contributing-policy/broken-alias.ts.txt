@@ -1,0 +1,4 @@
+type Broken = MissingType;
+const aliasValue: Broken = 1;
+
+export { aliasValue };

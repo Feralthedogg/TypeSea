@@ -226,7 +226,6 @@ export function emitTupleCheck(
 
 /**
  * @brief Emit unsafe array check.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeArrayCheck(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
@@ -374,10 +373,7 @@ function emitArrayLengthIssuesAtSegment(
     return chunks.join("");
 }
 
-/**
- * @brief Emit unsafe tuple check.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitUnsafeTupleCheck(
     items: readonly Schema[],
     value: string,
@@ -633,10 +629,7 @@ function emitTupleCheckAtSegment(
     return parts.join("");
 }
 
-/**
- * @brief Emit unsafe array check at segment.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitUnsafeArrayCheckAtSegment(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Array }>,
     value: string,
@@ -684,10 +677,7 @@ function emitUnsafeArrayCheckAtSegment(
     return parts.join("");
 }
 
-/**
- * @brief Emit unsafe tuple check at segment.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitUnsafeTupleCheckAtSegment(
     items: readonly Schema[],
     value: string,
@@ -859,10 +849,7 @@ function emitRecordCheckAtSegment(
     ].join("");
 }
 
-/**
- * @brief Emit unsafe record check.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitUnsafeRecordCheck(
     item: Schema,
     value: string,
@@ -908,10 +895,7 @@ function emitUnsafeRecordCheck(
     return parts.join("");
 }
 
-/**
- * @brief Emit unsafe record check at segment.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitUnsafeRecordCheckAtSegment(
     item: Schema,
     value: string,
@@ -1133,10 +1117,7 @@ function objectKeyExpressions(
     return keys;
 }
 
-/**
- * @brief Emit unsafe object check.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitUnsafeObjectCheck(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Object }>,
     value: string,
@@ -1256,10 +1237,7 @@ function emitUnsafeObjectCatchallCheck(
     ].join("");
 }
 
-/**
- * @brief Emit object field check.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitObjectFieldCheck(
     schema: Schema,
     value: string,
@@ -1295,10 +1273,7 @@ function emitObjectFieldCheck(
     return `${path}.push(${segmentExpression});${child}(${value},${path},${issues});${path}.pop();`;
 }
 
-/**
- * @brief Emit composite check at segment.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
- */
+
 function emitCompositeCheckAtSegment(
     schema: Schema,
     value: string,
@@ -1413,7 +1388,6 @@ export function emitDiscriminatedUnionCheck(
 
 /**
  * @brief Emit unsafe discriminated union check.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function emitUnsafeDiscriminatedUnionCheck(
     key: string,
@@ -1459,7 +1433,6 @@ function emitUnsafeDiscriminatedUnionCheck(
 
 /**
  * @brief Build the object rejection predicate used by generated checks.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function objectRejectExpression(value: string): string {
     return `typeof ${value}!=="object"||${value}===null||Array.isArray(${value})`;
@@ -1467,7 +1440,6 @@ function objectRejectExpression(value: string): string {
 
 /**
  * @brief Check unsafe mode.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function isUnsafeMode(context: EmitContext): boolean {
     return context.mode !== "safe";
@@ -1475,7 +1447,6 @@ function isUnsafeMode(context: EmitContext): boolean {
 
 /**
  * @brief Check unchecked mode.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function isUncheckedMode(context: EmitContext): boolean {
     return context.mode === "unchecked";
@@ -1483,7 +1454,6 @@ function isUncheckedMode(context: EmitContext): boolean {
 
 /**
  * @brief Build a direct property read for unsafe and unchecked modes.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function unsafePropertyReadExpression(
     objectExpression: string,
@@ -1497,7 +1467,6 @@ function unsafePropertyReadExpression(
 
 /**
  * @brief Build inline key membership checks for unsafe literal keys.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function unsafeKeyMembershipExpression(
     key: string,
@@ -1518,7 +1487,6 @@ function unsafeKeyMembershipExpression(
 
 /**
  * @brief Build inline key membership checks using side-table string refs.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function safeKeyMembershipExpression(
     key: string,
@@ -1539,7 +1507,6 @@ function safeKeyMembershipExpression(
 
 /**
  * @brief Check ascii identifier name.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function isAsciiIdentifierName(value: string): boolean {
     return /^[A-Za-z_$][0-9A-Za-z_$]*$/u.test(value);
@@ -1547,7 +1514,6 @@ function isAsciiIdentifierName(value: string): boolean {
 
 /**
  * @brief Escape a string literal for direct insertion into generated source.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function unsafeStringLiteralExpression(value: string): string {
     return JSON.stringify(value)

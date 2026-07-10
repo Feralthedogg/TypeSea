@@ -2,7 +2,6 @@
  * @file compile/check-scalar.ts
  * @brief Scalar diagnostic validator snippets.
  */
-
 import {
     BigIntCheckTag,
     DateCheckTag,
@@ -37,6 +36,7 @@ import {
     emitPatternIssue
 } from "./issue.js";
 import { stringLiteral } from "./names.js";
+import { numberMultipleOfExpression } from "./number.js";
 import { emitUnion } from "./union-preflight.js";
 import type { EmitContext } from "./types.js";
 
@@ -1274,7 +1274,7 @@ export function emitNumberCheck(
                 )}}`);
                 break;
             case NumberCheckTag.MultipleOf:
-                parts.push(`if(${value}%${String(check.value)}!==0){${emitIssue(
+                parts.push(`if(!${numberMultipleOfExpression(value, check.value)}){${emitIssue(
                     issues,
                     path,
                     "expected_multiple_of",
@@ -1613,7 +1613,7 @@ function emitNumberCheckAtSegment(
                 )}}`);
                 break;
             case NumberCheckTag.MultipleOf:
-                parts.push(`if(${value}%${String(check.value)}!==0){${emitIssueAtSegment(
+                parts.push(`if(!${numberMultipleOfExpression(value, check.value)}){${emitIssueAtSegment(
                     issues,
                     path,
                     segmentExpression,
@@ -1740,7 +1740,7 @@ function emitNumberCheckAtTwoSegments(
                 )}}`);
                 break;
             case NumberCheckTag.MultipleOf:
-                parts.push(`if(${value}%${String(check.value)}!==0){${emitIssueAtTwoSegments(
+                parts.push(`if(!${numberMultipleOfExpression(value, check.value)}){${emitIssueAtTwoSegments(
                     issues,
                     path,
                     firstSegmentExpression,

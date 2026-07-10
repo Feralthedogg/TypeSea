@@ -80,6 +80,9 @@ export class SeaBreezeArena {
     readonly #fieldKeys: Int32Array;
     readonly #fieldTypes: Int32Array;
     readonly #fieldPresence: Uint8Array;
+    readonly #occursMarks: Uint32Array;
+    readonly #occursStack: Int32Array;
+    #occursEpoch = 0;
     #nodeLength = 0;
     #fieldLength = 0;
     #neverNode = -1;
@@ -110,6 +113,8 @@ export class SeaBreezeArena {
         this.#fieldKeys = new Int32Array(maxFields);
         this.#fieldTypes = new Int32Array(maxFields);
         this.#fieldPresence = new Uint8Array(maxFields);
+        this.#occursMarks = new Uint32Array(maxNodes);
+        this.#occursStack = new Int32Array(maxNodes);
         this.reset();
     }
 
@@ -670,29 +675,73 @@ export class SeaBreezeArena {
     }
 
     /**
-     * @brief Detect recursive variable binding.
+     * @brief Reject bindings that would place a variable inside its own type.
+     * @details Epoch marks and a preallocated typed-array worklist avoid both
+     * per-call allocation and call-stack growth while traversing cyclic arenas.
      */
     #occurs(variable: SeaBreezeNodeId, target: SeaBreezeNodeId): boolean {
+        let epoch = (this.#occursEpoch + 1) >>> 0;
+        if (epoch === 0) {
+            this.#occursMarks.fill(0);
+            epoch = 1;
+        }
+        this.#occursEpoch = epoch;
         const root = this.find(target);
         if (root === variable) {
             return true;
         }
-        const kind = this.#kinds[root] as SeaBreezeKind;
-        if (kind === SeaBreezeKind.Array) {
-            return this.#occurs(variable, this.#left[root] ?? -1);
-        }
-        if (kind === SeaBreezeKind.Union) {
-            return this.#occurs(variable, this.#left[root] ?? -1) ||
-                this.#occurs(variable, this.#right[root] ?? -1);
-        }
-        if (kind !== SeaBreezeKind.Object) {
-            return false;
-        }
-        const start = this.#fieldStarts[root] ?? -1;
-        const count = this.#fieldCounts[root] ?? 0;
-        for (let index = 0; index < count; index += 1) {
-            if (this.#occurs(variable, this.#fieldTypes[start + index] ?? -1)) {
-                return true;
+        let stackLength = 1;
+        this.#occursMarks[root] = epoch;
+        this.#occursStack[0] = root;
+        while (stackLength > 0) {
+            stackLength -= 1;
+            const current = this.#occursStack[stackLength] ?? -1;
+            const kind = this.#kinds[current] as SeaBreezeKind;
+            if (kind === SeaBreezeKind.Array) {
+                const child = this.find(this.#left[current] ?? -1);
+                if (child === variable) {
+                    return true;
+                }
+                if (this.#occursMarks[child] !== epoch) {
+                    this.#occursMarks[child] = epoch;
+                    this.#occursStack[stackLength] = child;
+                    stackLength += 1;
+                }
+                continue;
+            }
+            if (kind === SeaBreezeKind.Union) {
+                const left = this.find(this.#left[current] ?? -1);
+                const right = this.find(this.#right[current] ?? -1);
+                if (left === variable || right === variable) {
+                    return true;
+                }
+                if (this.#occursMarks[left] !== epoch) {
+                    this.#occursMarks[left] = epoch;
+                    this.#occursStack[stackLength] = left;
+                    stackLength += 1;
+                }
+                if (this.#occursMarks[right] !== epoch) {
+                    this.#occursMarks[right] = epoch;
+                    this.#occursStack[stackLength] = right;
+                    stackLength += 1;
+                }
+                continue;
+            }
+            if (kind !== SeaBreezeKind.Object) {
+                continue;
+            }
+            const start = this.#fieldStarts[current] ?? -1;
+            const count = this.#fieldCounts[current] ?? 0;
+            for (let index = 0; index < count; index += 1) {
+                const child = this.find(this.#fieldTypes[start + index] ?? -1);
+                if (child === variable) {
+                    return true;
+                }
+                if (this.#occursMarks[child] !== epoch) {
+                    this.#occursMarks[child] = epoch;
+                    this.#occursStack[stackLength] = child;
+                    stackLength += 1;
+                }
             }
         }
         return false;
@@ -889,6 +938,11 @@ function validateSnapshotNodeRows(snapshot: SeaBreezeSnapshot): void {
             throw new RangeError("SeaBreeze snapshot canonical parent is invalid");
         }
         validateSnapshotNodeByKind(snapshot, node, kind, fieldOwners);
+    }
+    for (let slot = 0; slot < fieldOwners.length; slot += 1) {
+        if (fieldOwners[slot] === 0) {
+            throw new RangeError("SeaBreeze snapshot field slot has no object owner");
+        }
     }
 }
 

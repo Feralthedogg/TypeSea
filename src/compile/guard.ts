@@ -510,7 +510,6 @@ export function compileBoolean<TValue, TPresence extends Presence>(
 
 /**
  * @brief Install trusted hot-path methods on a compiled guard instance.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function defineTrustedHotMethods<
     TValue,
@@ -533,7 +532,6 @@ function defineTrustedHotMethods<
         "is",
         /**
          * @brief Run the trusted predicate after receiver validation.
-         * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
          */
         function compiledTrustedIs(
             this: unknown,
@@ -552,7 +550,6 @@ function defineTrustedHotMethods<
             "check",
             /**
              * @brief Run a trusted check and finalize accepted values.
-             * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
              */
             function compiledTrustedCheck(
                 this: unknown,
@@ -579,7 +576,6 @@ function defineTrustedHotMethods<
             "check",
             /**
              * @brief Run a trusted check without finalization overhead.
-             * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
              */
             function compiledTrustedCheck(
                 this: unknown,
@@ -621,7 +617,6 @@ function defineTrustedHotMethods<
             "assert",
             /**
              * @brief Assert with trusted diagnostics and accepted-value finalization.
-             * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
              */
             function compiledTrustedAssert(
                 this: unknown,
@@ -649,7 +644,6 @@ function defineTrustedHotMethods<
             "checkFirst",
             /**
              * @brief Run first-issue checking and finalize accepted values.
-             * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
              */
             function compiledTrustedCheckFirst(
                 this: unknown,
@@ -676,7 +670,6 @@ function defineTrustedHotMethods<
             "assert",
             /**
              * @brief Assert with trusted diagnostics and no finalization pass.
-             * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
              */
             function compiledTrustedAssert(
                 this: unknown,
@@ -707,7 +700,6 @@ function defineTrustedHotMethods<
             "checkFirst",
             /**
              * @brief Run first-issue checking without finalization overhead.
-             * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
              */
             function compiledTrustedCheckFirst(
                 this: unknown,
@@ -941,7 +933,6 @@ function runCompiledCheckFirst<TValue>(
 
 /**
  * @brief Define a non-writable method slot on a compiled guard.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function defineReadonlyProperty(
     target: object,
@@ -1143,7 +1134,6 @@ function readConsoleWarn(): (message: string) => void {
 
 /**
  * @brief Accept non-array objects before structured field reads.
- * @details Code generation helpers keep emitted JavaScript shape stable across runtime and AOT paths.
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === "object" && value !== null && !Array.isArray(value);

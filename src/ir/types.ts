@@ -1,8 +1,6 @@
 /**
  * @file types.ts
  * @brief Sea-of-Nodes graph value model.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
  */
 
 import { NodeTag, type ObjectModeTag, type PresenceTag } from "../kind/index.js";
@@ -264,8 +262,6 @@ export interface ObjectShapeNode {
 
 /**
  * @brief Bit mask of possible root JavaScript kinds for a union arm.
- * @details IR helpers preserve Sea-of-Nodes invariants before graphs cross optimizer,
- * compiler, or public introspection boundaries.
  */
 export type UnionDispatchMask = number;
 
