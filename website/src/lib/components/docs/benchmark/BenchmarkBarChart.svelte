@@ -68,16 +68,18 @@
             </BarChart>
         </Chart.Container>
 
-        <table class="sr-only">
-            <caption>{title}</caption>
-            <thead>
-                <tr><th>{validatorLabel}</th><th>{unitLabel}</th></tr>
-            </thead>
-            <tbody>
-                {#each suite.rows as row (row.id)}
-                    <tr><td>{row.label}</td><td>{row.hz}</td></tr>
-                {/each}
-            </tbody>
-        </table>
+        <div class="benchmark-data-table">
+            <table>
+                <caption>{title}</caption>
+                <thead>
+                    <tr><th>{validatorLabel}</th><th>{unitLabel}</th></tr>
+                </thead>
+                <tbody>
+                    {#each suite.rows as row (row.id)}
+                        <tr><td>{row.label}</td><td>{row.hz}</td></tr>
+                    {/each}
+                </tbody>
+            </table>
+        </div>
     </Card.Content>
 </Card.Root>
