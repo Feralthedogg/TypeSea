@@ -47,10 +47,10 @@ export const load: PageServerLoad = async () => {
 
     return {
         codeExamples: {
-            quickStart: quickStartHtml,
+            quickStart: { html: quickStartHtml, source: quickStart },
             migration: {
-                en: migrationEnglishHtml,
-                ko: migrationKoreanHtml
+                en: { html: migrationEnglishHtml, source: migrationEnglish },
+                ko: { html: migrationKoreanHtml, source: migrationKorean }
             }
         }
     };

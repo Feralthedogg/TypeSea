@@ -749,6 +749,11 @@
     line-height: 1.75;
 }
 
+.code-block {
+    position: relative;
+    overflow: hidden;
+}
+
 .showcase-code > .shiki {
     min-width: max-content;
     margin: 0;
@@ -1099,6 +1104,20 @@
     line-height: 1.7;
 }
 
+.doc-article .markdown-code-block {
+    margin: 22px 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-code);
+}
+
+.doc-article .markdown-code-block > pre {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    padding-right: 56px;
+}
+
 .doc-article pre code {
     background: transparent !important;
     color: inherit;
@@ -1219,16 +1238,20 @@
     height: 32px;
     cursor: pointer;
     place-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid var(--border);
     border-radius: 6px;
-    background: #202832;
-    color: #cdd8e2;
-    font-size: 15px;
+    background: var(--surface);
+    color: var(--muted);
 }
 
 .copy-code-button:hover {
-    background: #2a3541;
-    color: #ffffff;
+    background: var(--surface-muted);
+    color: var(--text);
+}
+
+.copy-code-button svg {
+    width: 15px;
+    height: 15px;
 }
 
 .doc-article blockquote {
@@ -1324,15 +1347,9 @@
     text-transform: uppercase;
 }
 
-.table-of-contents nav {
-    border-left: 1px solid var(--border);
-}
-
 .table-of-contents nav a {
     display: block;
-    margin-left: -1px;
-    border-left: 1px solid transparent;
-    padding: 5px 0 5px 12px;
+    padding: 5px 0;
     color: var(--subtle);
     font-size: 11px;
     line-height: 1.35;

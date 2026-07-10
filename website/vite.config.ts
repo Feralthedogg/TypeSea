@@ -1,11 +1,16 @@
 import tailwindcss from '@tailwindcss/vite';
 import { mdsvex } from 'mdsvex';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
+import { fileURLToPath } from 'node:url';
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import rehypeSlug from 'rehype-slug';
 import { highlightPrism } from './src/lib/server/prism-highlight';
+
+const markdownLayout = fileURLToPath(
+    new URL('./src/lib/components/docs/code/MarkdownLayout.svelte', import.meta.url)
+);
 
 const configuredBasePath = process.env.BASE_PATH ?? '';
 if (configuredBasePath !== '' && !configuredBasePath.startsWith('/')) {
@@ -20,9 +25,16 @@ export default defineConfig({
         tailwindcss(),
         sveltekit({
             compilerOptions: {
-                // Force runes mode for the project, except for libraries. Can be removed in svelte 6.
-                runes: ({ filename }) =>
-                    filename.split(/[/\\]/).includes('node_modules') ? undefined : true
+                // MDsveX emits legacy layout forwarding; let generated Markdown auto-detect its mode.
+                runes: ({ filename }) => {
+                    if (
+                        filename.endsWith('.md') ||
+                        filename.split(/[/\\]/).includes('node_modules')
+                    ) {
+                        return undefined;
+                    }
+                    return true;
+                }
             },
             adapter: adapter(),
             paths: {
@@ -32,6 +44,7 @@ export default defineConfig({
             preprocess: [
                 mdsvex({
                     extensions: ['.svx', '.md'],
+                    layout: markdownLayout,
                     highlight: {
                         highlighter: (code, language) => highlightPrism(code, language)
                     },

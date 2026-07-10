@@ -28,10 +28,10 @@ const grammars: Readonly<Record<PrismLanguage, Prism.Grammar>> = {
     typescript: Prism.languages.typescript
 };
 
-/** Convert a Markdown code fence into Svelte-safe, class-based Prism markup. */
+/** Convert a Markdown code fence into the code component exported by the MDsveX layout. */
 export function highlightPrism(source: string, language: string | null | undefined): string {
     const normalized = languageAliases[language?.toLowerCase() ?? ''] ?? 'text';
     const highlighted = Prism.highlight(source, grammars[normalized], normalized);
     const code = `<code class="language-${normalized}">${highlighted}</code>`;
-    return `<pre class="language-${normalized}">{@html ${JSON.stringify(code)}}</pre>`;
+    return `<Components.pre class="language-${normalized}">{@html ${JSON.stringify(code)}}</Components.pre>`;
 }

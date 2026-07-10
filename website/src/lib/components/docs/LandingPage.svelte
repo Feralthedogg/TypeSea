@@ -7,7 +7,7 @@
     import ScanSearch from '@lucide/svelte/icons/scan-search';
     import ShieldCheck from '@lucide/svelte/icons/shield-check';
     import { base } from '$app/paths';
-    import SyntaxCode from '$lib/components/docs/SyntaxCode.svelte';
+    import CodeBlock from '$lib/components/docs/code/CodeBlock.svelte';
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
     import { localizedPath } from '$lib/navigation';
@@ -17,9 +17,14 @@
 
     interface Props {
         readonly codeExamples: {
-            readonly quickStart: string;
-            readonly migration: Readonly<Record<'en' | 'ko', string>>;
+            readonly quickStart: HighlightedSource;
+            readonly migration: Readonly<Record<'en' | 'ko', HighlightedSource>>;
         };
+    }
+
+    interface HighlightedSource {
+        readonly html: string;
+        readonly source: string;
     }
 
     let { codeExamples }: Props = $props();
@@ -113,7 +118,7 @@
             <p class="eyebrow">{m.quick_start()}</p>
             <h2>{m.quick_start_title()}</h2>
         </div>
-        <SyntaxCode html={codeExamples.quickStart} />
+        <CodeBlock {...codeExamples.quickStart} />
     </section>
 
     <section class="content-section architecture-section" id="architecture">
@@ -198,7 +203,7 @@
                 <ArrowRight class="size-4" aria-hidden="true" />
             </Button>
         </div>
-        <SyntaxCode html={migration} />
+        <CodeBlock {...migration} />
     </section>
 
     <section class="content-section docs-section" id="docs">
