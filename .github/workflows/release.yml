@@ -60,8 +60,18 @@ jobs:
             - name: Verify Release Tag
               env:
                   RELEASE_TAG: ${{ steps.release.outputs.tag }}
-                  GITHUB_REF_NAME: ${{ steps.release.outputs.tag }}
-              run: node scripts/verify-release-tag.mjs
+              run: |
+                  node --input-type=module <<'NODE'
+                  import { readFileSync } from "node:fs";
+
+                  const metadata = JSON.parse(readFileSync("package.json", "utf8"));
+                  const expected = `v${metadata.version}`;
+                  const actual = (process.env.RELEASE_TAG ?? "").trim();
+                  if (actual !== expected) {
+                      console.error(`release tag must be ${expected}`);
+                      process.exit(1);
+                  }
+                  NODE
 
             - name: Release Gate
               run: npm run release:check
