@@ -47,29 +47,36 @@ export type JsonSchemaDialect =
     | "draft-07"
     | "2020-12";
 
+/** @brief Export target including JSON Schema dialects and OpenAPI 3.0. */
 export type JsonSchemaOutputTarget =
     | JsonSchemaDialect
     | "openapi-3.0";
 
 type JsonSchemaUnrepresentableOpen = Lowercase<"ANY">;
 
+/** @brief Policy for schema domains that JSON Schema cannot represent exactly. */
 export type JsonSchemaUnrepresentableMode =
     | "throw"
     | JsonSchemaUnrepresentableOpen;
 
+/** @brief Callback mapping registry ids to emitted reference URIs. */
 export type JsonSchemaUriMapper = (id: string) => string;
 
+/** @brief Policy controlling whether repeated schemas inline or use references. */
 export type JsonSchemaReusedMode =
     | "inline"
     | "ref";
 
+/** @brief Policy controlling cyclic schema emission. */
 export type JsonSchemaCyclesMode =
     | "ref"
     | "throw";
 
+/** @brief Mutable object exposed only during an export override callback. */
 export type JsonSchemaOverrideObject =
     MutableJsonSchemaObject & Record<string, unknown>;
 
+/** @brief Schema, path, target, and output fragment supplied to an override. */
 export interface JsonSchemaOverrideContext {
     readonly schema: Schema;
     readonly jsonSchema: JsonSchemaOverrideObject;
@@ -77,6 +84,7 @@ export interface JsonSchemaOverrideContext {
     readonly target: JsonSchemaOutputTarget;
 }
 
+/** @brief Callback permitted to customize one emitted JSON Schema fragment. */
 export type JsonSchemaOverride =
     (context: JsonSchemaOverrideContext) => void;
 
@@ -151,6 +159,7 @@ export interface JsonSchemaObject {
     readonly definitions?: Readonly<Record<string, JsonSchema>>;
 }
 
+/** @brief Named registry export containing independently addressable schemas. */
 export interface JsonSchemaRegistryDocument {
     readonly schemas: Readonly<Record<string, JsonSchema>>;
 }
@@ -190,6 +199,7 @@ export interface JsonSchemaExportIssue {
     readonly message: string;
 }
 
+/** @brief Closed set of JSON Schema import failure codes. */
 export type JsonSchemaImportCode =
     | "invalid_schema"
     | "unsupported_keyword"
@@ -197,6 +207,7 @@ export type JsonSchemaImportCode =
     | "unsupported_pattern"
     | "unsupported_empty_union";
 
+/** @brief Structured diagnostic for unsupported or malformed imported schemas. */
 export interface JsonSchemaImportIssue {
     readonly path: readonly PathSegment[];
     readonly code: JsonSchemaImportCode;

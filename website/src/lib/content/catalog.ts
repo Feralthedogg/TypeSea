@@ -1,6 +1,13 @@
 import siteData from '$lib/generated/site.json';
 
-export const documentSlugs = ['readme', 'api', 'seaflow', 'seabreeze', 'engine'] as const;
+export const documentSlugs = [
+    'readme',
+    'api',
+    'zod-compat',
+    'seaflow',
+    'seabreeze',
+    'engine'
+] as const;
 
 export type Locale = 'en' | 'ko';
 export type DocumentSlug = (typeof documentSlugs)[number];

@@ -22,6 +22,7 @@ import { readSuperRefineIssue } from "./super-refine.js";
 const sourceCallbacks = new WeakMap<object, unknown>();
 const sourceAppliers = new WeakMap<object, unknown>();
 
+/** @brief Message, path, and abort policy attached to a reusable semantic check. */
 export interface WithCheckSourceOptions {
     readonly apply?: (source: Guard<unknown, Presence>) => unknown;
     readonly zodDef?: Readonly<Record<string, unknown>>;

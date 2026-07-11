@@ -26,13 +26,21 @@ export function readCheckMessage(
     }
     const error = value["error"];
     const message = value["message"];
+    const requiredError = value["required_error"];
+    const invalidTypeError = value["invalid_type_error"];
     if (error !== undefined && typeof error !== "string") {
         throw new TypeError("check error option must be a string");
     }
     if (message !== undefined && typeof message !== "string") {
         throw new TypeError("check message option must be a string");
     }
-    return error ?? message;
+    if (requiredError !== undefined && typeof requiredError !== "string") {
+        throw new TypeError("check required_error option must be a string");
+    }
+    if (invalidTypeError !== undefined && typeof invalidTypeError !== "string") {
+        throw new TypeError("check invalid_type_error option must be a string");
+    }
+    return error ?? message ?? requiredError ?? invalidTypeError;
 }
 
 /**

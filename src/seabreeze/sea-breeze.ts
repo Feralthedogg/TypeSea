@@ -6,6 +6,7 @@
  * concrete nodes fall back to a best-common validation type instead of failing.
  */
 
+/** @brief Dense type-kind tags stored in the arena's kind buffer. */
 export const SeaBreezeKind = {
     Never: 0,
     Unknown: 1,
@@ -22,20 +23,29 @@ export const SeaBreezeKind = {
     Union: 12
 } as const;
 
+/** @brief Numeric union of SeaBreeze arena type kinds. */
 export type SeaBreezeKind = (typeof SeaBreezeKind)[keyof typeof SeaBreezeKind];
 
+/** @brief Required and optional field-presence tags stored beside object fields. */
 export const SeaBreezePresence = {
     Required: 1,
     Optional: 2
 } as const;
 
+/** @brief Numeric union of SeaBreeze field-presence tags. */
 export type SeaBreezePresence =
     (typeof SeaBreezePresence)[keyof typeof SeaBreezePresence];
 
+/**
+ * @brief Dense index into one SeaBreeze arena.
+ * @details Node ids are arena-local and may resolve to a different union-find
+ * representative after unification.
+ */
 export type SeaBreezeNodeId = number;
 
 const CANONICAL_NODE_COUNT = 9;
 
+/** @brief Fixed typed-array capacities allocated when an arena is constructed. */
 export interface SeaBreezeOptions {
     /**
      * @brief Maximum number of type nodes in the caller-owned arena.
@@ -48,6 +58,11 @@ export interface SeaBreezeOptions {
     readonly maxFields: number;
 }
 
+/**
+ * @brief Read-only snapshot of live arena buffers and logical lengths.
+ * @details Buffers are copied so resetting the source arena cannot mutate a
+ * serialized or externally inspected snapshot.
+ */
 export interface SeaBreezeSnapshot {
     readonly nodeLength: number;
     readonly fieldLength: number;

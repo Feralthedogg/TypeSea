@@ -14,6 +14,7 @@
     "internals": "내부 구조",
     "readme": "README",
     "api_reference": "API 레퍼런스",
+    "zod_compat": "Zod 호환성 코퍼스",
     "seaflow": "SeaFlow 퍼저",
     "seabreeze": "SeaBreeze 추론",
     "engine_notes": "엔진 설계 노트",

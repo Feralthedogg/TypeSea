@@ -12,6 +12,7 @@ import type {
     SuperRefineIssueInput
 } from "./types.js";
 
+/** @brief Callback that reports zero or more semantic issues through a context. */
 export type SuperRefineCallback<TValue> =
     (value: TValue, context: SuperRefineContext) => void;
 

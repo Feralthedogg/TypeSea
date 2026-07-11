@@ -16,6 +16,10 @@ import type {
     JsonSchemaUriMapper
 } from "./types.js";
 
+/**
+ * @brief Shared reference, cycle, override, and registry state for one export walk.
+ * @details Mutable collections are run-local and never escape the exporter.
+ */
 export interface JsonSchemaEmitContext {
     readonly refs: ReadonlyMap<Schema, string>;
     readonly active: Schema | undefined;

@@ -33,6 +33,18 @@ const documents = [
         }
     },
     {
+        slug: 'zod-compat',
+        group: 'reference',
+        enPath: 'docs/zod-real-world-compat.md',
+        koPath: 'docs/ko/zod-real-world-compat.md',
+        sourcePath: 'docs/zod-real-world-compat.md',
+        title: { en: 'Zod compatibility corpus', ko: 'Zod 호환성 코퍼스' },
+        description: {
+            en: 'Pinned public-source API counts and replacement compilation diagnostics.',
+            ko: '고정된 공개 소스의 API 사용량과 import 교체 컴파일 결과를 기록합니다.'
+        }
+    },
+    {
         slug: 'seaflow',
         group: 'tools',
         enPath: 'docs/seaflow.md',
@@ -151,10 +163,12 @@ async function main() {
 function transformMarkdown(source, locale) {
     const transformed = source
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/api/', '../api/')
+        .replaceAll('https://feralthedogg.github.io/TypeSea/ko/zod-compat/', '../zod-compat/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/seaflow/', '../seaflow/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/seabreeze/', '../seabreeze/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/engine/', '../engine/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/api/', '../api/')
+        .replaceAll('https://feralthedogg.github.io/TypeSea/zod-compat/', '../zod-compat/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/seaflow/', '../seaflow/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/seabreeze/', '../seabreeze/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/engine/', '../engine/')
@@ -176,6 +190,10 @@ function transformMarkdown(source, locale) {
         .replaceAll('docs/assets/benchmark-headline.svg', '__TYPESEA_BENCHMARK__')
         .replaceAll('(docs/api.md)', '(../api/)')
         .replaceAll('(../api.md)', '(../api/)')
+        .replaceAll('(./docs/zod-real-world-compat.md)', '(../zod-compat/)')
+        .replaceAll('(docs/zod-real-world-compat.md)', '(../zod-compat/)')
+        .replaceAll('(../zod-real-world-compat.md)', '(../zod-compat/)')
+        .replaceAll('(./zod-real-world-compat.md)', '(../zod-compat/)')
         .replaceAll('(docs/engine-notes.md)', '(../engine/)')
         .replaceAll('(../engine-notes.md)', '(../engine/)')
         .replaceAll(

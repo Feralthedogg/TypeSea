@@ -14,6 +14,7 @@ import type {
 
 const EMPTY_PATH: readonly PathSegment[] = Object.freeze([]);
 
+/** @brief Construction-time normalized refinement options. */
 export interface NormalizedRefineOptions {
     readonly name: string;
     readonly path: readonly PathSegment[];
@@ -53,6 +54,7 @@ export function readRefineOptions<TValue>(
         throw new TypeError("refinement options must be a string or object");
     }
     const error = readOptionalString(value["error"], "refinement error");
+    const message = readOptionalString(value["message"], "refinement message");
     const path = readOptionalPath(value["path"], "refinement path");
     const abort = readOptionalBoolean(value["abort"], "refinement abort");
     const rawWhen = readOptionalWhen<TValue>(value["when"], "refinement when");
@@ -61,9 +63,9 @@ export function readRefineOptions<TValue>(
         : (payload: RefineWhenPayload): boolean =>
             rawWhen(payload as RefineWhenPayload<TValue>);
     return Object.freeze({
-        name: error ?? "refinement",
+        name: error ?? message ?? "refinement",
         path,
-        message: error,
+        message: error ?? message,
         abort,
         when
     });

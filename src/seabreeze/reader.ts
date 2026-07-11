@@ -13,6 +13,11 @@ import type {
 } from "./sea-breeze.js";
 import type { SeaBreezeArena } from "./sea-breeze.js";
 
+/**
+ * @brief Read-only arena projection consumed by lowering and direct emission.
+ * @details Consumers operate on numeric ids and typed-array slots without
+ * materializing per-node JavaScript objects.
+ */
 export interface SeaBreezeReader {
     /**
      * @brief Number of live nodes.

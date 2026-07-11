@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 const documentPairs = [
     ["README.md", "docs/ko/readme.md"],
     ["docs/api.md", "docs/ko/api.md"],
+    ["docs/zod-real-world-compat.md", "docs/ko/zod-real-world-compat.md"],
     ["docs/seaflow.md", "docs/ko/seaflow.md"],
     ["docs/sea-breeze.md", "docs/ko/sea-breeze.md"],
     ["docs/engine-notes.md", "docs/ko/engine-notes.md"]

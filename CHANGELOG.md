@@ -2,6 +2,41 @@
 
 All notable changes to TypeSea are recorded here.
 
+## 1.2.0 - 2026-07-11
+
+### Added
+
+- Added a pinned real-world Zod compatibility corpus covering nine public
+  repositories, 1,875 Zod-importing files, 28,758 observed calls, and 224
+  self-contained replacement compilation candidates.
+- Added `TypeSource<Output, Input, Presence>` as the shared structural contract
+  for guards, decoders, codecs, and Zod-compatible schema aliases.
+- Added decoder-aware union, intersection, lazy, array, and object composition,
+  including public `ArrayDecoder`, `ObjectDecoder`, and `ObjectCodec` classes.
+- Added object decoder shape operations for `extend`, `safeExtend`, `merge`,
+  `pick`, `omit`, `partial`, strict/strip/passthrough modes, and mixed
+  guard-decoder object promotion.
+- Added the Zod declaration aliases observed by the corpus across
+  `typesea/zod`, `/v3`, `/v4`, `/v4/core`, and `/v4-mini`.
+
+### Changed
+
+- Preserved decoder input and output types through transformed strings, arrays,
+  object shapes, unions, and recursive lazy schemas. `default()` now excludes
+  `undefined` from its output after installing a fallback.
+- Preserved object shape capabilities after descriptions and refinements.
+  Zod-facade objects accept truthy refinement results while native TypeSea
+  refinements retain their literal-`true` contract.
+- Tightened the compatibility gate to zero replacement-only TypeScript
+  diagnostics and zero missing observed declaration exports. These are pinned
+  source-compatibility budgets, not a claim of complete Zod semantic parity.
+
+### Security
+
+- Kept decoder object reads descriptor-based, including the new object
+  composition and selection paths. Hostile data and selection-mask accessors
+  are rejected without execution.
+
 ## 1.1.1 - 2026-07-11
 
 ### Changed

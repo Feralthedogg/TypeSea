@@ -1,3 +1,11 @@
+/**
+ * @file aot/index.ts
+ * @brief Standalone source emission and schema portability checks.
+ * @details AOT output contains only data that can be serialized without closing
+ * over the originating process. Runtime callbacks and host-bound constructors
+ * are rejected with explicit issue codes.
+ */
+
 import { emitCompiledSourceBundle } from "../compile/index.js";
 import type { CompileMode } from "../compile/index.js";
 import type { Guard, Presence } from "../guard/index.js";

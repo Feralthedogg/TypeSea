@@ -14,6 +14,7 @@
     "internals": "Internals",
     "readme": "README",
     "api_reference": "API reference",
+    "zod_compat": "Zod compatibility corpus",
     "seaflow": "SeaFlow fuzzer",
     "seabreeze": "SeaBreeze inference",
     "engine_notes": "Engine notes",

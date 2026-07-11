@@ -27,6 +27,7 @@ import {
 } from "./sea-breeze.js";
 import type { SeaBreezeArena } from "./sea-breeze.js";
 
+/** @brief Schema-lowering policies plus optional graph optimization. */
 export interface SeaBreezeGraphLoweringOptions
     extends SeaBreezeSchemaLoweringOptions {
     /**

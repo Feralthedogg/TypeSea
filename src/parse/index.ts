@@ -1,3 +1,11 @@
+/**
+ * @file parse/index.ts
+ * @brief Throwing and tagged-result parse helpers for sync and async sources.
+ * @details These functions are convenience boundaries over decoder results.
+ * Validation itself remains Result-based and allocates assertion errors only
+ * when a throwing parse API is selected.
+ */
+
 import {
     decode,
     type DecodeSource,

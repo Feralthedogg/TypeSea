@@ -12,16 +12,19 @@ import {
 import {
     BaseGuard,
     type Guard,
-    type Presence
+    type Presence,
+    type RefineParams,
+    type SuperRefineContext
 } from "../../guard/index.js";
 import {
     decodeObjectShape,
+    decodeObjectShapeWithEffect,
     isDecoderValue,
-    type BaseCodec,
-    type BaseDecoder,
-    type InferDecodedObject,
-    type InferEncodedObject,
+    type MergeObjectDecodeShapes,
+    type ObjectCodec,
+    type ObjectDecoder,
     type ObjectCodecShape,
+    type ObjectDecodeMode,
     type ObjectDecodeShape
 } from "../../decoder/index.js";
 import { defineReadonlyProperty } from "../../guard/props.js";
@@ -58,11 +61,14 @@ import {
     requiredObjectSchema
 } from "./schema.js";
 
+/** @brief Regular-expression key domain paired with its value guard. */
 export interface PatternPropertyGuardInput {
     readonly source: string;
     readonly regex: RegExp;
     readonly guard: Guard<unknown, Presence>;
 }
+
+const objectCapabilitySchemas = new WeakMap<object, ObjectSchema>();
 
 /**
  * @brief Guard subclass with object-specific shape operations.
@@ -72,20 +78,63 @@ export interface PatternPropertyGuardInput {
  */
 export class ObjectGuard<
     TShape extends ObjectShape,
-    TMode extends ObjectGuardMode
+    TMode extends ObjectGuardMode = ObjectGuardMode
 > extends BaseGuard<InferObject<TShape>> {
     public declare readonly shape: TShape;
+    public declare readonly mode: TMode;
 
-    public constructor(schema: ObjectSchema, shape?: TShape) {
-        const object = readObjectConstructorSchema(schema);
-        super(object);
+    public constructor(
+        schema: Schema,
+        shape?: TShape,
+        capabilitySchema?: ObjectSchema
+    ) {
+        const object = capabilitySchema ?? readObjectConstructorSchema(schema);
+        super(schema);
         defineReadonlyProperty(
             this,
             "shape",
             shape === undefined ? objectShapeFromSchema(object) : copyObjectShape(shape),
             true
         );
+        defineReadonlyProperty(this, "mode", object.mode, false);
+        objectCapabilitySchemas.set(this, object);
         Object.freeze(this);
+    }
+
+    public override describe(description: string): ObjectGuard<TShape, TMode> {
+        const described = super.describe(description);
+        return new ObjectGuard(
+            readGuardSchema(described, "object describe result"),
+            this.shape,
+            readObjectCapabilitySchema(this, "object describe receiver")
+        );
+    }
+
+    public override refine(
+        predicate: (value: InferObject<TShape>) => boolean,
+        params?: RefineParams<InferObject<TShape>>
+    ): ObjectGuard<TShape, TMode> {
+        const refined = super.refine(predicate, params);
+        return new ObjectGuard(
+            readGuardSchema(refined, "object refine result"),
+            this.shape,
+            readObjectCapabilitySchema(this, "object refine receiver")
+        );
+    }
+
+    public override superRefine(
+        callback: (
+            value: InferObject<TShape>,
+            context: SuperRefineContext
+        ) => void,
+        name?: string
+    ): ObjectGuard<TShape, TMode> {
+        const refined = super.superRefine(callback, name);
+        return new ObjectGuard(
+            readGuardSchema(refined, "object superRefine result"),
+            this.shape,
+            readObjectCapabilitySchema(this, "object superRefine receiver")
+        );
     }
 
     public extend<const TExtension extends ObjectShape>(
@@ -105,8 +154,48 @@ export class ObjectGuard<
         TExtensionMode extends ObjectGuardMode
     >(
         other: ObjectGuard<TExtension, TExtensionMode>
-    ): ObjectGuard<MergeObjectShapes<TShape, TExtension>, TMode> {
-        return mergeObjectGuard(this, other);
+    ): ObjectGuard<MergeObjectShapes<TShape, TExtension>, TMode>;
+
+    public merge<
+        const TExtension extends ObjectCodecShape,
+        TExtensionMode extends ObjectDecodeMode
+    >(
+        other: ObjectCodec<TExtension, TExtensionMode>
+    ): ObjectCodec<MergeObjectDecodeShapes<TShape, TExtension>, TMode>;
+
+    public merge<
+        const TExtension extends ObjectDecodeShape,
+        TExtensionMode extends ObjectDecodeMode
+    >(
+        other: ObjectDecoder<TExtension, TExtensionMode>
+    ): ObjectDecoder<MergeObjectDecodeShapes<TShape, TExtension>, TMode>;
+
+    public merge(
+        other: ObjectGuard<ObjectShape> |
+            ObjectCodec<ObjectCodecShape> |
+            ObjectDecoder<ObjectDecodeShape>
+    ): ObjectGuard<ObjectShape, TMode> |
+        ObjectCodec<ObjectCodecShape, TMode> |
+        ObjectDecoder<ObjectDecodeShape, TMode> {
+        if (other instanceof ObjectGuard) {
+            return mergeObjectGuard(this, other);
+        }
+        const base = readObjectCapabilitySchema(this, "object merge receiver");
+        const shape = mergeMixedObjectShape(this.shape, other.shape);
+        if (!objectGuardHasRefinement(this, base)) {
+            return decodeObjectShape(shape, base.mode) as
+                | ObjectCodec<ObjectCodecShape, TMode>
+                | ObjectDecoder<ObjectDecodeShape, TMode>;
+        }
+        const effect = rebaseObjectValidationSchema(
+            readGuardSchema(this, "object merge receiver"),
+            base,
+            { tag: SchemaTag.Unknown },
+            "object merge receiver"
+        );
+        return decodeObjectShapeWithEffect(shape, base.mode, effect) as
+            | ObjectCodec<ObjectCodecShape, TMode>
+            | ObjectDecoder<ObjectDecodeShape, TMode>;
     }
 
     public pick<const TKeys extends readonly StringKeyOf<TShape>[]>(
@@ -227,6 +316,60 @@ export class ObjectGuard<
 }
 
 /**
+ * @brief Zod-facade object guard with truthy refinement compatibility.
+ * @details Native ObjectGuard keeps TypeSea's literal-true refinement rule.
+ * This facade normalizes Zod callbacks at schema construction, leaving the
+ * generated validation path identical to an ordinary boolean refinement.
+ */
+export class ZodObjectGuard<
+    TShape extends ObjectShape,
+    TMode extends ObjectGuardMode = ObjectGuardMode
+> extends ObjectGuard<TShape, TMode> {
+
+    public override describe(description: string): ZodObjectGuard<TShape, TMode> {
+        const described = super.describe(description);
+        return new ZodObjectGuard(
+            readGuardSchema(described, "Zod object describe result"),
+            this.shape,
+            readObjectCapabilitySchema(this, "Zod object describe receiver")
+        );
+    }
+
+    public override refine(
+        predicate: (value: InferObject<TShape>) => unknown,
+        params?: RefineParams<InferObject<TShape>>
+    ): ZodObjectGuard<TShape, TMode> {
+        if (typeof predicate !== "function") {
+            throw new TypeError("Zod object refinement predicate must be a function");
+        }
+        const refined = super.refine(
+            (value): boolean => Boolean(predicate(value)),
+            params
+        );
+        return new ZodObjectGuard(
+            readGuardSchema(refined, "Zod object refine result"),
+            this.shape,
+            readObjectCapabilitySchema(this, "Zod object refine receiver")
+        );
+    }
+
+    public override superRefine(
+        callback: (
+            value: InferObject<TShape>,
+            context: SuperRefineContext
+        ) => void,
+        name?: string
+    ): ZodObjectGuard<TShape, TMode> {
+        const refined = super.superRefine(callback, name);
+        return new ZodObjectGuard(
+            readGuardSchema(refined, "Zod object superRefine result"),
+            this.shape,
+            readObjectCapabilitySchema(this, "Zod object superRefine receiver")
+        );
+    }
+}
+
+/**
  * @brief Build an object guard that accepts unspecified enumerable keys.
  */
 export function object<const TShape extends ObjectShape>(
@@ -235,17 +378,17 @@ export function object<const TShape extends ObjectShape>(
 
 export function object<const TShape extends ObjectCodecShape>(
     shape: TShape
-): BaseCodec<InferEncodedObject<TShape>, InferDecodedObject<TShape>>;
+): ObjectCodec<TShape, typeof ObjectModeTag.Passthrough>;
 
 export function object<const TShape extends ObjectDecodeShape>(
     shape: TShape
-): BaseDecoder<InferDecodedObject<TShape>>;
+): ObjectDecoder<TShape, typeof ObjectModeTag.Passthrough>;
 
 export function object(
     shape: ObjectDecodeShape
 ): ObjectGuard<ObjectShape, typeof ObjectModeTag.Passthrough> |
-    BaseCodec<unknown, unknown> |
-    BaseDecoder<unknown> {
+    ObjectCodec<ObjectCodecShape, typeof ObjectModeTag.Passthrough> |
+    ObjectDecoder<ObjectDecodeShape, typeof ObjectModeTag.Passthrough> {
     if (objectShapeHasDecoder(shape)) {
         return decodeObjectShape(shape, ObjectModeTag.Passthrough);
     }
@@ -267,17 +410,17 @@ export function looseObject<const TShape extends ObjectShape>(
 
 export function looseObject<const TShape extends ObjectCodecShape>(
     shape: TShape
-): BaseCodec<InferEncodedObject<TShape>, InferDecodedObject<TShape>>;
+): ObjectCodec<TShape, typeof ObjectModeTag.Passthrough>;
 
 export function looseObject<const TShape extends ObjectDecodeShape>(
     shape: TShape
-): BaseDecoder<InferDecodedObject<TShape>>;
+): ObjectDecoder<TShape, typeof ObjectModeTag.Passthrough>;
 
 export function looseObject(
     shape: ObjectDecodeShape
 ): ObjectGuard<ObjectShape, typeof ObjectModeTag.Passthrough> |
-    BaseCodec<unknown, unknown> |
-    BaseDecoder<unknown> {
+    ObjectCodec<ObjectCodecShape, typeof ObjectModeTag.Passthrough> |
+    ObjectDecoder<ObjectDecodeShape, typeof ObjectModeTag.Passthrough> {
     return object(shape);
 }
 
@@ -290,17 +433,17 @@ export function strictObject<const TShape extends ObjectShape>(
 
 export function strictObject<const TShape extends ObjectCodecShape>(
     shape: TShape
-): BaseCodec<InferEncodedObject<TShape>, InferDecodedObject<TShape>>;
+): ObjectCodec<TShape, typeof ObjectModeTag.Strict>;
 
 export function strictObject<const TShape extends ObjectDecodeShape>(
     shape: TShape
-): BaseDecoder<InferDecodedObject<TShape>>;
+): ObjectDecoder<TShape, typeof ObjectModeTag.Strict>;
 
 export function strictObject(
     shape: ObjectDecodeShape
 ): ObjectGuard<ObjectShape, typeof ObjectModeTag.Strict> |
-    BaseCodec<unknown, unknown> |
-    BaseDecoder<unknown> {
+    ObjectCodec<ObjectCodecShape, typeof ObjectModeTag.Strict> |
+    ObjectDecoder<ObjectDecodeShape, typeof ObjectModeTag.Strict> {
     if (objectShapeHasDecoder(shape)) {
         return decodeObjectShape(shape, ObjectModeTag.Strict);
     }
@@ -737,6 +880,161 @@ function copyObjectShape<TShape extends ObjectShape>(shape: TShape): TShape {
 }
 
 /**
+ * @brief Resolve the structural object capability without trusting public fields.
+ * @details Constructed guards use a WeakMap side table; compatibility receivers
+ * fall back to the validated method schema. This prevents forged `.shape` or
+ * `.schema` properties from influencing fluent object derivations.
+ */
+function readObjectCapabilitySchema(guard: unknown, label: string): ObjectSchema {
+    if (typeof guard === "object" && guard !== null) {
+        const schema = objectCapabilitySchemas.get(guard);
+        if (schema !== undefined) {
+            readGuardSchema(guard, label);
+            return schema;
+        }
+    }
+    return readObjectMethodSchema(guard, label);
+}
+
+/**
+ * @brief Replace an object's structural leaf while preserving validation wrappers.
+ * @details ObjectGuard keeps structural capability metadata separate from its
+ * complete validation schema. Shape edits replace only that leaf; refinements
+ * and metadata are replayed in their original order so derivation cannot weaken
+ * the source guard.
+ * @invariant The supplied capability must be reachable through Metadata and
+ * Refine wrappers only.
+ */
+function rebaseObjectValidationSchema(
+    outer: Schema,
+    capability: ObjectSchema,
+    replacement: Schema,
+    label: string
+): Schema {
+    const wrappers: Schema[] = [];
+    let current = outer;
+    for (let depth = 0; depth < 65_536; depth += 1) {
+        if (current === capability) {
+            let output = replacement;
+            for (let index = wrappers.length - 1; index >= 0; index -= 1) {
+                const wrapper = wrappers[index];
+                if (wrapper === undefined) {
+                    continue;
+                }
+                output = copyObjectValidationWrapper(wrapper, output, label);
+            }
+            return output;
+        }
+        switch (current.tag) {
+            case SchemaTag.Metadata:
+            case SchemaTag.Refine:
+                wrappers.push(current);
+                current = current.inner;
+                break;
+            default:
+                throw new TypeError(`${label} has an invalid object validation wrapper`);
+        }
+    }
+    throw new TypeError(`${label} exceeds the object validation wrapper depth limit`);
+}
+
+/**
+ * @brief Rebuild one admitted object-validation wrapper around a new inner node.
+ * @details Wrapper callbacks and metadata are reused by identity. The schema
+ * freezer owns final immutability when the derived guard is constructed.
+ */
+function copyObjectValidationWrapper(
+    wrapper: Schema,
+    inner: Schema,
+    label: string
+): Schema {
+    switch (wrapper.tag) {
+        case SchemaTag.Metadata:
+            return {
+                tag: SchemaTag.Metadata,
+                inner,
+                metadata: wrapper.metadata
+            };
+        case SchemaTag.Refine:
+            return {
+                tag: SchemaTag.Refine,
+                inner,
+                predicate: wrapper.predicate,
+                collect: wrapper.collect,
+                path: wrapper.path,
+                message: wrapper.message,
+                abort: wrapper.abort,
+                when: wrapper.when,
+                name: wrapper.name
+            };
+        default:
+            throw new TypeError(`${label} has an invalid object validation wrapper`);
+    }
+}
+
+/**
+ * @brief Prove whether an object guard has a refinement above its capability leaf.
+ * @details `safeExtend` uses this proof to distinguish structural derivation from
+ * extension of a semantically refined object. Unknown wrapper shapes fail closed.
+ */
+function objectGuardHasRefinement(guard: unknown, capability: ObjectSchema): boolean {
+    let current = readGuardSchema(guard, "object refinement receiver");
+    for (let depth = 0; depth < 65_536; depth += 1) {
+        if (current === capability) {
+            return false;
+        }
+        switch (current.tag) {
+            case SchemaTag.Refine:
+                return true;
+            case SchemaTag.Metadata:
+                current = current.inner;
+                break;
+            default:
+                throw new TypeError("object refinement receiver has an invalid wrapper");
+        }
+    }
+    throw new TypeError("object refinement receiver exceeds the wrapper depth limit");
+}
+
+function mergeMixedObjectShape(
+    base: ObjectShape,
+    extension: ObjectDecodeShape
+): ObjectDecodeShape {
+    const output: Record<string, Guard<unknown, Presence> | ObjectDecodeShape[string]> =
+        Object.create(null) as Record<
+            string,
+            Guard<unknown, Presence> | ObjectDecodeShape[string]
+        >;
+    copyMixedObjectShapeEntries(base, output);
+    copyMixedObjectShapeEntries(extension, output);
+    return Object.freeze(output);
+}
+
+function copyMixedObjectShapeEntries(
+    shape: ObjectDecodeShape,
+    output: Record<string, ObjectDecodeShape[string]>
+): void {
+    const keys = Object.keys(shape);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined) {
+            continue;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(shape, key);
+        if (descriptor === undefined ||
+            !Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+            throw new TypeError(`mixed object property ${key} must be a data property`);
+        }
+        Object.defineProperty(output, key, {
+            value: descriptor.value as ObjectDecodeShape[string],
+            enumerable: true,
+            configurable: true,
+            writable: true
+        });
+    }
+}
+
+/**
  * @brief Install one copied shape property.
  * @details Data entries are copied directly. Getter entries keep the original
  * shape object as receiver so recursive factories that depend on closure or
@@ -823,9 +1121,17 @@ function extendObjectGuard<
     guard: unknown,
     extension: TExtension
 ): ObjectGuard<MergeObjectShapes<TShape, TExtension>, TMode> {
-    const schema = readObjectMethodSchema(guard, "object extend receiver");
+    const schema = readObjectCapabilitySchema(guard, "object extend receiver");
+    const merged = mergeObjectSchemas(schema, objectSchema(extension, schema.mode));
     return new ObjectGuard<MergeObjectShapes<TShape, TExtension>, TMode>(
-        mergeObjectSchemas(schema, objectSchema(extension, schema.mode))
+        rebaseObjectValidationSchema(
+            readGuardSchema(guard, "object extend receiver"),
+            schema,
+            merged,
+            "object extend receiver"
+        ),
+        undefined,
+        merged
     );
 }
 
@@ -841,10 +1147,24 @@ function mergeObjectGuard<
     guard: unknown,
     other: ObjectGuard<TExtension, TExtensionMode>
 ): ObjectGuard<MergeObjectShapes<TShape, TExtension>, TMode> {
-    const base = readObjectMethodSchema(guard, "object merge receiver");
-    const extension = readObjectMethodSchema(other, "object merge argument");
+    const base = readObjectCapabilitySchema(guard, "object merge receiver");
+    const extension = readObjectCapabilitySchema(other, "object merge argument");
+    const merged = mergeObjectSchemas(base, extension);
+    const withBaseValidation = rebaseObjectValidationSchema(
+        readGuardSchema(guard, "object merge receiver"),
+        base,
+        merged,
+        "object merge receiver"
+    );
     return new ObjectGuard<MergeObjectShapes<TShape, TExtension>, TMode>(
-        mergeObjectSchemas(base, extension)
+        rebaseObjectValidationSchema(
+            readGuardSchema(other, "object merge argument"),
+            extension,
+            withBaseValidation,
+            "object merge argument"
+        ),
+        undefined,
+        merged
     );
 }
 
@@ -858,10 +1178,18 @@ function pickObjectGuard<
     guard: unknown,
     keys: readonly string[] | ObjectKeyMask<TShape>
 ): ObjectGuard<ObjectShape, TMode> {
-    const schema = readObjectMethodSchema(guard, "object pick receiver");
+    const schema = readObjectCapabilitySchema(guard, "object pick receiver");
     const selection = readObjectKeySelection(keys, schema, "pick keys");
+    const selected = pickObjectSchema(schema, selection);
     return new ObjectGuard<ObjectShape, TMode>(
-        pickObjectSchema(schema, selection)
+        rebaseObjectValidationSchema(
+            readGuardSchema(guard, "object pick receiver"),
+            schema,
+            selected,
+            "object pick receiver"
+        ),
+        undefined,
+        selected
     );
 }
 
@@ -875,10 +1203,18 @@ function omitObjectGuard<
     guard: unknown,
     keys: readonly string[] | ObjectKeyMask<TShape>
 ): ObjectGuard<ObjectShape, TMode> {
-    const schema = readObjectMethodSchema(guard, "object omit receiver");
+    const schema = readObjectCapabilitySchema(guard, "object omit receiver");
     const selection = readObjectKeySelection(keys, schema, "omit keys");
+    const selected = omitObjectSchema(schema, selection);
     return new ObjectGuard<ObjectShape, TMode>(
-        omitObjectSchema(schema, selection)
+        rebaseObjectValidationSchema(
+            readGuardSchema(guard, "object omit receiver"),
+            schema,
+            selected,
+            "object omit receiver"
+        ),
+        undefined,
+        selected
     );
 }
 
@@ -892,12 +1228,20 @@ function partialObjectGuard<
     guard: unknown,
     keys?: ObjectKeyMask<TShape>
 ): ObjectGuard<ObjectShape, TMode> {
-    const schema = readObjectMethodSchema(guard, "object partial receiver");
+    const schema = readObjectCapabilitySchema(guard, "object partial receiver");
     const selection = keys === undefined
         ? undefined
         : readObjectKeySelection(keys, schema, "partial keys");
+    const partial = partialObjectSchema(schema, selection);
     return new ObjectGuard<ObjectShape, TMode>(
-        partialObjectSchema(schema, selection)
+        rebaseObjectValidationSchema(
+            readGuardSchema(guard, "object partial receiver"),
+            schema,
+            partial,
+            "object partial receiver"
+        ),
+        undefined,
+        partial
     );
 }
 
@@ -910,9 +1254,17 @@ function deepPartialObjectGuard<
 >(
     guard: unknown
 ): ObjectGuard<DeepPartialObjectShape<TShape>, TMode> {
-    const schema = readObjectMethodSchema(guard, "object deepPartial receiver");
+    const schema = readObjectCapabilitySchema(guard, "object deepPartial receiver");
+    const partial = deepPartialObjectSchema(schema);
     return new ObjectGuard<DeepPartialObjectShape<TShape>, TMode>(
-        deepPartialObjectSchema(schema)
+        rebaseObjectValidationSchema(
+            readGuardSchema(guard, "object deepPartial receiver"),
+            schema,
+            partial,
+            "object deepPartial receiver"
+        ),
+        undefined,
+        partial
     );
 }
 
@@ -926,12 +1278,20 @@ function requiredObjectGuard<
     guard: unknown,
     keys?: ObjectKeyMask<TShape>
 ): ObjectGuard<ObjectShape, TMode> {
-    const schema = readObjectMethodSchema(guard, "object required receiver");
+    const schema = readObjectCapabilitySchema(guard, "object required receiver");
     const selection = keys === undefined
         ? undefined
         : readObjectKeySelection(keys, schema, "required keys");
+    const required = requiredObjectSchema(schema, selection);
     return new ObjectGuard<ObjectShape, TMode>(
-        requiredObjectSchema(schema, selection)
+        rebaseObjectValidationSchema(
+            readGuardSchema(guard, "object required receiver"),
+            schema,
+            required,
+            "object required receiver"
+        ),
+        undefined,
+        required
     );
 }
 
@@ -945,8 +1305,18 @@ function objectModeGuard<
     guard: unknown,
     mode: TMode
 ): ObjectGuard<TShape, TMode> {
-    const schema = readObjectMethodSchema(guard, "object mode receiver");
-    return new ObjectGuard<TShape, TMode>(objectSchemaWithMode(schema, mode));
+    const schema = readObjectCapabilitySchema(guard, "object mode receiver");
+    const changed = objectSchemaWithMode(schema, mode);
+    return new ObjectGuard<TShape, TMode>(
+        rebaseObjectValidationSchema(
+            readGuardSchema(guard, "object mode receiver"),
+            schema,
+            changed,
+            "object mode receiver"
+        ),
+        undefined,
+        changed
+    );
 }
 
 /**
@@ -959,12 +1329,20 @@ function catchallObjectGuard<
     guard: unknown,
     value: Guard<unknown, Presence>
 ): ObjectGuard<TShape, TMode> {
-    const schema = readObjectMethodSchema(guard, "object catchall receiver");
+    const schema = readObjectCapabilitySchema(guard, "object catchall receiver");
+    const changed = objectSchemaWithCatchall(
+        schema,
+        readGuardSchema(value, "object catchall schema")
+    );
     return new ObjectGuard<TShape, TMode>(
-        objectSchemaWithCatchall(
+        rebaseObjectValidationSchema(
+            readGuardSchema(guard, "object catchall receiver"),
             schema,
-            readGuardSchema(value, "object catchall schema")
-        )
+            changed,
+            "object catchall receiver"
+        ),
+        undefined,
+        changed
     );
 }
 
@@ -1001,14 +1379,14 @@ function keyedObjectGuard<
     rule: KeyRuleTag,
     label: string
 ): BaseGuard<InferObject<TShape>> {
-    const schema = readObjectMethodSchema(guard, "object key-rule receiver");
+    const schema = readObjectCapabilitySchema(guard, "object key-rule receiver");
     const selection = readObjectKeySelection(keys, schema, label);
     if (selection.length === 0) {
         throw new TypeError(`${label} must select at least one key`);
     }
     return new BaseGuard<InferObject<TShape>>({
         tag: SchemaTag.KeyedObject,
-        inner: schema,
+        inner: readGuardSchema(guard, "object key-rule receiver"),
         keys: selection,
         rule
     });
@@ -1100,7 +1478,7 @@ function keyofObjectGuard<
 >(
     guard: ObjectGuard<TShape, TMode>
 ): BaseGuard<StringKeyOf<TShape>> {
-    const schema = readObjectMethodSchema(guard, "keyof object");
+    const schema = readObjectCapabilitySchema(guard, "keyof object");
     const keys = schema.keys;
     if (keys.length === 0) {
         return new BaseGuard<never>({

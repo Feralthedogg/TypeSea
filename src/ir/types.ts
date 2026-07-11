@@ -12,6 +12,7 @@ import type { ArrayCheck, LiteralValue, Schema } from "../schema/index.js";
  */
 export type NodeId = number;
 
+/** @brief Closed union of operations stored in a validation graph arena. */
 export type GraphNode =
     | StartNode
     | ParamNode
@@ -48,12 +49,14 @@ export interface Graph {
     readonly result: NodeId;
 }
 
+/** @brief Control anchor that owns no value dependencies. */
 export interface StartNode {
     readonly id: NodeId;
     readonly tag: typeof NodeTag.Start;
     readonly deps: readonly [];
 }
 
+/** @brief External graph input identified by a diagnostic name. */
 export interface ParamNode {
     readonly id: NodeId;
     readonly tag: typeof NodeTag.Param;
@@ -61,6 +64,7 @@ export interface ParamNode {
     readonly name: string;
 }
 
+/** @brief Literal value embedded directly in the graph. */
 export interface ConstNode {
     readonly id: NodeId;
     readonly tag: typeof NodeTag.Const;
@@ -68,6 +72,7 @@ export interface ConstNode {
     readonly value: LiteralValue;
 }
 
+/** @brief Own-property load candidate lowered from an object field. */
 export interface GetPropNode {
     readonly id: NodeId;
     readonly tag: typeof NodeTag.GetProp;
@@ -76,6 +81,7 @@ export interface GetPropNode {
     readonly key: string;
 }
 
+/** @brief Single-input type, nullability, integer, or negation predicate. */
 export interface UnaryPredicateNode {
     readonly id: NodeId;
     readonly tag:
@@ -94,6 +100,7 @@ export interface UnaryPredicateNode {
     readonly value: NodeId;
 }
 
+/** @brief Identity comparison between two graph values. */
 export interface EqualsNode {
     readonly id: NodeId;
     readonly tag: typeof NodeTag.Equals;
@@ -102,6 +109,7 @@ export interface EqualsNode {
     readonly right: NodeId;
 }
 
+/** @brief Inclusive numeric comparison between graph values. */
 export interface NumericCompareNode {
     readonly id: NodeId;
     readonly tag: typeof NodeTag.Gte | typeof NodeTag.Lte;
@@ -110,6 +118,7 @@ export interface NumericCompareNode {
     readonly right: NodeId;
 }
 
+/** @brief String length comparison against a compile-time bound. */
 export interface StringBoundNode {
     readonly id: NodeId;
     readonly tag: typeof NodeTag.StringMin | typeof NodeTag.StringMax;
@@ -118,6 +127,7 @@ export interface StringBoundNode {
     readonly bound: number;
 }
 
+/** @brief Regular-expression test retaining its diagnostic name. */
 export interface RegexNode {
     readonly id: NodeId;
     readonly tag: typeof NodeTag.Regex;
@@ -127,6 +137,7 @@ export interface RegexNode {
     readonly name: string;
 }
 
+/** @brief Own-property presence test that does not inspect the value slot. */
 export interface HasOwnNode {
     readonly id: NodeId;
     readonly tag: typeof NodeTag.HasOwn;
@@ -135,6 +146,7 @@ export interface HasOwnNode {
     readonly key: string;
 }
 
+/** @brief Own data-property proof that rejects accessor descriptors. */
 export interface HasOwnDataNode {
     readonly id: NodeId;
     readonly tag: typeof NodeTag.HasOwnData;
@@ -143,6 +155,7 @@ export interface HasOwnDataNode {
     readonly key: string;
 }
 
+/** @brief Exact own-key-set check for strict object validation. */
 export interface StrictKeysNode {
     readonly id: NodeId;
     readonly tag: typeof NodeTag.StrictKeys;
@@ -194,6 +207,7 @@ export interface RecordEveryNode {
     readonly itemGraph: Graph;
 }
 
+/** @brief Immutable discriminant-to-branch index table. */
 export type DiscriminantDispatchLookup = Readonly<Record<string, number>>;
 
 /**
@@ -319,6 +333,7 @@ export interface BooleanFoldNode {
     readonly values: readonly NodeId[];
 }
 
+/** @brief Graph return joining one control anchor and one boolean result. */
 export interface ReturnNode {
     readonly id: NodeId;
     readonly tag: typeof NodeTag.Return;

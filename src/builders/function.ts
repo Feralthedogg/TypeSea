@@ -22,17 +22,21 @@ import {
 } from "../issue/index.js";
 import { isRecord, readOwnDataProperty } from "../internal/index.js";
 
+/** @brief Ordered decode sources applied to wrapped function arguments. */
 export type FunctionInputShape = readonly DecodeSource[];
 
+/** @brief Mutable argument tuple inferred from a function input shape. */
 export type InferFunctionArgs<TInput extends FunctionInputShape> = {
     -readonly [TKey in keyof TInput]: InferDecoder<TInput[TKey]>;
 };
 
+/** @brief Validated return type, or the implementation fallback when omitted. */
 export type FunctionOutput<
     TOutput extends DecodeSource | undefined,
     TFallback
 > = TOutput extends DecodeSource ? InferDecoder<TOutput> : TFallback;
 
+/** @brief Input and optional output sources captured by a validated call boundary. */
 export interface FunctionContractOptions<
     TInput extends FunctionInputShape,
     TOutput extends DecodeSource | undefined = undefined
@@ -224,6 +228,11 @@ export class FunctionContractBuilder<
     }
 }
 
+/**
+ * @brief Start a fluent call boundary or construct one from explicit sources.
+ * @details Input and output sources are normalized once during construction so
+ * wrapped calls do not rebuild decoders.
+ */
 export function functionBuilder(): FunctionContractBuilder;
 
 export function functionBuilder<const TInput extends FunctionInputShape>(

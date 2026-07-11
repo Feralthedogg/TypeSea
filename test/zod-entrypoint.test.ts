@@ -38,6 +38,57 @@ interface ParityCase {
 }
 
 describe("typesea/zod entrypoint", () => {
+    test("preserves named and default z namespace type inference", () => {
+        const NamedUser = TypeSeaZod.z.object({
+            id: TypeSeaZod.z.string(),
+            score: TypeSeaZod.z.coerce.number().nullable()
+        });
+        const DefaultUser = ZodDefaultFacade.object({
+            name: ZodDefaultFacade.string()
+        });
+        type NamedUser = TypeSeaZod.z.infer<typeof NamedUser>;
+        type DefaultUser = ZodDefaultFacade.infer<typeof DefaultUser>;
+
+        expectTypeOf<NamedUser>().toEqualTypeOf<{
+            readonly id: string;
+            readonly score: number | null;
+        }>();
+        expectTypeOf<DefaultUser>().toEqualTypeOf<{ readonly name: string }>();
+        expect(NamedUser.parse({ id: "u1", score: "7" })).toEqual({
+            id: "u1",
+            score: 7
+        });
+    });
+
+    test("chains presence and array modifiers after decoding", () => {
+        const Values = TypeSeaZod.string()
+            .transform((value) => value.trim())
+            .nullish()
+            .array();
+
+        expect(Values.safeParse([" TypeSea ", null, undefined])).toEqual({
+            success: true,
+            data: ["TypeSea", null, undefined]
+        });
+        expect(Values.safeParse([1]).success).toBe(false);
+    });
+
+    test("accepts legacy Zod message option spellings", () => {
+        const Required = TypeSeaZod.string({ required_error: "required" });
+        const Refined = TypeSeaZod.string().refine(
+            (value) => value === "TypeSea",
+            { message: "project name" }
+        );
+        const Url = TypeSeaZod.string().url("absolute URL");
+
+        expect((Required.safeParse(undefined) as ResultLike).error?.issues[0]?.message)
+            .toBe("required");
+        expect((Refined.safeParse("other") as ResultLike).error?.issues[0]?.message)
+            .toBe("project name");
+        expect((Url.safeParse("not a URL") as ResultLike).error?.issues[0]?.message)
+            .toBe("absolute URL");
+    });
+
     test("accepts Zod-style regex calls without a diagnostic name", () => {
         const sea = TypeSeaZod.string().regex(/^x$/u);
         const zod = ActualZod.string().regex(/^x$/u);

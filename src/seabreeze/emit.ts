@@ -34,6 +34,11 @@ import type {
 } from "./lower-schema.js";
 import type { SeaBreezeReader } from "./reader.js";
 
+/**
+ * @brief Policies controlling direct arena-to-JavaScript predicate emission.
+ * @details These options affect generated source only; the inference arena and
+ * its node identities are left unchanged.
+ */
 export interface SeaBreezeEmitOptions {
     /**
      * @brief Intern table mapping arena field key ids to object property names.

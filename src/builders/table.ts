@@ -37,6 +37,7 @@ import {
     toZodIssues,
     treeifyError,
     treeifyIssues,
+    TypeSeaZodError,
     withMessages,
     ZodIssueCode
 } from "../message/index.js";
@@ -73,13 +74,14 @@ import {
     trim as zodTrim,
     uppercase as zodUppercase
 } from "../mini.js";
-import type { UnionInput } from "./types.js";
+import type { GuardUnionInput, UnionInput } from "./types.js";
 import {
     catchValue,
     codec,
     codecs,
     coerce,
     decode,
+    decodeLazySource,
     decoder,
     defaultValue,
     encode,
@@ -111,12 +113,14 @@ import {
     stringToURL,
     utf8ToBytes,
     transform,
-    type BaseCodec,
     type BaseDecoder,
-    type InferDecodedObject,
-    type InferEncodedObject,
+    type DecodeSource,
+    type InferDecoder,
+    type Input,
     type ObjectCodecShape,
-    type ObjectDecodeShape
+    type ObjectDecodeShape,
+    type ObjectCodec,
+    type ObjectDecoder
 } from "../decoder/index.js";
 import {
     array,
@@ -167,6 +171,7 @@ import {
     nonpassthrough,
     nonstrict,
     ObjectGuard,
+    ZodObjectGuard,
     object,
     omit,
     oneOfKeys,
@@ -180,6 +185,7 @@ import {
     strip,
     type ObjectShape
 } from "./object/index.js";
+import { objectSchema } from "./object/schema.js";
 import {
     bigint,
     boolean,
@@ -440,7 +446,8 @@ export const t = Object.freeze({
 type ZodWildcardPrefix = "an";
 type ZodWildcardKey = `${ZodWildcardPrefix}y`;
 
-type ZodNamespace = Omit<
+/** @brief Type of the callable Zod-compatible `z` namespace facade. */
+export type ZodNamespace = Omit<
     typeof t,
     | "unknown"
     | "never"
@@ -450,6 +457,7 @@ type ZodNamespace = Omit<
     | "object"
     | "union"
     | "xor"
+    | "lazy"
 > & ZodFunctionalHelpers &
 Readonly<Record<ZodWildcardKey, () => typeof unknownGuard>> & {
     readonly object: typeof zodObject;
@@ -468,9 +476,11 @@ Readonly<Record<ZodWildcardKey, () => typeof unknownGuard>> & {
     readonly NEVER: typeof NEVER;
     readonly union: typeof zodUnion;
     readonly xor: typeof zodXor;
+    readonly lazy: typeof zodLazy;
     readonly intersection: typeof intersect;
     readonly instanceof: typeof instanceOf;
     readonly TimePrecision: typeof zodTimePrecision;
+    readonly ZodError: typeof TypeSeaZodError;
 };
 
 const zodWildcardKey = ("an" + "y") as ZodWildcardKey;
@@ -542,9 +552,11 @@ export const z: ZodNamespace = Object.freeze({
     NEVER,
     union: zodUnion,
     xor: zodXor,
+    lazy: zodLazy,
     intersection: intersect,
     instanceof: instanceOf,
-    TimePrecision: zodTimePrecision
+    TimePrecision: zodTimePrecision,
+    ZodError: TypeSeaZodError
 } as const);
 
 /**
@@ -557,29 +569,32 @@ export const z: ZodNamespace = Object.freeze({
  */
 function zodObject<const TShape extends ObjectShape>(
     shape: TShape
-): ObjectGuard<TShape, typeof ObjectModeTag.Strip>;
+): ZodObjectGuard<TShape, typeof ObjectModeTag.Strip>;
 
 function zodObject<const TShape extends ObjectCodecShape>(
     shape: TShape
-): BaseCodec<InferEncodedObject<TShape>, InferDecodedObject<TShape>>;
+): ObjectCodec<TShape, typeof ObjectModeTag.Strip>;
 
 function zodObject<const TShape extends ObjectDecodeShape>(
     shape: TShape
-): BaseDecoder<InferDecodedObject<TShape>>;
+): ObjectDecoder<TShape, typeof ObjectModeTag.Strip>;
 
 function zodObject(
     shape: ObjectDecodeShape
 ): ObjectGuard<ObjectShape, typeof ObjectModeTag.Strip> |
-    BaseCodec<unknown, unknown> |
-    BaseDecoder<unknown> {
+    ObjectCodec<ObjectCodecShape, typeof ObjectModeTag.Strip> |
+    ObjectDecoder<ObjectDecodeShape, typeof ObjectModeTag.Strip> {
     const guard = object(shape) as
         ObjectGuard<ObjectShape, typeof ObjectModeTag.Passthrough> |
-        BaseCodec<unknown, unknown> |
-        BaseDecoder<unknown>;
+        ObjectCodec<ObjectCodecShape, typeof ObjectModeTag.Passthrough> |
+        ObjectDecoder<ObjectDecodeShape, typeof ObjectModeTag.Passthrough>;
     if (guard instanceof ObjectGuard) {
-        return guard.strip();
+        return new ZodObjectGuard(
+            objectSchema(shape as ObjectShape, ObjectModeTag.Strip),
+            shape as ObjectShape
+        );
     }
-    return guard;
+    return guard.strip();
 }
 
 /**
@@ -589,8 +604,12 @@ function zodObject(
  */
 function zodUnion<const TOptions extends UnionInput>(
     options: TOptions
-): UnionGuard<TOptions> {
-    return union(...options);
+): TOptions extends GuardUnionInput
+    ? UnionGuard<TOptions>
+    : BaseDecoder<InferDecoder<TOptions[number]>, Input<TOptions[number]>> {
+    return union(...options) as TOptions extends GuardUnionInput
+        ? UnionGuard<TOptions>
+        : BaseDecoder<InferDecoder<TOptions[number]>, Input<TOptions[number]>>;
 }
 
 /**
@@ -598,10 +617,16 @@ function zodUnion<const TOptions extends UnionInput>(
  * @param options Ordered xor options.
  * @returns Fresh exclusive-union guard.
  */
-function zodXor<const TOptions extends UnionInput>(
+function zodXor<const TOptions extends GuardUnionInput>(
     options: TOptions
 ): XorGuard<TOptions> {
     return xor(...options);
+}
+
+function zodLazy<TSource extends DecodeSource>(
+    get: () => TSource
+): BaseDecoder<InferDecoder<TSource>, Input<TSource>> {
+    return decodeLazySource(get);
 }
 
 /**

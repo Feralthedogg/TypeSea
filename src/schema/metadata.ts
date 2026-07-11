@@ -14,6 +14,7 @@ import {
 } from "./common.js";
 import type { SchemaMetadata } from "./types.js";
 
+/** @brief Optional annotations accepted by schema metadata builders. */
 export interface SchemaMetadataInput {
     readonly id?: string;
     readonly title?: string;

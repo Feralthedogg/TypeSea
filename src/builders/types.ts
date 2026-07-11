@@ -8,6 +8,7 @@ import type {
     Infer,
     Presence
 } from "../guard/index.js";
+import type { DecodeSource } from "../decoder/index.js";
 
 /**
  * @brief Tuple builder input shape.
@@ -21,6 +22,7 @@ export type InferTuple<TShape extends TupleShape> = {
     readonly [TKey in keyof TShape]: Infer<TShape[TKey]>;
 };
 
+/** @brief Infer a fixed tuple followed by a homogeneous rest guard. */
 export type InferTupleWithRest<
     TShape extends TupleShape,
     TRest extends Guard<unknown, Presence>
@@ -35,6 +37,10 @@ export type InferTupleWithRest<
  * @brief Non-empty union builder input.
  */
 export type UnionInput =
+    readonly [DecodeSource, ...DecodeSource[]];
+
+/** @brief Non-empty union input restricted to runtime guards. */
+export type GuardUnionInput =
     readonly [Guard<unknown, Presence>, ...Guard<unknown, Presence>[]];
 
 /**

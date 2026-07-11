@@ -8,67 +8,76 @@
 import { locales as typeSeaLocales } from "./config/index.js";
 import type { TypeSeaConfig } from "./config/index.js";
 
+/** @brief Construct the built-in English TypeSea message configuration. */
 export function en(): TypeSeaConfig {
     return typeSeaLocales.en();
 }
 
+/** @brief Construct the built-in Korean TypeSea message configuration. */
 export function ko(): TypeSeaConfig {
     return typeSeaLocales.ko();
 }
 
+/** @brief Locale registry containing native TypeSea message catalogs. */
 export const locales = typeSeaLocales;
 
 const englishFallback = en;
 
-export const ar = englishFallback;
-export const az = englishFallback;
-export const be = englishFallback;
-export const bg = englishFallback;
-export const ca = englishFallback;
-export const cs = englishFallback;
-export const da = englishFallback;
-export const de = englishFallback;
-export const el = englishFallback;
-export const eo = englishFallback;
-export const es = englishFallback;
-export const fa = englishFallback;
-export const fi = englishFallback;
-export const fr = englishFallback;
-export const frCA = englishFallback;
-export const he = englishFallback;
-export const hr = englishFallback;
-export const hu = englishFallback;
-export const hy = englishFallback;
-export const id = englishFallback;
-export const is = englishFallback;
-export const it = englishFallback;
-export const ja = englishFallback;
-export const ka = englishFallback;
-export const kh = englishFallback;
-export const km = englishFallback;
-export const lt = englishFallback;
-export const mk = englishFallback;
-export const ms = englishFallback;
-export const nl = englishFallback;
-export const no = englishFallback;
-export const ota = englishFallback;
-export const pl = englishFallback;
-export const ps = englishFallback;
-export const pt = englishFallback;
-export const ro = englishFallback;
-export const ru = englishFallback;
-export const sl = englishFallback;
-export const sv = englishFallback;
-export const ta = englishFallback;
-export const th = englishFallback;
-export const tr = englishFallback;
-export const ua = englishFallback;
-export const uk = englishFallback;
-export const ur = englishFallback;
-export const uz = englishFallback;
-export const vi = englishFallback;
-export const yo = englishFallback;
-export const zhCN = englishFallback;
-export const zhTW = englishFallback;
+/**
+ * @brief Zod locale-name compatibility exports backed by the English catalog.
+ * @details TypeSea does not claim translated diagnostics for these names. They
+ * exist so package aliases resolve deterministically until native catalogs are
+ * implemented.
+ */
+export const ar = englishFallback,
+    az = englishFallback,
+    be = englishFallback,
+    bg = englishFallback,
+    ca = englishFallback,
+    cs = englishFallback,
+    da = englishFallback,
+    de = englishFallback,
+    el = englishFallback,
+    eo = englishFallback,
+    es = englishFallback,
+    fa = englishFallback,
+    fi = englishFallback,
+    fr = englishFallback,
+    frCA = englishFallback,
+    he = englishFallback,
+    hr = englishFallback,
+    hu = englishFallback,
+    hy = englishFallback,
+    id = englishFallback,
+    is = englishFallback,
+    it = englishFallback,
+    ja = englishFallback,
+    ka = englishFallback,
+    kh = englishFallback,
+    km = englishFallback,
+    lt = englishFallback,
+    mk = englishFallback,
+    ms = englishFallback,
+    nl = englishFallback,
+    no = englishFallback,
+    ota = englishFallback,
+    pl = englishFallback,
+    ps = englishFallback,
+    pt = englishFallback,
+    ro = englishFallback,
+    ru = englishFallback,
+    sl = englishFallback,
+    sv = englishFallback,
+    ta = englishFallback,
+    th = englishFallback,
+    tr = englishFallback,
+    ua = englishFallback,
+    uk = englishFallback,
+    ur = englishFallback,
+    uz = englishFallback,
+    vi = englishFallback,
+    yo = englishFallback,
+    zhCN = englishFallback,
+    zhTW = englishFallback;
 
 export default en;

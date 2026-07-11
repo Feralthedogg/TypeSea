@@ -1,3 +1,10 @@
+/**
+ * @file issue/index.ts
+ * @brief Allocation-conscious validation diagnostics and result records.
+ * @details Issue codes are the machine-readable contract shared by interpreted,
+ * compiled, decoder, adapter, and localization paths.
+ */
+
 import type { Result } from "../result/index.js";
 
 /**
@@ -43,6 +50,7 @@ export type IssueCode =
     | "expected_required_key"
     | "expected_key_count"
     | "expected_union"
+    | "expected_intersection"
     | "expected_discriminant"
     | "expected_refinement"
     | "expected_depth_limit"
@@ -268,6 +276,7 @@ export function isIssueCodeValue(value: unknown): value is IssueCode {
         case "expected_required_key":
         case "expected_key_count":
         case "expected_union":
+        case "expected_intersection":
         case "expected_discriminant":
         case "expected_refinement":
         case "expected_depth_limit":

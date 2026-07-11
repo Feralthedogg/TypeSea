@@ -1,4 +1,17 @@
+/**
+ * @file decoder/index.ts
+ * @brief Bidirectional validation, transformation, and codec primitives.
+ * @details Decoders separate accepted input, decoded output, and optional encode
+ * behavior at the type level. Structural object derivations retain refinement
+ * post-runners so fluent shape edits cannot silently weaken validation.
+ */
+
 import { checkSchema } from "../evaluate/index.js";
+import {
+    freezeIntersectionReadonlyOutputs,
+    makeIntersectionFinalizeState,
+    mergeIntersectionOutputs
+} from "../evaluate/finalize-intersection.js";
 import { readMapEntries, readSetValues } from "../evaluate/shared.js";
 import type {
     CheckMessageInput,
@@ -8,6 +21,7 @@ import type {
     GuardValue,
     ParseOptions,
     Presence,
+    RefineParams,
     RuntimeValue,
     SafeParseResult,
     StringEmailOptions,
@@ -22,13 +36,21 @@ import type {
     StringNormalizationForm,
     StringUrlOptions,
     StringUuidOptions,
-    StringUuidVersion
+    StringUuidVersion,
+    SuperRefineContext,
+    ZodDef
 } from "../guard/index.js";
 import { TypeSeaAssertionError } from "../guard/error.js";
 import { readCheckMessage } from "../guard/check-message.js";
 import { applyParseOptions } from "../guard/parse-options.js";
 import {
+    readRefineOptions,
+    type NormalizedRefineOptions
+} from "../guard/refine-options.js";
+import { collectSuperRefineIssues } from "../guard/super-refine.js";
+import {
     checkDateBound,
+    checkArrayLengthBound,
     checkFiniteNumberBound,
     checkStringLengthBound
 } from "../guard/read.js";
@@ -50,14 +72,31 @@ import { makeStandardSchemaProps, type StandardSchemaV1Props } from "../standard
 
 type DecodeRunner<TValue> = (value: unknown) => CheckResult<TValue>;
 type EncodeRunner<TValue> = (value: unknown) => CheckResult<TValue>;
-type DefaultInput<TValue> = TValue | (() => TValue);
+type DecodePostRunner<TValue> = (result: CheckResult<TValue>) => CheckResult<TValue>;
+type DefaultInput<TValue, TInput = never> =
+    | Exclude<TValue | TInput, undefined>
+    | (() => Exclude<TValue | TInput, undefined>);
 type TransformMapper<TValue, TNext> =
     (value: TValue, context: TransformContext) => TNext;
 
 const TransformNeverSymbol = Symbol("TypeSea.NEVER");
 
+const decoderSchema = freezeSchema({
+    tag: SchemaTag.Unknown
+});
+
+const decoderZodDef: ZodDef = Object.freeze({
+    typeName: "ZodEffects",
+    type: "transform",
+    schema: decoderSchema,
+    effect: "decode",
+    checks: Object.freeze([])
+});
+
+/** @brief Sentinel returned by a transform to force validation failure. */
 export const NEVER = TransformNeverSymbol as never;
 
+/** @brief Recursively JSON-serializable value domain used by JSON codecs. */
 export type JsonCodecValue =
     | null
     | string
@@ -66,15 +105,18 @@ export type JsonCodecValue =
     | readonly JsonCodecValue[]
     | { readonly [key: string]: JsonCodecValue };
 
+/** @brief Diagnostic context supplied to a dynamic decoder fallback. */
 export interface CatchContext {
     readonly error: readonly Issue[];
 }
 
+/** @brief Static value or factory used to recover from decoder failure. */
 export type CatchInput<TValue> =
     | TValue
     | (() => TValue)
     | ((context: CatchContext) => TValue);
 
+/** @brief User-facing issue input accepted by transform contexts. */
 export type TransformIssueInput =
     | string
     | {
@@ -83,18 +125,22 @@ export type TransformIssueInput =
         readonly [key: string]: unknown;
     };
 
+/** @brief Restricted append-only issue sink exposed to transform callbacks. */
 export interface TransformIssueSink {
     readonly length: number;
     push(...issues: (TransformIssueInput | undefined)[]): number;
 }
 
+/** @brief Context through which transforms report validation failures. */
 export interface TransformContext {
     readonly issues: TransformIssueSink;
     addIssue(issue?: TransformIssueInput): void;
 }
 
+/** @brief Case comparison modes accepted by string-to-boolean decoders. */
 export type StringBoolCase = "insensitive" | "sensitive";
 
+/** @brief Truthy and falsy token configuration for string-to-boolean decoding. */
 export interface StringBoolOptions {
     readonly truthy?: readonly string[] | undefined;
     readonly falsy?: readonly string[] | undefined;
@@ -113,84 +159,202 @@ const CodecEncodeSymbol = Symbol("TypeSea.codec.encode");
  * @brief Real decoder instances tracked without extending object lifetime.
  */
 const constructedDecoders = new WeakSet<object>();
+const objectDecoderPostRunners = new WeakMap<object, DecodePostRunner<unknown>>();
+const customObjectDecoderRunners = new WeakSet<object>();
+const objectCodecEffectSchemas = new WeakMap<object, Schema>();
+const EMPTY_REFINEMENT_ISSUES: readonly Issue[] = Object.freeze([]);
 
+/**
+ * @brief Common structural contract shared by guards and synchronous decoders.
+ * @details Input, output, and presence slots are compile-time only. Composite
+ * builders still identify real TypeSea objects once during construction, so
+ * native guard validation acquires no additional runtime dispatch.
+ */
+export interface TypeSource<
+    TOutput = unknown,
+    TInput = unknown,
+    TPresence extends Presence = "required"
+> {
+    readonly _input: TInput;
+    readonly _output: TOutput;
+    readonly _presence: TPresence;
+    readonly _def: ZodDef;
+
+    parse(value: unknown, options?: Partial<ParseOptions>): TOutput;
+
+    safeParse(
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): SafeParseResult<this["_output"]>;
+}
+
+/** @brief Guard, decoder, or compatible source accepted by decode builders. */
 export type DecodeSource =
     | Guard<unknown, Presence>
-    | Decoder<unknown>;
+    | Decoder<unknown>
+    | TypeSource<unknown, unknown, Presence>;
 
+/** @brief Source whose decoded value can also be encoded. */
 export type EncodeSource =
     | Guard<unknown, Presence>
     | Codec<unknown, unknown>;
 
+/** @brief Immutable object field map containing guards or decoders. */
 export type ObjectDecodeShape = Readonly<Record<string, DecodeSource>>;
 
+/** @brief Immutable object field map restricted to encodable sources. */
 export type ObjectCodecShape = Readonly<Record<string, EncodeSource>>;
 
+/** @brief Fixed-position tuple sources accepted by tuple decoders. */
 export type TupleDecodeShape = readonly DecodeSource[];
 
+/** @brief Fixed-position tuple sources accepted by tuple codecs. */
 export type TupleCodecShape = readonly EncodeSource[];
 
-type ObjectDecodeMode =
+/** @brief Non-empty union input for decode-only branches. */
+export type DecodeUnionInput =
+    readonly [DecodeSource, ...DecodeSource[]];
+
+/** @brief Non-empty union input whose branches are all encodable. */
+export type EncodeUnionInput =
+    readonly [EncodeSource, ...EncodeSource[]];
+
+/** @brief Unknown-key policy shared by object decoders and codecs. */
+export type ObjectDecodeMode =
     | typeof ObjectModeTag.Passthrough
-    | typeof ObjectModeTag.Strict;
+    | typeof ObjectModeTag.Strict
+    | typeof ObjectModeTag.Strip;
 
-export type InferDecoder<TSource> =
-    TSource extends Decoder<infer TValue>
-        ? TValue
-        : TSource extends Guard<infer TValue, infer TPresence>
-            ? RuntimeValue<TValue, TPresence>
-            : never;
+type StringKeyOf<TValue> = Extract<keyof TValue, string>;
 
+/** @brief Boolean field-selection mask for object decoder derivation. */
+export type ObjectDecodeKeyMask<TShape extends ObjectDecodeShape> = Readonly<
+    Partial<Record<StringKeyOf<TShape>, boolean>>
+>;
+
+type TrueObjectDecodeMaskKeys<TMask> = {
+    [TKey in keyof TMask]-?: TMask[TKey] extends true ? TKey : never;
+}[keyof TMask];
+
+/** @brief Replace base decoder fields with extension fields. */
+export type MergeObjectDecodeShapes<
+    TBase extends ObjectDecodeShape,
+    TExtension extends ObjectDecodeShape
+> = Simplify<Omit<TBase, keyof TExtension> & TExtension>;
+
+/** @brief Decoder wrapper that permits an absent object property. */
+export type OptionalDecodeSource<TSource extends DecodeSource> =
+    BaseDecoder<
+        InferDecoder<TSource> | undefined,
+        Input<TSource> | undefined,
+        "optional"
+    >;
+
+/** @brief Mark every source in an object decode shape optional. */
+export type PartialObjectDecodeShape<TShape extends ObjectDecodeShape> = {
+    readonly [TKey in keyof TShape]: OptionalDecodeSource<TShape[TKey]>;
+};
+
+/** @brief Retain object decoder fields selected by a key tuple. */
+export type PickObjectDecodeShape<
+    TShape extends ObjectDecodeShape,
+    TKeys extends readonly StringKeyOf<TShape>[]
+> = Pick<TShape, TKeys[number]>;
+
+/** @brief Remove object decoder fields selected by a key tuple. */
+export type OmitObjectDecodeShape<
+    TShape extends ObjectDecodeShape,
+    TKeys extends readonly StringKeyOf<TShape>[]
+> = Omit<TShape, TKeys[number]>;
+
+/** @brief Retain object decoder fields enabled by a boolean mask. */
+export type PickObjectDecodeShapeByMask<
+    TShape extends ObjectDecodeShape,
+    TMask extends ObjectDecodeKeyMask<TShape>
+> = Pick<TShape, Extract<TrueObjectDecodeMaskKeys<TMask>, keyof TShape>>;
+
+/** @brief Remove object decoder fields enabled by a boolean mask. */
+export type OmitObjectDecodeShapeByMask<
+    TShape extends ObjectDecodeShape,
+    TMask extends ObjectDecodeKeyMask<TShape>
+> = Omit<TShape, Extract<TrueObjectDecodeMaskKeys<TMask>, keyof TShape>>;
+
+/** @brief Infer the decoded output type carried by a TypeSea source. */
+export type InferDecoder<TSource> = TSource[keyof TSource & "_output"];
+
+/** @brief Infer the encoded input side of a bidirectional codec. */
 export type InferCodecEncoded<TSource> =
     TSource extends Codec<infer TEncoded, unknown> ? TEncoded : never;
 
+/** @brief Infer the decoded output side of a bidirectional codec. */
 export type InferCodecDecoded<TSource> =
     TSource extends Codec<unknown, infer TDecoded> ? TDecoded : never;
 
+/** @brief Infer whether a source requires, permits, or defers field presence. */
+export type SourcePresence<TSource> =
+    TSource extends TypeSource<unknown, unknown, infer TPresence>
+        ? TPresence
+        : TSource extends Decoder<unknown, unknown, infer TPresence>
+            ? TPresence
+            : TSource extends Guard<unknown, infer TPresence>
+                ? TPresence
+                : "required";
+
 type ObjectDecodeOptionalKeys<TShape extends ObjectDecodeShape> = {
-    [TKey in keyof TShape]-?: TShape[TKey] extends Guard<unknown, Presence>
-        ? GuardPresence<TShape[TKey]> extends "optional"
+    [TKey in keyof TShape]-?: SourcePresence<TShape[TKey]> extends
+        "optional" | "exactOptional"
             ? TKey
-            : never
         : never;
 }[keyof TShape];
 
 type ObjectDecodeRequiredKeys<TShape extends ObjectDecodeShape> = {
-    [TKey in keyof TShape]-?: TShape[TKey] extends Guard<unknown, Presence>
-        ? GuardPresence<TShape[TKey]> extends "optional"
+    [TKey in keyof TShape]-?: SourcePresence<TShape[TKey]> extends
+        "optional" | "exactOptional"
             ? never
-            : TKey
-        : TKey;
+            : TKey;
 }[keyof TShape];
 
+/** @brief Infer decoded object fields while preserving optional presence. */
 export type InferDecodedObject<TShape extends ObjectDecodeShape> = Simplify<{
     readonly [TKey in ObjectDecodeRequiredKeys<TShape>]: InferDecoder<TShape[TKey]>;
 } & {
-    readonly [TKey in ObjectDecodeOptionalKeys<TShape>]?: GuardValue<TShape[TKey]>;
+    readonly [TKey in ObjectDecodeOptionalKeys<TShape>]?: InferDecoder<TShape[TKey]>;
 }>;
 
+/** @brief Infer pre-decode object inputs while preserving optional presence. */
+export type InferInputObject<TShape extends ObjectDecodeShape> = Simplify<{
+    readonly [TKey in ObjectDecodeRequiredKeys<TShape>]: Input<TShape[TKey]>;
+} & {
+    readonly [TKey in ObjectDecodeOptionalKeys<TShape>]?: Input<TShape[TKey]>;
+}>;
+
+/** @brief Infer the encoded representation of an object codec shape. */
 export type InferEncodedObject<TShape extends ObjectCodecShape> = Simplify<{
     readonly [TKey in ObjectDecodeRequiredKeys<TShape>]: TShape[TKey] extends Codec<
         infer TEncoded,
         unknown
     > ? TEncoded : InferDecoder<TShape[TKey]>;
 } & {
-    readonly [TKey in ObjectDecodeOptionalKeys<TShape>]?: GuardValue<TShape[TKey]>;
+    readonly [TKey in ObjectDecodeOptionalKeys<TShape>]?: InferEncodedSource<TShape[TKey]>;
 }>;
 
+/** @brief Infer the encoded side of a guard-or-codec source. */
 export type InferEncodedSource<TSource extends EncodeSource> =
     TSource extends Codec<infer TEncoded, unknown>
         ? TEncoded
         : InferDecoder<TSource>;
 
+/** @brief Infer decoded values at each fixed tuple position. */
 export type InferDecodedTuple<TShape extends TupleDecodeShape> = {
     readonly [TKey in keyof TShape]: InferDecoder<TShape[TKey]>;
 };
 
+/** @brief Infer encoded values at each fixed codec tuple position. */
 export type InferEncodedTuple<TShape extends TupleCodecShape> = {
     readonly [TKey in keyof TShape]: InferEncodedSource<TShape[TKey]>;
 };
 
+/** @brief Infer a decoded tuple with a homogeneous trailing rest source. */
 export type InferDecodedTupleWithRest<
     TShape extends TupleDecodeShape,
     TRest extends DecodeSource
@@ -201,6 +365,7 @@ export type InferDecodedTupleWithRest<
     ...InferDecoder<TRest>[]
 ];
 
+/** @brief Infer an encoded tuple with a homogeneous trailing rest source. */
 export type InferEncodedTupleWithRest<
     TShape extends TupleCodecShape,
     TRest extends EncodeSource
@@ -211,29 +376,35 @@ export type InferEncodedTupleWithRest<
     ...InferEncodedSource<TRest>[]
 ];
 
+/** @brief Restrict a record key guard's runtime value to property-key scalars. */
 export type InferRecordKey<TSource extends Guard<unknown, Presence>> = Extract<
     RuntimeValue<GuardValue<TSource>, GuardPresence<TSource>>,
     string | number
 >;
 
+/** @brief Infer a string-indexed record after value decoding. */
 export type InferDecodedRecordValue<TValue extends DecodeSource> = Readonly<
     Record<string, InferDecoder<TValue>>
 >;
 
+/** @brief Infer a string-indexed record before codec decoding. */
 export type InferEncodedRecordValue<TValue extends EncodeSource> = Readonly<
     Record<string, InferEncodedSource<TValue>>
 >;
 
+/** @brief Infer a closed record from key and value decode sources. */
 export type InferDecodedRecord<
     TKey extends Guard<unknown, Presence>,
     TValue extends DecodeSource
 > = Readonly<Record<InferRecordKey<TKey>, InferDecoder<TValue>>>;
 
+/** @brief Infer the encoded side of a closed record codec. */
 export type InferEncodedRecord<
     TKey extends Guard<unknown, Presence>,
     TValue extends EncodeSource
 > = Readonly<Record<InferRecordKey<TKey>, InferEncodedSource<TValue>>>;
 
+/** @brief Infer a passthrough record after decoding known keys. */
 export type InferDecodedLooseRecord<
     TKey extends Guard<unknown, Presence>,
     TValue extends DecodeSource
@@ -244,6 +415,7 @@ export type InferDecodedLooseRecord<
         Record<string, unknown>
     >;
 
+/** @brief Infer the encoded side of a passthrough record codec. */
 export type InferEncodedLooseRecord<
     TKey extends Guard<unknown, Presence>,
     TValue extends EncodeSource
@@ -254,11 +426,13 @@ export type InferEncodedLooseRecord<
         Record<string, unknown>
     >;
 
+/** @brief Infer a readonly Map after key and value decoding. */
 export type InferDecodedMap<
     TKey extends DecodeSource,
     TValue extends DecodeSource
 > = ReadonlyMap<InferDecoder<TKey>, InferDecoder<TValue>>;
 
+/** @brief Infer the encoded Map accepted by a map codec. */
 export type InferEncodedMap<
     TKey extends EncodeSource,
     TValue extends EncodeSource
@@ -274,7 +448,9 @@ type Simplify<TValue> = {
  * side. Plain decoders accept unknown by design because they own parsing.
  */
 export type Input<TSource> =
-    TSource extends Codec<infer TEncoded, unknown>
+    TSource extends TypeSource<unknown, infer TInput, Presence>
+        ? TInput
+        : TSource extends Codec<infer TEncoded, unknown>
         ? TEncoded
         : TSource extends Guard<infer TValue, infer TPresence>
             ? RuntimeValue<TValue, TPresence>
@@ -299,14 +475,21 @@ export type Output<TSource> =
  * @details Decoders are explicit Result producers; they do not throw for data
  * validation failure.
  */
-export interface Decoder<TValue, TInput = unknown> {
+export interface Decoder<
+    TValue,
+    TInput = unknown,
+    TPresence extends Presence = "required"
+> extends TypeSource<TValue, TInput, TPresence> {
     readonly "~standard": StandardSchemaV1Props<TInput, TValue>;
 
     decode(value: unknown): CheckResult<TValue>;
 
     parse(value: unknown, options?: Partial<ParseOptions>): TValue;
 
-    safeParse(value: unknown, options?: Partial<ParseOptions>): SafeParseResult<TValue>;
+    safeParse(
+        value: unknown,
+        options?: Partial<ParseOptions>
+    ): SafeParseResult<this["_output"]>;
 
     parseAsync(value: unknown, options?: Partial<ParseOptions>): Promise<TValue>;
 
@@ -317,17 +500,52 @@ export interface Decoder<TValue, TInput = unknown> {
 
     spa(value: unknown, options?: Partial<ParseOptions>): Promise<SafeParseResult<TValue>>;
 
+    optional(): BaseDecoder<TValue | undefined, TInput | undefined, "optional">;
+
+    nullable(): BaseDecoder<TValue | null, TInput | null, TPresence>;
+
+    nullish(): BaseDecoder<TValue | null | undefined, TInput | null | undefined, "optional">;
+
+    array(): ArrayDecoder<TValue, TInput>;
+
+    describe(description: string): BaseDecoder<TValue, TInput, TPresence>;
+
+    refine(
+        predicate: (value: TValue) => boolean,
+        params?: RefineParams<TValue>
+    ): BaseDecoder<TValue, TInput, TPresence>;
+
+    superRefine(
+        callback: (value: TValue, context: SuperRefineContext) => void,
+        name?: string
+    ): BaseDecoder<TValue, TInput, TPresence>;
+
     transform<TNext>(mapper: TransformMapper<TValue, TNext>): BaseDecoder<TNext>;
 
     pipe<TNext extends DecodeSource>(next: TNext): BaseDecoder<InferDecoder<TNext>>;
 
-    default(fallback: DefaultInput<TValue>): BaseDecoder<TValue>;
+    default(
+        fallback: DefaultInput<TValue, TInput>
+    ): BaseDecoder<Exclude<TValue, undefined>>;
 
     prefault(fallback: unknown): BaseDecoder<TValue>;
 
     catch(fallback: CatchInput<TValue>): BaseDecoder<TValue>;
+
+    or<TOther extends DecodeSource>(
+        other: TOther
+    ): BaseDecoder<TValue | InferDecoder<TOther>>;
+
+    and<TOther extends DecodeSource>(
+        other: TOther
+    ): BaseDecoder<TValue & InferDecoder<TOther>>;
+
+    intersect<TOther extends DecodeSource>(
+        other: TOther
+    ): BaseDecoder<TValue & InferDecoder<TOther>>;
 }
 
+/** @brief Bidirectional source with explicit validated encode behavior. */
 export interface Codec<TEncoded, TDecoded> extends Decoder<TDecoded, TEncoded> {
     encode(value: TDecoded): CheckResult<TEncoded>;
 }
@@ -345,15 +563,26 @@ interface ConstructedCodec<TEncoded, TDecoded> extends Codec<TEncoded, TDecoded>
  * @details Methods re-read the symbol runner from the receiver so detached
  * method calls fail with TypeSea errors instead of touching undefined state.
  */
-export class BaseDecoder<TValue, TInput = unknown> implements Decoder<TValue, TInput> {
+export class BaseDecoder<
+    TValue,
+    TInput = unknown,
+    TPresence extends Presence = "required"
+> implements Decoder<TValue, TInput, TPresence> {
     private declare readonly [DecoderRunSymbol]: DecodeRunner<TValue>;
+    public declare readonly _input: TInput;
+    public declare readonly _output: TValue;
+    public declare readonly _presence: TPresence;
+    public declare readonly _def: ZodDef;
+    public declare readonly description: string | undefined;
     public declare readonly "~standard": StandardSchemaV1Props<TInput, TValue>;
 
-    public constructor(run: DecodeRunner<TValue>) {
+    public constructor(run: DecodeRunner<TValue>, description?: string) {
         if (typeof run !== "function") {
             throw new TypeError("decoder run must be a function");
         }
         defineReadonlyProperty(this, DecoderRunSymbol, run, false);
+        defineReadonlyProperty(this, "_def", decoderZodDef, false);
+        defineReadonlyProperty(this, "description", description, false);
         defineReadonlyProperty(
             this,
             "~standard",
@@ -386,8 +615,8 @@ export class BaseDecoder<TValue, TInput = unknown> implements Decoder<TValue, TI
         this: unknown,
         value: unknown,
         options?: Partial<ParseOptions>
-    ): SafeParseResult<TValue> {
-        const result = readDecoderRunner<TValue>(this, "decoder receiver")(value);
+    ): SafeParseResult<this["_output"]> {
+        const result = readDecoderRunner<this["_output"]>(this, "decoder receiver")(value);
         if (result.ok) {
             return Object.freeze({
                 success: true,
@@ -450,6 +679,132 @@ export class BaseDecoder<TValue, TInput = unknown> implements Decoder<TValue, TI
         }));
     }
 
+    public optional(): BaseDecoder<TValue | undefined, TInput | undefined, "optional"> {
+        const run = readDecoderRunner<TValue>(this, "decoder optional receiver");
+        return new BaseDecoder<TValue | undefined, TInput | undefined, "optional">(
+            (value: unknown): CheckResult<TValue | undefined> =>
+                value === undefined ? okResult(undefined) : run(value),
+            this.description
+        );
+    }
+
+    public nullable(): BaseDecoder<TValue | null, TInput | null, TPresence> {
+        const run = readDecoderRunner<TValue>(this, "decoder nullable receiver");
+        return new BaseDecoder<TValue | null, TInput | null, TPresence>(
+            (value: unknown): CheckResult<TValue | null> =>
+                value === null ? okResult(null) : run(value),
+            this.description
+        );
+    }
+
+    public nullish(): BaseDecoder<
+        TValue | null | undefined,
+        TInput | null | undefined,
+        "optional"
+    > {
+        const run = readDecoderRunner<TValue>(this, "decoder nullish receiver");
+        return new BaseDecoder<
+            TValue | null | undefined,
+            TInput | null | undefined,
+            "optional"
+        >((value: unknown): CheckResult<TValue | null | undefined> =>
+            value === null || value === undefined ? okResult(value) : run(value),
+        this.description);
+    }
+
+    public array(): ArrayDecoder<TValue, TInput> {
+        return decodeArraySource(this) as ArrayDecoder<TValue, TInput>;
+    }
+
+    public describe(description: string): BaseDecoder<TValue, TInput, TPresence> {
+        if (typeof description !== "string") {
+            throw new TypeError("decoder description must be a string");
+        }
+        return new BaseDecoder<TValue, TInput, TPresence>(
+            readDecoderRunner<TValue>(this, "decoder describe receiver"),
+            description
+        );
+    }
+
+    public refine(
+        predicate: (value: TValue) => boolean,
+        params?: RefineParams<TValue>
+    ): BaseDecoder<TValue, TInput, TPresence> {
+        if (typeof predicate !== "function") {
+            throw new TypeError("decoder refinement predicate must be a function");
+        }
+        const run = readDecoderRunner<TValue>(this, "decoder refine receiver");
+        const options = readRefineOptions(params);
+        return new BaseDecoder<TValue, TInput, TPresence>(
+            (value: unknown): CheckResult<TValue> => {
+                const decoded = run(value);
+                if (!decoded.ok) {
+                    return decoded;
+                }
+                if (options.when !== undefined && !options.when({
+                    value: decoded.value,
+                    issues: Object.freeze([])
+                })) {
+                    return decoded;
+                }
+                const accepted: unknown = predicate(decoded.value);
+                if (accepted === true) {
+                    return decoded;
+                }
+                return err(freezeIssueArray([
+                    makeIssue(
+                        options.path,
+                        "expected_refinement",
+                        options.name,
+                        actualType(decoded.value),
+                        options.message
+                    )
+                ]));
+            },
+            this.description
+        );
+    }
+
+    public superRefine(
+        callback: (value: TValue, context: SuperRefineContext) => void,
+        name = "superRefine"
+    ): BaseDecoder<TValue, TInput, TPresence> {
+        if (typeof callback !== "function") {
+            throw new TypeError("decoder super refinement callback must be a function");
+        }
+        if (typeof name !== "string") {
+            throw new TypeError("decoder super refinement name must be a string");
+        }
+        const run = readDecoderRunner<TValue>(this, "decoder superRefine receiver");
+        return new BaseDecoder<TValue, TInput, TPresence>(
+            (value: unknown): CheckResult<TValue> => {
+                const decoded = run(value);
+                if (!decoded.ok) {
+                    return decoded;
+                }
+                const collected = collectSuperRefineIssues(callback, decoded.value);
+                if (collected === undefined) {
+                    return decoded;
+                }
+                const issues = new Array<Issue>(collected.length);
+                for (let index = 0; index < collected.length; index += 1) {
+                    const issue = collected[index];
+                    if (issue !== undefined) {
+                        issues[index] = makeIssue(
+                            issue.path,
+                            "expected_refinement",
+                            name,
+                            actualType(decoded.value),
+                            issue.message
+                        );
+                    }
+                }
+                return err(freezeIssueArray(issues));
+            },
+            this.description
+        );
+    }
+
     public transform<TNext>(mapper: TransformMapper<TValue, TNext>): BaseDecoder<TNext> {
         if (typeof mapper !== "function") {
             throw new TypeError("decoder transform mapper must be a function");
@@ -485,14 +840,20 @@ export class BaseDecoder<TValue, TInput = unknown> implements Decoder<TValue, TI
         );
     }
 
-    public default(fallback: DefaultInput<TValue>): BaseDecoder<TValue> {
+    public default(
+        fallback: DefaultInput<TValue, TInput>
+    ): BaseDecoder<Exclude<TValue, undefined>> {
         const run = readDecoderRunner<TValue>(this, "decoder default receiver");
-        return new BaseDecoder<TValue>((value: unknown): CheckResult<TValue> => {
-            if (value === undefined) {
-                return okResult(resolveDefault(fallback));
+        return new BaseDecoder<Exclude<TValue, undefined>>(
+            (value: unknown): CheckResult<Exclude<TValue, undefined>> => {
+                if (value === undefined) {
+                    return okResult(
+                        resolveDefault(fallback) as Exclude<TValue, undefined>
+                    );
+                }
+                return run(value) as CheckResult<Exclude<TValue, undefined>>;
             }
-            return run(value);
-        });
+        );
     }
 
     public prefault(fallback: unknown): BaseDecoder<TValue> {
@@ -510,6 +871,24 @@ export class BaseDecoder<TValue, TInput = unknown> implements Decoder<TValue, TI
             }
             return okResult(resolveCatch(fallback, decoded.error));
         });
+    }
+
+    public or<TOther extends DecodeSource>(
+        other: TOther
+    ): BaseDecoder<TValue | InferDecoder<TOther>> {
+        return decodeUnionSources([this, other]);
+    }
+
+    public and<TOther extends DecodeSource>(
+        other: TOther
+    ): BaseDecoder<TValue & InferDecoder<TOther>> {
+        return decodeIntersectionSources(this, other);
+    }
+
+    public intersect<TOther extends DecodeSource>(
+        other: TOther
+    ): BaseDecoder<TValue & InferDecoder<TOther>> {
+        return this.and(other);
     }
 }
 
@@ -533,11 +912,605 @@ export class BaseCodec<TEncoded, TDecoded>
             throw new TypeError("codec encode run must be a function");
         }
         defineReadonlyProperty(this, CodecEncodeSymbol, encodeRun, false);
-        Object.freeze(this);
+        if (new.target === BaseCodec) {
+            Object.freeze(this);
+        }
     }
 
     public encode(this: unknown, value: TDecoded): CheckResult<TEncoded> {
         return readCodecEncodeRunner<TEncoded>(this, "codec receiver")(value);
+    }
+}
+
+/**
+ * @brief Decoder-aware array retaining Zod-style length checks.
+ */
+export class ArrayDecoder<TItem, TInputItem = unknown>
+    extends BaseDecoder<TItem[], TInputItem[]> {
+
+    public constructor(run: DecodeRunner<TItem[]>) {
+        super(run);
+        Object.freeze(this);
+    }
+
+    public min(
+        value: number,
+        options?: CheckMessageInput
+    ): ArrayDecoder<TItem, TInputItem> {
+        return this.withLengthBound(
+            checkArrayLengthBound(value, "array decoder min"),
+            undefined,
+            readCheckMessage(options)
+        );
+    }
+
+    public max(
+        value: number,
+        options?: CheckMessageInput
+    ): ArrayDecoder<TItem, TInputItem> {
+        return this.withLengthBound(
+            undefined,
+            checkArrayLengthBound(value, "array decoder max"),
+            readCheckMessage(options)
+        );
+    }
+
+    public length(
+        value: number,
+        options?: CheckMessageInput
+    ): ArrayDecoder<TItem, TInputItem> {
+        const bound = checkArrayLengthBound(value, "array decoder length");
+        return this.withLengthBound(bound, bound, readCheckMessage(options));
+    }
+
+    public nonempty(options?: CheckMessageInput): ArrayDecoder<TItem, TInputItem> {
+        return this.min(1, options);
+    }
+
+    private withLengthBound(
+        min: number | undefined,
+        max: number | undefined,
+        message: string | undefined
+    ): ArrayDecoder<TItem, TInputItem> {
+        const run = readDecoderRunner<TItem[]>(this, "array decoder receiver");
+        return new ArrayDecoder<TItem, TInputItem>(
+            (value: unknown): CheckResult<TItem[]> => {
+                const decoded = run(value);
+                if (!decoded.ok) {
+                    return decoded;
+                }
+                if (min !== undefined && decoded.value.length < min) {
+                    return err(freezeIssueArray([
+                        makeIssue(
+                            [],
+                            "expected_min_length",
+                            `length >= ${String(min)}`,
+                            `length ${String(decoded.value.length)}`,
+                            message
+                        )
+                    ]));
+                }
+                if (max !== undefined && decoded.value.length > max) {
+                    return err(freezeIssueArray([
+                        makeIssue(
+                            [],
+                            "expected_max_length",
+                            `length <= ${String(max)}`,
+                            `length ${String(decoded.value.length)}`,
+                            message
+                        )
+                    ]));
+                }
+                return decoded;
+            }
+        );
+    }
+}
+
+/**
+ * @brief Decoder-aware object schema retaining its source shape.
+ * @details Shape edits occur only while schemas are built. The inherited parse
+ * path executes the precomputed object runner directly and never reads shape or
+ * mode metadata.
+ */
+export class ObjectDecoder<
+    TShape extends ObjectDecodeShape,
+    TMode extends ObjectDecodeMode = ObjectDecodeMode
+> extends BaseDecoder<InferDecodedObject<TShape>, InferInputObject<TShape>> {
+    public declare readonly shape: TShape;
+    public declare readonly mode: TMode;
+
+    public constructor(
+        shape: TShape,
+        mode: TMode,
+        config = readObjectDecodeConfig(shape, mode),
+        run?: DecodeRunner<InferDecodedObject<TShape>>,
+        description?: string,
+        postRun?: DecodePostRunner<InferDecodedObject<TShape>>
+    ) {
+        const structural = run ?? ((value: unknown): CheckResult<InferDecodedObject<TShape>> =>
+            decodeObjectValue(config, value) as CheckResult<InferDecodedObject<TShape>>);
+        super(
+            postRun === undefined
+                ? structural
+                : (value: unknown): CheckResult<InferDecodedObject<TShape>> =>
+                    postRun(structural(value)),
+            description
+        );
+        defineReadonlyProperty(this, "shape", copyObjectDecodeShape(shape), true);
+        defineReadonlyProperty(this, "mode", mode, false);
+        if (postRun !== undefined) {
+            objectDecoderPostRunners.set(
+                this,
+                postRun as DecodePostRunner<unknown>
+            );
+        }
+        if (run !== undefined) {
+            customObjectDecoderRunners.add(this);
+        }
+        Object.freeze(this);
+    }
+
+    public extend<const TExtension extends ObjectDecodeShape>(
+        extension: TExtension
+    ): ObjectDecoder<MergeObjectDecodeShapes<TShape, TExtension>, TMode> {
+        const merged = mergeObjectDecodeShapes(this.shape, extension);
+        return deriveObjectDecoder(this, merged, this.mode);
+    }
+
+    public safeExtend<const TExtension extends ObjectDecodeShape>(
+        extension: TExtension
+    ): ObjectDecoder<MergeObjectDecodeShapes<TShape, TExtension>, TMode> {
+        return this.extend(extension);
+    }
+
+    public merge<
+        const TExtension extends ObjectDecodeShape
+    >(
+        other: {
+            readonly shape: TExtension;
+            readonly mode: ObjectDecodeMode;
+        }
+    ): ObjectDecoder<MergeObjectDecodeShapes<TShape, TExtension>, TMode> {
+        return this.extend(other.shape);
+    }
+
+    public partial(): ObjectDecoder<PartialObjectDecodeShape<TShape>, TMode> {
+        return deriveObjectDecoder(
+            this,
+            partialObjectDecodeShape(this.shape),
+            this.mode
+        );
+    }
+
+    public pick<const TKeys extends readonly StringKeyOf<TShape>[]>(
+        keys: TKeys
+    ): ObjectDecoder<PickObjectDecodeShape<TShape, TKeys>, TMode>;
+
+    public pick<const TMask extends ObjectDecodeKeyMask<TShape>>(
+        keys: TMask
+    ): ObjectDecoder<PickObjectDecodeShapeByMask<TShape, TMask>, TMode>;
+
+    public pick(
+        keys: readonly string[] | ObjectDecodeKeyMask<TShape>
+    ): ObjectDecoder<ObjectDecodeShape, TMode> {
+        return deriveObjectDecoder(
+            this,
+            selectObjectDecodeShape(this.shape, keys, true),
+            this.mode
+        );
+    }
+
+    public omit<const TKeys extends readonly StringKeyOf<TShape>[]>(
+        keys: TKeys
+    ): ObjectDecoder<OmitObjectDecodeShape<TShape, TKeys>, TMode>;
+
+    public omit<const TMask extends ObjectDecodeKeyMask<TShape>>(
+        keys: TMask
+    ): ObjectDecoder<OmitObjectDecodeShapeByMask<TShape, TMask>, TMode>;
+
+    public omit(
+        keys: readonly string[] | ObjectDecodeKeyMask<TShape>
+    ): ObjectDecoder<ObjectDecodeShape, TMode> {
+        return deriveObjectDecoder(
+            this,
+            selectObjectDecodeShape(this.shape, keys, false),
+            this.mode
+        );
+    }
+
+    public override describe(
+        description: string
+    ): ObjectDecoder<TShape, TMode> {
+        if (typeof description !== "string") {
+            throw new TypeError("decoder description must be a string");
+        }
+        if (customObjectDecoderRunners.has(this)) {
+            return new ObjectDecoder(
+                this.shape,
+                this.mode,
+                readObjectDecodeConfig(this.shape, this.mode),
+                readDecoderRunner(this, "object decoder describe receiver"),
+                description
+            );
+        }
+        return new ObjectDecoder(
+            this.shape,
+            this.mode,
+            readObjectDecodeConfig(this.shape, this.mode),
+            undefined,
+            description,
+            readObjectDecoderPostRunner(this)
+        );
+    }
+
+    public override refine(
+        predicate: (value: InferDecodedObject<TShape>) => boolean,
+        params?: RefineParams<InferDecodedObject<TShape>>
+    ): ObjectDecoder<TShape, TMode> {
+        if (typeof predicate !== "function") {
+            throw new TypeError("decoder refinement predicate must be a function");
+        }
+        if (customObjectDecoderRunners.has(this)) {
+            const refined = super.refine(predicate, params);
+            return new ObjectDecoder(
+                this.shape,
+                this.mode,
+                readObjectDecodeConfig(this.shape, this.mode),
+                readDecoderRunner(refined, "object decoder refine result"),
+                refined.description
+            );
+        }
+        const postRun = appendObjectDecoderRefinement(
+            readObjectDecoderPostRunner<InferDecodedObject<TShape>>(this),
+            predicate,
+            readRefineOptions(params)
+        );
+        return new ObjectDecoder(
+            this.shape,
+            this.mode,
+            readObjectDecodeConfig(this.shape, this.mode),
+            undefined,
+            this.description,
+            postRun
+        );
+    }
+
+    public override superRefine(
+        callback: (
+            value: InferDecodedObject<TShape>,
+            context: SuperRefineContext
+        ) => void,
+        name?: string
+    ): ObjectDecoder<TShape, TMode> {
+        if (typeof callback !== "function") {
+            throw new TypeError("decoder super refinement callback must be a function");
+        }
+        if (name !== undefined && typeof name !== "string") {
+            throw new TypeError("decoder super refinement name must be a string");
+        }
+        if (customObjectDecoderRunners.has(this)) {
+            const refined = super.superRefine(callback, name);
+            return new ObjectDecoder(
+                this.shape,
+                this.mode,
+                readObjectDecodeConfig(this.shape, this.mode),
+                readDecoderRunner(refined, "object decoder superRefine result"),
+                refined.description
+            );
+        }
+        const postRun = appendObjectDecoderSuperRefinement(
+            readObjectDecoderPostRunner<InferDecodedObject<TShape>>(this),
+            callback,
+            name ?? "superRefine"
+        );
+        return new ObjectDecoder(
+            this.shape,
+            this.mode,
+            readObjectDecodeConfig(this.shape, this.mode),
+            undefined,
+            this.description,
+            postRun
+        );
+    }
+
+    public strict(): ObjectDecoder<TShape, typeof ObjectModeTag.Strict> {
+        return deriveObjectDecoder(this, this.shape, ObjectModeTag.Strict);
+    }
+
+    public passthrough(): ObjectDecoder<TShape, typeof ObjectModeTag.Passthrough> {
+        return deriveObjectDecoder(this, this.shape, ObjectModeTag.Passthrough);
+    }
+
+    public loose(): ObjectDecoder<TShape, typeof ObjectModeTag.Passthrough> {
+        return this.passthrough();
+    }
+
+    public strip(): ObjectDecoder<TShape, typeof ObjectModeTag.Strip> {
+        return deriveObjectDecoder(this, this.shape, ObjectModeTag.Strip);
+    }
+}
+
+/**
+ * @brief Derive an object decoder without discarding its semantic post-runner.
+ * @details Shape and mode changes rebuild the structural runner, then attach the
+ * source refinement chain. Custom runners are rejected because their relationship
+ * to the advertised shape cannot be proven.
+ */
+function deriveObjectDecoder<
+    TShape extends ObjectDecodeShape,
+    TMode extends ObjectDecodeMode
+>(
+    source: object & { readonly description: string | undefined },
+    shape: TShape,
+    mode: TMode
+): ObjectDecoder<TShape, TMode> {
+    if (customObjectDecoderRunners.has(source)) {
+        throw new TypeError("custom ObjectDecoder runners cannot be shape-derived safely");
+    }
+    return new ObjectDecoder(
+        shape,
+        mode,
+        readObjectDecodeConfig(shape, mode),
+        undefined,
+        source.description,
+        readObjectDecoderPostRunner<InferDecodedObject<TShape>>(source)
+    );
+}
+
+/**
+ * @brief Read the refinement chain stored outside a frozen object decoder.
+ * @details The side table keeps construction metadata off the decode hot path and
+ * prevents public object fields from forging a derivation contract.
+ */
+function readObjectDecoderPostRunner<TValue>(
+    source: object
+): DecodePostRunner<TValue> | undefined {
+    return objectDecoderPostRunners.get(source) as DecodePostRunner<TValue> | undefined;
+}
+
+/**
+ * @brief Append a boolean refinement after structural object decoding.
+ * @details Previous post-runners execute first, preserving fluent call order.
+ * The predicate is never called after structural or earlier semantic failure.
+ */
+function appendObjectDecoderRefinement<TValue>(
+    previous: DecodePostRunner<TValue> | undefined,
+    predicate: (value: TValue) => boolean,
+    options: NormalizedRefineOptions
+): DecodePostRunner<TValue> {
+    return (result: CheckResult<TValue>): CheckResult<TValue> => {
+        const decoded = previous === undefined ? result : previous(result);
+        if (!decoded.ok) {
+            return decoded;
+        }
+        if (options.when !== undefined && !options.when({
+            value: decoded.value,
+            issues: EMPTY_REFINEMENT_ISSUES
+        })) {
+            return decoded;
+        }
+        const accepted: unknown = predicate(decoded.value);
+        if (accepted === true) {
+            return decoded;
+        }
+        return err(freezeIssueArray([
+            makeIssue(
+                options.path,
+                "expected_refinement",
+                options.name,
+                actualType(decoded.value),
+                options.message
+            )
+        ]));
+    };
+}
+
+/**
+ * @brief Append a multi-issue refinement after structural object decoding.
+ * @details Collected user issues are normalized into immutable TypeSea issues
+ * only after every earlier post-runner has succeeded.
+ */
+function appendObjectDecoderSuperRefinement<TValue>(
+    previous: DecodePostRunner<TValue> | undefined,
+    callback: (value: TValue, context: SuperRefineContext) => void,
+    name: string
+): DecodePostRunner<TValue> {
+    return (result: CheckResult<TValue>): CheckResult<TValue> => {
+        const decoded = previous === undefined ? result : previous(result);
+        if (!decoded.ok) {
+            return decoded;
+        }
+        const collected = collectSuperRefineIssues(callback, decoded.value);
+        if (collected === undefined) {
+            return decoded;
+        }
+        const issues = new Array<Issue>(collected.length);
+        for (let index = 0; index < collected.length; index += 1) {
+            const issue = collected[index];
+            if (issue !== undefined) {
+                issues[index] = makeIssue(
+                    issue.path,
+                    "expected_refinement",
+                    name,
+                    actualType(decoded.value),
+                    issue.message
+                );
+            }
+        }
+        return err(freezeIssueArray(issues));
+    };
+}
+
+/**
+ * @brief Bind an immutable validation effect to a decoder post-runner.
+ * @details Used by mixed guard/decoder object shapes where structural decoding
+ * and output-level guard semantics must remain separate phases.
+ */
+function makeObjectSchemaPostRunner<TValue>(effect: Schema): DecodePostRunner<TValue> {
+    return (result: CheckResult<TValue>): CheckResult<TValue> =>
+        runObjectSchemaEffect<TValue>(result, effect);
+}
+
+/**
+ * @brief Apply an output schema only after structural decoding succeeds.
+ * @returns The original success result when the effect accepts, preserving value
+ * identity; otherwise the effect's diagnostics are returned.
+ */
+function runObjectSchemaEffect<TValue>(
+    result: CheckResult<TValue>,
+    effect: Schema
+): CheckResult<TValue> {
+    if (!result.ok) {
+        return result;
+    }
+    const checked = checkSchema(effect, result.value);
+    return checked.ok ? result : checked;
+}
+
+/**
+ * @brief Bidirectional object codec retaining shape operations.
+ */
+export class ObjectCodec<
+    TShape extends ObjectCodecShape,
+    TMode extends ObjectDecodeMode = ObjectDecodeMode
+> extends BaseCodec<InferEncodedObject<TShape>, InferDecodedObject<TShape>> {
+    public declare readonly shape: TShape;
+    public declare readonly mode: TMode;
+
+    public constructor(
+        shape: TShape,
+        mode: TMode,
+        config = readObjectDecodeConfig(shape, mode),
+        effect?: Schema
+    ) {
+        super(
+            effect === undefined
+                ? (value: unknown): CheckResult<InferDecodedObject<TShape>> =>
+                    decodeObjectValue(config, value) as CheckResult<InferDecodedObject<TShape>>
+                : (value: unknown): CheckResult<InferDecodedObject<TShape>> =>
+                    runObjectSchemaEffect<InferDecodedObject<TShape>>(
+                        decodeObjectValue(config, value) as
+                            CheckResult<InferDecodedObject<TShape>>,
+                        effect
+                    ),
+            effect === undefined
+                ? (value: unknown): CheckResult<InferEncodedObject<TShape>> =>
+                    encodeObjectValue(config, value) as CheckResult<InferEncodedObject<TShape>>
+                : (value: unknown): CheckResult<InferEncodedObject<TShape>> =>
+                    runObjectSchemaEffect<InferEncodedObject<TShape>>(
+                        encodeObjectValue(config, value) as
+                            CheckResult<InferEncodedObject<TShape>>,
+                        effect
+                    )
+        );
+        if (!config.encodable) {
+            throw new TypeError("object codec shape contains a one-way decoder");
+        }
+        defineReadonlyProperty(this, "shape", copyObjectCodecShape(shape), true);
+        defineReadonlyProperty(this, "mode", mode, false);
+        if (effect !== undefined) {
+            objectCodecEffectSchemas.set(this, effect);
+        }
+        Object.freeze(this);
+    }
+
+    public extend<const TExtension extends ObjectCodecShape>(
+        extension: TExtension
+    ): ObjectCodec<MergeObjectDecodeShapes<TShape, TExtension>, TMode> {
+        const merged = mergeObjectCodecShapes(this.shape, extension);
+        return new ObjectCodec(
+            merged,
+            this.mode,
+            readObjectDecodeConfig(merged, this.mode),
+            objectCodecEffectSchemas.get(this)
+        );
+    }
+
+    public safeExtend<const TExtension extends ObjectCodecShape>(
+        extension: TExtension
+    ): ObjectCodec<MergeObjectDecodeShapes<TShape, TExtension>, TMode> {
+        return this.extend(extension);
+    }
+
+    public merge<
+        const TExtension extends ObjectCodecShape
+    >(
+        other: {
+            readonly shape: TExtension;
+            readonly mode: ObjectDecodeMode;
+        }
+    ): ObjectCodec<MergeObjectDecodeShapes<TShape, TExtension>, TMode> {
+        return this.extend(other.shape);
+    }
+
+    public pick<const TKeys extends readonly StringKeyOf<TShape>[]>(
+        keys: TKeys
+    ): ObjectCodec<PickObjectDecodeShape<TShape, TKeys>, TMode>;
+
+    public pick<const TMask extends ObjectDecodeKeyMask<TShape>>(
+        keys: TMask
+    ): ObjectCodec<PickObjectDecodeShapeByMask<TShape, TMask>, TMode>;
+
+    public pick(
+        keys: readonly string[] | ObjectDecodeKeyMask<TShape>
+    ): ObjectCodec<ObjectCodecShape, TMode> {
+        return new ObjectCodec(
+            selectObjectDecodeShape(this.shape, keys, true) as ObjectCodecShape,
+            this.mode,
+            undefined,
+            objectCodecEffectSchemas.get(this)
+        );
+    }
+
+    public omit<const TKeys extends readonly StringKeyOf<TShape>[]>(
+        keys: TKeys
+    ): ObjectCodec<OmitObjectDecodeShape<TShape, TKeys>, TMode>;
+
+    public omit<const TMask extends ObjectDecodeKeyMask<TShape>>(
+        keys: TMask
+    ): ObjectCodec<OmitObjectDecodeShapeByMask<TShape, TMask>, TMode>;
+
+    public omit(
+        keys: readonly string[] | ObjectDecodeKeyMask<TShape>
+    ): ObjectCodec<ObjectCodecShape, TMode> {
+        return new ObjectCodec(
+            selectObjectDecodeShape(this.shape, keys, false) as ObjectCodecShape,
+            this.mode,
+            undefined,
+            objectCodecEffectSchemas.get(this)
+        );
+    }
+
+    public strict(): ObjectCodec<TShape, typeof ObjectModeTag.Strict> {
+        return new ObjectCodec(
+            this.shape,
+            ObjectModeTag.Strict,
+            undefined,
+            objectCodecEffectSchemas.get(this)
+        );
+    }
+
+    public passthrough(): ObjectCodec<TShape, typeof ObjectModeTag.Passthrough> {
+        return new ObjectCodec(
+            this.shape,
+            ObjectModeTag.Passthrough,
+            undefined,
+            objectCodecEffectSchemas.get(this)
+        );
+    }
+
+    public loose(): ObjectCodec<TShape, typeof ObjectModeTag.Passthrough> {
+        return this.passthrough();
+    }
+
+    public strip(): ObjectCodec<TShape, typeof ObjectModeTag.Strip> {
+        return new ObjectCodec(
+            this.shape,
+            ObjectModeTag.Strip,
+            undefined,
+            objectCodecEffectSchemas.get(this)
+        );
     }
 }
 
@@ -552,6 +1525,12 @@ export function decoder<TValue, TPresence extends Presence>(
  * @brief Wrap an existing decoder without changing its output type.
  */
 export function decoder<TValue>(source: Decoder<TValue>): BaseDecoder<TValue>;
+
+export function decoder<TSource extends TypeSource<unknown, unknown, Presence>>(
+    source: TSource
+): BaseDecoder<InferDecoder<TSource>>;
+
+export function decoder(source: DecodeSource): BaseDecoder<unknown>;
 
 /**
  * @brief Normalize a guard or decoder into a synchronous decoder pipeline.
@@ -632,43 +1611,83 @@ export function safeEncodeAsync<TSource extends Codec<unknown, unknown>>(
     return encodeAsync(source, value);
 }
 
-export function decodeObjectShape<TShape extends ObjectCodecShape>(
+/**
+ * @brief Construct an object decoder or codec from a mixed decode shape.
+ * @details The shape is copied through descriptor-safe admission. A codec is
+ * selected only when every field supplies a proven encode runner.
+ */
+export function decodeObjectShape<
+    TShape extends ObjectCodecShape,
+    TMode extends ObjectDecodeMode
+>(
     shape: TShape,
-    mode: ObjectDecodeMode
-): BaseCodec<InferEncodedObject<TShape>, InferDecodedObject<TShape>>;
+    mode: TMode
+): ObjectCodec<TShape, TMode>;
 
-export function decodeObjectShape<TShape extends ObjectDecodeShape>(
+export function decodeObjectShape<
+    TShape extends ObjectDecodeShape,
+    TMode extends ObjectDecodeMode
+>(
     shape: TShape,
-    mode: ObjectDecodeMode
-): BaseDecoder<InferDecodedObject<TShape>>;
+    mode: TMode
+): ObjectDecoder<TShape, TMode>;
 
 export function decodeObjectShape(
     shape: ObjectDecodeShape,
     mode: ObjectDecodeMode
-): BaseDecoder<unknown> | BaseCodec<unknown, unknown> {
-    const config = readObjectDecodeConfig(shape, mode);
+): ObjectDecoder<ObjectDecodeShape> | ObjectCodec<ObjectCodecShape> {
+    const owned = copyObjectDecodeShape(shape);
+    const config = readObjectDecodeConfig(owned, mode);
     if (config.encodable) {
-        return new BaseCodec<unknown, unknown>(
-            (value: unknown): CheckResult<unknown> => decodeObjectValue(config, value),
-            (value: unknown): CheckResult<unknown> => encodeObjectValue(config, value)
+        return new ObjectCodec(owned as ObjectCodecShape, mode, config);
+    }
+    return new ObjectDecoder(owned, mode, config);
+}
+
+/**
+ * @brief Construct a mixed object source with an output-level schema effect.
+ * @details Structural decoding runs first and the frozen effect validates the
+ * decoded value second. Derived object decoders retain this effect through their
+ * private post-runner chain.
+ */
+export function decodeObjectShapeWithEffect(
+    shape: ObjectDecodeShape,
+    mode: ObjectDecodeMode,
+    effect: Schema
+): ObjectDecoder<ObjectDecodeShape> | ObjectCodec<ObjectCodecShape> {
+    const owned = copyObjectDecodeShape(shape);
+    const config = readObjectDecodeConfig(owned, mode);
+    const ownedEffect = freezeSchema(effect);
+    if (config.encodable) {
+        return new ObjectCodec(
+            owned as ObjectCodecShape,
+            mode,
+            config,
+            ownedEffect
         );
     }
-    return new BaseDecoder<unknown>(
-        (value: unknown): CheckResult<unknown> => decodeObjectValue(config, value)
+    return new ObjectDecoder(
+        owned,
+        mode,
+        config,
+        undefined,
+        undefined,
+        makeObjectSchemaPostRunner(ownedEffect)
     );
 }
 
+/** @brief Construct an array decoder or codec from one item source. */
 export function decodeArraySource<TItem extends EncodeSource>(
     item: TItem
 ): BaseCodec<readonly InferEncodedSource<TItem>[], readonly InferDecoder<TItem>[]>;
 
 export function decodeArraySource<TItem extends DecodeSource>(
     item: TItem
-): BaseDecoder<readonly InferDecoder<TItem>[]>;
+): ArrayDecoder<InferDecoder<TItem>, Input<TItem>>;
 
 export function decodeArraySource(
     item: DecodeSource
-): BaseDecoder<readonly unknown[]> | BaseCodec<readonly unknown[], readonly unknown[]> {
+): ArrayDecoder<unknown> | BaseCodec<readonly unknown[], readonly unknown[]> {
     const decodeRun = readDecodeSourceRunner<unknown>(item, "array item");
     const encodeRun = readEncodeSourceRunner(item, "array item");
     if (encodeRun !== undefined) {
@@ -679,11 +1698,12 @@ export function decodeArraySource(
                 runArrayItems(value, encodeRun)
         );
     }
-    return new BaseDecoder<readonly unknown[]>(
-        (value: unknown): CheckResult<readonly unknown[]> => runArrayItems(value, decodeRun)
+    return new ArrayDecoder<unknown>(
+        (value: unknown): CheckResult<unknown[]> => runArrayItems(value, decodeRun)
     );
 }
 
+/** @brief Construct a tuple decoder or codec with an optional rest source. */
 export function decodeTupleSources<
     const TShape extends TupleCodecShape
 >(
@@ -734,6 +1754,7 @@ export function decodeTupleSources(
     );
 }
 
+/** @brief Construct a record decoder or codec from key and value sources. */
 export function decodeRecordSource(
     keyOrValue: DecodeSource,
     value?: DecodeSource,
@@ -760,6 +1781,7 @@ export function decodeRecordSource(
     );
 }
 
+/** @brief Construct a Map decoder or codec from key and value sources. */
 export function decodeMapSources<TKey extends EncodeSource, TValue extends EncodeSource>(
     key: TKey,
     value: TValue
@@ -792,6 +1814,7 @@ export function decodeMapSources(
     );
 }
 
+/** @brief Construct a Set decoder or codec from one item source. */
 export function decodeSetSource<TItem extends EncodeSource>(
     item: TItem
 ): BaseCodec<ReadonlySet<InferEncodedSource<TItem>>, ReadonlySet<InferDecoder<TItem>>>;
@@ -816,6 +1839,105 @@ export function decodeSetSource(
     return new BaseDecoder<ReadonlySet<unknown>>(
         (input: unknown): CheckResult<ReadonlySet<unknown>> =>
             runSetValues(input, decodeRun)
+    );
+}
+
+/**
+ * @brief Build one decoder-aware ordered union.
+ * @details Branch runners are resolved once at construction. Successful inputs
+ * return immediately; branch diagnostics are concatenated only after every arm
+ * rejects the value.
+ */
+export function decodeUnionSources<const TOptions extends EncodeUnionInput>(
+    options: TOptions
+): BaseCodec<
+    InferEncodedSource<TOptions[number]>,
+    InferDecoder<TOptions[number]>
+>;
+
+export function decodeUnionSources<const TOptions extends DecodeUnionInput>(
+    options: TOptions
+): BaseDecoder<InferDecoder<TOptions[number]>, Input<TOptions[number]>>;
+
+export function decodeUnionSources(
+    options: DecodeUnionInput
+): BaseDecoder<unknown> | BaseCodec<unknown, unknown> {
+    const config = buildUnionDecodeConfig(options);
+    if (config.encodable) {
+        return new BaseCodec<unknown, unknown>(
+            (value: unknown): CheckResult<unknown> =>
+                runUnionSources(config.entries, value, false),
+            (value: unknown): CheckResult<unknown> =>
+                runUnionSources(config.entries, value, true)
+        );
+    }
+    return new BaseDecoder<unknown>((value: unknown): CheckResult<unknown> =>
+        runUnionSources(config.entries, value, false));
+}
+
+/**
+ * @brief Build one decoder-aware intersection.
+ * @details Both sources consume the same input. Their successful projected
+ * outputs are merged with the same descriptor-safe algorithm used by guard
+ * intersection finalization.
+ */
+export function decodeIntersectionSources<
+    TLeft extends EncodeSource,
+    TRight extends EncodeSource
+>(
+    left: TLeft,
+    right: TRight
+): BaseCodec<
+    InferEncodedSource<TLeft> & InferEncodedSource<TRight>,
+    InferDecoder<TLeft> & InferDecoder<TRight>
+>;
+
+export function decodeIntersectionSources<
+    TLeft extends DecodeSource,
+    TRight extends DecodeSource
+>(
+    left: TLeft,
+    right: TRight
+): BaseDecoder<InferDecoder<TLeft> & InferDecoder<TRight>>;
+
+export function decodeIntersectionSources(
+    left: DecodeSource,
+    right: DecodeSource
+): BaseDecoder<unknown> | BaseCodec<unknown, unknown> {
+    const leftEntry = readUnionDecodeEntry(left, "intersection left");
+    const rightEntry = readUnionDecodeEntry(right, "intersection right");
+    if (leftEntry.encode !== undefined && rightEntry.encode !== undefined) {
+        const leftEncode = leftEntry.encode;
+        const rightEncode = rightEntry.encode;
+        return new BaseCodec<unknown, unknown>(
+            (value: unknown): CheckResult<unknown> =>
+                runIntersectionSources(leftEntry.decode, rightEntry.decode, value),
+            (value: unknown): CheckResult<unknown> =>
+                runIntersectionSources(leftEncode, rightEncode, value)
+        );
+    }
+    return new BaseDecoder<unknown>((value: unknown): CheckResult<unknown> =>
+        runIntersectionSources(leftEntry.decode, rightEntry.decode, value));
+}
+
+/**
+ * @brief Resolve a recursive decoder source once.
+ */
+export function decodeLazySource<TSource extends DecodeSource>(
+    get: () => TSource
+): BaseDecoder<InferDecoder<TSource>, Input<TSource>> {
+    if (typeof get !== "function") {
+        throw new TypeError("lazy decoder resolver must be a function");
+    }
+    let runner: DecodeRunner<InferDecoder<TSource>> | undefined;
+    return new BaseDecoder<InferDecoder<TSource>, Input<TSource>>(
+        (value: unknown): CheckResult<InferDecoder<TSource>> => {
+            runner ??= readDecodeSourceRunner<InferDecoder<TSource>>(
+                get(),
+                "lazy decoder result"
+            );
+            return runner(value);
+        }
     );
 }
 
@@ -923,15 +2045,17 @@ export function preprocess<TSource extends DecodeSource>(
  */
 export function defaultValue<TSource extends DecodeSource>(
     source: TSource,
-    fallback: DefaultInput<InferDecoder<TSource>>
-): BaseDecoder<InferDecoder<TSource>> {
+    fallback: DefaultInput<InferDecoder<TSource>, Input<TSource>>
+): BaseDecoder<Exclude<InferDecoder<TSource>, undefined>> {
     const run = readDecodeSourceRunner<InferDecoder<TSource>>(source, "default source");
-    return new BaseDecoder<InferDecoder<TSource>>(
-        (value: unknown): CheckResult<InferDecoder<TSource>> => {
+    return new BaseDecoder<Exclude<InferDecoder<TSource>, undefined>>(
+        (value: unknown): CheckResult<Exclude<InferDecoder<TSource>, undefined>> => {
             if (value === undefined) {
-                return okResult(resolveDefault(fallback));
+                return okResult(
+                    resolveDefault(fallback) as Exclude<InferDecoder<TSource>, undefined>
+                );
             }
-            return run(value);
+            return run(value) as CheckResult<Exclude<InferDecoder<TSource>, undefined>>;
         }
     );
 }
@@ -1375,7 +2499,9 @@ type CoerceStringEmailInput =
     | (Partial<StringEmailOptions> & CheckMessageOptions)
     | CheckMessageInput;
 
-type CoerceStringUrlInput = Partial<StringUrlOptions> & CheckMessageOptions;
+type CoerceStringUrlInput =
+    | (Partial<StringUrlOptions> & CheckMessageOptions)
+    | CheckMessageInput;
 
 type CoerceStringIsoDateTimeInput =
     Partial<StringIsoDateTimeOptions> & CheckMessageOptions;
@@ -1532,7 +2658,7 @@ const coerceStringGuard = Object.freeze({
             message: readCheckMessage(options)
         }),
     url: (options?: CoerceStringUrlInput): DecodeSource =>
-        options?.normalize === true
+        readCoerceOption(options, "normalize") === true
             ? normalizedCoerceUrlDecoder(readCheckMessage(options))
             : stringSchemaSource({
                 tag: StringCheckTag.Url,
@@ -1832,26 +2958,26 @@ const coerceDateGuard = Object.freeze({
  * @details Each check appends an ordinary StringGuard or string decoder to the
  * existing coercion pipeline, preserving call order without mutating receivers.
  */
-export class CoerceStringDecoder extends BaseDecoder<string> {
+export class CoerceStringDecoder<TInput = unknown> extends BaseDecoder<string, TInput> {
 
     public constructor(run: DecodeRunner<string>) {
         super(run);
         Object.freeze(this);
     }
 
-    public min(value: number, options?: CheckMessageInput): CoerceStringDecoder {
+    public min(value: number, options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.min(value, options));
     }
 
-    public max(value: number, options?: CheckMessageInput): CoerceStringDecoder {
+    public max(value: number, options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.max(value, options));
     }
 
-    public length(value: number, options?: CheckMessageInput): CoerceStringDecoder {
+    public length(value: number, options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.length(value, options));
     }
 
-    public nonempty(options?: CheckMessageInput): CoerceStringDecoder {
+    public nonempty(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.nonempty(options));
     }
 
@@ -1859,190 +2985,190 @@ export class CoerceStringDecoder extends BaseDecoder<string> {
         pattern: RegExp,
         name: string,
         options?: CheckMessageInput
-    ): CoerceStringDecoder {
+    ): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.regex(pattern, name, options));
     }
 
-    public startsWith(value: string, options?: CheckMessageInput): CoerceStringDecoder {
+    public startsWith(value: string, options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.startsWith(value, options));
     }
 
-    public endsWith(value: string, options?: CheckMessageInput): CoerceStringDecoder {
+    public endsWith(value: string, options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.endsWith(value, options));
     }
 
-    public includes(value: string, options?: CheckMessageInput): CoerceStringDecoder {
+    public includes(value: string, options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.includes(value, options));
     }
 
-    public uppercase(options?: CheckMessageInput): CoerceStringDecoder {
+    public uppercase(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.uppercase(options));
     }
 
-    public lowercase(options?: CheckMessageInput): CoerceStringDecoder {
+    public lowercase(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.lowercase(options));
     }
 
-    public uuid(options?: CoerceStringUuidInput): CoerceStringDecoder {
+    public uuid(options?: CoerceStringUuidInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.uuid(options));
     }
 
-    public guid(options?: CheckMessageInput): CoerceStringDecoder {
+    public guid(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.guid(options));
     }
 
-    public uuidv4(options?: CheckMessageInput): CoerceStringDecoder {
+    public uuidv4(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.uuidv4(options));
     }
 
-    public uuidv6(options?: CheckMessageInput): CoerceStringDecoder {
+    public uuidv6(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.uuidv6(options));
     }
 
-    public uuidv7(options?: CheckMessageInput): CoerceStringDecoder {
+    public uuidv7(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.uuidv7(options));
     }
 
-    public email(options?: CoerceStringEmailInput): CoerceStringDecoder {
+    public email(options?: CoerceStringEmailInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.email(options));
     }
 
-    public url(options?: CoerceStringUrlInput): CoerceStringDecoder {
+    public url(options?: CoerceStringUrlInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.url(options));
     }
 
-    public httpUrl(options?: CheckMessageInput): CoerceStringDecoder {
+    public httpUrl(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.httpUrl(options));
     }
 
-    public hostname(options?: CheckMessageInput): CoerceStringDecoder {
+    public hostname(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.hostname(options));
     }
 
-    public e164(options?: CheckMessageInput): CoerceStringDecoder {
+    public e164(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.e164(options));
     }
 
-    public emoji(options?: CheckMessageInput): CoerceStringDecoder {
+    public emoji(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.emoji(options));
     }
 
-    public base64(options?: CheckMessageInput): CoerceStringDecoder {
+    public base64(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.base64(options));
     }
 
-    public base64url(options?: CheckMessageInput): CoerceStringDecoder {
+    public base64url(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.base64url(options));
     }
 
-    public hex(options?: CheckMessageInput): CoerceStringDecoder {
+    public hex(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.hex(options));
     }
 
-    public jwt(options?: CoerceStringJwtInput): CoerceStringDecoder {
+    public jwt(options?: CoerceStringJwtInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.jwt(options));
     }
 
-    public nanoid(options?: CheckMessageInput): CoerceStringDecoder {
+    public nanoid(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.nanoid(options));
     }
 
-    public cuid(options?: CheckMessageInput): CoerceStringDecoder {
+    public cuid(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.cuid(options));
     }
 
-    public cuid2(options?: CheckMessageInput): CoerceStringDecoder {
+    public cuid2(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.cuid2(options));
     }
 
-    public xid(options?: CheckMessageInput): CoerceStringDecoder {
+    public xid(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.xid(options));
     }
 
-    public ksuid(options?: CheckMessageInput): CoerceStringDecoder {
+    public ksuid(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.ksuid(options));
     }
 
-    public mac(delimiter: CoerceStringMacInput = ":"): CoerceStringDecoder {
+    public mac(delimiter: CoerceStringMacInput = ":"): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.mac(delimiter));
     }
 
-    public cidrv4(options?: CheckMessageInput): CoerceStringDecoder {
+    public cidrv4(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.cidrv4(options));
     }
 
-    public cidrv6(options?: CheckMessageInput): CoerceStringDecoder {
+    public cidrv6(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.cidrv6(options));
     }
 
-    public isoDate(options?: CheckMessageInput): CoerceStringDecoder {
+    public isoDate(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.isoDate(options));
     }
 
-    public date(options?: CheckMessageInput): CoerceStringDecoder {
+    public date(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.date(options));
     }
 
-    public isoDateTime(options?: CoerceStringIsoDateTimeInput): CoerceStringDecoder {
+    public isoDateTime(options?: CoerceStringIsoDateTimeInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.isoDateTime(options));
     }
 
-    public datetime(options?: CoerceStringIsoDateTimeInput): CoerceStringDecoder {
+    public datetime(options?: CoerceStringIsoDateTimeInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.datetime(options));
     }
 
-    public isoTime(options?: CoerceStringIsoTimeInput): CoerceStringDecoder {
+    public isoTime(options?: CoerceStringIsoTimeInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.isoTime(options));
     }
 
-    public time(options?: CoerceStringIsoTimeInput): CoerceStringDecoder {
+    public time(options?: CoerceStringIsoTimeInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.time(options));
     }
 
-    public isoDuration(options?: CheckMessageInput): CoerceStringDecoder {
+    public isoDuration(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.isoDuration(options));
     }
 
-    public duration(options?: CheckMessageInput): CoerceStringDecoder {
+    public duration(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.duration(options));
     }
 
-    public ulid(options?: CheckMessageInput): CoerceStringDecoder {
+    public ulid(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.ulid(options));
     }
 
-    public ipv4(options?: CheckMessageInput): CoerceStringDecoder {
+    public ipv4(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.ipv4(options));
     }
 
-    public ipv6(options?: CheckMessageInput): CoerceStringDecoder {
+    public ipv6(options?: CheckMessageInput): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.ipv6(options));
     }
 
     public hash(
         algorithm: StringHashAlgorithm,
         options?: CoerceStringHashInput
-    ): CoerceStringDecoder {
+    ): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.hash(algorithm, options));
     }
 
-    public trim(): CoerceStringDecoder {
+    public trim(): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.trim());
     }
 
-    public toLowerCase(): CoerceStringDecoder {
+    public toLowerCase(): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.toLowerCase());
     }
 
-    public toUpperCase(): CoerceStringDecoder {
+    public toUpperCase(): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.toUpperCase());
     }
 
-    public slugify(): CoerceStringDecoder {
+    public slugify(): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.slugify());
     }
 
-    public normalize(form: StringNormalizationForm = "NFC"): CoerceStringDecoder {
+    public normalize(form: StringNormalizationForm = "NFC"): CoerceStringDecoder<TInput> {
         return chainCoerceString(this, coerceStringGuard.normalize(form));
     }
 }
@@ -2220,8 +3346,11 @@ export class CoerceDateDecoder extends BaseDecoder<Date> {
     }
 }
 
-function chainCoerceString(source: CoerceStringDecoder, next: DecodeSource): CoerceStringDecoder {
-    return new CoerceStringDecoder(chainedDecodeRunner<string>(
+function chainCoerceString<TInput>(
+    source: CoerceStringDecoder<TInput>,
+    next: DecodeSource
+): CoerceStringDecoder<TInput> {
+    return new CoerceStringDecoder<TInput>(chainedDecodeRunner<string>(
         source,
         next,
         "coerce string receiver",
@@ -2674,7 +3803,7 @@ interface TupleDecodeConfig {
 function runArrayItems(
     value: unknown,
     runner: DecodeRunner<unknown>
-): CheckResult<readonly unknown[]> {
+): CheckResult<unknown[]> {
     if (!Array.isArray(value)) {
         return fail("expected_array", "array", value);
     }
@@ -3189,6 +4318,305 @@ interface ObjectDecodeEntry {
     readonly encode: EncodeRunner<unknown> | undefined;
 }
 
+function copyObjectDecodeShape<TShape extends ObjectDecodeShape>(
+    shape: TShape
+): TShape {
+    if (!isRecord(shape)) {
+        throw new TypeError("object decoder shape must be an object");
+    }
+    const output: Record<string, DecodeSource> = Object.create(null) as
+        Record<string, DecodeSource>;
+    const keys = Object.keys(shape);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined) {
+            continue;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(shape, key);
+        if (descriptor === undefined ||
+            !Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+            throw new TypeError(`object decoder property ${key} must be a data property`);
+        }
+        Object.defineProperty(output, key, {
+            value: descriptor.value as DecodeSource,
+            enumerable: true,
+            configurable: false,
+            writable: false
+        });
+    }
+    return Object.freeze(output) as TShape;
+}
+
+function copyObjectCodecShape<TShape extends ObjectCodecShape>(
+    shape: TShape
+): TShape {
+    return copyObjectDecodeShape(shape);
+}
+
+function mergeObjectDecodeShapes<
+    TBase extends ObjectDecodeShape,
+    TExtension extends ObjectDecodeShape
+>(
+    base: TBase,
+    extension: TExtension
+): MergeObjectDecodeShapes<TBase, TExtension> {
+    const output: Record<string, DecodeSource> = Object.create(null) as
+        Record<string, DecodeSource>;
+    copyShapeEntries(base, output);
+    copyShapeEntries(extension, output);
+    return Object.freeze(output) as MergeObjectDecodeShapes<TBase, TExtension>;
+}
+
+function mergeObjectCodecShapes<
+    TBase extends ObjectCodecShape,
+    TExtension extends ObjectCodecShape
+>(
+    base: TBase,
+    extension: TExtension
+): MergeObjectDecodeShapes<TBase, TExtension> {
+    return mergeObjectDecodeShapes(base, extension);
+}
+
+function copyShapeEntries(
+    shape: ObjectDecodeShape,
+    output: Record<string, DecodeSource>
+): void {
+    const owned = copyObjectDecodeShape(shape);
+    const keys = Object.keys(owned);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined) {
+            continue;
+        }
+        Object.defineProperty(output, key, {
+            value: owned[key],
+            enumerable: true,
+            configurable: true,
+            writable: true
+        });
+    }
+}
+
+function selectObjectDecodeShape(
+    shape: ObjectDecodeShape,
+    selection: readonly string[] | ObjectDecodeKeyMask<ObjectDecodeShape>,
+    keepSelected: boolean
+): ObjectDecodeShape {
+    const owned = copyObjectDecodeShape(shape);
+    const selected = parseObjectDecodeSelection(owned, selection);
+    const output: Record<string, DecodeSource> = Object.create(null) as
+        Record<string, DecodeSource>;
+    const keys = Object.keys(owned);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined || selected.has(key) !== keepSelected) {
+            continue;
+        }
+        Object.defineProperty(output, key, {
+            value: owned[key],
+            enumerable: true,
+            configurable: false,
+            writable: false
+        });
+    }
+    return Object.freeze(output);
+}
+
+function parseObjectDecodeSelection(
+    shape: ObjectDecodeShape,
+    selection: readonly string[] | ObjectDecodeKeyMask<ObjectDecodeShape>
+): ReadonlySet<string> {
+    const keys = Array.isArray(selection)
+        ? parseObjectDecodeKeyList(selection)
+        : parseObjectDecodeMask(
+            selection as ObjectDecodeKeyMask<ObjectDecodeShape>
+        );
+    const selected = new Set<string>();
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined) {
+            continue;
+        }
+        if (!Object.prototype.hasOwnProperty.call(shape, key)) {
+            throw new TypeError(`object decoder key ${key} is not declared`);
+        }
+        selected.add(key);
+    }
+    return selected;
+}
+
+function parseObjectDecodeKeyList(selection: readonly unknown[]): readonly string[] {
+    const keys = new Array<string>(selection.length);
+    for (let index = 0; index < selection.length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(selection, index);
+        if (descriptor === undefined ||
+            !Object.prototype.hasOwnProperty.call(descriptor, "value") ||
+            typeof descriptor.value !== "string") {
+            throw new TypeError("object decoder key list must contain strings");
+        }
+        keys[index] = descriptor.value;
+    }
+    return keys;
+}
+
+function parseObjectDecodeMask(
+    selection: ObjectDecodeKeyMask<ObjectDecodeShape>
+): readonly string[] {
+    if (!isRecord(selection)) {
+        throw new TypeError("object decoder key mask must be an object");
+    }
+    const sourceKeys = Object.keys(selection);
+    const keys: string[] = [];
+    for (let index = 0; index < sourceKeys.length; index += 1) {
+        const key = sourceKeys[index];
+        if (key === undefined) {
+            continue;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(selection, key);
+        if (descriptor === undefined ||
+            !Object.prototype.hasOwnProperty.call(descriptor, "value") ||
+            typeof descriptor.value !== "boolean") {
+            throw new TypeError("object decoder key mask values must be booleans");
+        }
+        if (descriptor.value) {
+            keys.push(key);
+        }
+    }
+    return keys;
+}
+
+function partialObjectDecodeShape<TShape extends ObjectDecodeShape>(
+    shape: TShape
+): PartialObjectDecodeShape<TShape> {
+    const owned = copyObjectDecodeShape(shape);
+    const output: Record<string, DecodeSource> = Object.create(null) as
+        Record<string, DecodeSource>;
+    const keys = Object.keys(owned);
+    for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined) {
+            continue;
+        }
+        const source = owned[key];
+        const runner = readDecodeSourceRunner<unknown>(
+            source,
+            `partial object property ${key}`
+        );
+        Object.defineProperty(output, key, {
+            value: new BaseDecoder<unknown, unknown, "optional">(
+                (value: unknown): CheckResult<unknown> =>
+                    value === undefined ? okResult(undefined) : runner(value)
+            ),
+            enumerable: true,
+            configurable: false,
+            writable: false
+        });
+    }
+    return Object.freeze(output) as PartialObjectDecodeShape<TShape>;
+}
+
+interface UnionDecodeEntry {
+    readonly decode: DecodeRunner<unknown>;
+    readonly encode: EncodeRunner<unknown> | undefined;
+}
+
+interface UnionDecodeConfig {
+    readonly entries: readonly UnionDecodeEntry[];
+    readonly encodable: boolean;
+}
+
+function buildUnionDecodeConfig(options: DecodeUnionInput): UnionDecodeConfig {
+    const sources: readonly DecodeSource[] = options;
+    if (!Array.isArray(options) || options.length === 0) {
+        throw new TypeError("decoder union requires at least one source");
+    }
+    const entries = new Array<UnionDecodeEntry>(sources.length);
+    let encodable = true;
+    for (let index = 0; index < sources.length; index += 1) {
+        const source = sources[index];
+        if (source === undefined) {
+            throw new TypeError(`union option ${String(index)} disappeared`);
+        }
+        const entry = readUnionDecodeEntry(source, `union option ${String(index)}`);
+        if (entry.encode === undefined) {
+            encodable = false;
+        }
+        entries[index] = entry;
+    }
+    return Object.freeze({
+        entries: Object.freeze(entries),
+        encodable
+    });
+}
+
+function readUnionDecodeEntry(
+    source: DecodeSource,
+    label: string
+): UnionDecodeEntry {
+    return Object.freeze({
+        decode: readDecodeSourceRunner(source, label),
+        encode: readEncodeSourceRunner(source, label)
+    });
+}
+
+function runUnionSources(
+    entries: readonly UnionDecodeEntry[],
+    value: unknown,
+    encoding: boolean
+): CheckResult<unknown> {
+    const failures: Issue[] = [];
+    for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (entry === undefined) {
+            continue;
+        }
+        const runner = encoding ? entry.encode : entry.decode;
+        if (runner === undefined) {
+            continue;
+        }
+        const result = runner(value);
+        if (result.ok) {
+            return result;
+        }
+        for (let issueIndex = 0; issueIndex < result.error.length; issueIndex += 1) {
+            const issue = result.error[issueIndex];
+            if (issue !== undefined) {
+                failures.push(issue);
+            }
+        }
+    }
+    if (failures.length === 0) {
+        return fail("expected_union", "union", value);
+    }
+    return err(freezeIssueArray(failures));
+}
+
+function runIntersectionSources(
+    left: DecodeRunner<unknown>,
+    right: DecodeRunner<unknown>,
+    value: unknown
+): CheckResult<unknown> {
+    const leftResult = left(value);
+    if (!leftResult.ok) {
+        return leftResult;
+    }
+    const rightResult = right(value);
+    if (!rightResult.ok) {
+        return rightResult;
+    }
+    const state = makeIntersectionFinalizeState(true);
+    const output = mergeIntersectionOutputs(leftResult.value, rightResult.value, state);
+    if (state.conflicted) {
+        return fail(
+            "expected_intersection",
+            "compatible intersection outputs",
+            value
+        );
+    }
+    freezeIntersectionReadonlyOutputs(state);
+    return okResult(output);
+}
+
 interface ObjectDecodeConfig {
     readonly entries: readonly ObjectDecodeEntry[];
     readonly keyLookup: Readonly<Record<string, true>>;
@@ -3552,7 +4980,9 @@ function isConstructedCodec(value: unknown): value is ConstructedCodec<unknown, 
  * @param fallback Stored fallback value or producer.
  * @returns Concrete fallback output.
  */
-function resolveDefault<TValue>(fallback: DefaultInput<TValue>): TValue {
+function resolveDefault<TValue, TInput>(
+    fallback: DefaultInput<TValue, TInput>
+): TValue | TInput {
     return typeof fallback === "function"
         ? (fallback as () => TValue)()
         : fallback;

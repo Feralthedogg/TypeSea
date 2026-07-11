@@ -32,7 +32,8 @@
             label: m.reference(),
             items: [
                 { label: m.readme(), href: '/readme/', match: '/readme/' },
-                { label: m.api_reference(), href: '/api/', match: '/api/' }
+                { label: m.api_reference(), href: '/api/', match: '/api/' },
+                { label: m.zod_compat(), href: '/zod-compat/', match: '/zod-compat/' }
             ]
         },
         {

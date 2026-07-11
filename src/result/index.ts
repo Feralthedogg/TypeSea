@@ -1,4 +1,11 @@
 /**
+ * @file result/index.ts
+ * @brief Minimal discriminated Result algebra for expected failure boundaries.
+ * @details The closed `ok` discriminant keeps validation and decoding failures
+ * explicit without exceptions or package dependencies.
+ */
+
+/**
  * @brief Explicit success-or-failure value used instead of implicit exceptions.
  * @details Public validators return Result so failure is visible in the type
  * system and callers must handle diagnostics deliberately.
@@ -56,3 +63,9 @@ export function err<TError>(error: TError): Result<never, TError> {
     };
     return Object.freeze(result);
 }
+/**
+ * @file result/index.ts
+ * @brief Minimal discriminated Result algebra used at expected failure boundaries.
+ * @details The closed `ok` discriminant keeps validation and decoding failures
+ * explicit without exceptions or package dependencies.
+ */

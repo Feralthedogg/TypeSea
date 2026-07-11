@@ -18,20 +18,25 @@ import type { Schema } from "../schema/index.js";
 import { readGuardSchema } from "../internal/index.js";
 import { createWithCheckSource } from "../guard/with-check.js";
 
+/** @brief Abstract or concrete constructor accepted by `instanceOf()`. */
 export type InstanceConstructor<TValue> =
     abstract new (...args: never[]) => TValue;
 
+/** @brief JSON primitive value domain. */
 export type JsonPrimitive = string | number | boolean | null;
 
+/** @brief Structural readonly JSON array without mutable array methods. */
 export interface JsonArray {
     readonly length: number;
     readonly [index: number]: JsonValue;
 }
 
+/** @brief Structural readonly JSON object. */
 export interface JsonObject {
     readonly [key: string]: JsonValue;
 }
 
+/** @brief Recursive value domain representable by JSON text. */
 export type JsonValue =
     | JsonPrimitive
     | JsonArray

@@ -227,7 +227,11 @@ function emitGraphChildFunction(graph: Graph, context: EmitContext): string {
     return name;
 }
 
-/* Predicate and diagnostic emitters share one generated function namespace. */
+/**
+ * @brief Allocate a collision-free generated predicate function name.
+ * @details Predicate and diagnostic emitters append to the same function table,
+ * so length alone is not a sufficient namespace proof after mixed emission.
+ */
 function nextGraphFunctionName(context: EmitContext): string {
     let index = context.functions.length;
     let name = `p${String(index)}`;
