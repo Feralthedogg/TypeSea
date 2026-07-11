@@ -17,7 +17,7 @@ async function main() {
     }
 
     const expected = `v${metadata.version}`;
-    const actual = process.env.GITHUB_REF_NAME;
+    const actual = (process.env.RELEASE_TAG ?? process.env.GITHUB_REF_NAME ?? "").trim();
     if (actual !== expected) {
         return err(`release tag must be ${expected}`);
     }

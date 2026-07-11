@@ -59,6 +59,7 @@ jobs:
 
             - name: Verify Release Tag
               env:
+                  RELEASE_TAG: ${{ steps.release.outputs.tag }}
                   GITHUB_REF_NAME: ${{ steps.release.outputs.tag }}
               run: node scripts/verify-release-tag.mjs
 
