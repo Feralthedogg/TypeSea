@@ -1097,18 +1097,25 @@ npm run release:publish # npm publish with provenance and ignored lifecycle scri
 `npm run release:check` runs the same gate expected before publishing:
 typecheck, lint, tests, build, docs smoke, dist policy, public API snapshot,
 package contents, consumer install, benchmark smoke, and pack dry run.
-CI executes it on Node 20.19, 22, and 24; releases publish with npm provenance.
+CI executes it on Node 20.19, 22, and 24. Releases use npm Trusted Publishing
+through GitHub OIDC, so no long-lived `NPM_TOKEN` or 2FA-bypass token is needed.
 
 Release path:
 
 1. Push a `vX.Y.Z` tag or run the GitHub `Release` workflow with that tag.
 2. The release workflow verifies that the tag matches `package.json`.
-3. The same release workflow runs `npm run release:check`, then `npm run release:publish`, which expands to `npm publish --provenance --access public --ignore-scripts`.
+3. The same release workflow runs `npm run release:check`, then
+   `npm run release:publish`, which expands to
+   `npm publish --provenance --access public --ignore-scripts` using the
+   configured npm Trusted Publisher (`.github/workflows/release.yml`).
 4. The workflow verifies npm registry visibility and then creates the GitHub Release.
 
-Local publishing with `NPM_TOKEN` is reserved for manual recovery releases. It
-must still run `npm run release:check` first, and it cannot attach GitHub OIDC
-provenance.
+The npm package must be configured with a Trusted Publisher for the
+`Feralthedogg/TypeSea` repository, this workflow filename, and the
+`npm-publish` environment. Keep 2FA enabled on the npm account; the workflow
+uses short-lived OIDC credentials instead of a token that bypasses 2FA. For
+the strongest release approval boundary, configure npm staged publishing so a
+maintainer confirms the final publication with 2FA.
 
 > [!NOTE]
 > Benchmark comparison packages (Zod, Valibot, Ajv) are dev dependencies only —

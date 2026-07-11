@@ -936,22 +936,31 @@ npm run bench:record    # full benchmark run + committed JSON/SVG refresh
 npm run bench:render    # committed benchmark JSON에서 SVG 재생성
 npm run bench -- --run  # benchmark smoke
 npm run pack:dry        # package contents dry run
-npm run release:check   # the full pre-publish gate
-npm run release:publish # provenance를 붙이고 lifecycle script를 무시하는 npm publish
+npm run release:check   # publish 전 전체 gate
+npm run release:publish # provenance와 함께 lifecycle script를 무시하는 npm publish
 ```
 
 `npm run release:check`는 publish 전에 기대하는 동일한 gate를 실행합니다.
 typecheck, lint, tests, build, docs smoke, dist policy, public API snapshot, package contents, consumer install, benchmark smoke, pack dry run을 포함합니다.
-CI는 Node 20.19, 22, 24에서 실행하고, release는 npm provenance와 함께 publish합니다.
+CI는 Node 20.19, 22, 24에서 실행합니다. release publish는 GitHub OIDC 기반
+npm Trusted Publishing을 사용하므로 장기 `NPM_TOKEN`이나 2FA 우회 토큰이
+필요하지 않습니다.
 
 릴리스 경로:
 
 1. `vX.Y.Z` 태그를 push하거나 GitHub `Release` workflow를 그 태그로 실행합니다.
 2. release workflow는 tag가 `package.json`의 version과 일치하는지 확인합니다.
-3. 같은 release workflow가 `npm run release:check`를 통과한 뒤 `npm run release:publish`를 실행합니다. 이 스크립트는 `npm publish --provenance --access public --ignore-scripts`로 확장됩니다.
+3. 같은 release workflow가 `npm run release:check`를 통과한 뒤
+   `npm run release:publish`를 실행합니다. 이 스크립트는
+   `npm publish --provenance --access public --ignore-scripts`로 확장되며,
+   `.github/workflows/release.yml`에 연결된 npm Trusted Publisher를 사용합니다.
 4. npm registry에서 새 버전이 보이는지 확인한 뒤 GitHub Release를 생성합니다.
 
-로컬 `NPM_TOKEN` publish는 수동 복구 릴리스용입니다. 이 경우에도 먼저 `npm run release:check`를 통과해야 하며, GitHub OIDC provenance는 붙지 않습니다.
+npm 패키지 설정에는 `Feralthedogg/TypeSea` 저장소, 이 workflow 파일명,
+`npm-publish` environment를 Trusted Publisher로 등록해야 합니다. npm 계정의
+2FA는 계속 켜 두며, workflow는 2FA를 우회하는 토큰 대신 짧은 수명의 OIDC
+자격 증명을 사용합니다. 최종 공개 전에 maintainer의 2FA 승인을 요구하려면
+npm staged publishing을 선택하세요.
 
 > [!NOTE]
 > benchmark 비교 패키지인 Zod, Valibot, Ajv는 dev dependency일 뿐입니다.
