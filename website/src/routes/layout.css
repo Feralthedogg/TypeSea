@@ -407,14 +407,10 @@
 }
 
 .brand-mark {
-    display: grid;
-    width: 28px;
-    height: 28px;
-    place-items: center;
-    border-radius: 7px;
-    background: var(--text);
-    color: var(--bg);
-    font-size: 14px;
+    display: block;
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
 }
 
 .brand-version {

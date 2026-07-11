@@ -1,6 +1,6 @@
 <script lang="ts">
     import './layout.css';
-    import favicon from '$lib/assets/favicon.svg';
+    import favicon from '$lib/assets/favicon.png';
     import SearchDialog from '$lib/components/docs/SearchDialog.svelte';
     import Sidebar from '$lib/components/docs/Sidebar.svelte';
     import SiteHeader from '$lib/components/docs/SiteHeader.svelte';

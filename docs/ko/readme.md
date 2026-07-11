@@ -1,5 +1,9 @@
 # TypeSea
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Feralthedogg/TypeSea/main/docs/assets/typesea-logo.png" alt="TypeSea" width="620" />
+</p>
+
 **TypeSea**는 런타임 의존성 없이 TypeScript 값을 검증하고 타입을 좁히는 라이브러리입니다.
 불변 스키마, Sea-of-Nodes에서 영향을 받은 검증 IR, 런타임 컴파일, AOT 소스 생성을 한 흐름으로 묶는 것을 목표로 합니다.
 

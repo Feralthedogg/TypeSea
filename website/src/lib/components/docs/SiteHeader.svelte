@@ -2,6 +2,7 @@
     import GitBranch from '@lucide/svelte/icons/git-branch';
     import Menu from '@lucide/svelte/icons/menu';
     import Search from '@lucide/svelte/icons/search';
+    import brandMark from '$lib/assets/typesea-mark.png';
     import { Button } from '$lib/components/ui/button';
     import * as Sidebar from '$lib/components/ui/sidebar';
     import { localizedPath } from '$lib/navigation';
@@ -28,7 +29,7 @@
                 <Menu class="size-4" aria-hidden="true" />
             </Sidebar.Trigger>
             <a class="brand-link" href={localizedPath('/')} aria-label={m.home()}>
-                <span class="brand-mark" aria-hidden="true">T</span>
+                <img class="brand-mark" src={brandMark} alt="" aria-hidden="true" />
                 <span>TypeSea</span>
                 <span class="brand-version">v{site.version}</span>
             </a>

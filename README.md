@@ -1,5 +1,9 @@
 # TypeSea
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Feralthedogg/TypeSea/main/docs/assets/typesea-logo.png" alt="TypeSea" width="620" />
+</p>
+
 [![CI](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml/badge.svg)](https://github.com/Feralthedogg/TypeSea/actions/workflows/ci.yml)
 [![Socket Badge](https://badge.socket.dev/npm/package/typesea)](https://socket.dev/npm/package/typesea)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
