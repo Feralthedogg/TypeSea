@@ -117,6 +117,7 @@ export class SchemaRegistry<TMetadata> {
     }
 }
 
+/** @brief Schema and metadata stored under one registry identifier. */
 export interface SchemaRegistryEntry<TMetadata> {
     readonly schema: Schema;
     readonly metadata: TMetadata;

@@ -11,6 +11,7 @@ import { BaseGuard } from "./base.js";
 import { defineReadonlyProperty } from "./props.js";
 import type { Presence } from "./types.js";
 
+/** @brief Primitive values admitted by enum guards and enum-like objects. */
 export type EnumLiteralValue = string | number;
 
 type EnumObject<TValue extends EnumLiteralValue> =

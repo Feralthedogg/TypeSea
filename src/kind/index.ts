@@ -1,4 +1,11 @@
 /**
+ * @file kind/index.ts
+ * @brief Stable numeric tags for schema records, checks, and IR nodes.
+ * @details Plain frozen tables avoid TypeScript enum emit and give generated
+ * validators compact constants whose numeric identity is controlled here.
+ */
+
+/**
  * @brief Numeric schema tags used in frozen schema records.
  * @details Plain objects avoid TypeScript enum emit and keep runtime constants
  * stable for generated validators.
@@ -18,7 +25,7 @@ export const SchemaTag = {
     Brand: 12,
     Tuple: 13,
     Record: 14,
-    Lazy: 15, 
+    Lazy: 15,
     Refine: 16,
     Unknown: 17,
     Never: 18,
@@ -41,6 +48,7 @@ export const SchemaTag = {
     PatternProperties: 35
 } as const;
 
+/** @brief Numeric value union for all schema record tags. */
 export type SchemaTag = (typeof SchemaTag)[keyof typeof SchemaTag];
 
 /**
@@ -52,6 +60,7 @@ export const ObjectModeTag = {
     Strip: 3
 } as const;
 
+/** @brief Numeric value union for object unknown-key modes. */
 export type ObjectModeTag = (typeof ObjectModeTag)[keyof typeof ObjectModeTag];
 
 /**
@@ -65,15 +74,19 @@ export const PresenceTag = {
     Deferred: 3
 } as const;
 
+/** @brief Numeric value union for object field presence states. */
 export type PresenceTag = (typeof PresenceTag)[keyof typeof PresenceTag];
 
+/** @brief Cross-field object key cardinality rule tags. */
 export const KeyRuleTag = {
     AtLeastOne: 1,
     ExactlyOne: 2
 } as const;
 
+/** @brief Numeric value union for object key cardinality rules. */
 export type KeyRuleTag = (typeof KeyRuleTag)[keyof typeof KeyRuleTag];
 
+/** @brief String constraint tags stored in normalized schema check vectors. */
 export const StringCheckTag = {
     Min: 1,
     Max: 2,
@@ -90,9 +103,11 @@ export const StringCheckTag = {
     Ipv6: 13
 } as const;
 
+/** @brief Numeric value union for string constraint tags. */
 export type StringCheckTag =
     (typeof StringCheckTag)[keyof typeof StringCheckTag];
 
+/** @brief Number constraint tags stored in normalized schema check vectors. */
 export const NumberCheckTag = {
     Integer: 1,
     Gte: 2,
@@ -102,9 +117,11 @@ export const NumberCheckTag = {
     MultipleOf: 6
 } as const;
 
+/** @brief Numeric value union for number constraint tags. */
 export type NumberCheckTag =
     (typeof NumberCheckTag)[keyof typeof NumberCheckTag];
 
+/** @brief BigInt constraint tags stored in normalized schema check vectors. */
 export const BigIntCheckTag = {
     Gte: 1,
     Lte: 2,
@@ -113,31 +130,38 @@ export const BigIntCheckTag = {
     MultipleOf: 5
 } as const;
 
+/** @brief Numeric value union for BigInt constraint tags. */
 export type BigIntCheckTag =
     (typeof BigIntCheckTag)[keyof typeof BigIntCheckTag];
 
+/** @brief Date timestamp-bound tags stored in normalized schema check vectors. */
 export const DateCheckTag = {
     Min: 1,
     Max: 2
 } as const;
 
+/** @brief Numeric value union for date constraint tags. */
 export type DateCheckTag =
     (typeof DateCheckTag)[keyof typeof DateCheckTag];
 
+/** @brief Array length-bound tags stored in normalized schema check vectors. */
 export const ArrayCheckTag = {
     Min: 1,
     Max: 2
 } as const;
 
+/** @brief Numeric value union for array constraint tags. */
 export type ArrayCheckTag =
     (typeof ArrayCheckTag)[keyof typeof ArrayCheckTag];
 
+/** @brief File size and MIME constraint tags stored in schema check vectors. */
 export const FileCheckTag = {
     Min: 1,
     Max: 2,
     Mime: 3
 } as const;
 
+/** @brief Numeric value union for file constraint tags. */
 export type FileCheckTag =
     (typeof FileCheckTag)[keyof typeof FileCheckTag];
 
@@ -185,4 +209,5 @@ export const NodeTag = {
     Return: 70
 } as const;
 
+/** @brief Numeric value union for all Sea-of-Nodes operation tags. */
 export type NodeTag = (typeof NodeTag)[keyof typeof NodeTag];

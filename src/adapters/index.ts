@@ -1,3 +1,12 @@
+/**
+ * @file adapters/index.ts
+ * @brief Framework adapters for TypeSea guards and decoders.
+ * @details Adapters preserve TypeSea diagnostics while translating only the
+ * outer result shape expected by tRPC, Fastify, Hono, React Hook Form, and
+ * related integration points. Framework packages remain optional and are never
+ * imported at runtime.
+ */
+
 import {
     type AsyncDecodeSource,
     type AsyncDecoder,

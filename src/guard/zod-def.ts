@@ -52,6 +52,7 @@ export const ZodFirstPartyTypeKind = Object.freeze({
     ZodEnum: "ZodEnum"
 } as const);
 
+/** @brief Compatibility names used by Zod first-party schema introspection. */
 export type ZodFirstPartyTypeKind =
     (typeof ZodFirstPartyTypeKind)[keyof typeof ZodFirstPartyTypeKind];
 

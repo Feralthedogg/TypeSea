@@ -139,7 +139,11 @@ npm run check:contributing
 npm run analyzer:gate
 npm run check:api
 npm run check:zod-compat
+npm run check:zod-real-world
 ```
+
+`npm run compat:zod:real-world` refreshes the pinned public-source corpus and
+requires network access. The normal gate uses its committed snapshot offline.
 
 Policy diagnostics are `error`, `warning`, or `notice`. Use the analyzer help
 and rule explanation instead of reading its implementation:

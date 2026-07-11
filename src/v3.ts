@@ -16,8 +16,10 @@ export { ZodSchema as Schema } from "./index.js";
 export { EnumGuard as ZodNativeEnum } from "./index.js";
 export { BaseDecoder as ZodTransformer } from "./index.js";
 
+/** @brief Shared immutable empty path used by Zod v3 issue helpers. */
 export const EMPTY_PATH: readonly [] = Object.freeze([]);
 
+/** @brief Runtime type labels returned by the Zod v3 compatibility classifier. */
 export const ZodParsedType = Object.freeze({
     string: "string",
     nan: "nan",
@@ -41,8 +43,10 @@ export const ZodParsedType = Object.freeze({
     set: "set"
 });
 
+/** @brief Shared aborted parse status record. */
 export const INVALID = Object.freeze({ status: "aborted" });
 
+/** @brief Construct an immutable successful Zod v3 parse status. */
 export function OK<TValue>(value: TValue): Readonly<{
     readonly status: "valid";
     readonly value: TValue;
@@ -50,6 +54,7 @@ export function OK<TValue>(value: TValue): Readonly<{
     return Object.freeze({ status: "valid", value });
 }
 
+/** @brief Construct an immutable recoverable-error Zod v3 parse status. */
 export function DIRTY<TValue>(value: TValue): Readonly<{
     readonly status: "dirty";
     readonly value: TValue;
@@ -57,6 +62,7 @@ export function DIRTY<TValue>(value: TValue): Readonly<{
     return Object.freeze({ status: "dirty", value });
 }
 
+/** @brief Mutable status accumulator expected by Zod v3 helper consumers. */
 export class ParseStatus {
     public value: "valid" | "dirty" | "aborted" = "valid";
 
@@ -94,30 +100,35 @@ export class ParseStatus {
     }
 }
 
+/** @brief Test whether a compatibility parse result has valid status. */
 export function isValid(
     result: unknown
 ): boolean {
     return readStatus(result) === "valid";
 }
 
+/** @brief Test whether a compatibility parse result has dirty status. */
 export function isDirty(
     result: unknown
 ): boolean {
     return readStatus(result) === "dirty";
 }
 
+/** @brief Test whether a compatibility parse result has aborted status. */
 export function isAborted(
     result: unknown
 ): boolean {
     return readStatus(result) === "aborted";
 }
 
+/** @brief Detect native Promise instances for Zod v3 compatibility. */
 export function isAsync(
     value: unknown
 ): boolean {
     return value instanceof Promise;
 }
 
+/** @brief Classify a runtime value using Zod v3 parsed-type labels. */
 export function getParsedType(value: unknown): string {
     if (typeof value === "string") {
         return ZodParsedType.string;
@@ -158,16 +169,19 @@ export function getParsedType(value: unknown): string {
     return ZodParsedType.object;
 }
 
+/** @brief Return the fallback Zod v3 error-map message. */
 export function defaultErrorMap(): Readonly<{
     readonly message: string;
 }> {
     return Object.freeze({ message: "Invalid input" });
 }
 
+/** @brief Preserve an externally constructed issue through the compatibility hook. */
 export function makeIssue(issue: unknown): unknown {
     return issue;
 }
 
+/** @brief Append an issue only when the supplied context has the v3 issue shape. */
 export function addIssueToContext(
     context: unknown,
     issue: unknown
@@ -178,10 +192,12 @@ export function addIssueToContext(
     context.common.issues.push(issue);
 }
 
+/** @brief Serialize a value with the compatibility helper's JSON semantics. */
 export function quotelessJson(value: unknown): string {
     return JSON.stringify(value);
 }
 
+/** @brief Build the compatibility ISO date-time expression from offset policies. */
 export function datetimeRegex(
     options: Readonly<{
         readonly offset?: boolean;
@@ -199,6 +215,7 @@ export function datetimeRegex(
     );
 }
 
+/** @brief Object-shape helper namespace expected by Zod v3 internals. */
 export const objectUtil = Object.freeze({
     mergeShapes<TLeft extends object, TRight extends object>(
         left: TLeft,
@@ -211,21 +228,28 @@ export const objectUtil = Object.freeze({
     }
 });
 
+/** @brief Late-bound object builder namespace expected by recursive v3 code. */
 export const late = Object.freeze({
     object: objectBuilder
 });
 
+/** @brief Construct an optional string guard through the v3 shorthand. */
 export const ostring = (): BaseGuard<string, "optional"> =>
     zodFacade.string().optional();
 
+/** @brief Construct an optional number guard through the v3 shorthand. */
 export const onumber = (): BaseGuard<number, "optional"> =>
     zodFacade.number().optional();
 
+/** @brief Construct an optional boolean guard through the v3 shorthand. */
 export const oboolean = (): BaseGuard<boolean, "optional"> =>
     zodFacade.boolean().optional();
 
+/** @brief Zod v3 effect alias backed by TypeSea transforms. */
 export const effect = zodFacade.transform;
+/** @brief Zod v3 transformer alias backed by TypeSea transforms. */
 export const transformer = zodFacade.transform;
+/** @brief Zod v3 pipeline alias backed by TypeSea decoder composition. */
 export const pipeline = zodFacade.pipe;
 
 const v3Default: Readonly<Record<string, unknown>> = Object.freeze({

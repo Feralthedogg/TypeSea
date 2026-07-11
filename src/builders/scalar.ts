@@ -45,11 +45,16 @@ export type {
     StringUuidVersion
 } from "../guard/index.js";
 
+/** @brief Non-empty string tuple accepted by string enum builders. */
 export type EnumValues = readonly [string, ...string[]];
+/** @brief Enum-like object whose values are string or numeric literals. */
 export type EnumLikeInput = Readonly<Record<string, string | number>>;
+/** @brief Literal value union extracted from an enum-like object. */
 export type EnumLikeValue<TEnum extends EnumLikeInput> =
     TEnum[keyof TEnum] & EnumLiteralValue;
+/** @brief Non-empty literal tuple accepted by multi-literal builders. */
 export type LiteralValues = readonly [LiteralValue, ...LiteralValue[]];
+/** @brief ISO-specific string guard constructors exposed under `t.iso`. */
 export interface IsoNamespace {
     readonly date: () => StringGuard;
     readonly datetime: (options?: Partial<StringIsoDateTimeOptions>) => StringGuard;
@@ -57,21 +62,27 @@ export interface IsoNamespace {
     readonly duration: () => StringGuard;
 }
 
+/** @brief String guard singleton that is also callable for message options. */
 export type CallableStringGuard =
     StringGuard & ((options?: CheckMessageInput) => StringGuard);
 
+/** @brief Number guard singleton that is also callable for message options. */
 export type CallableNumberGuard =
     NumberGuard & ((options?: CheckMessageInput) => NumberGuard);
 
+/** @brief Date guard singleton that is also callable for message options. */
 export type CallableDateGuard =
     DateGuard & ((options?: CheckMessageInput) => DateGuard);
 
+/** @brief BigInt guard singleton that is also callable for message options. */
 export type CallableBigIntGuard =
     BigIntGuard & ((options?: CheckMessageInput) => BigIntGuard);
 
+/** @brief Symbol guard singleton that is also callable for message options. */
 export type CallableSymbolGuard =
     BaseGuard<symbol> & ((options?: CheckMessageInput) => BaseGuard<symbol>);
 
+/** @brief Boolean guard singleton that is also callable for message options. */
 export type CallableBooleanGuard =
     BaseGuard<boolean> & ((options?: CheckMessageInput) => BaseGuard<boolean>);
 
@@ -85,6 +96,7 @@ export const stringGuard = new StringGuard({
     checks: []
 });
 
+/** @brief Callable facade over the immutable shared string guard. */
 export const string: CallableStringGuard = makeCallableGuard<StringGuard>(
     stringGuard,
     (options?: CheckMessageInput): StringGuard =>
@@ -119,6 +131,7 @@ export const numberGuard = new NumberGuard({
     checks: []
 });
 
+/** @brief Callable facade over the immutable shared number guard. */
 export const number: CallableNumberGuard = makeCallableGuard<NumberGuard>(
     numberGuard,
     (options?: CheckMessageInput): NumberGuard =>
@@ -141,6 +154,7 @@ export const dateGuard = new DateGuard({
     checks: []
 });
 
+/** @brief Callable facade over the immutable shared Date guard. */
 export const date: CallableDateGuard = makeCallableGuard<DateGuard>(
     dateGuard,
     (options?: CheckMessageInput): DateGuard =>
@@ -176,6 +190,7 @@ export const bigintGuard = new BigIntGuard({
     checks: []
 });
 
+/** @brief Callable facade over the immutable shared BigInt guard. */
 export const bigint: CallableBigIntGuard = makeCallableGuard<BigIntGuard>(
     bigintGuard,
     (options?: CheckMessageInput): BigIntGuard =>
@@ -195,6 +210,7 @@ export const symbolGuard = new BaseGuard<symbol>({
     tag: SchemaTag.Symbol
 });
 
+/** @brief Callable facade over the immutable shared symbol guard. */
 export const symbol: CallableSymbolGuard = makeCallableGuard<BaseGuard<symbol>>(
     symbolGuard,
     (options?: CheckMessageInput): BaseGuard<symbol> =>
@@ -213,6 +229,7 @@ export const booleanGuard = new BaseGuard<boolean>({
     tag: SchemaTag.Boolean
 });
 
+/** @brief Callable facade over the immutable shared boolean guard. */
 export const boolean: CallableBooleanGuard = makeCallableGuard<BaseGuard<boolean>>(
     booleanGuard,
     (options?: CheckMessageInput): BaseGuard<boolean> =>
@@ -278,16 +295,19 @@ function copyGuardMethods(target: object, guard: object): void {
     }
 }
 
+/** @brief Shared exact-null literal guard. */
 export const nullGuard = new BaseGuard<null>({
     tag: SchemaTag.Literal,
     value: null
 });
 
+/** @brief Shared exact-undefined literal guard. */
 export const undefinedGuard = new BaseGuard<undefined>({
     tag: SchemaTag.Literal,
     value: undefined
 });
 
+/** @brief Void alias of the exact-undefined guard. */
 export const voidGuard = undefinedGuard;
 
 /**

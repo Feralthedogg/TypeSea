@@ -1,3 +1,11 @@
+/**
+ * @file lower/index.ts
+ * @brief Lower immutable schema trees into validation Sea-of-Nodes graphs.
+ * @details Static constraints become explicit IR operations. Constructs that
+ * require runtime callbacks remain opaque SchemaCheck nodes so lowering never
+ * changes user-code execution semantics.
+ */
+
 import {
     BigIntCheckTag,
     KeyRuleTag,

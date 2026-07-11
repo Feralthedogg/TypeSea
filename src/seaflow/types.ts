@@ -9,6 +9,7 @@
 import type { PathSegment } from "../issue/index.js";
 import type { Schema } from "../schema/index.js";
 
+/** @brief Preset controlling the breadth and hostility of generated cases. */
 export type SeaFlowIntensity = "low" | "high" | "extreme";
 
 /**

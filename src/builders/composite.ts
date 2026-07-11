@@ -24,11 +24,14 @@ import {
 } from "../guard/index.js";
 import {
     decodeArraySource,
+    decodeIntersectionSources,
+    decodeUnionSources,
     decodeMapSources,
     decodeRecordSource,
     decodeSetSource,
     decodeTupleSources,
     isDecoderValue,
+    type ArrayDecoder,
     type BaseCodec,
     type BaseDecoder,
     type DecodeSource,
@@ -45,6 +48,7 @@ import {
     type InferEncodedLooseRecord,
     type InferEncodedRecord,
     type InferEncodedRecordValue,
+    type Input,
     type InferEncodedTuple,
     type InferEncodedTupleWithRest,
     type TupleCodecShape,
@@ -62,10 +66,12 @@ import type {
     DiscriminatedUnionCases,
     InferTuple,
     InferTupleWithRest,
+    GuardUnionInput,
     TupleShape,
     UnionInput
 } from "./types.js";
 
+/** @brief Static or guarded segment accepted by template-literal builders. */
 export type TemplateLiteralPart =
     | string
     | number
@@ -151,11 +157,11 @@ export function array<TItem extends EncodeSource>(
 
 export function array<TItem extends DecodeSource>(
     item: TItem
-): BaseDecoder<readonly InferDecoder<TItem>[]>;
+): ArrayDecoder<InferDecoder<TItem>, Input<TItem>>;
 
 export function array(
     item: DecodeSource
-): ArrayGuard<unknown> | BaseCodec<readonly unknown[], readonly unknown[]> | BaseDecoder<readonly unknown[]> {
+): ArrayGuard<unknown> | BaseCodec<readonly unknown[], readonly unknown[]> | ArrayDecoder<unknown> {
     if (isDecoderValue(item)) {
         return decodeArraySource(item);
     }
@@ -250,6 +256,16 @@ export function tuple(
 function tupleShapeHasDecoder(shape: TupleDecodeShape): boolean {
     for (let index = 0; index < shape.length; index += 1) {
         const source = shape[index];
+        if (source !== undefined && isDecoderValue(source)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function sourceListHasDecoder(sources: readonly DecodeSource[]): boolean {
+    for (let index = 0; index < sources.length; index += 1) {
+        const source = sources[index];
         if (source !== undefined && isDecoderValue(source)) {
             return true;
         }
@@ -462,6 +478,7 @@ export function looseRecord(
     });
 }
 
+/** @brief Build a Map source, promoting to a decoder or codec when required. */
 export function map<
     TKey extends Guard<unknown, Presence>,
     TValue extends Guard<unknown, Presence>
@@ -497,6 +514,7 @@ export function map(
     });
 }
 
+/** @brief Build a Set source, promoting to a decoder or codec when required. */
 export function set<TItem extends Guard<unknown, Presence>>(
     item: TItem
 ): SetGuard<Infer<TItem>>;
@@ -528,9 +546,17 @@ export function set(
  * @returns Fresh union guard.
  * @throws TypeError when called without guards.
  */
+export function union<const TGuards extends GuardUnionInput>(
+    ...guards: TGuards
+): UnionGuard<TGuards>;
+
 export function union<const TGuards extends UnionInput>(
     ...guards: TGuards
-): UnionGuard<TGuards> {
+): BaseDecoder<InferDecoder<TGuards[number]>, Input<TGuards[number]>>;
+
+export function union(
+    ...guards: UnionInput
+): UnionGuard<GuardUnionInput> | BaseDecoder<unknown> | BaseCodec<unknown, unknown> {
     if (guards.length === 0) {
         throw new TypeError("union requires at least one guard");
     }
@@ -538,12 +564,18 @@ export function union<const TGuards extends UnionInput>(
      * Preserve option order. Diagnostics and generated dispatch use this order
      * when probing branches and constructing graph children.
      */
+    if (sourceListHasDecoder(guards)) {
+        return decodeUnionSources(guards);
+    }
     const options = new Array<Schema>(guards.length);
     for (let index = 0; index < guards.length; index += 1) {
-        const guard = guards[index];
+        const guard = guards[index] as Guard<unknown, Presence>;
         options[index] = readGuardSchema(guard, `union option ${String(index)}`);
     }
-    return new UnionGuard<TGuards>(normalizeUnionSchema(options), guards);
+    return new UnionGuard<GuardUnionInput>(
+        normalizeUnionSchema(options),
+        guards as GuardUnionInput
+    );
 }
 
 /**
@@ -554,7 +586,7 @@ export function union<const TGuards extends UnionInput>(
  * @returns Fresh guard accepting values matched by exactly one branch.
  * @throws TypeError when called without guards.
  */
-export function xor<const TGuards extends UnionInput>(
+export function xor<const TGuards extends GuardUnionInput>(
     ...guards: TGuards
 ): XorGuard<TGuards> {
     if (guards.length === 0) {
@@ -586,8 +618,24 @@ export function intersect<
 >(
     left: TLeft,
     right: TRight
-): BaseGuard<Infer<TLeft> & Infer<TRight>> {
-    return new BaseGuard<Infer<TLeft> & Infer<TRight>>({
+): BaseGuard<Infer<TLeft> & Infer<TRight>>;
+
+export function intersect<
+    TLeft extends DecodeSource,
+    TRight extends DecodeSource
+>(
+    left: TLeft,
+    right: TRight
+): BaseDecoder<InferDecoder<TLeft> & InferDecoder<TRight>>;
+
+export function intersect(
+    left: DecodeSource,
+    right: DecodeSource
+): BaseGuard<unknown> | BaseDecoder<unknown> | BaseCodec<unknown, unknown> {
+    if (isDecoderValue(left) || isDecoderValue(right)) {
+        return decodeIntersectionSources(left, right);
+    }
+    return new BaseGuard<unknown>({
         tag: SchemaTag.Intersection,
         left: readGuardSchema(left, "intersection left"),
         right: readGuardSchema(right, "intersection right")
@@ -612,22 +660,30 @@ export function discriminatedUnion<
 ): BaseGuard<Infer<TCases[keyof TCases]>>;
 
 export function discriminatedUnion<
-    const TOptions extends UnionInput
+    const TOptions extends GuardUnionInput
 >(
     key: string,
     cases: TOptions
 ): BaseGuard<Infer<TOptions[number]>>;
 
+export function discriminatedUnion<
+    const TOptions extends UnionInput
+>(
+    key: string,
+    cases: TOptions
+): BaseDecoder<InferDecoder<TOptions[number]>>;
+
 export function discriminatedUnion(
     key: string,
-    cases: Readonly<Record<string, Guard<unknown, Presence>>> |
-        readonly [Guard<unknown, Presence>, ...Guard<unknown, Presence>[]]
-): BaseGuard<unknown> {
+    cases: Readonly<Record<string, DecodeSource>> | UnionInput
+): BaseGuard<unknown> | BaseDecoder<unknown> | BaseCodec<unknown, unknown> {
     if (typeof key !== "string") {
         throw new TypeError("discriminated union key must be a string");
     }
     if (Array.isArray(cases)) {
-        return discriminatedUnionFromArray(key, cases);
+        return sourceListHasDecoder(cases)
+            ? decodeUnionSources(cases as unknown as UnionInput)
+            : discriminatedUnionFromArray(key, cases as GuardUnionInput);
     }
     if (!isRecord(cases)) {
         throw new TypeError("discriminated union cases must be an object");
@@ -635,6 +691,10 @@ export function discriminatedUnion(
     const entries = Object.entries(cases);
     if (entries.length === 0) {
         throw new TypeError("discriminated union requires at least one case");
+    }
+    const sources = entries.map((entry) => entry[1]) as unknown as UnionInput;
+    if (sourceListHasDecoder(sources)) {
+        return decodeUnionSources(sources);
     }
     /*
      * Object.entries defines the dispatch order. The literal string is taken
@@ -647,7 +707,7 @@ export function discriminatedUnion(
             continue;
         }
         const caseKey = pair[0];
-        const guard = pair[1];
+        const guard = pair[1] as Guard<unknown, Presence>;
         unionCases[index] = {
             literal: caseKey,
             schema: readDiscriminatedUnionCaseSchema(guard, key, caseKey)

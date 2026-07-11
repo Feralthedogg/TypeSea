@@ -40,11 +40,13 @@ const undefinedSchema = (): typeof undefinedGuard => undefinedGuard;
 const unknownSchema = (): typeof unknownGuard => unknownGuard;
 const voidSchema = (): typeof voidGuard => voidGuard;
 
+/** @brief Pure pipeline step converting one Mini source type into another. */
 export type MiniTransform<TInput, TOutput> = (source: TInput) => TOutput;
 
 type MiniCheckTransform<TFunction extends object, TValue> =
     TFunction & WithCheckSource<TValue>;
 
+/** @brief Length-check transform applicable to strings, arrays, sets, and files. */
 export type MiniLengthTransform = MiniCheckTransform<
     (source: StringGuard) => StringGuard,
     string | readonly unknown[]
@@ -81,6 +83,7 @@ type MiniNonemptyResult<TSource> =
                     ? SetGuard<TItem, TPresence>
                     : never;
 
+/** @brief Non-empty transform preserving the concrete compatible source type. */
 export type MiniNonemptyTransform = <TSource extends MiniNonemptySource>(
     source: TSource
 ) => MiniNonemptyResult<TSource>;
@@ -106,6 +109,7 @@ type MiniMinSizeResult<TSource> =
                     ? FileGuard<TPresence>
                     : never;
 
+/** @brief Minimum-size transform for collections and file-like values. */
 export type MiniMinSizeTransform =
     <TSource extends MiniMinSizeSource>(source: TSource) => MiniMinSizeResult<TSource>;
 
@@ -130,9 +134,11 @@ type MiniSizeResult<TSource> =
                     ? SetGuard<TItem, TPresence>
                     : never;
 
+/** @brief Exact-size transform for collections and file-like values. */
 export type MiniSizeTransform =
     <TSource extends MiniSizeSource>(source: TSource) => MiniSizeResult<TSource>;
 
+/** @brief Overloaded signed-bound transform for numbers, BigInts, and Dates. */
 export interface MiniSignedTransform {
     (source: NumberGuard): NumberGuard;
     (source: BigIntGuard): BigIntGuard;
@@ -148,6 +154,11 @@ type MiniBigIntTransform = MiniCheckTransform<
     bigint
 >;
 
+/**
+ * @brief Compose a source with a fixed sequence of Mini transforms.
+ * @details Transform functions are applied once at schema construction; parsed
+ * values do not traverse this composition pipeline.
+ */
 export function apply<TItem>(
     source: ArrayGuard<TItem>,
     first: MiniMinSizeTransform | MiniSizeTransform,
@@ -268,6 +279,7 @@ function mimeMatches(type: string, pattern: string): boolean {
     return type === pattern;
 }
 
+/** @brief Return a pipeline transform that enforces an inclusive minimum length. */
 export function minLength(
     value: number,
     options?: CheckMessageInput
@@ -291,6 +303,7 @@ export function minLength(
     );
 }
 
+/** @brief Return a pipeline transform that enforces an inclusive maximum length. */
 export function maxLength(
     value: number,
     options?: CheckMessageInput
@@ -314,6 +327,7 @@ export function maxLength(
     );
 }
 
+/** @brief Return a pipeline transform that enforces one exact length. */
 export function length(
     value: number,
     options?: CheckMessageInput
@@ -337,6 +351,7 @@ export function length(
     );
 }
 
+/** @brief Return a string pipeline transform backed by a copied RegExp. */
 export function regex(
     pattern: RegExp,
     name = "regex",
@@ -366,6 +381,7 @@ export function regex(
     );
 }
 
+/** @brief Return a string pipeline transform requiring one prefix. */
 export function startsWith(
     value: string,
     options?: CheckMessageInput
@@ -389,6 +405,7 @@ export function startsWith(
     );
 }
 
+/** @brief Return a string pipeline transform requiring one suffix. */
 export function endsWith(
     value: string,
     options?: CheckMessageInput
@@ -412,6 +429,7 @@ export function endsWith(
     );
 }
 
+/** @brief Return a string pipeline transform requiring one substring. */
 export function includes(
     value: string,
     options?: CheckMessageInput
@@ -435,6 +453,7 @@ export function includes(
     );
 }
 
+/** @brief Return a string pipeline transform rejecting lower-case code points. */
 export function uppercase(
     options?: CheckMessageInput
 ): MiniStringPredicateTransform {
@@ -456,6 +475,7 @@ export function uppercase(
     );
 }
 
+/** @brief Return a string pipeline transform rejecting upper-case code points. */
 export function lowercase(
     options?: CheckMessageInput
 ): MiniStringPredicateTransform {
@@ -477,6 +497,7 @@ export function lowercase(
     );
 }
 
+/** @brief Return a decoder transform that trims surrounding whitespace. */
 export function trim(): MiniStringDecoderTransform {
     const transformSource = <TPresence extends Presence>(
         source: StringGuard<TPresence>
@@ -492,6 +513,7 @@ export function trim(): MiniStringDecoderTransform {
     );
 }
 
+/** @brief Return a decoder transform applying locale-independent lower casing. */
 export function toLowerCase(): MiniStringDecoderTransform {
     const transformSource = <TPresence extends Presence>(
         source: StringGuard<TPresence>
@@ -507,6 +529,7 @@ export function toLowerCase(): MiniStringDecoderTransform {
     );
 }
 
+/** @brief Return a decoder transform applying locale-independent upper casing. */
 export function toUpperCase(): MiniStringDecoderTransform {
     const transformSource = <TPresence extends Presence>(
         source: StringGuard<TPresence>
@@ -522,6 +545,7 @@ export function toUpperCase(): MiniStringDecoderTransform {
     );
 }
 
+/** @brief Return a decoder transform applying one Unicode normalization form. */
 export function normalize(
     form?: StringNormalizationForm
 ): MiniStringDecoderTransform {
@@ -539,6 +563,7 @@ export function normalize(
     );
 }
 
+/** @brief Return a decoder transform producing a lower-case ASCII slug. */
 export function slugify(): MiniStringDecoderTransform {
     const transformSource = <TPresence extends Presence>(
         source: StringGuard<TPresence>
@@ -554,6 +579,7 @@ export function slugify(): MiniStringDecoderTransform {
     );
 }
 
+/** @brief Return a non-empty transform specialized to the source category. */
 export function nonempty(
     options?: CheckMessageInput
 ): MiniCheckTransform<
@@ -587,6 +613,7 @@ export function nonempty(
     );
 }
 
+/** @brief Return a minimum cardinality or file-size transform. */
 export function minSize(
     value: number,
     options?: CheckMessageInput
@@ -621,6 +648,7 @@ export function minSize(
     );
 }
 
+/** @brief Return a maximum cardinality or file-size transform. */
 export function maxSize(
     value: number,
     options?: CheckMessageInput
@@ -655,6 +683,7 @@ export function maxSize(
     );
 }
 
+/** @brief Return a file transform restricted to the supplied MIME types. */
 export function mime(
     value: string | readonly string[],
     options?: CheckMessageInput
@@ -692,6 +721,7 @@ export function mime(
     );
 }
 
+/** @brief Return an exact cardinality or file-size transform. */
 export function size(
     value: number,
     options?: CheckMessageInput
@@ -730,6 +760,7 @@ export function size(
     );
 }
 
+/** @brief Return an exclusive lower-bound transform for ordered scalar sources. */
 export function gt(
     value: number,
     options?: CheckMessageInput
@@ -784,6 +815,7 @@ export function gt(
     );
 }
 
+/** @brief Return an inclusive lower-bound transform for ordered scalar sources. */
 export function gte(
     value: number,
     options?: CheckMessageInput
@@ -838,8 +870,10 @@ export function gte(
     );
 }
 
+/** @brief Alias of `gte` matching Zod Mini terminology. */
 export const minimum = gte;
 
+/** @brief Return an exclusive upper-bound transform for ordered scalar sources. */
 export function lt(
     value: number,
     options?: CheckMessageInput
@@ -894,6 +928,7 @@ export function lt(
     );
 }
 
+/** @brief Return an inclusive upper-bound transform for ordered scalar sources. */
 export function lte(
     value: number,
     options?: CheckMessageInput
@@ -948,8 +983,10 @@ export function lte(
     );
 }
 
+/** @brief Alias of `lte` matching Zod Mini terminology. */
 export const maximum = lte;
 
+/** @brief Return an exact divisibility transform for numeric sources. */
 export function multipleOf(
     value: number,
     options?: CheckMessageInput
@@ -1002,8 +1039,10 @@ export function multipleOf(
     );
 }
 
+/** @brief Alias of `multipleOf` matching Zod Mini terminology. */
 export const step = multipleOf;
 
+/** @brief Return a transform requiring a value greater than zero. */
 export function positive(
     options?: CheckMessageInput
 ): MiniCheckTransform<MiniSignedTransform, number | bigint> {
@@ -1028,6 +1067,7 @@ export function positive(
     );
 }
 
+/** @brief Return a transform requiring a value less than zero. */
 export function negative(
     options?: CheckMessageInput
 ): MiniCheckTransform<MiniSignedTransform, number | bigint> {
@@ -1052,6 +1092,7 @@ export function negative(
     );
 }
 
+/** @brief Return a transform requiring a value no greater than zero. */
 export function nonpositive(
     options?: CheckMessageInput
 ): MiniCheckTransform<MiniSignedTransform, number | bigint> {
@@ -1076,6 +1117,7 @@ export function nonpositive(
     );
 }
 
+/** @brief Return a transform requiring a value no less than zero. */
 export function nonnegative(
     options?: CheckMessageInput
 ): MiniCheckTransform<MiniSignedTransform, number | bigint> {
@@ -1100,6 +1142,7 @@ export function nonnegative(
     );
 }
 
+/** @brief Return a number transform restricted to safe integers. */
 export function safe(
     options?: CheckMessageInput
 ): <TPresence extends Presence>(source: NumberGuard<TPresence>) => NumberGuard<TPresence> {
@@ -1109,6 +1152,7 @@ export function safe(
         source.safe(options);
 }
 
+/** @brief Return a finite-number transform for Mini pipelines. */
 export function finite(): <TPresence extends Presence>(
     source: NumberGuard<TPresence>
 ) => NumberGuard<TPresence> {
@@ -1118,6 +1162,7 @@ export function finite(): <TPresence extends Presence>(
         source.finite();
 }
 
+/** @brief Return a Date transform enforcing an inclusive minimum timestamp. */
 export function minDate(
     value: Date,
     options?: CheckMessageInput
@@ -1128,6 +1173,7 @@ export function minDate(
         source.min(value, options);
 }
 
+/** @brief Return a Date transform enforcing an inclusive maximum timestamp. */
 export function maxDate(
     value: Date,
     options?: CheckMessageInput
@@ -1138,6 +1184,7 @@ export function maxDate(
         source.max(value, options);
 }
 
+/** @brief Return a decoder transform that replaces an accepted value. */
 export function overwrite<TValue, TNext>(
     mapper: (value: TValue | undefined) => TNext
 ): MiniCheckTransform<(source: Guard<TValue, Presence>) => BaseDecoder<TNext>, TValue> {
@@ -1153,6 +1200,7 @@ export function overwrite<TValue, TNext>(
     );
 }
 
+/** @brief Preserve a source by identity for compatibility with Mini cloning APIs. */
 export function clone<TSource extends Guard<unknown, Presence>>(source: TSource): TSource {
     return source.clone();
 }

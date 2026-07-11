@@ -1,3 +1,11 @@
+/**
+ * @file async/index.ts
+ * @brief Promise-aware decoding pipelines and async guard composition.
+ * @details Synchronous validation remains the semantic base. This module adds
+ * explicit asynchronous transforms and predicates without hiding validation
+ * failures in rejected promises.
+ */
+
 import {
     type CatchInput,
     type DecodeSource,
@@ -46,10 +54,12 @@ const SyncPromiseParseMessage =
  */
 const constructedAsyncDecoders = new WeakSet<object>();
 
+/** @brief Guard, decoder, or async decoder accepted by async composition APIs. */
 export type AsyncDecodeSource =
     | DecodeSource
     | AsyncDecoder<unknown>;
 
+/** @brief Infer the resolved output of a synchronous or asynchronous source. */
 export type InferAsyncDecoder<TSource> =
     TSource extends AsyncDecoder<infer TValue>
         ? TValue

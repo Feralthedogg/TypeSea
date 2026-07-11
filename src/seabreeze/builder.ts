@@ -40,6 +40,11 @@ import {
 } from "./sea-breeze.js";
 import { serializeSeaBreezeArena } from "./serialize.js";
 
+/**
+ * @brief Arena capacities plus an optional caller-owned key interning table.
+ * @details Key ids are serialized into snapshots, so a supplied table must stay
+ * aligned with every later lowering or emission operation.
+ */
 export interface SeaBreezeBuilderOptions extends SeaBreezeOptions {
     /**
      * @brief Optional pre-interned field key table.

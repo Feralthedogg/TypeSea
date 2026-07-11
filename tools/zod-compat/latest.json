@@ -1,0 +1,2989 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-10T20:49:48.310Z",
+  "typeseaVersion": "1.2.0",
+  "zodVersion": "4.4.3",
+  "manifestSchemaVersion": 1,
+  "repositories": [
+    {
+      "id": "create-t3-app",
+      "repository": "t3-oss/create-t3-app",
+      "commit": "4709861f7e67a15564c0460c13e7b4b6cfcae40d",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/t3-oss/create-t3-app/tree/4709861f7e67a15564c0460c13e7b4b6cfcae40d",
+      "zodFiles": 19,
+      "bytes": 55144,
+      "callCount": 40,
+      "internalAccesses": 0,
+      "selfContainedFiles": 1,
+      "staticPaths": [
+        {
+          "name": "string",
+          "count": 20
+        },
+        {
+          "name": "object",
+          "count": 17
+        },
+        {
+          "name": "number",
+          "count": 2
+        },
+        {
+          "name": "array",
+          "count": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "min",
+          "count": 6
+        }
+      ],
+      "namedImports": [
+        {
+          "module": "zod",
+          "name": "ZodError",
+          "count": 12
+        }
+      ],
+      "typeSymbols": [
+        {
+          "module": "zod",
+          "name": "infer",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "id": "calcom",
+      "repository": "calcom/cal.diy",
+      "commit": "f00434927386c9ecdcbd7e6c5f82d22044a245bc",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/calcom/cal.diy/tree/f00434927386c9ecdcbd7e6c5f82d22044a245bc",
+      "zodFiles": 510,
+      "bytes": 2465483,
+      "callCount": 5373,
+      "internalAccesses": 2,
+      "selfContainedFiles": 150,
+      "staticPaths": [
+        {
+          "name": "string",
+          "count": 2193
+        },
+        {
+          "name": "object",
+          "count": 1097
+        },
+        {
+          "name": "number",
+          "count": 756
+        },
+        {
+          "name": "boolean",
+          "count": 541
+        },
+        {
+          "name": "array",
+          "count": 191
+        },
+        {
+          "name": "literal",
+          "count": 144
+        },
+        {
+          "name": "enum",
+          "count": 120
+        },
+        {
+          "name": "nativeEnum",
+          "count": 71
+        },
+        {
+          "name": "union",
+          "count": 63
+        },
+        {
+          "name": "record",
+          "count": 47
+        },
+        {
+          "name": "coerce.number",
+          "count": 28
+        },
+        {
+          "name": "date",
+          "count": 26
+        },
+        {
+          "name": "coerce.date",
+          "count": 24
+        },
+        {
+          "name": "any",
+          "count": 19
+        },
+        {
+          "name": "null",
+          "count": 11
+        },
+        {
+          "name": "undefined",
+          "count": 9
+        },
+        {
+          "name": "discriminatedUnion",
+          "count": 8
+        },
+        {
+          "name": "unknown",
+          "count": 7
+        },
+        {
+          "name": "preprocess",
+          "count": 6
+        },
+        {
+          "name": "coerce.string",
+          "count": 4
+        },
+        {
+          "name": "nullable",
+          "count": 3
+        },
+        {
+          "name": "optional",
+          "count": 3
+        },
+        {
+          "name": "custom",
+          "count": 2
+        }
+      ],
+      "methods": [
+        {
+          "name": "optional",
+          "count": 1019
+        },
+        {
+          "name": "nullable",
+          "count": 278
+        },
+        {
+          "name": "min",
+          "count": 219
+        },
+        {
+          "name": "parse",
+          "count": 132
+        },
+        {
+          "name": "int",
+          "count": 121
+        },
+        {
+          "name": "default",
+          "count": 114
+        },
+        {
+          "name": "nullish",
+          "count": 85
+        },
+        {
+          "name": "safeParse",
+          "count": 67
+        },
+        {
+          "name": "passthrough",
+          "count": 60
+        },
+        {
+          "name": "url",
+          "count": 59
+        },
+        {
+          "name": "refine",
+          "count": 58
+        },
+        {
+          "name": "array",
+          "count": 56
+        },
+        {
+          "name": "transform",
+          "count": 54
+        },
+        {
+          "name": "max",
+          "count": 50
+        },
+        {
+          "name": "extend",
+          "count": 30
+        },
+        {
+          "name": "or",
+          "count": 29
+        },
+        {
+          "name": "trim",
+          "count": 29
+        },
+        {
+          "name": "regex",
+          "count": 16
+        },
+        {
+          "name": "startsWith",
+          "count": 16
+        },
+        {
+          "name": "superRefine",
+          "count": 13
+        },
+        {
+          "name": "email",
+          "count": 12
+        },
+        {
+          "name": "merge",
+          "count": 10
+        },
+        {
+          "name": "strict",
+          "count": 10
+        },
+        {
+          "name": "partial",
+          "count": 9
+        },
+        {
+          "name": "uuid",
+          "count": 6
+        },
+        {
+          "name": "positive",
+          "count": 5
+        },
+        {
+          "name": "toLowerCase",
+          "count": 5
+        },
+        {
+          "name": "describe",
+          "count": 4
+        },
+        {
+          "name": "and",
+          "count": 3
+        },
+        {
+          "name": "includes",
+          "count": 3
+        },
+        {
+          "name": "nonnegative",
+          "count": 3
+        },
+        {
+          "name": "required",
+          "count": 3
+        },
+        {
+          "name": "toString",
+          "count": 3
+        },
+        {
+          "name": "catchall",
+          "count": 2
+        },
+        {
+          "name": "length",
+          "count": 2
+        },
+        {
+          "name": "omit",
+          "count": 2
+        },
+        {
+          "name": "catch",
+          "count": 1
+        },
+        {
+          "name": "pipe",
+          "count": 1
+        }
+      ],
+      "namedImports": [
+        {
+          "module": "zod",
+          "name": "ZodError",
+          "count": 11
+        },
+        {
+          "module": "zod",
+          "name": "ZodObject",
+          "count": 5
+        },
+        {
+          "module": "zod",
+          "name": "ZodTypeAny",
+          "count": 4
+        },
+        {
+          "module": "zod",
+          "name": "ZodIssue",
+          "count": 2
+        },
+        {
+          "module": "zod",
+          "name": "ZodSchema",
+          "count": 2
+        },
+        {
+          "module": "zod",
+          "name": "AnyZodObject",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "objectInputType",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "objectOutputType",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "SomeZodObject",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodArray",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodNullable",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodNullableDef",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodOptional",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodOptionalDef",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodRawShape",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodType",
+          "count": 1
+        }
+      ],
+      "typeSymbols": [
+        {
+          "module": "zod",
+          "name": "infer",
+          "count": 482
+        },
+        {
+          "module": "zod",
+          "name": "BRAND",
+          "count": 70
+        },
+        {
+          "module": "zod",
+          "name": "ZodType",
+          "count": 65
+        },
+        {
+          "module": "zod",
+          "name": "ZodNullable",
+          "count": 9
+        },
+        {
+          "module": "zod",
+          "name": "ZodTypeDef",
+          "count": 6
+        },
+        {
+          "module": "zod",
+          "name": "ZodDate",
+          "count": 5
+        },
+        {
+          "module": "zod",
+          "name": "ZodString",
+          "count": 5
+        },
+        {
+          "module": "zod",
+          "name": "ZodTypeAny",
+          "count": 5
+        },
+        {
+          "module": "zod",
+          "name": "IssueData",
+          "count": 3
+        },
+        {
+          "module": "zod",
+          "name": "Schema",
+          "count": 3
+        },
+        {
+          "module": "zod",
+          "name": "ZodEffects",
+          "count": 3
+        },
+        {
+          "module": "zod",
+          "name": "input",
+          "count": 2
+        },
+        {
+          "module": "zod",
+          "name": "SafeParseReturnType",
+          "count": 2
+        },
+        {
+          "module": "zod",
+          "name": "ZodBoolean",
+          "count": 2
+        },
+        {
+          "module": "zod",
+          "name": "ZodOptional",
+          "count": 2
+        },
+        {
+          "module": "zod",
+          "name": "AnyZodObject",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "RefinementCtx",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodEnum",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodError",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodNumber",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "hoppscotch",
+      "repository": "hoppscotch/hoppscotch",
+      "commit": "afc2cf181c16e56647b099e5d18cfe55710c6cdd",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/hoppscotch/hoppscotch/tree/afc2cf181c16e56647b099e5d18cfe55710c6cdd",
+      "zodFiles": 94,
+      "bytes": 299928,
+      "callCount": 1629,
+      "internalAccesses": 0,
+      "selfContainedFiles": 3,
+      "staticPaths": [
+        {
+          "name": "string",
+          "count": 525
+        },
+        {
+          "name": "object",
+          "count": 294
+        },
+        {
+          "name": "literal",
+          "count": 166
+        },
+        {
+          "name": "array",
+          "count": 149
+        },
+        {
+          "name": "boolean",
+          "count": 149
+        },
+        {
+          "name": "enum",
+          "count": 76
+        },
+        {
+          "name": "optional",
+          "count": 73
+        },
+        {
+          "name": "number",
+          "count": 53
+        },
+        {
+          "name": "discriminatedUnion",
+          "count": 46
+        },
+        {
+          "name": "union",
+          "count": 38
+        },
+        {
+          "name": "lazy",
+          "count": 15
+        },
+        {
+          "name": "nullable",
+          "count": 15
+        },
+        {
+          "name": "instanceof",
+          "count": 13
+        },
+        {
+          "name": "record",
+          "count": 9
+        },
+        {
+          "name": "unknown",
+          "count": 3
+        },
+        {
+          "name": "date",
+          "count": 2
+        },
+        {
+          "name": "intersection",
+          "count": 2
+        },
+        {
+          "name": "function",
+          "count": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "catch",
+          "count": 154
+        },
+        {
+          "name": "optional",
+          "count": 113
+        },
+        {
+          "name": "strict",
+          "count": 41
+        },
+        {
+          "name": "safeParse",
+          "count": 37
+        },
+        {
+          "name": "trim",
+          "count": 22
+        },
+        {
+          "name": "and",
+          "count": 21
+        },
+        {
+          "name": "default",
+          "count": 17
+        },
+        {
+          "name": "nullable",
+          "count": 13
+        },
+        {
+          "name": "refine",
+          "count": 8
+        },
+        {
+          "name": "datetime",
+          "count": 5
+        },
+        {
+          "name": "int",
+          "count": 5
+        },
+        {
+          "name": "regex",
+          "count": 4
+        },
+        {
+          "name": "extend",
+          "count": 3
+        },
+        {
+          "name": "min",
+          "count": 3
+        },
+        {
+          "name": "transform",
+          "count": 3
+        },
+        {
+          "name": "max",
+          "count": 2
+        },
+        {
+          "name": "positive",
+          "count": 2
+        },
+        {
+          "name": "omit",
+          "count": 1
+        },
+        {
+          "name": "parse",
+          "count": 1
+        },
+        {
+          "name": "passthrough",
+          "count": 1
+        }
+      ],
+      "namedImports": [
+        {
+          "module": "zod",
+          "name": "ZodType",
+          "count": 1
+        }
+      ],
+      "typeSymbols": [
+        {
+          "module": "zod",
+          "name": "infer",
+          "count": 153
+        },
+        {
+          "module": "zod",
+          "name": "ZodType",
+          "count": 14
+        },
+        {
+          "module": "zod",
+          "name": "ZodTypeDef",
+          "count": 13
+        },
+        {
+          "module": "zod",
+          "name": "input",
+          "count": 12
+        },
+        {
+          "module": "zod",
+          "name": "output",
+          "count": 12
+        },
+        {
+          "module": "zod",
+          "name": "ZodLiteral",
+          "count": 3
+        },
+        {
+          "module": "zod",
+          "name": "SafeParseReturnType",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "trigger-dev",
+      "repository": "triggerdotdev/trigger.dev",
+      "commit": "2cac63f13ab151ae408282c44d42f01295cf9f64",
+      "license": "Apache-2.0",
+      "sourceUrl": "https://github.com/triggerdotdev/trigger.dev/tree/2cac63f13ab151ae408282c44d42f01295cf9f64",
+      "zodFiles": 545,
+      "bytes": 5558341,
+      "callCount": 12489,
+      "internalAccesses": 3,
+      "selfContainedFiles": 31,
+      "staticPaths": [
+        {
+          "name": "string",
+          "count": 5325
+        },
+        {
+          "name": "object",
+          "count": 1961
+        },
+        {
+          "name": "coerce.number",
+          "count": 1803
+        },
+        {
+          "name": "number",
+          "count": 966
+        },
+        {
+          "name": "literal",
+          "count": 440
+        },
+        {
+          "name": "boolean",
+          "count": 413
+        },
+        {
+          "name": "enum",
+          "count": 398
+        },
+        {
+          "name": "array",
+          "count": 383
+        },
+        {
+          "name": "record",
+          "count": 169
+        },
+        {
+          "name": "union",
+          "count": 137
+        },
+        {
+          "name": "coerce.date",
+          "count": 132
+        },
+        {
+          "name": "discriminatedUnion",
+          "count": 98
+        },
+        {
+          "name": "unknown",
+          "count": 76
+        },
+        {
+          "name": "any",
+          "count": 63
+        },
+        {
+          "name": "preprocess",
+          "count": 62
+        },
+        {
+          "name": "coerce.boolean",
+          "count": 15
+        },
+        {
+          "name": "date",
+          "count": 14
+        },
+        {
+          "name": "lazy",
+          "count": 7
+        },
+        {
+          "name": "nativeEnum",
+          "count": 6
+        },
+        {
+          "name": "custom",
+          "count": 5
+        },
+        {
+          "name": "tuple",
+          "count": 3
+        },
+        {
+          "name": "void",
+          "count": 3
+        },
+        {
+          "name": "coerce.string",
+          "count": 2
+        },
+        {
+          "name": "never",
+          "count": 2
+        },
+        {
+          "name": "null",
+          "count": 2
+        },
+        {
+          "name": "email",
+          "count": 1
+        },
+        {
+          "name": "symbol",
+          "count": 1
+        },
+        {
+          "name": "toJSONSchema",
+          "count": 1
+        },
+        {
+          "name": "undefined",
+          "count": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "optional",
+          "count": 1999
+        },
+        {
+          "name": "int",
+          "count": 1238
+        },
+        {
+          "name": "default",
+          "count": 895
+        },
+        {
+          "name": "min",
+          "count": 322
+        },
+        {
+          "name": "describe",
+          "count": 241
+        },
+        {
+          "name": "transform",
+          "count": 220
+        },
+        {
+          "name": "positive",
+          "count": 195
+        },
+        {
+          "name": "max",
+          "count": 194
+        },
+        {
+          "name": "safeParse",
+          "count": 173
+        },
+        {
+          "name": "nullable",
+          "count": 129
+        },
+        {
+          "name": "parse",
+          "count": 111
+        },
+        {
+          "name": "nullish",
+          "count": 73
+        },
+        {
+          "name": "extend",
+          "count": 57
+        },
+        {
+          "name": "refine",
+          "count": 57
+        },
+        {
+          "name": "array",
+          "count": 55
+        },
+        {
+          "name": "trim",
+          "count": 48
+        },
+        {
+          "name": "nonnegative",
+          "count": 39
+        },
+        {
+          "name": "or",
+          "count": 36
+        },
+        {
+          "name": "url",
+          "count": 34
+        },
+        {
+          "name": "email",
+          "count": 21
+        },
+        {
+          "name": "passthrough",
+          "count": 21
+        },
+        {
+          "name": "and",
+          "count": 19
+        },
+        {
+          "name": "superRefine",
+          "count": 16
+        },
+        {
+          "name": "datetime",
+          "count": 14
+        },
+        {
+          "name": "omit",
+          "count": 11
+        },
+        {
+          "name": "regex",
+          "count": 10
+        },
+        {
+          "name": "nonempty",
+          "count": 7
+        },
+        {
+          "name": "pipe",
+          "count": 5
+        },
+        {
+          "name": "pick",
+          "count": 4
+        },
+        {
+          "name": "merge",
+          "count": 3
+        },
+        {
+          "name": "partial",
+          "count": 3
+        },
+        {
+          "name": "toString",
+          "count": 3
+        },
+        {
+          "name": "gt",
+          "count": 2
+        },
+        {
+          "name": "toLowerCase",
+          "count": 2
+        },
+        {
+          "name": "format",
+          "count": 1
+        },
+        {
+          "name": "length",
+          "count": 1
+        }
+      ],
+      "namedImports": [
+        {
+          "module": "zod",
+          "name": "ZodError",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodType",
+          "count": 1
+        }
+      ],
+      "typeSymbols": [
+        {
+          "module": "zod",
+          "name": "infer",
+          "count": 693
+        },
+        {
+          "module": "zod",
+          "name": "output",
+          "count": 57
+        },
+        {
+          "module": "zod",
+          "name": "ZodFirstPartySchemaTypes",
+          "count": 54
+        },
+        {
+          "module": "zod",
+          "name": "input",
+          "count": 42
+        },
+        {
+          "module": "zod",
+          "name": "ZodDiscriminatedUnion",
+          "count": 42
+        },
+        {
+          "module": "zod",
+          "name": "ZodSchema",
+          "count": 25
+        },
+        {
+          "module": "zod",
+          "name": "ZodTypeAny",
+          "count": 18
+        },
+        {
+          "module": "zod",
+          "name": "Schema",
+          "count": 15
+        },
+        {
+          "module": "zod",
+          "name": "ZodUnknown",
+          "count": 11
+        },
+        {
+          "module": "zod",
+          "name": "ZodType",
+          "count": 8
+        },
+        {
+          "module": "zod",
+          "name": "RefinementCtx",
+          "count": 6
+        },
+        {
+          "module": "zod",
+          "name": "ZodIssue",
+          "count": 5
+        },
+        {
+          "module": "zod",
+          "name": "ZodObject",
+          "count": 4
+        },
+        {
+          "module": "zod",
+          "name": "SafeParseReturnType",
+          "count": 3
+        },
+        {
+          "module": "zod",
+          "name": "ZodDefault",
+          "count": 2
+        },
+        {
+          "module": "zod",
+          "name": "AnyZodObject",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "TypeOf",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodError",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodRawShape",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "trpc",
+      "repository": "trpc/trpc",
+      "commit": "340811ba5320637fbaf48fccf3dbfdd258bd34db",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/trpc/trpc/tree/340811ba5320637fbaf48fccf3dbfdd258bd34db",
+      "zodFiles": 147,
+      "bytes": 867573,
+      "callCount": 1511,
+      "internalAccesses": 12,
+      "selfContainedFiles": 4,
+      "staticPaths": [
+        {
+          "name": "string",
+          "count": 596
+        },
+        {
+          "name": "object",
+          "count": 439
+        },
+        {
+          "name": "number",
+          "count": 201
+        },
+        {
+          "name": "array",
+          "count": 50
+        },
+        {
+          "name": "literal",
+          "count": 43
+        },
+        {
+          "name": "date",
+          "count": 33
+        },
+        {
+          "name": "boolean",
+          "count": 27
+        },
+        {
+          "name": "coerce.number",
+          "count": 23
+        },
+        {
+          "name": "tuple",
+          "count": 15
+        },
+        {
+          "name": "union",
+          "count": 15
+        },
+        {
+          "name": "enum",
+          "count": 13
+        },
+        {
+          "name": "lazy",
+          "count": 12
+        },
+        {
+          "name": "record",
+          "count": 6
+        },
+        {
+          "name": "bigint",
+          "count": 5
+        },
+        {
+          "name": "custom",
+          "count": 5
+        },
+        {
+          "name": "unknown",
+          "count": 3
+        },
+        {
+          "name": "any",
+          "count": 2
+        },
+        {
+          "name": "coerce.date",
+          "count": 2
+        },
+        {
+          "name": "cuid2",
+          "count": 2
+        },
+        {
+          "name": "discriminatedUnion",
+          "count": 2
+        },
+        {
+          "name": "intersection",
+          "count": 2
+        },
+        {
+          "name": "nativeEnum",
+          "count": 2
+        },
+        {
+          "name": "undefined",
+          "count": 2
+        },
+        {
+          "name": "function",
+          "count": 1
+        },
+        {
+          "name": "instanceof",
+          "count": 1
+        },
+        {
+          "name": "json",
+          "count": 1
+        },
+        {
+          "name": "map",
+          "count": 1
+        },
+        {
+          "name": "nullable",
+          "count": 1
+        },
+        {
+          "name": "optional",
+          "count": 1
+        },
+        {
+          "name": "promise",
+          "count": 1
+        },
+        {
+          "name": "set",
+          "count": 1
+        },
+        {
+          "name": "symbol",
+          "count": 1
+        },
+        {
+          "name": "toJSONSchema",
+          "count": 1
+        },
+        {
+          "name": "void",
+          "count": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "optional",
+          "count": 99
+        },
+        {
+          "name": "min",
+          "count": 74
+        },
+        {
+          "name": "nullish",
+          "count": 60
+        },
+        {
+          "name": "describe",
+          "count": 37
+        },
+        {
+          "name": "default",
+          "count": 30
+        },
+        {
+          "name": "uuid",
+          "count": 16
+        },
+        {
+          "name": "max",
+          "count": 15
+        },
+        {
+          "name": "nullable",
+          "count": 15
+        },
+        {
+          "name": "partial",
+          "count": 12
+        },
+        {
+          "name": "transform",
+          "count": 10
+        },
+        {
+          "name": "int",
+          "count": 7
+        },
+        {
+          "name": "or",
+          "count": 5
+        },
+        {
+          "name": "parse",
+          "count": 4
+        },
+        {
+          "name": "refine",
+          "count": 4
+        },
+        {
+          "name": "trim",
+          "count": 4
+        },
+        {
+          "name": "safeParse",
+          "count": 3
+        },
+        {
+          "name": "brand",
+          "count": 2
+        },
+        {
+          "name": "finite",
+          "count": 2
+        },
+        {
+          "name": "pipe",
+          "count": 2
+        },
+        {
+          "name": "prefault",
+          "count": 2
+        },
+        {
+          "name": "url",
+          "count": 2
+        },
+        {
+          "name": "array",
+          "count": 1
+        },
+        {
+          "name": "catch",
+          "count": 1
+        },
+        {
+          "name": "email",
+          "count": 1
+        },
+        {
+          "name": "format",
+          "count": 1
+        },
+        {
+          "name": "nonnegative",
+          "count": 1
+        },
+        {
+          "name": "omit",
+          "count": 1
+        },
+        {
+          "name": "passthrough",
+          "count": 1
+        },
+        {
+          "name": "positive",
+          "count": 1
+        },
+        {
+          "name": "startsWith",
+          "count": 1
+        },
+        {
+          "name": "strict",
+          "count": 1
+        }
+      ],
+      "namedImports": [
+        {
+          "module": "zod",
+          "name": "ZodError",
+          "count": 7
+        },
+        {
+          "module": "zod/v4/core",
+          "name": "$ZodArrayDef",
+          "count": 1
+        },
+        {
+          "module": "zod/v4/core",
+          "name": "$ZodObjectDef",
+          "count": 1
+        },
+        {
+          "module": "zod/v4/core",
+          "name": "$ZodRegistry",
+          "count": 1
+        },
+        {
+          "module": "zod/v4/core",
+          "name": "$ZodShape",
+          "count": 1
+        },
+        {
+          "module": "zod/v4/core",
+          "name": "$ZodType",
+          "count": 1
+        },
+        {
+          "module": "zod/v4/core",
+          "name": "$ZodTypeDef",
+          "count": 1
+        },
+        {
+          "module": "zod/v4/core",
+          "name": "GlobalMeta",
+          "count": 1
+        }
+      ],
+      "typeSymbols": [
+        {
+          "module": "zod",
+          "name": "ZodType",
+          "count": 14
+        },
+        {
+          "module": "zod",
+          "name": "infer",
+          "count": 9
+        },
+        {
+          "module": "zod",
+          "name": "core",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "core.$ZodFlattenedError",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodRawShape",
+          "count": 1
+        },
+        {
+          "module": "zod/v3",
+          "name": "ZodType",
+          "count": 1
+        },
+        {
+          "module": "zod/v4",
+          "name": "ZodType",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "shadcn-ui",
+      "repository": "shadcn-ui/ui",
+      "commit": "3cdaa6eb2f0da27aca8598cb752c32d840e06940",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/shadcn-ui/ui/tree/3cdaa6eb2f0da27aca8598cb752c32d840e06940",
+      "zodFiles": 95,
+      "bytes": 876378,
+      "callCount": 874,
+      "internalAccesses": 0,
+      "selfContainedFiles": 4,
+      "staticPaths": [
+        {
+          "name": "string",
+          "count": 369
+        },
+        {
+          "name": "array",
+          "count": 152
+        },
+        {
+          "name": "object",
+          "count": 138
+        },
+        {
+          "name": "boolean",
+          "count": 58
+        },
+        {
+          "name": "record",
+          "count": 44
+        },
+        {
+          "name": "enum",
+          "count": 41
+        },
+        {
+          "name": "number",
+          "count": 33
+        },
+        {
+          "name": "union",
+          "count": 12
+        },
+        {
+          "name": "coerce.boolean",
+          "count": 9
+        },
+        {
+          "name": "literal",
+          "count": 6
+        },
+        {
+          "name": "any",
+          "count": 4
+        },
+        {
+          "name": "unknown",
+          "count": 4
+        },
+        {
+          "name": "discriminatedUnion",
+          "count": 2
+        },
+        {
+          "name": "lazy",
+          "count": 1
+        },
+        {
+          "name": "null",
+          "count": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "optional",
+          "count": 132
+        },
+        {
+          "name": "min",
+          "count": 61
+        },
+        {
+          "name": "parse",
+          "count": 48
+        },
+        {
+          "name": "refine",
+          "count": 34
+        },
+        {
+          "name": "default",
+          "count": 26
+        },
+        {
+          "name": "max",
+          "count": 20
+        },
+        {
+          "name": "describe",
+          "count": 13
+        },
+        {
+          "name": "safeParse",
+          "count": 13
+        },
+        {
+          "name": "extend",
+          "count": 7
+        },
+        {
+          "name": "transform",
+          "count": 5
+        },
+        {
+          "name": "includes",
+          "count": 4
+        },
+        {
+          "name": "regex",
+          "count": 4
+        },
+        {
+          "name": "array",
+          "count": 2
+        },
+        {
+          "name": "email",
+          "count": 2
+        },
+        {
+          "name": "exclude",
+          "count": 2
+        },
+        {
+          "name": "format",
+          "count": 2
+        },
+        {
+          "name": "pick",
+          "count": 2
+        },
+        {
+          "name": "strict",
+          "count": 2
+        },
+        {
+          "name": "trim",
+          "count": 2
+        },
+        {
+          "name": "or",
+          "count": 1
+        },
+        {
+          "name": "passthrough",
+          "count": 1
+        },
+        {
+          "name": "pipe",
+          "count": 1
+        },
+        {
+          "name": "startsWith",
+          "count": 1
+        },
+        {
+          "name": "url",
+          "count": 1
+        }
+      ],
+      "namedImports": [],
+      "typeSymbols": [
+        {
+          "module": "zod",
+          "name": "infer",
+          "count": 176
+        },
+        {
+          "module": "zod",
+          "name": "ZodError",
+          "count": 3
+        },
+        {
+          "module": "zod",
+          "name": "ZodIssue",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodType",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "payload",
+      "repository": "payloadcms/payload",
+      "commit": "fd11d0796117b48d25159119a3e5830c77097f93",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/payloadcms/payload/tree/fd11d0796117b48d25159119a3e5830c77097f93",
+      "zodFiles": 23,
+      "bytes": 101578,
+      "callCount": 607,
+      "internalAccesses": 0,
+      "selfContainedFiles": 1,
+      "staticPaths": [
+        {
+          "name": "string",
+          "count": 178
+        },
+        {
+          "name": "number",
+          "count": 172
+        },
+        {
+          "name": "boolean",
+          "count": 90
+        },
+        {
+          "name": "record",
+          "count": 76
+        },
+        {
+          "name": "object",
+          "count": 37
+        },
+        {
+          "name": "unknown",
+          "count": 27
+        },
+        {
+          "name": "union",
+          "count": 14
+        },
+        {
+          "name": "array",
+          "count": 7
+        },
+        {
+          "name": "lazy",
+          "count": 2
+        },
+        {
+          "name": "partialRecord",
+          "count": 2
+        },
+        {
+          "name": "enum",
+          "count": 1
+        },
+        {
+          "name": "literal",
+          "count": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "describe",
+          "count": 286
+        },
+        {
+          "name": "optional",
+          "count": 148
+        },
+        {
+          "name": "int",
+          "count": 126
+        },
+        {
+          "name": "min",
+          "count": 104
+        },
+        {
+          "name": "max",
+          "count": 71
+        },
+        {
+          "name": "default",
+          "count": 32
+        },
+        {
+          "name": "email",
+          "count": 2
+        },
+        {
+          "name": "catchall",
+          "count": 1
+        }
+      ],
+      "namedImports": [],
+      "typeSymbols": [
+        {
+          "module": "zod",
+          "name": "ZodType",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "medusa",
+      "repository": "medusajs/medusa",
+      "commit": "917ddbe0e56b4e739fa828140cd7973d823d1bbd",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/medusajs/medusa/tree/917ddbe0e56b4e739fa828140cd7973d823d1bbd",
+      "zodFiles": 170,
+      "bytes": 1205168,
+      "callCount": 1849,
+      "internalAccesses": 0,
+      "selfContainedFiles": 16,
+      "staticPaths": [
+        {
+          "name": "string",
+          "count": 1011
+        },
+        {
+          "name": "object",
+          "count": 272
+        },
+        {
+          "name": "array",
+          "count": 159
+        },
+        {
+          "name": "number",
+          "count": 128
+        },
+        {
+          "name": "boolean",
+          "count": 118
+        },
+        {
+          "name": "record",
+          "count": 56
+        },
+        {
+          "name": "union",
+          "count": 34
+        },
+        {
+          "name": "date",
+          "count": 24
+        },
+        {
+          "name": "enum",
+          "count": 23
+        },
+        {
+          "name": "any",
+          "count": 6
+        },
+        {
+          "name": "coerce.number",
+          "count": 6
+        },
+        {
+          "name": "nativeEnum",
+          "count": 5
+        },
+        {
+          "name": "null",
+          "count": 4
+        },
+        {
+          "name": "unknown",
+          "count": 2
+        },
+        {
+          "name": "undefined",
+          "count": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "optional",
+          "count": 359
+        },
+        {
+          "name": "min",
+          "count": 196
+        },
+        {
+          "name": "or",
+          "count": 43
+        },
+        {
+          "name": "nullish",
+          "count": 38
+        },
+        {
+          "name": "nullable",
+          "count": 24
+        },
+        {
+          "name": "refine",
+          "count": 19
+        },
+        {
+          "name": "email",
+          "count": 12
+        },
+        {
+          "name": "superRefine",
+          "count": 10
+        },
+        {
+          "name": "positive",
+          "count": 9
+        },
+        {
+          "name": "pick",
+          "count": 7
+        },
+        {
+          "name": "merge",
+          "count": 6
+        },
+        {
+          "name": "max",
+          "count": 5
+        },
+        {
+          "name": "int",
+          "count": 4
+        },
+        {
+          "name": "safeParse",
+          "count": 3
+        },
+        {
+          "name": "transform",
+          "count": 3
+        },
+        {
+          "name": "toLowerCase",
+          "count": 2
+        },
+        {
+          "name": "and",
+          "count": 1
+        },
+        {
+          "name": "default",
+          "count": 1
+        },
+        {
+          "name": "extend",
+          "count": 1
+        }
+      ],
+      "namedImports": [
+        {
+          "module": "zod",
+          "name": "ZodFirstPartySchemaTypes",
+          "count": 2
+        },
+        {
+          "module": "zod",
+          "name": "ZodObject",
+          "count": 1
+        }
+      ],
+      "typeSymbols": [
+        {
+          "module": "zod",
+          "name": "infer",
+          "count": 211
+        },
+        {
+          "module": "zod",
+          "name": "ZodType",
+          "count": 8
+        },
+        {
+          "module": "zod",
+          "name": "ZodSchema",
+          "count": 4
+        },
+        {
+          "module": "zod",
+          "name": "ZodTypeAny",
+          "count": 4
+        },
+        {
+          "module": "zod",
+          "name": "RefinementCtx",
+          "count": 3
+        },
+        {
+          "module": "zod",
+          "name": "ZodPipe",
+          "count": 3
+        },
+        {
+          "module": "zod",
+          "name": "ZodRawShape",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "supabase",
+      "repository": "supabase/supabase",
+      "commit": "e5df232b44cf0a66d8c10692323ac8934f47e3f3",
+      "license": "Apache-2.0",
+      "sourceUrl": "https://github.com/supabase/supabase/tree/e5df232b44cf0a66d8c10692323ac8934f47e3f3",
+      "zodFiles": 272,
+      "bytes": 2504838,
+      "callCount": 4386,
+      "internalAccesses": 2,
+      "selfContainedFiles": 14,
+      "staticPaths": [
+        {
+          "name": "string",
+          "count": 2074
+        },
+        {
+          "name": "object",
+          "count": 684
+        },
+        {
+          "name": "boolean",
+          "count": 375
+        },
+        {
+          "name": "array",
+          "count": 241
+        },
+        {
+          "name": "number",
+          "count": 234
+        },
+        {
+          "name": "coerce.number",
+          "count": 198
+        },
+        {
+          "name": "literal",
+          "count": 191
+        },
+        {
+          "name": "enum",
+          "count": 127
+        },
+        {
+          "name": "union",
+          "count": 67
+        },
+        {
+          "name": "discriminatedUnion",
+          "count": 45
+        },
+        {
+          "name": "preprocess",
+          "count": 30
+        },
+        {
+          "name": "record",
+          "count": 27
+        },
+        {
+          "name": "any",
+          "count": 24
+        },
+        {
+          "name": "null",
+          "count": 13
+        },
+        {
+          "name": "optional",
+          "count": 13
+        },
+        {
+          "name": "unknown",
+          "count": 11
+        },
+        {
+          "name": "coerce.boolean",
+          "count": 10
+        },
+        {
+          "name": "date",
+          "count": 6
+        },
+        {
+          "name": "void",
+          "count": 6
+        },
+        {
+          "name": "tuple",
+          "count": 3
+        },
+        {
+          "name": "coerce.date",
+          "count": 2
+        },
+        {
+          "name": "custom",
+          "count": 2
+        },
+        {
+          "name": "lazy",
+          "count": 1
+        },
+        {
+          "name": "nativeEnum",
+          "count": 1
+        },
+        {
+          "name": "undefined",
+          "count": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "optional",
+          "count": 593
+        },
+        {
+          "name": "min",
+          "count": 571
+        },
+        {
+          "name": "trim",
+          "count": 181
+        },
+        {
+          "name": "default",
+          "count": 117
+        },
+        {
+          "name": "max",
+          "count": 110
+        },
+        {
+          "name": "int",
+          "count": 94
+        },
+        {
+          "name": "refine",
+          "count": 89
+        },
+        {
+          "name": "describe",
+          "count": 73
+        },
+        {
+          "name": "transform",
+          "count": 55
+        },
+        {
+          "name": "nullable",
+          "count": 50
+        },
+        {
+          "name": "merge",
+          "count": 41
+        },
+        {
+          "name": "superRefine",
+          "count": 39
+        },
+        {
+          "name": "safeParse",
+          "count": 34
+        },
+        {
+          "name": "regex",
+          "count": 32
+        },
+        {
+          "name": "email",
+          "count": 23
+        },
+        {
+          "name": "gte",
+          "count": 21
+        },
+        {
+          "name": "array",
+          "count": 19
+        },
+        {
+          "name": "pipe",
+          "count": 18
+        },
+        {
+          "name": "url",
+          "count": 16
+        },
+        {
+          "name": "passthrough",
+          "count": 15
+        },
+        {
+          "name": "extend",
+          "count": 13
+        },
+        {
+          "name": "lte",
+          "count": 11
+        },
+        {
+          "name": "positive",
+          "count": 11
+        },
+        {
+          "name": "parse",
+          "count": 10
+        },
+        {
+          "name": "and",
+          "count": 7
+        },
+        {
+          "name": "nonnegative",
+          "count": 4
+        },
+        {
+          "name": "datetime",
+          "count": 3
+        },
+        {
+          "name": "nullish",
+          "count": 3
+        },
+        {
+          "name": "uuid",
+          "count": 3
+        },
+        {
+          "name": "multipleOf",
+          "count": 2
+        },
+        {
+          "name": "partial",
+          "count": 2
+        },
+        {
+          "name": "catchall",
+          "count": 1
+        },
+        {
+          "name": "includes",
+          "count": 1
+        },
+        {
+          "name": "nonempty",
+          "count": 1
+        }
+      ],
+      "namedImports": [
+        {
+          "module": "zod",
+          "name": "ZodTypeAny",
+          "count": 2
+        },
+        {
+          "module": "zod",
+          "name": "SafeParseError",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "SafeParseReturnType",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodError",
+          "count": 1
+        }
+      ],
+      "typeSymbols": [
+        {
+          "module": "zod",
+          "name": "infer",
+          "count": 445
+        },
+        {
+          "module": "zod",
+          "name": "ZodType",
+          "count": 20
+        },
+        {
+          "module": "zod",
+          "name": "ZodObject",
+          "count": 12
+        },
+        {
+          "module": "zod",
+          "name": "ZodRawShape",
+          "count": 5
+        },
+        {
+          "module": "zod",
+          "name": "ZodEffects",
+          "count": 3
+        },
+        {
+          "module": "zod",
+          "name": "input",
+          "count": 2
+        },
+        {
+          "module": "zod",
+          "name": "RefinementCtx",
+          "count": 2
+        },
+        {
+          "module": "zod",
+          "name": "ZodBoolean",
+          "count": 2
+        },
+        {
+          "module": "zod",
+          "name": "AnyZodObject",
+          "count": 1
+        },
+        {
+          "module": "zod",
+          "name": "ZodNumber",
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "repositories": 9,
+    "zodFiles": 1875,
+    "bytes": 13934431,
+    "callCount": 28758,
+    "internalAccesses": 19,
+    "selfContainedFiles": 224
+  },
+  "observed": {
+    "staticPaths": [
+      {
+        "name": "string",
+        "count": 12291
+      },
+      {
+        "name": "object",
+        "count": 4939
+      },
+      {
+        "name": "number",
+        "count": 2545
+      },
+      {
+        "name": "coerce.number",
+        "count": 2058
+      },
+      {
+        "name": "boolean",
+        "count": 1771
+      },
+      {
+        "name": "array",
+        "count": 1333
+      },
+      {
+        "name": "literal",
+        "count": 991
+      },
+      {
+        "name": "enum",
+        "count": 799
+      },
+      {
+        "name": "record",
+        "count": 434
+      },
+      {
+        "name": "union",
+        "count": 380
+      },
+      {
+        "name": "discriminatedUnion",
+        "count": 201
+      },
+      {
+        "name": "coerce.date",
+        "count": 160
+      },
+      {
+        "name": "unknown",
+        "count": 133
+      },
+      {
+        "name": "any",
+        "count": 118
+      },
+      {
+        "name": "date",
+        "count": 105
+      },
+      {
+        "name": "preprocess",
+        "count": 98
+      },
+      {
+        "name": "optional",
+        "count": 90
+      },
+      {
+        "name": "nativeEnum",
+        "count": 85
+      },
+      {
+        "name": "lazy",
+        "count": 38
+      },
+      {
+        "name": "coerce.boolean",
+        "count": 34
+      },
+      {
+        "name": "null",
+        "count": 31
+      },
+      {
+        "name": "tuple",
+        "count": 21
+      },
+      {
+        "name": "nullable",
+        "count": 19
+      },
+      {
+        "name": "custom",
+        "count": 14
+      },
+      {
+        "name": "instanceof",
+        "count": 14
+      },
+      {
+        "name": "undefined",
+        "count": 14
+      },
+      {
+        "name": "void",
+        "count": 10
+      },
+      {
+        "name": "coerce.string",
+        "count": 6
+      },
+      {
+        "name": "bigint",
+        "count": 5
+      },
+      {
+        "name": "intersection",
+        "count": 4
+      },
+      {
+        "name": "cuid2",
+        "count": 2
+      },
+      {
+        "name": "function",
+        "count": 2
+      },
+      {
+        "name": "never",
+        "count": 2
+      },
+      {
+        "name": "partialRecord",
+        "count": 2
+      },
+      {
+        "name": "symbol",
+        "count": 2
+      },
+      {
+        "name": "toJSONSchema",
+        "count": 2
+      },
+      {
+        "name": "email",
+        "count": 1
+      },
+      {
+        "name": "json",
+        "count": 1
+      },
+      {
+        "name": "map",
+        "count": 1
+      },
+      {
+        "name": "promise",
+        "count": 1
+      },
+      {
+        "name": "set",
+        "count": 1
+      }
+    ],
+    "methods": [
+      {
+        "name": "optional",
+        "count": 4462
+      },
+      {
+        "name": "int",
+        "count": 1595
+      },
+      {
+        "name": "min",
+        "count": 1556
+      },
+      {
+        "name": "default",
+        "count": 1232
+      },
+      {
+        "name": "describe",
+        "count": 654
+      },
+      {
+        "name": "nullable",
+        "count": 509
+      },
+      {
+        "name": "max",
+        "count": 467
+      },
+      {
+        "name": "transform",
+        "count": 350
+      },
+      {
+        "name": "safeParse",
+        "count": 330
+      },
+      {
+        "name": "parse",
+        "count": 306
+      },
+      {
+        "name": "trim",
+        "count": 286
+      },
+      {
+        "name": "refine",
+        "count": 269
+      },
+      {
+        "name": "nullish",
+        "count": 259
+      },
+      {
+        "name": "positive",
+        "count": 223
+      },
+      {
+        "name": "catch",
+        "count": 156
+      },
+      {
+        "name": "array",
+        "count": 133
+      },
+      {
+        "name": "or",
+        "count": 114
+      },
+      {
+        "name": "url",
+        "count": 112
+      },
+      {
+        "name": "extend",
+        "count": 111
+      },
+      {
+        "name": "passthrough",
+        "count": 99
+      },
+      {
+        "name": "superRefine",
+        "count": 78
+      },
+      {
+        "name": "email",
+        "count": 73
+      },
+      {
+        "name": "regex",
+        "count": 66
+      },
+      {
+        "name": "merge",
+        "count": 60
+      },
+      {
+        "name": "strict",
+        "count": 54
+      },
+      {
+        "name": "and",
+        "count": 51
+      },
+      {
+        "name": "nonnegative",
+        "count": 47
+      },
+      {
+        "name": "pipe",
+        "count": 27
+      },
+      {
+        "name": "partial",
+        "count": 26
+      },
+      {
+        "name": "uuid",
+        "count": 25
+      },
+      {
+        "name": "datetime",
+        "count": 22
+      },
+      {
+        "name": "gte",
+        "count": 21
+      },
+      {
+        "name": "startsWith",
+        "count": 18
+      },
+      {
+        "name": "omit",
+        "count": 15
+      },
+      {
+        "name": "pick",
+        "count": 13
+      },
+      {
+        "name": "lte",
+        "count": 11
+      },
+      {
+        "name": "toLowerCase",
+        "count": 9
+      },
+      {
+        "name": "includes",
+        "count": 8
+      },
+      {
+        "name": "nonempty",
+        "count": 8
+      },
+      {
+        "name": "toString",
+        "count": 6
+      },
+      {
+        "name": "catchall",
+        "count": 4
+      },
+      {
+        "name": "format",
+        "count": 4
+      },
+      {
+        "name": "length",
+        "count": 3
+      },
+      {
+        "name": "required",
+        "count": 3
+      },
+      {
+        "name": "brand",
+        "count": 2
+      },
+      {
+        "name": "exclude",
+        "count": 2
+      },
+      {
+        "name": "finite",
+        "count": 2
+      },
+      {
+        "name": "gt",
+        "count": 2
+      },
+      {
+        "name": "multipleOf",
+        "count": 2
+      },
+      {
+        "name": "prefault",
+        "count": 2
+      }
+    ],
+    "namedImports": [
+      {
+        "module": "zod",
+        "name": "ZodError",
+        "count": 32
+      },
+      {
+        "module": "zod",
+        "name": "ZodObject",
+        "count": 6
+      },
+      {
+        "module": "zod",
+        "name": "ZodTypeAny",
+        "count": 6
+      },
+      {
+        "module": "zod",
+        "name": "ZodType",
+        "count": 3
+      },
+      {
+        "module": "zod",
+        "name": "ZodFirstPartySchemaTypes",
+        "count": 2
+      },
+      {
+        "module": "zod",
+        "name": "ZodIssue",
+        "count": 2
+      },
+      {
+        "module": "zod",
+        "name": "ZodSchema",
+        "count": 2
+      },
+      {
+        "module": "zod",
+        "name": "AnyZodObject",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "objectInputType",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "objectOutputType",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "SafeParseError",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "SafeParseReturnType",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "SomeZodObject",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "ZodArray",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "ZodNullable",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "ZodNullableDef",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "ZodOptional",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "ZodOptionalDef",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "ZodRawShape",
+        "count": 1
+      },
+      {
+        "module": "zod/v4/core",
+        "name": "$ZodArrayDef",
+        "count": 1
+      },
+      {
+        "module": "zod/v4/core",
+        "name": "$ZodObjectDef",
+        "count": 1
+      },
+      {
+        "module": "zod/v4/core",
+        "name": "$ZodRegistry",
+        "count": 1
+      },
+      {
+        "module": "zod/v4/core",
+        "name": "$ZodShape",
+        "count": 1
+      },
+      {
+        "module": "zod/v4/core",
+        "name": "$ZodType",
+        "count": 1
+      },
+      {
+        "module": "zod/v4/core",
+        "name": "$ZodTypeDef",
+        "count": 1
+      },
+      {
+        "module": "zod/v4/core",
+        "name": "GlobalMeta",
+        "count": 1
+      }
+    ],
+    "typeSymbols": [
+      {
+        "module": "zod",
+        "name": "infer",
+        "count": 2171
+      },
+      {
+        "module": "zod",
+        "name": "ZodType",
+        "count": 131
+      },
+      {
+        "module": "zod",
+        "name": "BRAND",
+        "count": 70
+      },
+      {
+        "module": "zod",
+        "name": "output",
+        "count": 69
+      },
+      {
+        "module": "zod",
+        "name": "input",
+        "count": 58
+      },
+      {
+        "module": "zod",
+        "name": "ZodFirstPartySchemaTypes",
+        "count": 54
+      },
+      {
+        "module": "zod",
+        "name": "ZodDiscriminatedUnion",
+        "count": 42
+      },
+      {
+        "module": "zod",
+        "name": "ZodSchema",
+        "count": 29
+      },
+      {
+        "module": "zod",
+        "name": "ZodTypeAny",
+        "count": 27
+      },
+      {
+        "module": "zod",
+        "name": "ZodTypeDef",
+        "count": 19
+      },
+      {
+        "module": "zod",
+        "name": "Schema",
+        "count": 18
+      },
+      {
+        "module": "zod",
+        "name": "ZodObject",
+        "count": 16
+      },
+      {
+        "module": "zod",
+        "name": "RefinementCtx",
+        "count": 12
+      },
+      {
+        "module": "zod",
+        "name": "ZodUnknown",
+        "count": 11
+      },
+      {
+        "module": "zod",
+        "name": "ZodNullable",
+        "count": 9
+      },
+      {
+        "module": "zod",
+        "name": "ZodRawShape",
+        "count": 8
+      },
+      {
+        "module": "zod",
+        "name": "SafeParseReturnType",
+        "count": 6
+      },
+      {
+        "module": "zod",
+        "name": "ZodEffects",
+        "count": 6
+      },
+      {
+        "module": "zod",
+        "name": "ZodIssue",
+        "count": 6
+      },
+      {
+        "module": "zod",
+        "name": "ZodDate",
+        "count": 5
+      },
+      {
+        "module": "zod",
+        "name": "ZodError",
+        "count": 5
+      },
+      {
+        "module": "zod",
+        "name": "ZodString",
+        "count": 5
+      },
+      {
+        "module": "zod",
+        "name": "ZodBoolean",
+        "count": 4
+      },
+      {
+        "module": "zod",
+        "name": "AnyZodObject",
+        "count": 3
+      },
+      {
+        "module": "zod",
+        "name": "IssueData",
+        "count": 3
+      },
+      {
+        "module": "zod",
+        "name": "ZodLiteral",
+        "count": 3
+      },
+      {
+        "module": "zod",
+        "name": "ZodPipe",
+        "count": 3
+      },
+      {
+        "module": "zod",
+        "name": "ZodDefault",
+        "count": 2
+      },
+      {
+        "module": "zod",
+        "name": "ZodNumber",
+        "count": 2
+      },
+      {
+        "module": "zod",
+        "name": "ZodOptional",
+        "count": 2
+      },
+      {
+        "module": "zod",
+        "name": "core",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "core.$ZodFlattenedError",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "TypeOf",
+        "count": 1
+      },
+      {
+        "module": "zod",
+        "name": "ZodEnum",
+        "count": 1
+      },
+      {
+        "module": "zod/v3",
+        "name": "ZodType",
+        "count": 1
+      },
+      {
+        "module": "zod/v4",
+        "name": "ZodType",
+        "count": 1
+      }
+    ]
+  },
+  "compilation": {
+    "candidateFiles": 224,
+    "baselineDiagnostics": 52,
+    "typeSeaDiagnostics": 17,
+    "regressionDiagnostics": 0,
+    "regressions": []
+  },
+  "support": {
+    "missingStaticPaths": [],
+    "missingMethods": [],
+    "missingDeclarationExports": [],
+    "supportedStaticPaths": 41,
+    "supportedMethods": 50,
+    "declarationExportCount": 2731,
+    "instanceMethodCount": 193
+  }
+}

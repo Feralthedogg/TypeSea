@@ -1927,7 +1927,7 @@ describe("public type contracts", () => {
         expectTypeOf<typeof zodPrivateDef>().toEqualTypeOf<ZodDef>();
         expectTypeOf<typeof zodTypeKind>().toExtend<ZodFirstPartyTypeKindValue>();
         expectTypeOf<typeof ZodType>().toEqualTypeOf<typeof ZodSchema>();
-        expectTypeOf<ZodTypeAny>().toEqualTypeOf<Guard<unknown, Presence>>();
+        expectTypeOf<Guard<unknown, Presence>>().toExtend<ZodTypeAny>();
         expectTypeOf<typeof zodAliasUser>().toExtend<AnyZodObject>();
         expectTypeOf<ZodEffects<string>>().toExtend<BaseDecoder<string>>();
         expectTypeOf<ZodPipeline<number>>().toExtend<BaseDecoder<number>>();

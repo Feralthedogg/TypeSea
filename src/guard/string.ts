@@ -4,7 +4,11 @@
  */
 
 import { SchemaTag, StringCheckTag } from "../kind/index.js";
-import { transform, type BaseDecoder } from "../decoder/index.js";
+import {
+    CoerceStringDecoder,
+    transform,
+    type BaseDecoder
+} from "../decoder/index.js";
 import type { StringSchema } from "../schema/index.js";
 import { BaseGuard } from "./base.js";
 import { readCheckMessage } from "./check-message.js";
@@ -57,6 +61,7 @@ const UUID_V7_PATTERN =
 const UPPERCASE_PATTERN = /^\P{Ll}*$/u;
 const LOWERCASE_PATTERN = /^\P{Lu}*$/u;
 
+/** @brief UUID versions accepted by version-restricted string guards. */
 export type StringUuidVersion =
     | "v1"
     | "v2"
@@ -67,40 +72,49 @@ export type StringUuidVersion =
     | "v7"
     | "v8";
 
+/** @brief Optional UUID version restriction. */
 export interface StringUuidOptions {
     readonly version: StringUuidVersion | undefined;
 }
 
+/** @brief Custom regular expression used by email guards. */
 export interface StringEmailOptions {
     readonly pattern: RegExp | undefined;
 }
 
+/** @brief URL component restrictions and optional normalization behavior. */
 export interface StringUrlOptions {
     readonly protocol: RegExp | undefined;
     readonly hostname: RegExp | undefined;
     readonly normalize: boolean | undefined;
 }
 
+/** @brief Offset, local-time, and precision policy for ISO date-time guards. */
 export interface StringIsoDateTimeOptions {
     readonly offset: boolean | undefined;
     readonly local: boolean | undefined;
     readonly precision: number | undefined;
 }
 
+/** @brief Fractional-second precision policy for ISO time guards. */
 export interface StringIsoTimeOptions {
     readonly precision: number | undefined;
 }
 
+/** @brief Supported separators for textual MAC addresses. */
 export type StringMacDelimiter = ":" | "-";
 
+/** @brief Delimiter restriction for textual MAC-address guards. */
 export interface StringMacOptions {
     readonly delimiter: StringMacDelimiter | undefined;
 }
 
+/** @brief Expected algorithm metadata for JWT syntax guards. */
 export interface StringJwtOptions {
     readonly alg: string | undefined;
 }
 
+/** @brief Hash algorithms with fixed textual digest widths. */
 export type StringHashAlgorithm =
     | "md5"
     | "sha1"
@@ -108,15 +122,18 @@ export type StringHashAlgorithm =
     | "sha384"
     | "sha512";
 
+/** @brief Text encodings accepted by hash guards. */
 export type StringHashEncoding =
     | "hex"
     | "base64"
     | "base64url";
 
+/** @brief Digest encoding restriction for hash guards. */
 export interface StringHashOptions {
     readonly enc: StringHashEncoding | undefined;
 }
 
+/** @brief Unicode normalization forms exposed by string transforms. */
 export type StringNormalizationForm =
     | "NFC"
     | "NFD"
@@ -125,7 +142,7 @@ export type StringNormalizationForm =
 
 type StringUuidInput = (Partial<StringUuidOptions> & CheckMessageOptions) | CheckMessageInput;
 type StringEmailInput = (Partial<StringEmailOptions> & CheckMessageOptions) | CheckMessageInput;
-type StringUrlInput = Partial<StringUrlOptions> & CheckMessageOptions;
+type StringUrlInput = (Partial<StringUrlOptions> & CheckMessageOptions) | CheckMessageInput;
 type StringIsoDateTimeInput = Partial<StringIsoDateTimeOptions> & CheckMessageOptions;
 type StringIsoTimeInput = Partial<StringIsoTimeOptions> & CheckMessageOptions;
 type StringMacInput = StringMacDelimiter | (Partial<StringMacOptions> & CheckMessageOptions);
@@ -525,7 +542,9 @@ export class StringGuard<
      * @details The check is a deterministic grammar subset rather than a
      * throwing URL constructor call, so AOT and runtime validators agree.
      */
-    public url(options: StringUrlInput & { readonly normalize: true }): BaseDecoder<string>;
+    public url(
+        options: StringUrlInput & { readonly normalize: true }
+    ): CoerceStringDecoder<string>;
 
     public url(options?: StringUrlInput): StringGuard<TPresence>;
 
@@ -537,8 +556,9 @@ export class StringGuard<
         const normalize = readUrlNormalize(options);
         const message = readCheckMessage(options);
         if (normalize) {
+            const source = readRequiredStringGuard(this);
             return normalizedUrlDecoder(
-                this.refine(
+                source.refine(
                     (value): boolean =>
                         typeof value === "string" &&
                         canParseUrl(value) &&
@@ -926,36 +946,35 @@ export class StringGuard<
      * @brief Decode a string and trim surrounding whitespace.
      * @returns Decoder that validates this string guard before trimming.
      */
-    public trim(): BaseDecoder<string> {
-        return transform(readRequiredStringGuard(this), (value: string): string =>
-            trimString(value));
+    public trim(): CoerceStringDecoder<string> {
+        return transformStringGuard(
+            readRequiredStringGuard(this),
+            trimString
+        );
     }
 
     /**
      * @brief Decode a string and lowercase it.
      * @returns Decoder that validates this string guard before lowercasing.
      */
-    public toLowerCase(): BaseDecoder<string> {
-        return transform(readRequiredStringGuard(this), (value: string): string =>
-            lowerString(value));
+    public toLowerCase(): CoerceStringDecoder<string> {
+        return transformStringGuard(readRequiredStringGuard(this), lowerString);
     }
 
     /**
      * @brief Decode a string and uppercase it.
      * @returns Decoder that validates this string guard before uppercasing.
      */
-    public toUpperCase(): BaseDecoder<string> {
-        return transform(readRequiredStringGuard(this), (value: string): string =>
-            upperString(value));
+    public toUpperCase(): CoerceStringDecoder<string> {
+        return transformStringGuard(readRequiredStringGuard(this), upperString);
     }
 
     /**
      * @brief Decode a string into a URL slug.
      * @returns Decoder that validates this string guard before slugifying.
      */
-    public slugify(): BaseDecoder<string> {
-        return transform(readRequiredStringGuard(this), (value: string): string =>
-            slugifyString(value));
+    public slugify(): CoerceStringDecoder<string> {
+        return transformStringGuard(readRequiredStringGuard(this), slugifyString);
     }
 
     /**
@@ -963,10 +982,14 @@ export class StringGuard<
      * @param form Normalization form, defaulting to NFC.
      * @returns Decoder that validates this string guard before normalizing.
      */
-    public normalize(form: StringNormalizationForm = "NFC"): BaseDecoder<string> {
+    public normalize(
+        form: StringNormalizationForm = "NFC"
+    ): CoerceStringDecoder<string> {
         const normalizedForm = readNormalizationForm(form);
-        return transform(readRequiredStringGuard(this), (value: string): string =>
-            normalizeString(value, normalizedForm));
+        return transformStringGuard(
+            readRequiredStringGuard(this),
+            (value: string): string => normalizeString(value, normalizedForm)
+        );
     }
 }
 
@@ -1242,10 +1265,19 @@ function readIsoTimePrecision(
 }
 
 function normalizedUrlDecoder(
-    guard: BaseGuard<string, Presence>
-): BaseDecoder<string> {
-    return guard.transform((value): string =>
+    guard: Guard<string>
+): CoerceStringDecoder<string> {
+    const source = transform(guard, (value): string =>
         typeof value === "string" ? normalizeUrl(value) : "");
+    return new CoerceStringDecoder<string>((value: unknown) => source.decode(value));
+}
+
+function transformStringGuard(
+    guard: Guard<string>,
+    mapper: (value: string) => string
+): CoerceStringDecoder<string> {
+    const source = transform(guard, mapper);
+    return new CoerceStringDecoder<string>((value: unknown) => source.decode(value));
 }
 
 function canParseUrl(value: string): boolean {

@@ -139,6 +139,7 @@ export function fromJsonSchema(
     return ok(guard);
 }
 
+/** @brief Uppercase compatibility alias for `fromJsonSchema`. */
 export const fromJSONSchema = fromJsonSchema;
 
 /**

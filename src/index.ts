@@ -1,12 +1,19 @@
+/**
+ * @file index.ts
+ * @brief Canonical public entry point for TypeSea.
+ * @details This module assembles the stable builder, compiler, decoder, adapter,
+ * analysis, and compatibility surfaces. Implementation modules should import
+ * each other directly instead of depending on this aggregate to avoid cycles.
+ */
+
 import type {
     ObjectGuard as ObjectGuardType,
-    ObjectGuardMode,
     ObjectShape
 } from "./builders/index.js";
 import type {
-    Guard as GuardType,
     Presence as GuardPresenceType
 } from "./guard/index.js";
+import type { TypeSource as TypeSourceType } from "./decoder/index.js";
 
 export {
     analyzeSchema,
@@ -381,9 +388,12 @@ export {
 } from "./async-validation/index.js";
 
 export {
+    ArrayDecoder,
     BaseCodec,
     BaseCodec as ZodCodec,
     BaseDecoder,
+    ObjectCodec,
+    ObjectDecoder,
     BaseDecoder as ZodCatch,
     BaseDecoder as ZodDefault,
     BaseDecoder as ZodEffects,
@@ -443,15 +453,23 @@ export {
     type Decoder,
     type InferCodecDecoded,
     type InferCodecEncoded,
+    type InferDecodedObject,
     type InferDecoder,
+    type InferEncodedObject,
+    type InferInputObject,
     type Input,
     type JsonCodecValue,
     type Output,
+    type ObjectDecodeMode,
+    type ObjectCodecShape,
+    type ObjectDecodeKeyMask,
+    type ObjectDecodeShape,
     type StringBoolCase,
     type StringBoolOptions,
     type TransformContext,
     type TransformIssueSink,
-    type TransformIssueInput
+    type TransformIssueInput,
+    type TypeSource
 } from "./decoder/index.js";
 
 export {
@@ -597,8 +615,14 @@ export {
 } from "./message/index.js";
 
 export type { Infer as infer } from "./guard/index.js";
-export type ZodTypeAny = GuardType<unknown, GuardPresenceType>;
-export type AnyZodObject = ObjectGuardType<ObjectShape, ObjectGuardMode>;
+/** @brief Broad Zod-compatible source type used by ecosystem generic bounds. */
+export type ZodTypeAny = TypeSourceType<
+    unknown,
+    unknown,
+    GuardPresenceType
+>;
+/** @brief Broad Zod-compatible object guard type. */
+export type AnyZodObject = ObjectGuardType<ObjectShape>;
 export type {
     Input as input,
     Output as output,

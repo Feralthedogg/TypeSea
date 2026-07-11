@@ -127,4 +127,5 @@ export function toJsonSchema<TValue>(
     return schemaToJsonSchema(readJsonSchemaGuardSchema(source), options);
 }
 
+/** @brief Uppercase compatibility alias for `toJsonSchema`. */
 export const toJSONSchema = toJsonSchema;

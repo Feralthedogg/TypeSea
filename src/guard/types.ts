@@ -26,12 +26,16 @@ import type { ArrayGuard } from "./array.js";
 import type { BaseGuard } from "./base.js";
 import type { TypeSeaAssertionError } from "./error.js";
 
+/** @brief Type-only slot carrying a guard's validated value. */
 export declare const TypeSymbol: unique symbol;
 
+/** @brief Type-only slot carrying object-property presence semantics. */
 export declare const PresenceSymbol: unique symbol;
 
+/** @brief Type-only slot carrying nominal brand metadata. */
 export declare const BrandSymbol: unique symbol;
 
+/** @brief Type-only authenticity slot for reusable semantic checks. */
 export declare const WithCheckSymbol: unique symbol;
 
 /**
@@ -139,21 +143,26 @@ export type WithCheckInput<TValue = unknown> =
  * refinement node, and `abort` is preserved for diagnostic collectors that
  * produce multiple refinement issues.
  */
+/** @brief Conditional-refinement payload containing the value and prior issues. */
 export interface RefineWhenPayload<TValue = unknown> {
     readonly value: TValue;
     readonly issues: readonly Issue[];
 }
 
+/** @brief Predicate deciding whether a refinement should execute. */
 export type RefineWhenPredicate<TValue = unknown> =
     (payload: RefineWhenPayload<TValue>) => boolean;
 
+/** @brief Message, path, abort, and scheduling options for refinements. */
 export interface RefineOptions<TValue = unknown> {
     readonly error?: string | undefined;
+    readonly message?: string | undefined;
     readonly path?: readonly PathSegment[] | undefined;
     readonly abort?: boolean | undefined;
     readonly when?: RefineWhenPredicate<TValue> | undefined;
 }
 
+/** @brief String shorthand or structured options accepted by `refine()`. */
 export type RefineParams<TValue = unknown> = string | RefineOptions<TValue>;
 
 /**
@@ -213,6 +222,8 @@ export interface ParseOptions {
 export interface CheckMessageOptions {
     readonly error?: string | undefined;
     readonly message?: string | undefined;
+    readonly required_error?: string | undefined;
+    readonly invalid_type_error?: string | undefined;
 }
 
 /**
@@ -280,6 +291,7 @@ export interface ZodDef {
     readonly className?: string | undefined;
     readonly propertyKey?: string | undefined;
     readonly effect?: string | undefined;
+    readonly checks?: readonly unknown[] | undefined;
     readonly getter?: (() => Schema) | undefined;
 }
 
@@ -337,6 +349,9 @@ export type Brand<TValue, TBrand extends string> = TValue & {
 export interface Guard<TValue, TPresence extends Presence = "required"> {
     readonly [TypeSymbol]: TValue;
     readonly [PresenceSymbol]: TPresence;
+    readonly _input: RuntimeValue<TValue, TPresence>;
+    readonly _output: RuntimeValue<TValue, TPresence>;
+    readonly _presence: TPresence;
     readonly schema: Schema;
     readonly def: ZodDef;
     readonly _def: ZodDef;
@@ -421,7 +436,7 @@ export interface Guard<TValue, TPresence extends Presence = "required"> {
     safeParse(
         value: unknown,
         options?: Partial<ParseOptions>
-    ): SafeParseResult<RuntimeValue<TValue, TPresence>>;
+    ): SafeParseResult<this["_output"]>;
 
     /**
      * @brief Zod-style decode alias for plain guard schemas.
@@ -802,9 +817,9 @@ export interface Guard<TValue, TPresence extends Presence = "required"> {
      * @returns Decoder that short-circuits undefined input to the fallback.
      */
     default(
-        fallback: RuntimeValue<TValue, TPresence> |
-            (() => RuntimeValue<TValue, TPresence>)
-    ): BaseDecoder<RuntimeValue<TValue, TPresence>>;
+        fallback: Exclude<RuntimeValue<TValue, TPresence>, undefined> |
+            (() => Exclude<RuntimeValue<TValue, TPresence>, undefined>)
+    ): BaseDecoder<Exclude<RuntimeValue<TValue, TPresence>, undefined>>;
 
     /**
      * @brief Substitute an input before validation when input is undefined.
@@ -839,6 +854,10 @@ export interface Guard<TValue, TPresence extends Presence = "required"> {
         other: TOther
     ): BaseGuard<RuntimeValue<TValue, TPresence> | Infer<TOther>>;
 
+    or<TOther extends DecodeSource>(
+        other: TOther
+    ): BaseDecoder<RuntimeValue<TValue, TPresence> | InferDecoder<TOther>>;
+
     /**
      * @brief Build an intersection with another guard.
      * @details Both guards must accept the same value. The resulting type is the
@@ -850,6 +869,10 @@ export interface Guard<TValue, TPresence extends Presence = "required"> {
         other: TOther
     ): BaseGuard<RuntimeValue<TValue, TPresence> & Infer<TOther>>;
 
+    intersect<TOther extends DecodeSource>(
+        other: TOther
+    ): BaseDecoder<RuntimeValue<TValue, TPresence> & InferDecoder<TOther>>;
+
     /**
      * @brief Alias for intersect().
      * @param other Guard accepted as the second intersection arm.
@@ -858,6 +881,10 @@ export interface Guard<TValue, TPresence extends Presence = "required"> {
     and<TOther extends Guard<unknown, Presence>>(
         other: TOther
     ): BaseGuard<RuntimeValue<TValue, TPresence> & Infer<TOther>>;
+
+    and<TOther extends DecodeSource>(
+        other: TOther
+    ): BaseDecoder<RuntimeValue<TValue, TPresence> & InferDecoder<TOther>>;
 
     /**
      * @brief Require one own data property after this guard succeeds.

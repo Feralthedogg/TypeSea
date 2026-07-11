@@ -1,8 +1,8 @@
 {
     "schemaVersion": 1,
     "package": "typesea",
-    "version": "1.1.1",
-    "recordedAt": "2026-07-09T19:48:04.352Z",
+    "version": "1.2.0",
+    "recordedAt": "2026-07-10T20:56:24.979Z",
     "command": "npm run bench:record",
     "rawOutput": "bench/results/raw.json",
     "environment": {
@@ -28,20 +28,20 @@
                     "label": "TypeSea interpreted",
                     "sourceName": "typesea interpreted",
                     "color": "#9ca3af",
-                    "hz": 431300.81392273516,
-                    "rme": 0.14242422544192088,
-                    "sampleCount": 215651,
+                    "hz": 420592.3083777544,
+                    "rme": 0.22808902868791261,
+                    "sampleCount": 210297,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 430205.69799539016,
-                        "medianHz": 431300.81392273516,
-                        "bestHz": 443075.3371594428,
+                        "selectedRun": 3,
+                        "worstHz": 414005.28377083386,
+                        "medianHz": 420592.3083777544,
+                        "bestHz": 427276.58229627233,
                         "hzSamples": [
-                            430205.69799539016,
-                            431300.81392273516,
-                            443075.3371594428
+                            414005.28377083386,
+                            420592.3083777544,
+                            427276.58229627233
                         ]
                     }
                 },
@@ -50,20 +50,20 @@
                     "label": "TypeSea safe compiled",
                     "sourceName": "typesea compiled",
                     "color": "#14b8a6",
-                    "hz": 5086120.8810537215,
-                    "rme": 0.16255131522383337,
-                    "sampleCount": 2543061,
+                    "hz": 5103157.0099888295,
+                    "rme": 0.26177718691464374,
+                    "sampleCount": 2551579,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 3,
-                        "worstHz": 4834181.767966015,
-                        "medianHz": 5086120.8810537215,
-                        "bestHz": 5176303.82400788,
+                        "worstHz": 5091925.887977954,
+                        "medianHz": 5103157.0099888295,
+                        "bestHz": 5190323.512100691,
                         "hzSamples": [
-                            4834181.767966015,
-                            5086120.8810537215,
-                            5176303.82400788
+                            5091925.887977954,
+                            5103157.0099888295,
+                            5190323.512100691
                         ]
                     }
                 },
@@ -72,20 +72,20 @@
                     "label": "TypeSea unsafe compiled",
                     "sourceName": "typesea unsafe compiled",
                     "color": "#f97316",
-                    "hz": 32770382.81977065,
-                    "rme": 0.09035835657469887,
-                    "sampleCount": 16385192,
+                    "hz": 33092343.749692116,
+                    "rme": 0.05932846276712955,
+                    "sampleCount": 16546173,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 2,
-                        "worstHz": 32061529.48717579,
-                        "medianHz": 32770382.81977065,
-                        "bestHz": 32926443.539471883,
+                        "worstHz": 31717922.097146153,
+                        "medianHz": 33092343.749692116,
+                        "bestHz": 33126571.204927612,
                         "hzSamples": [
-                            32061529.48717579,
-                            32770382.81977065,
-                            32926443.539471883
+                            31717922.097146153,
+                            33092343.749692116,
+                            33126571.204927612
                         ]
                     }
                 },
@@ -94,20 +94,20 @@
                     "label": "TypeSea unchecked compiled",
                     "sourceName": "typesea unchecked compiled",
                     "color": "#22c55e",
-                    "hz": 40510324.54152378,
-                    "rme": 0.08393236710656471,
-                    "sampleCount": 20255163,
+                    "hz": 40373998.22335224,
+                    "rme": 0.07691547559850007,
+                    "sampleCount": 20187000,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 1,
-                        "worstHz": 40419802.86845041,
-                        "medianHz": 40510324.54152378,
-                        "bestHz": 40716443.964070015,
+                        "selectedRun": 3,
+                        "worstHz": 35088891.0416751,
+                        "medianHz": 40373998.22335224,
+                        "bestHz": 40901412.28415768,
                         "hzSamples": [
-                            40419802.86845041,
-                            40510324.54152378,
-                            40716443.964070015
+                            35088891.0416751,
+                            40373998.22335224,
+                            40901412.28415768
                         ]
                     }
                 },
@@ -116,20 +116,20 @@
                     "label": "Zod safeParse",
                     "sourceName": "zod safeParse",
                     "color": "#8b5cf6",
-                    "hz": 1294395.0628599694,
-                    "rme": 0.31097618141194006,
-                    "sampleCount": 647198,
+                    "hz": 1291315.026347262,
+                    "rme": 0.19270106309342136,
+                    "sampleCount": 645658,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 3,
-                        "worstHz": 1277655.1337513435,
-                        "medianHz": 1294395.0628599694,
-                        "bestHz": 1306329.1430503726,
+                        "worstHz": 1271956.3566315346,
+                        "medianHz": 1291315.026347262,
+                        "bestHz": 1323452.3430362775,
                         "hzSamples": [
-                            1277655.1337513435,
-                            1294395.0628599694,
-                            1306329.1430503726
+                            1271956.3566315346,
+                            1291315.026347262,
+                            1323452.3430362775
                         ]
                     }
                 },
@@ -138,20 +138,20 @@
                     "label": "Valibot safeParse",
                     "sourceName": "valibot safeParse",
                     "color": "#ec4899",
-                    "hz": 1261489.7704064574,
-                    "rme": 0.2924437016352393,
-                    "sampleCount": 630745,
+                    "hz": 1279777.2116579623,
+                    "rme": 0.1740524917223665,
+                    "sampleCount": 639889,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 3,
-                        "worstHz": 1236491.0454316575,
-                        "medianHz": 1261489.7704064574,
-                        "bestHz": 1303736.0104968606,
+                        "worstHz": 1220328.7137711514,
+                        "medianHz": 1279777.2116579623,
+                        "bestHz": 1284714.7589680299,
                         "hzSamples": [
-                            1236491.0454316575,
-                            1261489.7704064574,
-                            1303736.0104968606
+                            1220328.7137711514,
+                            1279777.2116579623,
+                            1284714.7589680299
                         ]
                     }
                 },
@@ -160,20 +160,20 @@
                     "label": "Ajv compiled",
                     "sourceName": "ajv compiled",
                     "color": "#3b82f6",
-                    "hz": 4116794.9460978303,
-                    "rme": 0.18196179737288187,
-                    "sampleCount": 2058398,
+                    "hz": 4219205.858307968,
+                    "rme": 0.5657054798374946,
+                    "sampleCount": 2110409,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 4100546.5402061753,
-                        "medianHz": 4116794.9460978303,
-                        "bestHz": 4186246.5348140392,
+                        "selectedRun": 1,
+                        "worstHz": 4138776.841142243,
+                        "medianHz": 4219205.858307968,
+                        "bestHz": 4222376.809285789,
                         "hzSamples": [
-                            4100546.5402061753,
-                            4116794.9460978303,
-                            4186246.5348140392
+                            4138776.841142243,
+                            4219205.858307968,
+                            4222376.809285789
                         ]
                     }
                 }
@@ -189,20 +189,20 @@
                     "label": "TypeSea interpreted",
                     "sourceName": "typesea interpreted check",
                     "color": "#9ca3af",
-                    "hz": 414468.1282616776,
-                    "rme": 0.8249069667107166,
-                    "sampleCount": 207235,
+                    "hz": 417304.950895188,
+                    "rme": 1.5668650968529776,
+                    "sampleCount": 208653,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 411549.8847660906,
-                        "medianHz": 414468.1282616776,
-                        "bestHz": 428045.05059545423,
+                        "selectedRun": 2,
+                        "worstHz": 414425.8450051308,
+                        "medianHz": 417304.950895188,
+                        "bestHz": 432101.8349372004,
                         "hzSamples": [
-                            411549.8847660906,
-                            414468.1282616776,
-                            428045.05059545423
+                            414425.8450051308,
+                            417304.950895188,
+                            432101.8349372004
                         ]
                     }
                 },
@@ -211,20 +211,20 @@
                     "label": "TypeSea safe compiled",
                     "sourceName": "typesea compiled check",
                     "color": "#14b8a6",
-                    "hz": 4473022.318106816,
-                    "rme": 0.15182119481271358,
-                    "sampleCount": 2236512,
+                    "hz": 4319802.315291142,
+                    "rme": 0.2086963912611927,
+                    "sampleCount": 2159902,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 4394919.411077402,
-                        "medianHz": 4473022.318106816,
-                        "bestHz": 4495217.190858081,
+                        "selectedRun": 1,
+                        "worstHz": 4298785.948410047,
+                        "medianHz": 4319802.315291142,
+                        "bestHz": 4530197.8368924195,
                         "hzSamples": [
-                            4394919.411077402,
-                            4473022.318106816,
-                            4495217.190858081
+                            4298785.948410047,
+                            4319802.315291142,
+                            4530197.8368924195
                         ]
                     }
                 },
@@ -233,20 +233,20 @@
                     "label": "TypeSea unsafe compiled",
                     "sourceName": "typesea unsafe compiled check",
                     "color": "#f97316",
-                    "hz": 27476361.120595615,
-                    "rme": 0.06982235761730769,
-                    "sampleCount": 13738181,
+                    "hz": 27269601.345235698,
+                    "rme": 0.06770956642165911,
+                    "sampleCount": 13634801,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 26948984.97603862,
-                        "medianHz": 27476361.120595615,
-                        "bestHz": 27601581.999632284,
+                        "selectedRun": 2,
+                        "worstHz": 26058392.644978102,
+                        "medianHz": 27269601.345235698,
+                        "bestHz": 27789398.7776676,
                         "hzSamples": [
-                            26948984.97603862,
-                            27476361.120595615,
-                            27601581.999632284
+                            26058392.644978102,
+                            27269601.345235698,
+                            27789398.7776676
                         ]
                     }
                 },
@@ -255,20 +255,20 @@
                     "label": "TypeSea unchecked compiled",
                     "sourceName": "typesea unchecked compiled check",
                     "color": "#22c55e",
-                    "hz": 33682077.70981081,
-                    "rme": 0.07831783536709949,
-                    "sampleCount": 16841040,
+                    "hz": 33987147.048131555,
+                    "rme": 0.05738534112522124,
+                    "sampleCount": 16993574,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 2,
-                        "worstHz": 33282922.535395198,
-                        "medianHz": 33682077.70981081,
-                        "bestHz": 34772023.357207686,
+                        "worstHz": 33224042.80404767,
+                        "medianHz": 33987147.048131555,
+                        "bestHz": 34440232.00249794,
                         "hzSamples": [
-                            33282922.535395198,
-                            33682077.70981081,
-                            34772023.357207686
+                            33224042.80404767,
+                            33987147.048131555,
+                            34440232.00249794
                         ]
                     }
                 },
@@ -277,20 +277,20 @@
                     "label": "Zod safeParse",
                     "sourceName": "zod safeParse",
                     "color": "#8b5cf6",
-                    "hz": 1302312.1298830619,
-                    "rme": 0.2651715123083548,
-                    "sampleCount": 651157,
+                    "hz": 1282522.5430527874,
+                    "rme": 0.24797073949086068,
+                    "sampleCount": 641262,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 1273817.8624232218,
-                        "medianHz": 1302312.1298830619,
-                        "bestHz": 1309442.2636782369,
+                        "selectedRun": 3,
+                        "worstHz": 1272398.4400403916,
+                        "medianHz": 1282522.5430527874,
+                        "bestHz": 1296721.7821499782,
                         "hzSamples": [
-                            1273817.8624232218,
-                            1302312.1298830619,
-                            1309442.2636782369
+                            1272398.4400403916,
+                            1282522.5430527874,
+                            1296721.7821499782
                         ]
                     }
                 },
@@ -299,20 +299,20 @@
                     "label": "Valibot safeParse",
                     "sourceName": "valibot safeParse",
                     "color": "#ec4899",
-                    "hz": 1255791.20633968,
-                    "rme": 0.34774607194649015,
-                    "sampleCount": 627896,
+                    "hz": 1204019.57618324,
+                    "rme": 0.49800880376194967,
+                    "sampleCount": 602010,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 1217965.0304986655,
-                        "medianHz": 1255791.20633968,
-                        "bestHz": 1301847.398549765,
+                        "selectedRun": 1,
+                        "worstHz": 1174752.703072286,
+                        "medianHz": 1204019.57618324,
+                        "bestHz": 1242579.9925443185,
                         "hzSamples": [
-                            1217965.0304986655,
-                            1255791.20633968,
-                            1301847.398549765
+                            1174752.703072286,
+                            1204019.57618324,
+                            1242579.9925443185
                         ]
                     }
                 },
@@ -321,20 +321,20 @@
                     "label": "Ajv compiled",
                     "sourceName": "ajv compiled",
                     "color": "#3b82f6",
-                    "hz": 4202335.327618018,
-                    "rme": 0.5173795218969413,
-                    "sampleCount": 2101168,
+                    "hz": 4262426.627502038,
+                    "rme": 0.2540090126670918,
+                    "sampleCount": 2131214,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 1,
-                        "worstHz": 4110532.914833658,
-                        "medianHz": 4202335.327618018,
-                        "bestHz": 4265477.6246313555,
+                        "selectedRun": 2,
+                        "worstHz": 3574153.8841021867,
+                        "medianHz": 4262426.627502038,
+                        "bestHz": 4312416.947781016,
                         "hzSamples": [
-                            4110532.914833658,
-                            4202335.327618018,
-                            4265477.6246313555
+                            3574153.8841021867,
+                            4262426.627502038,
+                            4312416.947781016
                         ]
                     }
                 }
@@ -350,20 +350,20 @@
                     "label": "TypeSea interpreted",
                     "sourceName": "typesea interpreted",
                     "color": "#9ca3af",
-                    "hz": 3125336.4748404687,
-                    "rme": 0.2221161338197099,
-                    "sampleCount": 1562669,
+                    "hz": 3095730.445944502,
+                    "rme": 7.433699941553416,
+                    "sampleCount": 1547866,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 3034585.915044438,
-                        "medianHz": 3125336.4748404687,
-                        "bestHz": 3169875.429420615,
+                        "selectedRun": 1,
+                        "worstHz": 3039449.823706609,
+                        "medianHz": 3095730.445944502,
+                        "bestHz": 3112645.0537574175,
                         "hzSamples": [
-                            3034585.915044438,
-                            3125336.4748404687,
-                            3169875.429420615
+                            3039449.823706609,
+                            3095730.445944502,
+                            3112645.0537574175
                         ]
                     }
                 },
@@ -372,20 +372,20 @@
                     "label": "TypeSea safe compiled",
                     "sourceName": "typesea compiled",
                     "color": "#14b8a6",
-                    "hz": 42451053.53822322,
-                    "rme": 1.8256899766770696,
-                    "sampleCount": 21225528,
+                    "hz": 42378094.38949774,
+                    "rme": 1.3197447890582776,
+                    "sampleCount": 21189048,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 41866933.990423955,
-                        "medianHz": 42451053.53822322,
-                        "bestHz": 42683043.7927569,
+                        "selectedRun": 3,
+                        "worstHz": 42028757.39432258,
+                        "medianHz": 42378094.38949774,
+                        "bestHz": 42614412.761294544,
                         "hzSamples": [
-                            41866933.990423955,
-                            42451053.53822322,
-                            42683043.7927569
+                            42028757.39432258,
+                            42378094.38949774,
+                            42614412.761294544
                         ]
                     }
                 },
@@ -394,20 +394,20 @@
                     "label": "TypeSea unsafe compiled",
                     "sourceName": "typesea unsafe compiled",
                     "color": "#f97316",
-                    "hz": 50278005.88782333,
-                    "rme": 0.0801175852641446,
-                    "sampleCount": 25139004,
+                    "hz": 50016548.49897726,
+                    "rme": 0.07271611037464043,
+                    "sampleCount": 25008276,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 2,
-                        "worstHz": 50215161.58962101,
-                        "medianHz": 50278005.88782333,
-                        "bestHz": 50279464.18967308,
+                        "worstHz": 49510188.13796627,
+                        "medianHz": 50016548.49897726,
+                        "bestHz": 50506814.970358856,
                         "hzSamples": [
-                            50215161.58962101,
-                            50278005.88782333,
-                            50279464.18967308
+                            49510188.13796627,
+                            50016548.49897726,
+                            50506814.970358856
                         ]
                     }
                 },
@@ -416,20 +416,20 @@
                     "label": "TypeSea unchecked compiled",
                     "sourceName": "typesea unchecked compiled",
                     "color": "#22c55e",
-                    "hz": 50295740.9821118,
-                    "rme": 0.14388509319911605,
-                    "sampleCount": 25147872,
+                    "hz": 50468276.18229393,
+                    "rme": 0.07300241618875065,
+                    "sampleCount": 25234139,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 1,
-                        "worstHz": 49857338.51011063,
-                        "medianHz": 50295740.9821118,
-                        "bestHz": 50483147.47615252,
+                        "selectedRun": 2,
+                        "worstHz": 49915349.00505916,
+                        "medianHz": 50468276.18229393,
+                        "bestHz": 50544815.89863671,
                         "hzSamples": [
-                            49857338.51011063,
-                            50295740.9821118,
-                            50483147.47615252
+                            49915349.00505916,
+                            50468276.18229393,
+                            50544815.89863671
                         ]
                     }
                 },
@@ -438,20 +438,20 @@
                     "label": "Zod safeParse",
                     "sourceName": "zod safeParse",
                     "color": "#8b5cf6",
-                    "hz": 82966.60516545315,
-                    "rme": 5.457458199423325,
-                    "sampleCount": 41484,
+                    "hz": 82542.47676109984,
+                    "rme": 5.565172466225786,
+                    "sampleCount": 41272,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 1,
-                        "worstHz": 82039.00519497273,
-                        "medianHz": 82966.60516545315,
-                        "bestHz": 83283.22696500861,
+                        "worstHz": 80859.64551126114,
+                        "medianHz": 82542.47676109984,
+                        "bestHz": 82755.06128657213,
                         "hzSamples": [
-                            82039.00519497273,
-                            82966.60516545315,
-                            83283.22696500861
+                            80859.64551126114,
+                            82542.47676109984,
+                            82755.06128657213
                         ]
                     }
                 },
@@ -460,20 +460,20 @@
                     "label": "Valibot safeParse",
                     "sourceName": "valibot safeParse",
                     "color": "#ec4899",
-                    "hz": 910413.451932122,
-                    "rme": 0.4334439025789038,
-                    "sampleCount": 455207,
+                    "hz": 928057.8218134592,
+                    "rme": 0.32152109774315085,
+                    "sampleCount": 464029,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 883607.121691562,
-                        "medianHz": 910413.451932122,
-                        "bestHz": 929751.3677684093,
+                        "selectedRun": 1,
+                        "worstHz": 914229.4478057056,
+                        "medianHz": 928057.8218134592,
+                        "bestHz": 931539.17279326,
                         "hzSamples": [
-                            883607.121691562,
-                            910413.451932122,
-                            929751.3677684093
+                            914229.4478057056,
+                            928057.8218134592,
+                            931539.17279326
                         ]
                     }
                 },
@@ -482,20 +482,20 @@
                     "label": "Ajv compiled",
                     "sourceName": "ajv compiled",
                     "color": "#3b82f6",
-                    "hz": 29205868.773181822,
-                    "rme": 0.6204596793767958,
-                    "sampleCount": 14602935,
+                    "hz": 29102273.53467092,
+                    "rme": 0.6300234373258451,
+                    "sampleCount": 14551137,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 27824397.88833675,
-                        "medianHz": 29205868.773181822,
-                        "bestHz": 30953563.523589756,
+                        "selectedRun": 3,
+                        "worstHz": 27368911.397856664,
+                        "medianHz": 29102273.53467092,
+                        "bestHz": 30140920.493071012,
                         "hzSamples": [
-                            27824397.88833675,
-                            29205868.773181822,
-                            30953563.523589756
+                            27368911.397856664,
+                            29102273.53467092,
+                            30140920.493071012
                         ]
                     }
                 }
@@ -511,20 +511,20 @@
                     "label": "TypeSea interpreted",
                     "sourceName": "typesea interpreted check",
                     "color": "#9ca3af",
-                    "hz": 35461.8070877996,
-                    "rme": 0.4206693865139741,
-                    "sampleCount": 17731,
+                    "hz": 35271.128027156934,
+                    "rme": 0.3629076739842157,
+                    "sampleCount": 17636,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 2,
-                        "worstHz": 35155.4920734433,
-                        "medianHz": 35461.8070877996,
-                        "bestHz": 35576.939736069784,
+                        "worstHz": 34472.101138818754,
+                        "medianHz": 35271.128027156934,
+                        "bestHz": 35281.44862149806,
                         "hzSamples": [
-                            35155.4920734433,
-                            35461.8070877996,
-                            35576.939736069784
+                            34472.101138818754,
+                            35271.128027156934,
+                            35281.44862149806
                         ]
                     }
                 },
@@ -533,20 +533,20 @@
                     "label": "TypeSea safe compiled",
                     "sourceName": "typesea compiled check",
                     "color": "#14b8a6",
-                    "hz": 1929057.899685362,
-                    "rme": 0.6864983137690732,
-                    "sampleCount": 964529,
+                    "hz": 1983295.9722227643,
+                    "rme": 0.5909828301788261,
+                    "sampleCount": 991648,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 1925731.510868402,
-                        "medianHz": 1929057.899685362,
-                        "bestHz": 1983363.9127364897,
+                        "selectedRun": 1,
+                        "worstHz": 1969160.4916259341,
+                        "medianHz": 1983295.9722227643,
+                        "bestHz": 2000041.4919834102,
                         "hzSamples": [
-                            1925731.510868402,
-                            1929057.899685362,
-                            1983363.9127364897
+                            1969160.4916259341,
+                            1983295.9722227643,
+                            2000041.4919834102
                         ]
                     }
                 },
@@ -555,20 +555,20 @@
                     "label": "TypeSea unsafe compiled",
                     "sourceName": "typesea unsafe compiled check",
                     "color": "#f97316",
-                    "hz": 2858701.050902277,
-                    "rme": 0.6304459699071108,
-                    "sampleCount": 1429351,
+                    "hz": 2830516.9866767176,
+                    "rme": 0.5278198907571776,
+                    "sampleCount": 1415259,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 2841581.5510199973,
-                        "medianHz": 2858701.050902277,
-                        "bestHz": 2861747.553558069,
+                        "selectedRun": 3,
+                        "worstHz": 2048569.0740370448,
+                        "medianHz": 2830516.9866767176,
+                        "bestHz": 2918181.4961962863,
                         "hzSamples": [
-                            2841581.5510199973,
-                            2858701.050902277,
-                            2861747.553558069
+                            2048569.0740370448,
+                            2830516.9866767176,
+                            2918181.4961962863
                         ]
                     }
                 },
@@ -577,20 +577,20 @@
                     "label": "TypeSea unchecked compiled",
                     "sourceName": "typesea unchecked compiled check",
                     "color": "#22c55e",
-                    "hz": 3330681.9200704894,
-                    "rme": 0.12956723581815263,
-                    "sampleCount": 1665341,
+                    "hz": 3352127.235714585,
+                    "rme": 0.20365172462634262,
+                    "sampleCount": 1676064,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 1,
-                        "worstHz": 3274469.4302442227,
-                        "medianHz": 3330681.9200704894,
-                        "bestHz": 3354240.235704866,
+                        "selectedRun": 3,
+                        "worstHz": 3337884.217571507,
+                        "medianHz": 3352127.235714585,
+                        "bestHz": 3374020.9135322967,
                         "hzSamples": [
-                            3274469.4302442227,
-                            3330681.9200704894,
-                            3354240.235704866
+                            3337884.217571507,
+                            3352127.235714585,
+                            3374020.9135322967
                         ]
                     }
                 },
@@ -599,20 +599,20 @@
                     "label": "Zod safeParse",
                     "sourceName": "zod safeParse",
                     "color": "#8b5cf6",
-                    "hz": 75924.57352899312,
-                    "rme": 11.648704879966228,
-                    "sampleCount": 37963,
+                    "hz": 76308.640180088,
+                    "rme": 12.749693132098994,
+                    "sampleCount": 38155,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 75745.78503357558,
-                        "medianHz": 75924.57352899312,
-                        "bestHz": 80497.96039501234,
+                        "selectedRun": 1,
+                        "worstHz": 58151.040086039844,
+                        "medianHz": 76308.640180088,
+                        "bestHz": 82879.83075939583,
                         "hzSamples": [
-                            75745.78503357558,
-                            75924.57352899312,
-                            80497.96039501234
+                            58151.040086039844,
+                            76308.640180088,
+                            82879.83075939583
                         ]
                     }
                 },
@@ -621,20 +621,20 @@
                     "label": "Valibot safeParse",
                     "sourceName": "valibot safeParse",
                     "color": "#ec4899",
-                    "hz": 846972.5753954173,
-                    "rme": 0.3193953834581073,
-                    "sampleCount": 423487,
+                    "hz": 895002.2422169679,
+                    "rme": 0.27142500156222193,
+                    "sampleCount": 447502,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 834892.7743707354,
-                        "medianHz": 846972.5753954173,
-                        "bestHz": 938291.3094174854,
+                        "selectedRun": 1,
+                        "worstHz": 795480.8530243038,
+                        "medianHz": 895002.2422169679,
+                        "bestHz": 920616.199277293,
                         "hzSamples": [
-                            834892.7743707354,
-                            846972.5753954173,
-                            938291.3094174854
+                            795480.8530243038,
+                            895002.2422169679,
+                            920616.199277293
                         ]
                     }
                 },
@@ -643,20 +643,20 @@
                     "label": "Ajv compiled",
                     "sourceName": "ajv compiled",
                     "color": "#3b82f6",
-                    "hz": 29657237.169582836,
-                    "rme": 0.28616850093643803,
-                    "sampleCount": 14828619,
+                    "hz": 29650288.161596514,
+                    "rme": 0.3374667052795358,
+                    "sampleCount": 14825145,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 2,
-                        "worstHz": 27771386.555862352,
-                        "medianHz": 29657237.169582836,
-                        "bestHz": 29794521.58275516,
+                        "worstHz": 28576447.199768554,
+                        "medianHz": 29650288.161596514,
+                        "bestHz": 30254177.818360403,
                         "hzSamples": [
-                            27771386.555862352,
-                            29657237.169582836,
-                            29794521.58275516
+                            28576447.199768554,
+                            29650288.161596514,
+                            30254177.818360403
                         ]
                     }
                 }
@@ -672,20 +672,20 @@
                     "label": "TypeSea interpreted logical",
                     "sourceName": "interpreted logical branch",
                     "color": "#9ca3af",
-                    "hz": 1155425.4153545692,
-                    "rme": 0.33962804200818447,
-                    "sampleCount": 577713,
+                    "hz": 1147531.6488552783,
+                    "rme": 0.30926609264598526,
+                    "sampleCount": 573766,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 1093777.3021701958,
-                        "medianHz": 1155425.4153545692,
-                        "bestHz": 1187254.675023735,
+                        "selectedRun": 3,
+                        "worstHz": 1076867.7537009374,
+                        "medianHz": 1147531.6488552783,
+                        "bestHz": 1181567.0949196282,
                         "hzSamples": [
-                            1093777.3021701958,
-                            1155425.4153545692,
-                            1187254.675023735
+                            1076867.7537009374,
+                            1147531.6488552783,
+                            1181567.0949196282
                         ]
                     }
                 },
@@ -694,20 +694,20 @@
                     "label": "TypeSea safe logical",
                     "sourceName": "compiled logical branch",
                     "color": "#14b8a6",
-                    "hz": 5337012.398897803,
-                    "rme": 0.1815415921279985,
-                    "sampleCount": 2668507,
+                    "hz": 5351079.175932143,
+                    "rme": 0.1294881761245933,
+                    "sampleCount": 2675540,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 5182509.678684845,
-                        "medianHz": 5337012.398897803,
-                        "bestHz": 5374840.430547109,
+                        "selectedRun": 2,
+                        "worstHz": 5217597.989566228,
+                        "medianHz": 5351079.175932143,
+                        "bestHz": 5401765.904112467,
                         "hzSamples": [
-                            5182509.678684845,
-                            5337012.398897803,
-                            5374840.430547109
+                            5217597.989566228,
+                            5351079.175932143,
+                            5401765.904112467
                         ]
                     }
                 },
@@ -716,20 +716,20 @@
                     "label": "TypeSea unsafe logical",
                     "sourceName": "compiled unsafe logical branch",
                     "color": "#f97316",
-                    "hz": 45018574.82938973,
-                    "rme": 0.07451203019918579,
-                    "sampleCount": 22509288,
+                    "hz": 45173908.283430554,
+                    "rme": 0.06069569524566339,
+                    "sampleCount": 22586955,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 1,
-                        "worstHz": 44715838.747886136,
-                        "medianHz": 45018574.82938973,
-                        "bestHz": 45134523.63900451,
+                        "worstHz": 44279568.36897952,
+                        "medianHz": 45173908.283430554,
+                        "bestHz": 45202152.474361606,
                         "hzSamples": [
-                            44715838.747886136,
-                            45018574.82938973,
-                            45134523.63900451
+                            44279568.36897952,
+                            45173908.283430554,
+                            45202152.474361606
                         ]
                     }
                 },
@@ -738,20 +738,20 @@
                     "label": "TypeSea interpreted fallback",
                     "sourceName": "interpreted fallback record branch",
                     "color": "#9ca3af",
-                    "hz": 427132.8655352791,
-                    "rme": 0.18022453537982241,
-                    "sampleCount": 213567,
+                    "hz": 422185.4140068371,
+                    "rme": 0.14267718632167423,
+                    "sampleCount": 211093,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 415725.3373335335,
-                        "medianHz": 427132.8655352791,
-                        "bestHz": 429622.1973050242,
+                        "selectedRun": 1,
+                        "worstHz": 415665.8329023701,
+                        "medianHz": 422185.4140068371,
+                        "bestHz": 427170.7065269876,
                         "hzSamples": [
-                            415725.3373335335,
-                            427132.8655352791,
-                            429622.1973050242
+                            415665.8329023701,
+                            422185.4140068371,
+                            427170.7065269876
                         ]
                     }
                 },
@@ -760,20 +760,20 @@
                     "label": "TypeSea safe fallback",
                     "sourceName": "compiled fallback record branch",
                     "color": "#14b8a6",
-                    "hz": 6203584.052069367,
-                    "rme": 0.0745300236179971,
-                    "sampleCount": 3101793,
+                    "hz": 6343362.14773668,
+                    "rme": 0.05008977510395303,
+                    "sampleCount": 3171682,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 1,
-                        "worstHz": 6110862.8022801895,
-                        "medianHz": 6203584.052069367,
-                        "bestHz": 6289136.201299322,
+                        "worstHz": 6160792.2626431845,
+                        "medianHz": 6343362.14773668,
+                        "bestHz": 6359300.7026848085,
                         "hzSamples": [
-                            6110862.8022801895,
-                            6203584.052069367,
-                            6289136.201299322
+                            6160792.2626431845,
+                            6343362.14773668,
+                            6359300.7026848085
                         ]
                     }
                 },
@@ -782,20 +782,20 @@
                     "label": "TypeSea unsafe fallback",
                     "sourceName": "compiled unsafe fallback record branch",
                     "color": "#f97316",
-                    "hz": 13714933.369126523,
-                    "rme": 0.0867171169506785,
-                    "sampleCount": 6857467,
+                    "hz": 13696637.260364497,
+                    "rme": 0.057410235194986135,
+                    "sampleCount": 6848319,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 13153565.763156684,
-                        "medianHz": 13714933.369126523,
-                        "bestHz": 13739671.230570653,
+                        "selectedRun": 2,
+                        "worstHz": 13594109.646518955,
+                        "medianHz": 13696637.260364497,
+                        "bestHz": 13841549.806192655,
                         "hzSamples": [
-                            13153565.763156684,
-                            13714933.369126523,
-                            13739671.230570653
+                            13594109.646518955,
+                            13696637.260364497,
+                            13841549.806192655
                         ]
                     }
                 },
@@ -804,20 +804,20 @@
                     "label": "TypeSea interpreted invalid",
                     "sourceName": "interpreted invalid branch",
                     "color": "#9ca3af",
-                    "hz": 609534.9967051888,
-                    "rme": 0.26641979334099813,
-                    "sampleCount": 304768,
+                    "hz": 615674.2034619721,
+                    "rme": 0.04894103542433635,
+                    "sampleCount": 307838,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 2,
-                        "worstHz": 570184.3350619185,
-                        "medianHz": 609534.9967051888,
-                        "bestHz": 623806.4691789919,
+                        "worstHz": 606807.7257231176,
+                        "medianHz": 615674.2034619721,
+                        "bestHz": 623047.8915897707,
                         "hzSamples": [
-                            570184.3350619185,
-                            609534.9967051888,
-                            623806.4691789919
+                            606807.7257231176,
+                            615674.2034619721,
+                            623047.8915897707
                         ]
                     }
                 },
@@ -826,20 +826,20 @@
                     "label": "TypeSea safe invalid",
                     "sourceName": "compiled invalid branch",
                     "color": "#14b8a6",
-                    "hz": 15841710.32088781,
-                    "rme": 0.3243476825700129,
-                    "sampleCount": 7920856,
+                    "hz": 15603319.843923325,
+                    "rme": 0.30891903067739507,
+                    "sampleCount": 7801660,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 3,
-                        "worstHz": 15461915.628867492,
-                        "medianHz": 15841710.32088781,
-                        "bestHz": 15850570.858796053,
+                        "worstHz": 15379829.56989026,
+                        "medianHz": 15603319.843923325,
+                        "bestHz": 15695785.560650501,
                         "hzSamples": [
-                            15461915.628867492,
-                            15841710.32088781,
-                            15850570.858796053
+                            15379829.56989026,
+                            15603319.843923325,
+                            15695785.560650501
                         ]
                     }
                 },
@@ -848,20 +848,20 @@
                     "label": "TypeSea unsafe invalid",
                     "sourceName": "compiled unsafe invalid branch",
                     "color": "#f97316",
-                    "hz": 26173534.63893708,
-                    "rme": 0.0791366640048553,
-                    "sampleCount": 13086768,
+                    "hz": 26240123.685108006,
+                    "rme": 0.05933251175233084,
+                    "sampleCount": 13120062,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 25722713.897075143,
-                        "medianHz": 26173534.63893708,
-                        "bestHz": 26499898.72809168,
+                        "selectedRun": 1,
+                        "worstHz": 25660862.408971753,
+                        "medianHz": 26240123.685108006,
+                        "bestHz": 26426595.47155857,
                         "hzSamples": [
-                            25722713.897075143,
-                            26173534.63893708,
-                            26499898.72809168
+                            25660862.408971753,
+                            26240123.685108006,
+                            26426595.47155857
                         ]
                     }
                 }
@@ -877,20 +877,20 @@
                     "label": "Compiled is() valid",
                     "sourceName": "compiled is valid",
                     "color": "#14b8a6",
-                    "hz": 5302330.865304196,
-                    "rme": 0.5608486581150725,
-                    "sampleCount": 2651166,
+                    "hz": 5360054.86366735,
+                    "rme": 0.45492289244898076,
+                    "sampleCount": 2680028,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 1,
-                        "worstHz": 5183515.9689078415,
-                        "medianHz": 5302330.865304196,
-                        "bestHz": 5386402.513350943,
+                        "selectedRun": 2,
+                        "worstHz": 5316820.096590276,
+                        "medianHz": 5360054.86366735,
+                        "bestHz": 5418719.013801676,
                         "hzSamples": [
-                            5183515.9689078415,
-                            5302330.865304196,
-                            5386402.513350943
+                            5316820.096590276,
+                            5360054.86366735,
+                            5418719.013801676
                         ]
                     }
                 },
@@ -899,20 +899,20 @@
                     "label": "compileBoolean valid",
                     "sourceName": "compiled boolean valid",
                     "color": "#22c55e",
-                    "hz": 5308804.2905567335,
-                    "rme": 0.1361875642591888,
-                    "sampleCount": 2654403,
+                    "hz": 5450804.888021684,
+                    "rme": 0.11230852672689205,
+                    "sampleCount": 2725403,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 5257395.137785384,
-                        "medianHz": 5308804.2905567335,
-                        "bestHz": 5451301.934586893,
+                        "selectedRun": 1,
+                        "worstHz": 5394567.341861099,
+                        "medianHz": 5450804.888021684,
+                        "bestHz": 5478126.981082735,
                         "hzSamples": [
-                            5257395.137785384,
-                            5308804.2905567335,
-                            5451301.934586893
+                            5394567.341861099,
+                            5450804.888021684,
+                            5478126.981082735
                         ]
                     }
                 },
@@ -921,20 +921,20 @@
                     "label": "Compiled is() invalid",
                     "sourceName": "compiled is invalid",
                     "color": "#0f766e",
-                    "hz": 20421032.65215619,
-                    "rme": 2.41497592022425,
-                    "sampleCount": 10210517,
+                    "hz": 20363429.511211295,
+                    "rme": 0.19064545363757732,
+                    "sampleCount": 10181715,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 1,
-                        "worstHz": 19945819.361605965,
-                        "medianHz": 20421032.65215619,
-                        "bestHz": 20583572.188613735,
+                        "worstHz": 20339111.796558496,
+                        "medianHz": 20363429.511211295,
+                        "bestHz": 20478095.95902234,
                         "hzSamples": [
-                            19945819.361605965,
-                            20421032.65215619,
-                            20583572.188613735
+                            20339111.796558496,
+                            20363429.511211295,
+                            20478095.95902234
                         ]
                     }
                 },
@@ -943,20 +943,20 @@
                     "label": "compileBoolean invalid",
                     "sourceName": "compiled boolean invalid",
                     "color": "#16a34a",
-                    "hz": 20664531.586620443,
-                    "rme": 0.22183918117591436,
-                    "sampleCount": 10332266,
+                    "hz": 20424746.44778718,
+                    "rme": 0.18515942483284337,
+                    "sampleCount": 10212374,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 19980397.4404326,
-                        "medianHz": 20664531.586620443,
-                        "bestHz": 20731728.50734076,
+                        "selectedRun": 1,
+                        "worstHz": 20314947.22808769,
+                        "medianHz": 20424746.44778718,
+                        "bestHz": 20671078.67707872,
                         "hzSamples": [
-                            19980397.4404326,
-                            20664531.586620443,
-                            20731728.50734076
+                            20314947.22808769,
+                            20424746.44778718,
+                            20671078.67707872
                         ]
                     }
                 },
@@ -965,20 +965,20 @@
                     "label": "compileCached global hit",
                     "sourceName": "compileCached global hit",
                     "color": "#f97316",
-                    "hz": 2552831.6630265336,
-                    "rme": 0.12949912262038163,
-                    "sampleCount": 1276416,
+                    "hz": 2605112.6870240504,
+                    "rme": 0.12961335608544397,
+                    "sampleCount": 1302557,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 2545552.034827728,
-                        "medianHz": 2552831.6630265336,
-                        "bestHz": 2564722.8356137685,
+                        "selectedRun": 3,
+                        "worstHz": 2559726.281572005,
+                        "medianHz": 2605112.6870240504,
+                        "bestHz": 2615353.555388993,
                         "hzSamples": [
-                            2545552.034827728,
-                            2552831.6630265336,
-                            2564722.8356137685
+                            2559726.281572005,
+                            2605112.6870240504,
+                            2615353.555388993
                         ]
                     }
                 },
@@ -987,20 +987,20 @@
                     "label": "createCompileCache hit",
                     "sourceName": "createCompileCache hit",
                     "color": "#fb923c",
-                    "hz": 2830124.658519871,
-                    "rme": 0.14260986476253354,
-                    "sampleCount": 1415063,
+                    "hz": 2857052.8000455666,
+                    "rme": 0.1340980386284299,
+                    "sampleCount": 1428527,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 2,
-                        "worstHz": 2818179.785816798,
-                        "medianHz": 2830124.658519871,
-                        "bestHz": 2861793.765333779,
+                        "selectedRun": 1,
+                        "worstHz": 2842168.7153435242,
+                        "medianHz": 2857052.8000455666,
+                        "bestHz": 2858678.4220082075,
                         "hzSamples": [
-                            2818179.785816798,
-                            2830124.658519871,
-                            2861793.765333779
+                            2842168.7153435242,
+                            2857052.8000455666,
+                            2858678.4220082075
                         ]
                     }
                 },
@@ -1009,20 +1009,20 @@
                     "label": "Prebuilt cached guard",
                     "sourceName": "prebuilt cached guard valid",
                     "color": "#fdba74",
-                    "hz": 5345068.04370459,
-                    "rme": 0.18781935649801407,
-                    "sampleCount": 2672535,
+                    "hz": 5453403.498272225,
+                    "rme": 0.1525282804118286,
+                    "sampleCount": 2726702,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 2,
-                        "worstHz": 5176628.219255184,
-                        "medianHz": 5345068.04370459,
-                        "bestHz": 5420310.569028474,
+                        "worstHz": 5441445.673528749,
+                        "medianHz": 5453403.498272225,
+                        "bestHz": 5480438.794308361,
                         "hzSamples": [
-                            5176628.219255184,
-                            5345068.04370459,
-                            5420310.569028474
+                            5441445.673528749,
+                            5453403.498272225,
+                            5480438.794308361
                         ]
                     }
                 },
@@ -1031,20 +1031,20 @@
                     "label": "Prebuilt global cached guard",
                     "sourceName": "prebuilt global cached guard valid",
                     "color": "#fed7aa",
-                    "hz": 5360673.05651898,
-                    "rme": 0.260685028667043,
-                    "sampleCount": 2680337,
+                    "hz": 5474599.923345696,
+                    "rme": 0.18853192732888707,
+                    "sampleCount": 2737300,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 1,
-                        "worstHz": 5298604.357428238,
-                        "medianHz": 5360673.05651898,
-                        "bestHz": 5425304.524338302,
+                        "worstHz": 5351630.333845597,
+                        "medianHz": 5474599.923345696,
+                        "bestHz": 5500991.053819273,
                         "hzSamples": [
-                            5298604.357428238,
-                            5360673.05651898,
-                            5425304.524338302
+                            5351630.333845597,
+                            5474599.923345696,
+                            5500991.053819273
                         ]
                     }
                 },
@@ -1053,20 +1053,20 @@
                     "label": "compileAsync valid",
                     "sourceName": "compileAsync is valid",
                     "color": "#3b82f6",
-                    "hz": 1366.0808585736518,
-                    "rme": 0.2672298105071285,
-                    "sampleCount": 684,
+                    "hz": 1331.1056726941629,
+                    "rme": 0.25581155418051055,
+                    "sampleCount": 666,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 1342.8369769513565,
-                        "medianHz": 1366.0808585736518,
-                        "bestHz": 1395.2294287390055,
+                        "selectedRun": 1,
+                        "worstHz": 1031.8010708171223,
+                        "medianHz": 1331.1056726941629,
+                        "bestHz": 1361.0524516157923,
                         "hzSamples": [
-                            1342.8369769513565,
-                            1366.0808585736518,
-                            1395.2294287390055
+                            1031.8010708171223,
+                            1331.1056726941629,
+                            1361.0524516157923
                         ]
                     }
                 },
@@ -1075,20 +1075,20 @@
                     "label": "compileAsync invalid check",
                     "sourceName": "compileAsync check invalid",
                     "color": "#60a5fa",
-                    "hz": 1199.5406503024078,
-                    "rme": 0.6853621701488702,
-                    "sampleCount": 600,
+                    "hz": 1188.8940051959923,
+                    "rme": 0.5692896023137171,
+                    "sampleCount": 595,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 3,
-                        "worstHz": 1192.336785571064,
-                        "medianHz": 1199.5406503024078,
-                        "bestHz": 1208.5552640320789,
+                        "selectedRun": 1,
+                        "worstHz": 1171.5206442119843,
+                        "medianHz": 1188.8940051959923,
+                        "bestHz": 1207.7844950125111,
                         "hzSamples": [
-                            1192.336785571064,
-                            1199.5406503024078,
-                            1208.5552640320789
+                            1171.5206442119843,
+                            1188.8940051959923,
+                            1207.7844950125111
                         ]
                     }
                 },
@@ -1097,20 +1097,20 @@
                     "label": "Rollup macro transform",
                     "sourceName": "rollup compileCached macro transform",
                     "color": "#8b5cf6",
-                    "hz": 3755252.7156966333,
-                    "rme": 0.13624499382407324,
-                    "sampleCount": 1877627,
+                    "hz": 3755222.6105610156,
+                    "rme": 0.13424306314839735,
+                    "sampleCount": 1877612,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 1,
-                        "worstHz": 3694030.522390086,
-                        "medianHz": 3755252.7156966333,
-                        "bestHz": 3843507.7924429025,
+                        "selectedRun": 2,
+                        "worstHz": 3652503.963450897,
+                        "medianHz": 3755222.6105610156,
+                        "bestHz": 3869755.3266549967,
                         "hzSamples": [
-                            3694030.522390086,
-                            3755252.7156966333,
-                            3843507.7924429025
+                            3652503.963450897,
+                            3755222.6105610156,
+                            3869755.3266549967
                         ]
                     }
                 },
@@ -1119,20 +1119,20 @@
                     "label": "esbuild macro transform",
                     "sourceName": "esbuild compileCached macro transform",
                     "color": "#a78bfa",
-                    "hz": 2198640.8610959696,
-                    "rme": 4.979637673723447,
-                    "sampleCount": 1099321,
+                    "hz": 2191839.386293057,
+                    "rme": 4.5028173320328,
+                    "sampleCount": 1095920,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
                         "selectedRun": 3,
-                        "worstHz": 2174241.4868735834,
-                        "medianHz": 2198640.8610959696,
-                        "bestHz": 2390210.0782758896,
+                        "worstHz": 2096211.153130621,
+                        "medianHz": 2191839.386293057,
+                        "bestHz": 2338582.334942171,
                         "hzSamples": [
-                            2174241.4868735834,
-                            2198640.8610959696,
-                            2390210.0782758896
+                            2096211.153130621,
+                            2191839.386293057,
+                            2338582.334942171
                         ]
                     }
                 },
@@ -1141,20 +1141,20 @@
                     "label": "Rollup AOT virtual load",
                     "sourceName": "rollup AOT virtual load",
                     "color": "#c4b5fd",
-                    "hz": 11715.449233303938,
-                    "rme": 0.28743743870415495,
-                    "sampleCount": 5858,
+                    "hz": 11940.722557622237,
+                    "rme": 0.37502200333410596,
+                    "sampleCount": 5971,
                     "aggregation": {
                         "strategy": "median-hz",
                         "runCount": 3,
-                        "selectedRun": 1,
-                        "worstHz": 11217.794848968217,
-                        "medianHz": 11715.449233303938,
-                        "bestHz": 11801.175074260525,
+                        "selectedRun": 2,
+                        "worstHz": 11907.346167625068,
+                        "medianHz": 11940.722557622237,
+                        "bestHz": 12078.73361725367,
                         "hzSamples": [
-                            11217.794848968217,
-                            11715.449233303938,
-                            11801.175074260525
+                            11907.346167625068,
+                            11940.722557622237,
+                            12078.73361725367
                         ]
                     }
                 }

@@ -1,3 +1,10 @@
+/**
+ * @file message/index.ts
+ * @brief Locale-aware rendering for stable validation issue records.
+ * @details Validation engines emit structured issues only; this module performs
+ * the deferred string allocation needed for human-facing diagnostics.
+ */
+
 import {
     copyIssueArray,
     freezeIssueArray,
@@ -920,6 +927,7 @@ function toZodIssueCode(code: IssueCode): ZodIssueCode {
             return "unrecognized_keys";
         case "expected_tuple_length":
         case "expected_key_count":
+        case "expected_intersection":
         case "expected_refinement":
         case "expected_depth_limit":
             return "custom";
@@ -1629,6 +1637,7 @@ const enCatalog: Readonly<Record<IssueCode, string>> = Object.freeze({
     expected_required_key: "Expected required key at {path}; received {actual}.",
     expected_key_count: "Expected {expected} at {path}; received {actual}.",
     expected_union: "Expected union at {path}; received {actual}.",
+    expected_intersection: "Expected {expected} at {path}; received {actual}.",
     expected_discriminant: "Expected discriminant {expected} at {path}; received {actual}.",
     expected_refinement: "Expected refinement {expected} at {path}; received {actual}.",
     expected_depth_limit: "Expected validation depth within {expected} at {path}; received {actual}.",
@@ -1671,6 +1680,7 @@ const koCatalog: Readonly<Record<IssueCode, string>> = Object.freeze({
     expected_required_key: "{path}에 필수 키가 필요하지만 {actual}입니다.",
     expected_key_count: "{path}에서 {expected}이 필요하지만 {actual}입니다.",
     expected_union: "{path}에서 유니온 값이 필요하지만 {actual}을 받았습니다.",
+    expected_intersection: "{path}에서 {expected}이 필요하지만 {actual}을 받았습니다.",
     expected_discriminant: "{path}에서 discriminant {expected}이 필요하지만 {actual}을 받았습니다.",
     expected_refinement: "{path}에서 refinement {expected}을 통과해야 하지만 {actual}을 받았습니다.",
     expected_depth_limit: "{path}에서 검증 깊이 {expected} 이내가 필요하지만 {actual}입니다.",

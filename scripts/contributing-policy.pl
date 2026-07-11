@@ -1,4 +1,86 @@
 #!/usr/bin/env perl
+
+=head1 NAME
+
+contributing-policy.pl - TypeSea repository policy and static-analysis engine
+
+=head1 SYNOPSIS
+
+    perl scripts/contributing-policy.pl
+    perl scripts/contributing-policy.pl --strict-warnings
+    perl scripts/contributing-policy.pl --json
+    perl scripts/contributing-policy.pl --sarif
+    perl scripts/contributing-policy.pl --html
+    perl scripts/contributing-policy.pl --serve 7331
+    perl scripts/contributing-policy.pl --explain RULE_CODE
+
+=head1 DESCRIPTION
+
+This program builds one repository policy IR, analyzes that snapshot, applies
+profiles and reviewed suppressions, computes evidence-backed quality gates, and
+renders terminal or machine-readable reports. Expected findings are immutable
+records; process failure is reserved for a failed gate or malformed analyzer
+configuration.
+
+The TypeScript frontend is authoritative for syntax, declarations, spans, and
+function ownership. The Perl lexer remains a bounded fallback and supplies
+repository-wide domains that do not require full TypeScript semantics.
+
+=head1 PIPELINE
+
+=over 4
+
+=item 1. Bootstrap
+
+Validate CLI options and execute deterministic engine self-tests before reading
+repository policy inputs.
+
+=item 2. Admission
+
+Read package metadata, source, tests, workflow files, benchmark evidence, and the
+TypeScript frontend payload into one normalized IR. Paths and spans crossing the
+frontend boundary are validated against the repository root.
+
+=item 3. Analysis
+
+Run architecture, type escape, control-flow, symbolic execution, taint,
+dependency, release, and evidence domains without mutating admitted source data.
+
+=item 4. Governance
+
+Apply profiles, baselines, source suppressions, ownership, triage, history, and
+proof obligations in a fixed order. Diagnostic fingerprints are established
+before lifecycle comparisons.
+
+=item 5. Reporting
+
+Render terminal, JSON, SARIF, HTML, or local dashboard output from the same final
+diagnostic set and gate model.
+
+=back
+
+=head1 SECURITY MODEL
+
+Repository files and frontend output are untrusted inputs. File admission uses
+bounded reads, regular-file checks, no-follow flags where supported, normalized
+repository paths, and explicit byte budgets. Source text is never evaluated as
+Perl. External process output is decoded and structurally validated before it is
+used by analysis domains.
+
+=head1 SUPPRESSIONS
+
+C<TINL rule.code: reason> suppresses the next source line and
+C<TIND rule.code: reason> suppresses the next declaration. Wildcards and empty
+reasons are rejected. Suppressions are applied after diagnostics are normalized
+so they cannot change data-flow or coverage evidence.
+
+=head1 EXIT STATUS
+
+Zero means the selected quality gate passed. Non-zero means bootstrap validation,
+self-tests, analysis admission, or the final quality gate failed.
+
+=cut
+
 use strict;
 use warnings;
 
@@ -51,6 +133,8 @@ my %frontend_source_lines_cache;
 my $frontend_source_lines_cache_bytes = 0;
 my $declared_analyzer_rule_codes_cache;
 
+# CLI validation runs before repository reads. This keeps malformed output modes
+# and unsafe dashboard ports from changing later analysis or report behavior.
 if (has_arg("--help") || has_arg("-h")) {
     emit_usage();
     exit 0;
@@ -61,6 +145,8 @@ if (defined $explain_rule) {
     exit 0;
 }
 
+# Engine self-tests execute on every run because this file is also the release
+# gate. A broken abstract domain must fail before it can certify the repository.
 run_terminal_diagnostic_self_tests();
 run_typescript_frontend_adapter_self_tests();
 run_lexer_self_tests();
@@ -97,12 +183,18 @@ run_defect_lineage_model_self_tests();
 run_proof_obligation_model_self_tests();
 run_defect_routing_model_self_tests();
 
+# Admission produces the sole repository snapshot consumed by all domains.
+# Sensitive source lines are indexed only after secret findings identify the
+# minimum paths needed for terminal rendering.
 my $ir = build_policy_ir();
 index_terminal_sensitive_source_lines($ir->{secrets}{findings});
 my @diagnostics = analyze_policy_ir($ir);
 push @diagnostics, source_suppression_rule_diagnostics($ir->{source}{source_suppressions}, \@diagnostics);
 push @diagnostics, source_suppression_wildcard_diagnostics($ir->{source}{source_suppressions});
 push @diagnostics, analyze_rule_metadata_integrity(\@diagnostics);
+# Governance order is deliberate: profiles set effective severity, baselines
+# annotate identity, source directives suppress normalized findings, and triage
+# then adds human lifecycle state without rewriting analyzer evidence.
 my $profile = read_policy_profile($profile_path);
 my $quality_profile_model = quality_profile_model($profile, \@diagnostics);
 @diagnostics = apply_policy_profile(\@diagnostics, $profile);
@@ -121,6 +213,8 @@ my $rule_metadata_model = rule_metadata_integrity_model(\@diagnostics);
 $ir->{policy_runtime}{rule_metadata_model} = $rule_metadata_model;
 $ir->{policy_runtime}{suppressed_diagnostics} = count_suppressed(@diagnostics);
 
+# Derived models share the finalized diagnostic set. Each model contributes
+# evidence to the gate but cannot remove findings produced by another domain.
 my $errors = count_severity("error", @diagnostics);
 my $warnings = count_severity("warning", @diagnostics);
 my $notices = count_severity("notice", @diagnostics);
@@ -196,6 +290,8 @@ write_policy_baseline($write_baseline_path, \@diagnostics) if defined $write_bas
 write_triage_template($write_triage_template_path, $defect_ledger) if defined $write_triage_template_path;
 write_history_ledger($write_history_path, $history_trend) if defined $write_history_path;
 
+# Every renderer consumes the same payload. Format selection therefore cannot
+# alter gate status, fingerprints, ownership, or suppression decisions.
 if ($serve_report) {
     serve_analysis_dashboard(machine_report_payload($ir, \@diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model), $serve_port);
 } elsif ($html_report) {
@@ -218,6 +314,13 @@ if ($quality_gate->{status} ne "passed" || ($strict_warnings && $warnings != 0))
 emit_summary($errors, $warnings, $notices, "ok")
     if !$json_report && !$sarif_report && !$html_report && !$serve_report;
 
+# -----------------------------------------------------------------------------
+# Repository admission
+#
+# Keep filesystem and subprocess reads in this phase. Analysis routines consume
+# normalized records so domain logic never needs to reopen source paths or infer
+# whether a missing field means "not measured" or "measured as zero".
+# -----------------------------------------------------------------------------
 sub build_policy_ir {
     my $package = read_json("package.json");
     my $package_lock = read_json("package-lock.json");
@@ -250,6 +353,13 @@ sub build_policy_ir {
     return $ir;
 }
 
+# -----------------------------------------------------------------------------
+# Policy-domain orchestration
+#
+# Domains return diagnostics rather than printing or exiting. This separation is
+# required for profiles, baselines, SARIF, and dashboard output to observe one
+# identical finding set.
+# -----------------------------------------------------------------------------
 sub analyze_policy_ir {
     my ($ir) = @_;
     my @out;
@@ -2979,6 +3089,13 @@ sub script_ir {
     };
 }
 
+# -----------------------------------------------------------------------------
+# TypeScript frontend boundary
+#
+# The child process is authoritative only after JSON shape, repository-relative
+# paths, integer spans, and source bounds pass local validation. Invalid payloads
+# degrade to explicit coverage findings instead of guessed semantic facts.
+# -----------------------------------------------------------------------------
 sub typescript_frontend_ir {
     my $bridge = "scripts/typescript-policy-bridge.mjs";
     return typescript_frontend_failure("bridge-missing", "TypeScript AST bridge '$bridge' is missing")
@@ -3553,6 +3670,13 @@ sub typescript_frontend_file_index {
     return \%index;
 }
 
+# -----------------------------------------------------------------------------
+# Source IR construction
+#
+# AST facts and bounded lexical summaries are joined here. Every downstream fact
+# records its authority so legacy token metrics cannot silently masquerade as
+# TypeScript-semantic evidence.
+# -----------------------------------------------------------------------------
 sub source_ir {
     my ($typescript_frontend) = @_;
     my @files = source_files("src", qr/\.ts\z/);
@@ -7211,6 +7335,13 @@ sub read_const_object_keys {
     return @keys;
 }
 
+# -----------------------------------------------------------------------------
+# Bounded TypeScript lexical fallback
+#
+# This lexer exists for policy facts that need token locality when the frontend
+# is unavailable. It does not claim parser completeness and must make forward
+# progress on malformed text while respecting source byte budgets.
+# -----------------------------------------------------------------------------
 sub lex_ts_source {
     my ($source) = @_;
     my @tokens;
@@ -7611,6 +7742,12 @@ sub merge_lex_parts {
     push @{$jsdocs}, @{$part->{jsdocs}};
 }
 
+# -----------------------------------------------------------------------------
+# Analyzer self-tests
+#
+# Synthetic fixtures pin wire validation and abstract-domain invariants inside
+# the release gate. Keep them deterministic and independent from worktree state.
+# -----------------------------------------------------------------------------
 sub run_typescript_frontend_adapter_self_tests {
     my $path = "test/fixtures/contributing-policy/ast-regression.ts.txt";
     return if !-f $path;
@@ -10504,6 +10641,13 @@ sub find_matching_open_paren_token {
     return undef;
 }
 
+# -----------------------------------------------------------------------------
+# Function ownership and local summaries
+#
+# AST functions own semantic identities. Legacy summaries contribute metrics
+# only through an explicit adapter match, preventing duplicate call edges and
+# accidental attribution of nested work to an enclosing function.
+# -----------------------------------------------------------------------------
 sub read_function_summaries {
     my ($path, $tokens, $locations_only) = @_;
     my @functions;
@@ -12597,6 +12741,13 @@ sub is_lifecycle_sensitive_path {
     return 0;
 }
 
+# -----------------------------------------------------------------------------
+# Bounded symbolic execution
+#
+# State growth is quota-controlled and joins at stable program points. The
+# engine prefers an explicit unknown fact over path explosion or a fabricated
+# proof when branch, loop, or call ownership cannot be established.
+# -----------------------------------------------------------------------------
 sub build_symbolic_execution_summary {
     my ($path, $name, $param_meta, $tokens, $descriptor_model, $source_taint_domain) = @_;
     my @conditions;
@@ -15742,6 +15893,13 @@ sub count_direct_value_property_reads {
     return $count;
 }
 
+# -----------------------------------------------------------------------------
+# Diagnostic normalization and flow witnesses
+#
+# Findings enter governance only through this constructor family. Stable fields,
+# bounded witness steps, and canonical locations are prerequisites for reliable
+# fingerprints and baseline comparison.
+# -----------------------------------------------------------------------------
 sub diagnostic {
     my ($severity, $code, $where, $message, $flow, $details) = @_;
     if (ref($flow) eq "HASH" && !defined $details) {
@@ -16095,6 +16253,13 @@ sub flow_steps_from_symbolic_path {
     return \@steps;
 }
 
+# -----------------------------------------------------------------------------
+# Baseline and suppression application
+#
+# Fingerprints are derived from normalized evidence before suppression state is
+# attached. A suppression can hide presentation and gate impact, but it cannot
+# rewrite the underlying witness or analysis coverage.
+# -----------------------------------------------------------------------------
 sub annotate_diagnostics {
     my ($diagnostics, $baseline) = @_;
     my %ignored = map { $_ => 1 } @{$baseline->{ignored_fingerprints}};
@@ -16351,6 +16516,9 @@ sub normalize_source_suppression_comment {
     return join(" ", @normalized);
 }
 
+# Parse one TINL/TIND directive without accepting wildcard rules or empty
+# rationales. Returning structured failure keeps malformed waivers visible to
+# the policy engine instead of silently ignoring them.
 sub parse_source_suppression_directive {
     my ($comment_text) = @_;
     my $text = normalize_source_suppression_comment($comment_text // "");
@@ -16486,6 +16654,13 @@ sub next_source_code_line {
     return undef;
 }
 
+# -----------------------------------------------------------------------------
+# Quality profiles and gates
+#
+# Profiles may tune documented severity and budget fields only. Domain evidence
+# remains profile-independent, which makes reports comparable across local and
+# release configurations.
+# -----------------------------------------------------------------------------
 sub read_policy_profile {
     my ($path) = @_;
     my $profile = default_policy_profile();
@@ -16821,6 +16996,9 @@ sub sort_quality_profile_risks {
     } @_;
 }
 
+# Fold finalized diagnostics and measured evidence into the base quality gate.
+# Later model-specific gate functions may add failures but never turn a failed
+# base requirement into a pass.
 sub compute_policy_quality_gate {
     my ($ir, $diagnostics, $profile) = @_;
     my $flow = $ir->{source}{function_analysis};
@@ -17881,6 +18059,13 @@ sub stable_hex_hash {
     return sprintf("%08x", $hash);
 }
 
+# -----------------------------------------------------------------------------
+# Persistent governance ledgers
+#
+# Baselines, triage, and history are versioned external state. Readers validate
+# shape and writers use deterministic ordering so review diffs expose semantic
+# changes instead of hash iteration order.
+# -----------------------------------------------------------------------------
 sub read_policy_baseline {
     my ($path) = @_;
     return { ignored_fingerprints => [] } if !defined $path;
@@ -18830,6 +19015,13 @@ sub proof_obligation_status_rank {
 }
 
 
+# -----------------------------------------------------------------------------
+# Assurance, compliance, and soundness
+#
+# These models summarize existing evidence; they are not independent scanners.
+# Missing witnesses or coverage become explicit proof gaps rather than optimistic
+# claims derived from a passing aggregate score.
+# -----------------------------------------------------------------------------
 sub assurance_case {
     my ($ir, $diagnostics, $quality_gate) = @_;
     my @claims = map {
@@ -19113,6 +19305,9 @@ sub diagnostic_matches_any_code {
     return 0;
 }
 
+# Map assurance evidence and gate state to named control families. A control is
+# satisfied only when its required findings, witnesses, and coverage dimensions
+# are present in the same analysis run.
 sub compliance_model {
     my ($diagnostics, $quality_gate, $assurance_case) = @_;
     my @controls = map {
@@ -20455,6 +20650,9 @@ sub sort_context_sensitivity_items {
 }
 
 
+# Calibrate confidence from frontend authority, analysis coverage, unresolved
+# obligations, and concrete witnesses. The model reports uncertainty; it does
+# not suppress lower-confidence findings.
 sub soundness_model {
     my ($ir, $diagnostics, $quality_gate, $assurance_case, $compliance_model) = @_;
     my @assumptions = map {
@@ -20753,6 +20951,13 @@ sub soundness_controls_for_spec {
     return grep { $wanted{$_->{id} // ""} } @{$compliance_model->{controlSet} // []};
 }
 
+# -----------------------------------------------------------------------------
+# Report serialization and local dashboard
+#
+# One machine payload feeds JSON, SARIF, HTML, and HTTP rendering. Secret-bearing
+# source context stays outside serialized findings and is read only for approved
+# terminal frames.
+# -----------------------------------------------------------------------------
 sub machine_report_payload {
     my ($ir, $diagnostics, $errors, $warnings, $notices, $quality_gate, $defect_ledger, $rule_health_model, $root_cause_model, $finding_provenance_model, $finding_witness_model, $finding_confidence_model, $analysis_run_manifest, $defect_delta, $history_trend, $new_code_scope, $change_impact_model, $component_model, $ownership_model, $triage_model, $waiver_model, $analysis_coverage_model, $aging_model, $assurance_case, $compliance_model, $security_hotspot_model, $soundness_model) = @_;
     my $quality_model = quality_model($diagnostics);
@@ -20878,6 +21083,8 @@ sub emit_sarif_report {
     });
 }
 
+# The dashboard binds to a local listener and serves a precomputed report. It
+# does not rerun analysis per request or expose arbitrary repository file reads.
 sub serve_analysis_dashboard {
     my ($payload, $port) = @_;
     $port = 7331 if !defined $port || $port !~ /\A\d+\z/;
@@ -22086,6 +22293,12 @@ sub diagnostic_with_taxonomy {
     return \%copy;
 }
 
+# -----------------------------------------------------------------------------
+# Defect identity, ownership, and lifecycle
+#
+# The ledger groups findings by semantic fingerprint, preserving provenance and
+# witness references so history can distinguish persistence from recurrence.
+# -----------------------------------------------------------------------------
 sub defect_ledger {
     my ($diagnostics) = @_;
     my @records = map { defect_record($_) } @{$diagnostics};
@@ -23727,6 +23940,12 @@ sub limited_defect_lineage_matches {
     ];
 }
 
+# -----------------------------------------------------------------------------
+# Change scope and historical trend
+#
+# Git-derived paths are normalized through the same repository admission rules.
+# New-code gates operate on this scope without changing whole-repository counts.
+# -----------------------------------------------------------------------------
 sub new_code_scope {
     my ($base, $explicit_files, $diagnostics) = @_;
     my @files = map { normalize_report_path($_) } @{$explicit_files // []};
@@ -23829,6 +24048,8 @@ sub normalize_report_path {
     return $path;
 }
 
+# Join the current ledger with prior snapshots by stable fingerprint. Missing or
+# malformed history yields a visible model gap instead of resetting issue age.
 sub history_trend {
     my ($path, $diagnostics, $quality_gate, $defect_ledger) = @_;
     my $current = current_history_snapshot($diagnostics, $quality_gate, $defect_ledger);
@@ -24468,6 +24689,13 @@ sub sarif_rule_for_diagnostic {
     };
 }
 
+# -----------------------------------------------------------------------------
+# Rule catalog
+#
+# Metadata is the single source for severity, ownership, rationale, remediation,
+# and external report descriptions. Integrity checks ensure emitted rule codes
+# cannot escape the catalog unnoticed.
+# -----------------------------------------------------------------------------
 sub rule_metadata {
     my ($code) = @_;
     my $meta = default_rule_metadata($code);
@@ -25843,6 +26071,12 @@ sub validate_cli_arguments {
     }
 }
 
+# -----------------------------------------------------------------------------
+# Terminal diagnostics and CLI surface
+#
+# Width calculations, source frames, colors, and witness truncation are bounded
+# presentation concerns. They must not mutate diagnostics or quality-gate state.
+# -----------------------------------------------------------------------------
 sub validate_terminal_options {
     validate_cli_arguments();
     if (has_arg("--color") && !defined $color_option) {

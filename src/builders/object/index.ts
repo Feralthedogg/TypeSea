@@ -5,6 +5,7 @@
 
 export {
     ObjectGuard,
+    ZodObjectGuard,
     atLeastOneKey,
     catchall,
     deepPartial,

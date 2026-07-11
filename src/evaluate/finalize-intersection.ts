@@ -11,6 +11,8 @@ export interface IntersectionFinalizeState {
     readonly outputs: WeakMap<object, WeakMap<object, unknown>>;
     readonly readonlyMarks: WeakSet<object>;
     readonly readonlyOutputs: object[];
+    readonly rejectConflicts: boolean;
+    conflicted: boolean;
 }
 
 interface IntersectionMergeTask {
@@ -30,11 +32,15 @@ interface CachedIntersectionOutput {
  * @details Pair-keyed output caching preserves aliases and terminates cyclic
  * intersections without retaining inputs after finalization completes.
  */
-export function makeIntersectionFinalizeState(): IntersectionFinalizeState {
+export function makeIntersectionFinalizeState(
+    rejectConflicts = false
+): IntersectionFinalizeState {
     return {
         outputs: new WeakMap<object, WeakMap<object, unknown>>(),
         readonlyMarks: new WeakSet<object>(),
-        readonlyOutputs: []
+        readonlyOutputs: [],
+        rejectConflicts,
+        conflicted: false
     };
 }
 
@@ -77,7 +83,7 @@ export function mergeIntersectionOutputs(
 ): unknown {
     const tasks: IntersectionMergeTask[] = [];
     const output = selectIntersectionOutput(left, right, state, tasks);
-    while (tasks.length > 0) {
+    while (tasks.length > 0 && !state.conflicted) {
         const task = tasks.pop();
         if (task !== undefined) {
             fillIntersectionOutput(task, state, tasks);
@@ -98,6 +104,7 @@ function selectIntersectionOutput(
             : left;
     }
     if (!isObjectLike(left) || !isObjectLike(right)) {
+        markIntersectionConflict(state);
         return right;
     }
     const cached = readIntersectionOutput(left, right, state);
@@ -107,6 +114,10 @@ function selectIntersectionOutput(
     const leftArray = Array.isArray(left);
     const rightArray = Array.isArray(right);
     if (leftArray && rightArray) {
+        if (left.length !== right.length) {
+            markIntersectionConflict(state);
+            return right;
+        }
         return propagateReadonly(
             allocateIntersectionOutput(left, right, true, state, tasks),
             left,
@@ -115,6 +126,7 @@ function selectIntersectionOutput(
         );
     }
     if (leftArray || rightArray) {
+        markIntersectionConflict(state);
         return propagateReadonly(leftArray ? left : right, left, right, state);
     }
     const leftRecord = isOrdinaryRecord(left);
@@ -128,9 +140,23 @@ function selectIntersectionOutput(
         );
     }
     if (leftRecord || rightRecord) {
+        markIntersectionConflict(state);
         return propagateReadonly(leftRecord ? right : left, left, right, state);
     }
+    markIntersectionConflict(state);
     return propagateReadonly(right, left, right, state);
+}
+
+/**
+ * @brief Record incompatible normalized outputs when strict joining is enabled.
+ * @details Guard intersections may retain historical right-biased merging, while
+ * decoder intersections set `rejectConflicts` because accepting two different
+ * decoded values would make the output contract ambiguous.
+ */
+function markIntersectionConflict(state: IntersectionFinalizeState): void {
+    if (state.rejectConflicts) {
+        state.conflicted = true;
+    }
 }
 
 function propagateReadonly(
@@ -172,7 +198,7 @@ function fillIntersectionOutput(
     tasks: IntersectionMergeTask[]
 ): void {
     const keys = collectKeys(task.left, task.right, task.array);
-    for (let index = 0; index < keys.length; index += 1) {
+    for (let index = 0; index < keys.length && !state.conflicted; index += 1) {
         const key = keys[index];
         if (key === undefined) {
             continue;
@@ -209,8 +235,15 @@ function mergeDescriptor(
             value: selectIntersectionOutput(left.value, right.value, state, tasks)
         };
     }
-    if (leftData) {
-        return left;
+    if (leftData || rightData) {
+        markIntersectionConflict(state);
+        return right;
+    }
+    if (left.get !== right.get ||
+        left.set !== right.set ||
+        left.enumerable !== right.enumerable ||
+        left.configurable !== right.configurable) {
+        markIntersectionConflict(state);
     }
     return right;
 }

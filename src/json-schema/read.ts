@@ -36,8 +36,11 @@ interface ResolvedJsonSchemaOptions {
     readonly schemaId: string | undefined;
 }
 
+/** @brief Sentinel spelling that opens unrepresentable domains during export. */
 export const JSON_SCHEMA_UNREPRESENTABLE_OPEN = "ANY".toLowerCase() as JsonSchemaUnrepresentableMode;
+/** @brief Strict policy that reports unrepresentable schema domains. */
 export const JSON_SCHEMA_UNREPRESENTABLE_THROW = "throw";
+/** @brief Default URI mapper preserving registry identifiers verbatim. */
 export const JSON_SCHEMA_IDENTITY_URI: JsonSchemaUriMapper = (id: string): string => id;
 
 /**

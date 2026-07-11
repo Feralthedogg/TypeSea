@@ -70,6 +70,12 @@ a promise to clone Zod's internal parser engine or every future upstream
 feature. Missing Zod APIs should be treated as compatibility gaps, not as part
 of TypeSea's core validation contract.
 
+The [pinned real-world corpus](./zod-real-world-compat.md) scans 1,875 Zod files
+and 28,758 calls across nine repositories. Its 224 self-contained replacement
+candidates currently compile with zero TypeSea-only diagnostics and zero missing
+observed declaration exports. This is source-compatibility evidence for the
+pinned commits, not a full semantic-equivalence claim.
+
 ### Zod Compatibility Matrix
 
 The facade is useful when existing code already thinks in Zod-shaped builders.
@@ -81,9 +87,9 @@ or lossy export blocker is present.
 | --- | --- | --- |
 | `z.string()`, `z.number()`, `z.boolean()`, `z.bigint()`, `z.symbol()`, `z.date()` | Supported and compiled | Primitive guards are TypeSea guards with Zod-style constructors and aliases. |
 | String, number, bigint, date, array, set, map, and file checks | Supported and compiled | Built-in checks such as `.min()`, `.max()`, `.email()`, `.uuid()`, `.int()`, `.gte()`, `.nonempty()`, and `.mime()` stay in the normal validator pipeline. |
-| `z.object()`, `.strict()`, `.loose()`, `.passthrough()`, `.strip()`, `.extend()`, `.pick()`, `.omit()`, `.partial()`, `.required()` | Supported and compiled | `z.object()` follows Zod v4 strip-by-default output semantics; safe strict objects reject undeclared own string, symbol, and non-enumerable keys without reading through prototypes. |
+| `z.object()`, `.strict()`, `.loose()`, `.passthrough()`, `.strip()`, `.extend()`, `.pick()`, `.omit()`, `.partial()`, `.required()` | Supported and compiled | `z.object()` follows Zod v4 strip-by-default output semantics. Object decoders retain shape operations after transforms, metadata, and refinements. Safe strict objects reject undeclared own string, symbol, and non-enumerable keys without reading through prototypes. |
 | `z.array()`, `z.tuple()`, tuple rest, `z.record()`, `z.map()`, `z.set()`, `z.enum()`, `z.literal()` | Supported and compiled | Container schemas keep TypeSea's own presence, tuple, and key semantics. |
-| `z.union()`, `z.discriminatedUnion()`, `z.intersection()` | Supported and compiled | Object-union preflight is optimized when branches expose required keys or discriminators. Wide overlapping unions may still need branch probing. |
+| `z.union()`, `z.discriminatedUnion()`, `z.intersection()` | Supported and compiled | Guard and decoder branches can be mixed while preserving input/output inference. Object-union preflight is optimized when branches expose required keys or discriminators. Wide overlapping unions may still need branch probing. |
 | `z.default()`, `z.prefault()`, `z.catch()`, `z.pipe()`, `z.codec()`, `z.coerce.*`, transforms, and overwrites | Supported as decoder/codec pipelines | Use parse/decode APIs for output-changing behavior. These paths may block JSON Schema export or standalone AOT when semantics would be lost. |
 | `z.refine()`, `z.superRefine()`, `z.custom()`, `z.lazy()`, `z.function()`, `z.instanceof()` | Runtime-supported, not always exportable | Callback or identity-sensitive contracts can validate at runtime, but they are intentionally treated as AOT/JSON Schema blockers unless TypeSea can preserve the behavior. |
 | `typesea/v4/core`, underscore-prefixed metadata, class aliases, and v3 shims | Migration/probe shims | These keep common package-alias probes and type references alive. They are not a promise to clone Zod's private parser engine. |
@@ -863,6 +869,20 @@ surfaces. Async decoder instances provide `parseAsync`, `safeParseAsync`, and
   `t.set()`. A container with one-way child decoders returns a decoder. A
   container whose transformed children are all codecs returns a codec, so
   `decode()` and `encode()` both work at container granularity.
+- Decoder-aware union, intersection, lazy, array, and object builders preserve
+  both `Input<>` and `Output<>`. `TypeSource<Output, Input, Presence>` is their
+  common structural contract with guards and codecs.
+- Object decoders retain `shape`, `extend`, `safeExtend`, `merge`, `pick`,
+  `omit`, `partial`, `strict`, `strip`, `passthrough`, and `loose`. These are
+  cold schema-construction operations; they do not add branches to the finished
+  decode runner. Merging a guard-only object with an object decoder promotes the
+  result to an object decoder.
+- `default()` excludes `undefined` from its output after a fallback is installed.
+  String transforms retain `string` input, and decoder arrays retain the child
+  input array type.
+- Native TypeSea refinements require literal `true`. The `z.object()` facade
+  normalizes truthy refinement results for Zod compatibility without changing
+  the `t.object()` contract.
 - `t.stringbool(options)` decodes env-style boolean strings and encodes booleans
   back to representative strings. It is case-insensitive by default; set
   `case: "sensitive"` for exact token matching.

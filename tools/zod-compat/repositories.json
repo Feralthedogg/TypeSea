@@ -1,0 +1,63 @@
+{
+    "schemaVersion": 1,
+    "budgets": {
+        "maxCompilationRegressions": 0,
+        "maxMissingDeclarationExports": 0
+    },
+    "repositories": [
+        {
+            "id": "create-t3-app",
+            "repository": "t3-oss/create-t3-app",
+            "commit": "4709861f7e67a15564c0460c13e7b4b6cfcae40d",
+            "license": "MIT"
+        },
+        {
+            "id": "calcom",
+            "repository": "calcom/cal.diy",
+            "commit": "f00434927386c9ecdcbd7e6c5f82d22044a245bc",
+            "license": "MIT"
+        },
+        {
+            "id": "hoppscotch",
+            "repository": "hoppscotch/hoppscotch",
+            "commit": "afc2cf181c16e56647b099e5d18cfe55710c6cdd",
+            "license": "MIT"
+        },
+        {
+            "id": "trigger-dev",
+            "repository": "triggerdotdev/trigger.dev",
+            "commit": "2cac63f13ab151ae408282c44d42f01295cf9f64",
+            "license": "Apache-2.0"
+        },
+        {
+            "id": "trpc",
+            "repository": "trpc/trpc",
+            "commit": "340811ba5320637fbaf48fccf3dbfdd258bd34db",
+            "license": "MIT"
+        },
+        {
+            "id": "shadcn-ui",
+            "repository": "shadcn-ui/ui",
+            "commit": "3cdaa6eb2f0da27aca8598cb752c32d840e06940",
+            "license": "MIT"
+        },
+        {
+            "id": "payload",
+            "repository": "payloadcms/payload",
+            "commit": "fd11d0796117b48d25159119a3e5830c77097f93",
+            "license": "MIT"
+        },
+        {
+            "id": "medusa",
+            "repository": "medusajs/medusa",
+            "commit": "917ddbe0e56b4e739fa828140cd7973d823d1bbd",
+            "license": "MIT"
+        },
+        {
+            "id": "supabase",
+            "repository": "supabase/supabase",
+            "commit": "e5df232b44cf0a66d8c10692323ac8934f47e3f3",
+            "license": "Apache-2.0"
+        }
+    ]
+}

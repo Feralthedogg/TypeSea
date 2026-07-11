@@ -24,23 +24,28 @@ import {
 } from "./sea-breeze.js";
 import type { SeaBreezeArena } from "./sea-breeze.js";
 
+/** @brief Object unknown-key policy applied during arena-to-schema lowering. */
 export type SeaBreezeSchemaObjectMode =
     | "strict"
     | "passthrough"
     | "strip";
 
+/** @brief Behavior when lowering reaches an unresolved inference variable. */
 export type SeaBreezeUnboundVarPolicy =
     | "unknown"
     | "error";
 
+/** @brief Behavior when an arena cycle cannot be represented without a lazy node. */
 export type SeaBreezeCyclePolicy =
     | "unknown"
     | "error";
 
+/** @brief Choice between normalized flat unions and preserved binary joins. */
 export type SeaBreezeUnionMode =
     | "flatten"
     | "binary";
 
+/** @brief Key interning table and semantic policies for schema materialization. */
 export interface SeaBreezeSchemaLoweringOptions {
     /**
      * @brief Intern table mapping arena field key ids to object property names.

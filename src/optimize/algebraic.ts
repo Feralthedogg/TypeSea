@@ -9,6 +9,7 @@ import type {
     NodeId
 } from "../ir/index.js";
 
+/** @brief One algebraic rewrite candidate and its replacement node id. */
 export interface AlgebraicFold {
     /**
      * @brief True when an And fold has proven false.

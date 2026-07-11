@@ -37,6 +37,12 @@ const User = z.object({
 const user = User.parse(input);
 ```
 
+The pinned [real-world Zod compatibility corpus](./docs/zod-real-world-compat.md)
+currently scans 1,875 files across nine public repositories and compiles 224
+self-contained source files after import replacement with zero replacement-only
+TypeScript diagnostics and zero missing observed declaration exports. This is a
+pinned compatibility measurement, not a claim of universal semantic parity.
+
 TypeSea guards also expose Standard Schema V1, so ecosystem tools that accept
 Standard Schema can receive the guard directly. Hono supports this through
 `@hono/standard-validator`, and tRPC can consume Standard Schema validators or
@@ -68,7 +74,7 @@ publicProcedure.input(userInput).mutation(({ input }) => {
 
 ## Benchmark Headline
 
-Last clean committed local benchmark on 2026-07-09 KST:
+Last clean committed local benchmark on 2026-07-11 KST:
 `npm run bench:record`, median of 3 full runs, strict-object contract,
 operations per second on one machine. The chart is generated from
 [`bench/results/latest.json`](https://github.com/Feralthedogg/TypeSea/blob/main/bench/results/latest.json).
@@ -437,7 +443,7 @@ failed check() -> schema-aware diagnostic collector
 
 ## Performance Snapshot
 
-Last clean local benchmark on 2026-07-09 KST, using `npm run bench:record` with the
+Last clean local benchmark on 2026-07-11 KST, using `npm run bench:record` with the
 median of 3 full Vitest runs over the benchmark strict-object contract. The raw
 Vitest JSON is stored in
 [`bench/results/raw.json`](https://github.com/Feralthedogg/TypeSea/blob/main/bench/results/raw.json),
@@ -549,6 +555,10 @@ coercion, decoder output wrappers, top-level wrappers, and object modifiers.
 In the `z` namespace, `z.object(shape)` follows Zod v4 strip-by-default output
 semantics; call `.passthrough()` or `.loose()` when unknown keys should be kept.
 Native `t.object(shape)` remains TypeSea's explicit passthrough object builder.
+The [pinned compatibility corpus](./docs/zod-real-world-compat.md) records the
+exact repositories, commits, API counts, and replacement compilation result.
+Its zero-regression budget prevents observed source compatibility from drifting
+silently, but does not turn private Zod parser internals into a TypeSea contract.
 For 1.x, TypeSea owns these subpath names as stable migration facades, but they
 remain best-effort compatibility layers over TypeSea's guard engine rather than
 a promise to clone Zod's internal parser engine or every future upstream
@@ -751,6 +761,20 @@ Decoder and codec children can be placed directly inside object, array, tuple,
 record, map, and set containers. If the container includes a one-way decoder,
 the builder returns a decoder. If every transformed child is bidirectional, the
 builder returns a codec that can encode the value back across the same boundary.
+
+Decoder-aware unions, intersections, lazy schemas, arrays, and objects preserve
+both `Input<>` and `Output<>`. Object decoders retain `shape`, `extend`,
+`safeExtend`, `merge`, `pick`, `omit`, `partial`, `strict`, `strip`,
+`passthrough`, and `loose` while schema definitions are composed; these methods
+do not add dispatch to the completed validation runner. A guard-only object
+merged with an object decoder is promoted to an object decoder automatically.
+`TypeSource<Output, Input, Presence>` is the common structural contract used by
+guards, decoders, codecs, and the Zod-compatible `ZodType` aliases.
+
+`default()` removes `undefined` from its output type after installing a fallback.
+String transforms retain `string` as their input type, and decoder arrays retain
+the child input array type. Native `t.*.refine()` still requires literal `true`;
+the `z.object()` facade alone accepts Zod-style truthy refinement results.
 
 ```ts
 const Event = t.strictObject({
@@ -1101,6 +1125,7 @@ provenance.
 
 - [Documentation site](https://feralthedogg.github.io/TypeSea/)
 - [API reference](https://feralthedogg.github.io/TypeSea/api/)
+- [Zod compatibility corpus](https://feralthedogg.github.io/TypeSea/zod-compat/)
 - [SeaFlow fuzzer guide](https://feralthedogg.github.io/TypeSea/seaflow/)
 - [SeaBreeze arena inference](https://feralthedogg.github.io/TypeSea/seabreeze/)
 - [Engine notes](https://feralthedogg.github.io/TypeSea/engine/)
@@ -1109,6 +1134,19 @@ provenance.
 ---
 
 ## Migration Notes
+
+### 1.1.1 to 1.2.0
+
+`1.2.0` expands source compatibility without changing TypeSea's safe validation
+defaults. Decoder children now compose through union, intersection, lazy, array,
+tuple, record, map, set, and object builders while retaining input/output types.
+Object decoder shape operations survive metadata and refinement wrappers, and
+guard/decoder object merges select the correct decoder or codec result type.
+
+The `typesea/zod`, `/v3`, `/v4`, `/v4/core`, and `/v4-mini` declaration facades
+now cover every export observed by the pinned nine-repository corpus. All 224
+self-contained replacement candidates compile with zero TypeSea-only diagnostics.
+This is a measured migration baseline, not a full Zod parser compatibility claim.
 
 ### 1.1.0 to 1.1.1
 

@@ -6,9 +6,12 @@
 import { PresenceTag, SchemaTag } from "../kind/index.js";
 import {
     catchValue,
+    decodeIntersectionSources,
+    decodeUnionSources,
     defaultValue,
     pipe as pipeDecoder,
     prefault as prefaultDecoder,
+    isDecoderValue,
     transform as transformDecoder,
     type BaseDecoder,
     type CatchInput,
@@ -101,8 +104,8 @@ type GuardPromiseFactory = <TValue, TPresence extends Presence>(
     source: Guard<TValue, TPresence>
 ) => PromiseAsyncDecoder<GuardRuntimeValue<TValue, TPresence>>;
 type GuardDefaultInput<TValue, TPresence extends Presence> =
-    GuardRuntimeValue<TValue, TPresence> |
-    (() => GuardRuntimeValue<TValue, TPresence>);
+    Exclude<GuardRuntimeValue<TValue, TPresence>, undefined> |
+    (() => Exclude<GuardRuntimeValue<TValue, TPresence>, undefined>);
 type GuardCatchInput<TValue, TPresence extends Presence> =
     CatchInput<GuardRuntimeValue<TValue, TPresence>>;
 
@@ -143,6 +146,9 @@ export class BaseGuard<
 > implements Guard<TValue, TPresence> {
     public declare readonly [TypeSymbol]: TValue;
     public declare readonly [PresenceSymbol]: TPresence;
+    public declare readonly _input: GuardRuntimeValue<TValue, TPresence>;
+    public declare readonly _output: GuardRuntimeValue<TValue, TPresence>;
+    public declare readonly _presence: TPresence;
     public declare readonly schema: Schema;
     public declare readonly "~standard": StandardSchemaV1Props<
         GuardRuntimeValue<TValue, TPresence>,
@@ -395,8 +401,8 @@ export class BaseGuard<
         this: unknown,
         value: unknown,
         options?: Partial<ParseOptions>
-    ): SafeParseResult<RuntimeValue<TValue, TPresence>> {
-        const result = checkSchema<RuntimeValue<TValue, TPresence>>(
+    ): SafeParseResult<this["_output"]> {
+        const result = checkSchema<this["_output"]>(
             readGuardSchema(this, "guard receiver"),
             value
         );
@@ -1045,7 +1051,7 @@ export class BaseGuard<
      */
     public default(
         fallback: GuardDefaultInput<TValue, TPresence>
-    ): BaseDecoder<RuntimeValue<TValue, TPresence>> {
+    ): BaseDecoder<Exclude<RuntimeValue<TValue, TPresence>, undefined>> {
         const source = readRuntimeGuard<TValue, TPresence>(this);
         return defaultValue(source, fallback as never);
     }
@@ -1093,10 +1099,19 @@ export class BaseGuard<
      */
     public or<TOther extends Guard<unknown, Presence>>(
         other: TOther
-    ): BaseGuard<RuntimeValue<TValue, TPresence> | Infer<TOther>> {
-        return new BaseGuard<
-            RuntimeValue<TValue, TPresence> | Infer<TOther>
-        >(normalizeUnionSchema([
+    ): BaseGuard<RuntimeValue<TValue, TPresence> | Infer<TOther>>;
+
+    public or<TOther extends DecodeSource>(
+        other: TOther
+    ): BaseDecoder<RuntimeValue<TValue, TPresence> | InferDecoder<TOther>>;
+
+    public or(
+        other: DecodeSource
+    ): BaseGuard<unknown> | BaseDecoder<unknown> {
+        if (isDecoderValue(other)) {
+            return decodeUnionSources([readThisGuard(this), other]);
+        }
+        return new BaseGuard<unknown>(normalizeUnionSchema([
             readGuardSchema(this, "union option 0"),
             readGuardSchema(other, "union option 1")
         ]));
@@ -1109,8 +1124,19 @@ export class BaseGuard<
      */
     public intersect<TOther extends Guard<unknown, Presence>>(
         other: TOther
-    ): BaseGuard<RuntimeValue<TValue, TPresence> & Infer<TOther>> {
-        return new BaseGuard<RuntimeValue<TValue, TPresence> & Infer<TOther>>({
+    ): BaseGuard<RuntimeValue<TValue, TPresence> & Infer<TOther>>;
+
+    public intersect<TOther extends DecodeSource>(
+        other: TOther
+    ): BaseDecoder<RuntimeValue<TValue, TPresence> & InferDecoder<TOther>>;
+
+    public intersect(
+        other: DecodeSource
+    ): BaseGuard<unknown> | BaseDecoder<unknown> {
+        if (isDecoderValue(other)) {
+            return decodeIntersectionSources(readThisGuard(this), other);
+        }
+        return new BaseGuard<unknown>({
             tag: SchemaTag.Intersection,
             left: readGuardSchema(this, "intersection left"),
             right: readGuardSchema(other, "intersection right")
@@ -1124,7 +1150,15 @@ export class BaseGuard<
      */
     public and<TOther extends Guard<unknown, Presence>>(
         other: TOther
-    ): BaseGuard<RuntimeValue<TValue, TPresence> & Infer<TOther>> {
+    ): BaseGuard<RuntimeValue<TValue, TPresence> & Infer<TOther>>;
+
+    public and<TOther extends DecodeSource>(
+        other: TOther
+    ): BaseDecoder<RuntimeValue<TValue, TPresence> & InferDecoder<TOther>>;
+
+    public and(
+        other: DecodeSource
+    ): BaseGuard<unknown> | BaseDecoder<unknown> {
         return this.intersect(other);
     }
 
