@@ -15,9 +15,15 @@
 ![Module](https://img.shields.io/badge/module-ESM--only-orange)
 ![Node](https://img.shields.io/badge/node-%3E%3D20.19-yellowgreen)
 
-**TypeSea** is a **zero-runtime-dependency TypeScript runtime narrowing library**
-built around **immutable guards**, optimized **Sea-of-Nodes validation plans**,
-runtime compilation, and AOT source generation.
+**TypeSea is a zero-dependency TypeScript validation compiler: schema in,
+optimized type guard out.** Its core is built around immutable guards,
+Sea-of-Nodes validation plans, JIT predicate generation, and standalone AOT
+source.
+
+TypeSea's identity is the compiler and hostile-input-safe validation engine.
+`typesea/v3`, `typesea/v4`, and the Zod-shaped exports are migration and
+ecosystem facades with an explicit support matrix; they are not a clone of
+Zod's private parser runtime.
 
 ## Try It In Existing Code
 
@@ -85,14 +91,15 @@ operations per second on one machine. The chart is generated from
 
 ![TypeSea benchmark comparison](https://feralthedogg.github.io/TypeSea/benchmark-headline.svg)
 
-TypeSea safe compiled validators are already in Ajv's boolean hot-path class
-while keeping descriptor-based hostile-input semantics. Unsafe and unchecked
-FastMode are the bragging-rights path for trusted normalized data: direct field
-loads, allocation-light strict-key loops, and V8-friendly monomorphic codegen.
+TypeSea safe compiled validators target Ajv's boolean hot-path class while
+keeping descriptor-based hostile-input semantics. Unsafe and unchecked modes
+are separate contracts for trusted normalized data: direct field loads,
+allocation-light strict-key loops, and V8-friendly monomorphic codegen.
 
-> Goal: not "probably valid", but **provably parity-tested validation** that
-> never executes user code, never throws on expected failures, and never leaks
-> mutable state across a public boundary.
+> Goal: not "probably valid", but **parity-tested validation** that never
+> executes input getters in safe structural paths, never throws on expected
+> failures, and never leaks mutable state across a public boundary. Explicit
+> refinement and transform callbacks execute only when the schema requests them.
 
 > [!IMPORTANT]
 > TypeSea is designed for **hostile boundary data**: property reads go through
@@ -123,7 +130,8 @@ Many validation libraries fall short when you care about:
 
 TypeSea focuses on:
 
-- **no user-code execution during validation**
+- **no implicit input-code execution during structural validation**
+- **explicit callback boundaries for refinements and transforms**
 - **runtime plan / compiled / AOT parity, enforced by a seeded generative fuzzer**
 - **injection-safe code generation** (side tables, never string interpolation)
 - **explicit presence semantics** (`optional` vs `undefinedable`)
@@ -297,9 +305,9 @@ import {
   compileAsync,
   compileBoolean,
   compileCached,
-  createTypeSeaVitePlugin,
   warmup
 } from "typesea";
+import { createTypeSeaVitePlugin } from "typesea/plugin";
 
 const FastUser = compileCached("user:v1", () => User, { name: "isUser" });
 const BooleanUser = compileBoolean(User, { name: "isUserBoolean" });
@@ -335,6 +343,8 @@ compatible plugin objects. All three can rewrite static
 `compileCached("id", ...)` calls into imports from `typesea:aot/<id>` when the
 entry is listed in the plugin config. esbuild reads source through an optional
 `readFile` hook or a dynamic `node:fs/promises` import inside `setup()`.
+Use the dedicated `typesea/plugin` subpath in bundler configuration so runtime
+validator imports do not pull the plugin surface into the application graph.
 
 ### Unsafe FastMode
 
@@ -1136,9 +1146,12 @@ maintainer confirms the final publication with 2FA.
 
 - [Documentation site](https://feralthedogg.github.io/TypeSea/)
 - [API reference](https://feralthedogg.github.io/TypeSea/api/)
-- [Zod compatibility corpus](https://feralthedogg.github.io/TypeSea/zod-compat/)
+- [Zod compatibility matrix](https://feralthedogg.github.io/TypeSea/zod-compat/)
+- [Real-world Zod corpus](https://feralthedogg.github.io/TypeSea/zod-corpus/)
+- [AOT bundler plugin](https://feralthedogg.github.io/TypeSea/aot/)
 - [SeaFlow fuzzer guide](https://feralthedogg.github.io/TypeSea/seaflow/)
 - [SeaBreeze arena inference](https://feralthedogg.github.io/TypeSea/seabreeze/)
+- [Project direction](https://feralthedogg.github.io/TypeSea/direction/)
 - [Engine notes](https://feralthedogg.github.io/TypeSea/engine/)
 - [Security policy](https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md)
 

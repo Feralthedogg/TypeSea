@@ -78,6 +78,10 @@ pinned commits, not a full semantic-equivalence claim.
 
 ### Zod Compatibility Matrix
 
+The canonical support levels and migration policy live in the
+[Zod compatibility guide](./zod-compatibility.md). The summary below is kept
+next to the API surface for quick reference.
+
 The facade is useful when existing code already thinks in Zod-shaped builders.
 The table below describes the practical support boundary. "Compiled" means the
 schema lowers into TypeSea's generated validator path when no runtime callback
@@ -1241,6 +1245,8 @@ use `isAsync()` when the hot path needs only the cooperative boolean verdict.
 ### AOT Bundler Plugins
 
 ```ts
+import { createTypeSeaVitePlugin } from "typesea/plugin";
+
 export default createTypeSeaVitePlugin({
   entries: [
     {
@@ -1261,6 +1267,8 @@ They serve virtual modules such as `typesea:aot/user:v1` by running
 modules, so production bundles can drop the schema factory and runtime compiler
 for that guard. esbuild source reads use an optional `readFile` hook or a
 dynamic `node:fs/promises` import inside plugin `setup()`.
+See the [AOT plugin guide](./aot-plugin.md) for complete Vite, Rollup, and
+esbuild configurations and the conservative rewrite rules.
 
 ### Union Schema Shape
 

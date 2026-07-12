@@ -1,7 +1,7 @@
 {
     "name": "typesea",
-    "version": "1.2.0",
-    "description": "V8-friendly runtime narrowing for TypeScript with Sea-of-Nodes graph introspection.",
+    "version": "1.2.1",
+    "description": "Zero-dependency TypeScript validation compiler with JIT and AOT type guards.",
     "type": "module",
     "author": "feral",
     "repository": {
@@ -40,6 +40,11 @@
             "types": "./dist/seabreeze/index.d.ts",
             "import": "./dist/seabreeze/index.js",
             "default": "./dist/seabreeze/index.js"
+        },
+        "./plugin": {
+            "types": "./dist/plugin/index.d.ts",
+            "import": "./dist/plugin/index.js",
+            "default": "./dist/plugin/index.js"
         },
         "./zod": {
             "types": "./dist/zod.d.ts",
@@ -88,6 +93,10 @@
         "typeguard",
         "type-guard",
         "runtime-validation",
+        "validation-compiler",
+        "jit",
+        "aot",
+        "code-generation",
         "schema",
         "narrowing",
         "v8"

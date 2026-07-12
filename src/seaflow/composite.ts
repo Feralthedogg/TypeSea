@@ -14,6 +14,7 @@ import type {
     ObjectEntry,
     Schema
 } from "../schema/index.js";
+import { readEnumerableStringKeys } from "../evaluate/shared.js";
 import {
     childContext,
     descendContext,
@@ -346,6 +347,22 @@ function* emitObjectCases(
             "object.prototype"
         );
     }
+    if (context.config.intensity === "extreme") {
+        yield makeSeaFlowCase(
+            context,
+            makeThrowingReflectionProxy(valid),
+            false,
+            "security",
+            "object.proxy.reflection"
+        );
+        yield makeSeaFlowCase(
+            context,
+            makeRevokedProxy(valid),
+            false,
+            "security",
+            "object.proxy.revoked"
+        );
+    }
 }
 
 /**
@@ -656,6 +673,31 @@ function setAccessorKey(
 }
 
 /**
+ * @brief Wrap a valid sample in a Proxy whose reflection trap throws.
+ * @details Safe validators must convert hostile reflection into a false verdict;
+ * SeaFlow never invokes the trap while constructing the payload.
+ */
+function makeThrowingReflectionProxy(value: unknown): object {
+    return new Proxy(readProxyTarget(value), {
+        ownKeys(): never {
+            throw new TypeError("SeaFlow hostile ownKeys trap");
+        }
+    });
+}
+
+/** @brief Return a revoked Proxy over a valid object sample. */
+function makeRevokedProxy(value: unknown): object {
+    const handle = Proxy.revocable(readProxyTarget(value), {});
+    handle.revoke();
+    return handle.proxy;
+}
+
+/** @brief Narrow an object-schema sample into a legal Proxy target. */
+function readProxyTarget(value: unknown): object {
+    return typeof value === "object" && value !== null ? value : {};
+}
+
+/**
  * @brief Copy own enumerable data into a plain record.
  */
 function copyRecord(value: unknown): Record<string, unknown> {
@@ -672,7 +714,11 @@ function propertyCountMatches(
     if (!isRecord(value)) {
         return false;
     }
-    const count = Object.keys(value).length;
+    const keys = readEnumerableStringKeys(value);
+    if (keys === undefined) {
+        return false;
+    }
+    const count = keys.length;
     return (schema.min === undefined || count >= schema.min) &&
         (schema.max === undefined || count <= schema.max);
 }

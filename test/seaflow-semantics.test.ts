@@ -30,8 +30,34 @@ describe("SeaFlow symbolic fuzzer", () => {
         expect(cases.some((item) => item.reason === "object.sample")).toBe(true);
         expect(cases.some((item) => item.reason === "object.requiredKey")).toBe(true);
         expect(cases.some((item) => item.reason === "object.proto")).toBe(true);
+        expect(cases.some((item) => item.reason === "object.proxy.reflection")).toBe(true);
+        expect(cases.some((item) => item.reason === "object.proxy.revoked")).toBe(true);
 
         assertCaseLabels(Event, cases);
+    });
+
+    test("emits hostile Proxy cases without leaking reflection failures", () => {
+        const User = t.strictObject({ id: t.string });
+        const cases = [...fuzzCases(User, {
+            intensity: "extreme",
+            maxYields: 64
+        })];
+        const proxies = cases.filter((item) => item.reason.startsWith("object.proxy."));
+
+        expect(proxies.map((item) => item.reason)).toEqual([
+            "object.proxy.reflection",
+            "object.proxy.revoked"
+        ]);
+        for (let index = 0; index < proxies.length; index += 1) {
+            const item = proxies[index];
+            if (item === undefined) {
+                continue;
+            }
+            expect(() => User.is(item.value)).not.toThrow();
+            expect(User.is(item.value)).toBe(false);
+            expect(item.valid).toBe(false);
+            expect(item.kind).toBe("security");
+        }
     });
 
     test("offers a value-only generator and namespace facade", () => {

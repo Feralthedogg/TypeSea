@@ -4,8 +4,13 @@
   <img src="https://raw.githubusercontent.com/Feralthedogg/TypeSea/main/docs/assets/typesea-logo.png" alt="TypeSea" width="620" />
 </p>
 
-**TypeSea**는 런타임 의존성 없이 TypeScript 값을 검증하고 타입을 좁히는 라이브러리입니다.
-불변 스키마, Sea-of-Nodes에서 영향을 받은 검증 IR, 런타임 컴파일, AOT 소스 생성을 한 흐름으로 묶는 것을 목표로 합니다.
+**TypeSea는 zero-dependency TypeScript 검증 컴파일러입니다. 스키마를 입력받아
+최적화된 type guard를 출력합니다.** 핵심은 불변 guard, Sea-of-Nodes 검증 계획,
+JIT predicate 생성, standalone AOT source입니다.
+
+TypeSea의 정체성은 컴파일러와 적대적 입력에 안전한 검증 엔진입니다.
+`typesea/v3`, `typesea/v4`와 Zod 형태의 export는 지원 범위를 명시한
+마이그레이션·생태계 facade이며 Zod 비공개 parser runtime의 복제품이 아닙니다.
 
 ## 기존 코드에서 찍어보기
 
@@ -81,7 +86,10 @@ TypeSea의 안전 모드 컴파일 검증기는 getter 실행 방지와 strict e
 
 > 목표는 "대충 유효해 보이면 통과"가 아닙니다.
 > TypeSea의 목표는 **런타임 실행, 컴파일 실행, AOT 실행이 같은 판정을 내린다는 사실을 테스트로 고정하는 검증기**입니다.
-> 사용자 코드를 실행하지 않고, 예상 가능한 실패에서 예외를 던지지 않으며, 공개 API 경계 밖으로 변경 가능한 내부 상태를 내보내지 않는 것을 기본 원칙으로 둡니다.
+> safe 구조 검증에서 입력 getter를 실행하지 않고, 예상 가능한 실패에서 예외를
+> 던지지 않으며, 공개 API 경계 밖으로 변경 가능한 내부 상태를 내보내지 않는 것을
+> 기본 원칙으로 둡니다. refinement와 transform callback은 스키마가 명시적으로
+> 요청한 경우에만 실행합니다.
 
 > [!IMPORTANT]
 > TypeSea는 **적대적인 경계 입력**을 전제로 설계했습니다.
@@ -109,7 +117,8 @@ TypeSea의 안전 모드 컴파일 검증기는 getter 실행 방지와 strict e
 
 TypeSea는 아래 원칙에 집중합니다.
 
-- 검증 중 사용자 코드 실행 금지
+- 구조 검증 중 입력에 숨겨진 코드 실행 금지
+- refinement와 transform의 명시적인 callback 경계
 - 런타임, 컴파일, AOT 실행 경로의 판정 일치를 seeded fuzzer로 검증
 - 코드 생성 시 사용자 입력을 소스 문자열에 직접 삽입하지 않기
 - `optional`과 `undefinedable`을 분리하는 명시적 key presence 규칙
@@ -262,9 +271,9 @@ import {
   compileAsync,
   compileBoolean,
   compileCached,
-  createTypeSeaVitePlugin,
   warmup
 } from "typesea";
+import { createTypeSeaVitePlugin } from "typesea/plugin";
 
 const FastUser = compileCached("user:v1", () => User, { name: "isUser" });
 const BooleanUser = compileBoolean(User, { name: "isUserBoolean" });
@@ -292,6 +301,8 @@ true/false 판정만 필요한 hot path는 diagnostic collector를 아예 만들
 
 zero-dependency AOT plugin helper는 Rollup, Vite, esbuild compatible plugin object를 반환합니다.
 Vite, Rollup, esbuild는 plugin config에 등록된 entry에 한해 정적 `compileCached("id", ...)` 호출을 `typesea:aot/<id>` virtual module import로 치환할 수 있습니다.
+bundler 설정에서는 `typesea/plugin` 전용 subpath를 사용해 runtime validator import가
+plugin 표면을 애플리케이션 graph에 포함하지 않도록 합니다.
 
 ### Unsafe FastMode
 
@@ -979,9 +990,12 @@ npm staged publishing을 선택하세요.
 
 - [문서 사이트](https://feralthedogg.github.io/TypeSea/)
 - [API 레퍼런스](https://feralthedogg.github.io/TypeSea/ko/api/)
-- [Zod 호환성 코퍼스](https://feralthedogg.github.io/TypeSea/ko/zod-compat/)
+- [Zod 호환성 표](https://feralthedogg.github.io/TypeSea/ko/zod-compat/)
+- [실사용 Zod 코퍼스](https://feralthedogg.github.io/TypeSea/ko/zod-corpus/)
+- [AOT 번들러 플러그인](https://feralthedogg.github.io/TypeSea/ko/aot/)
 - [SeaFlow 퍼저 가이드](https://feralthedogg.github.io/TypeSea/ko/seaflow/)
 - [SeaBreeze arena 추론](https://feralthedogg.github.io/TypeSea/ko/seabreeze/)
+- [프로젝트 방향](https://feralthedogg.github.io/TypeSea/ko/direction/)
 - [엔진 노트](https://feralthedogg.github.io/TypeSea/ko/engine/)
 - [보안 정책](https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md)
 

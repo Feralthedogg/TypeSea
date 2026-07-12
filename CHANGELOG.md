@@ -2,6 +2,25 @@
 
 All notable changes to TypeSea are recorded here.
 
+## 1.2.1 - 2026-07-13
+
+### Added
+
+- Added the dedicated `typesea/plugin` subpath and standalone English/Korean AOT
+  plugin guides for Vite, Rollup, and esbuild configuration.
+- Added SeaFlow extreme-mode probes for reflection-throwing and revoked proxies.
+- Added canonical English/Korean Zod compatibility and project-direction guides.
+
+### Changed
+
+- Positioned the package and documentation around TypeSea's validation compiler
+  contract, with Zod-shaped exports explicitly classified as compatibility
+  facades.
+- Removed declaration maps from npm release builds and added packed size,
+  unpacked size, and file-count budgets to the package gate.
+- Pinned GitHub Actions to immutable revisions and disabled persisted checkout
+  credentials in CI and release workflows.
+
 ## 1.2.0 - 2026-07-11
 
 ### Added

@@ -63,6 +63,8 @@ async function main() {
     await writeFile(join(workspace, "seaflow.ts"), seaflowTypeSource());
     await writeFile(join(workspace, "seabreeze.mjs"), seabreezeRuntimeSource());
     await writeFile(join(workspace, "seabreeze.ts"), seabreezeTypeSource());
+    await writeFile(join(workspace, "plugin.mjs"), pluginRuntimeSource());
+    await writeFile(join(workspace, "plugin.ts"), pluginTypeSource());
     await writeFile(join(workspace, "subpath.ts"), subpathTypeSource());
     await writeFile(join(workspace, "tsconfig.json"), tsconfigSource());
     for (let index = 0; index < blockedSubpaths.length; index += 1) {
@@ -102,6 +104,10 @@ async function main() {
     const seabreezeRuntime = await run("node", ["seabreeze.mjs"], workspace);
     if (!seabreezeRuntime.ok) {
         return seabreezeRuntime;
+    }
+    const pluginRuntime = await run("node", ["plugin.mjs"], workspace);
+    if (!pluginRuntime.ok) {
+        return pluginRuntime;
     }
     for (let index = 0; index < blockedSubpaths.length; index += 1) {
         const subpath = blockedSubpaths[index];
@@ -196,6 +202,25 @@ async function main() {
     );
     if (!seabreezeTypes.ok) {
         return seabreezeTypes;
+    }
+    const pluginTypes = await run(
+        "npx",
+        [
+            "tsc",
+            "plugin.ts",
+            "--ignoreConfig",
+            "--module",
+            "NodeNext",
+            "--moduleResolution",
+            "NodeNext",
+            "--target",
+            "ES2023",
+            "--noEmit"
+        ],
+        workspace
+    );
+    if (!pluginTypes.ok) {
+        return pluginTypes;
     }
     return run(
         "npx",
@@ -361,6 +386,25 @@ function seabreezeRuntimeSource() {
     ].join("\n");
 }
 
+/** @brief Exercise the published AOT plugin subpath at runtime. */
+function pluginRuntimeSource() {
+    return [
+        "import { t } from 'typesea';",
+        "import { createTypeSeaRollupPlugin } from 'typesea/plugin';",
+        "const User = t.strictObject({ id: t.string });",
+        "const plugin = createTypeSeaRollupPlugin({",
+        "  entries: [{ id: 'consumer-user', guard: User }],",
+        "  transformCompileCached: true",
+        "});",
+        "const resolved = plugin.resolveId('typesea:aot/consumer-user');",
+        "if (resolved !== '\\0typesea:aot/consumer-user') process.exit(1);",
+        "const source = plugin.load(resolved);",
+        "if (source === null || !source.includes('export function is')) process.exit(1);",
+        "console.log('consumer plugin runtime ok');",
+        ""
+    ].join("\n");
+}
+
 /**
  * @brief Run mini entry runtime source.
  */
@@ -506,6 +550,19 @@ function seabreezeTypeSource() {
         "}",
         "arena.appendField(arena.allocObject(), 1, arena.number, SeaBreezePresence.Required);",
         "void schema;",
+        ""
+    ].join("\n");
+}
+
+/** @brief Compile the published AOT plugin subpath and optional configuration. */
+function pluginTypeSource() {
+    return [
+        "import { t } from 'typesea';",
+        "import { createTypeSeaVitePlugin, type TypeSeaAotPluginOptions } from 'typesea/plugin';",
+        "const User = t.object({ id: t.string });",
+        "const options: TypeSeaAotPluginOptions = { entries: [{ id: 'user', guard: User }] };",
+        "const plugin = createTypeSeaVitePlugin(options);",
+        "plugin.resolveId('typesea:aot/user');",
         ""
     ].join("\n");
 }

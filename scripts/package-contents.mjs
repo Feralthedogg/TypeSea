@@ -3,6 +3,10 @@ import { spawnSync } from "node:child_process";
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 
+const maximumPackedBytes = 600_000;
+const maximumUnpackedBytes = 2_800_000;
+const maximumPublishedFiles = 350;
+
 const runtimeDependencyFields = [
     "dependencies",
     "peerDependencies",
@@ -562,8 +566,10 @@ async function main() {
         return parsed;
     }
 
-    const files = parsed.value;
-    const expected = expectedFiles.slice().sort();
+    const files = parsed.value.files;
+    const expected = expectedFiles
+        .filter((path) => !path.endsWith(".d.ts.map"))
+        .sort();
     const actual = files.slice().sort();
     const forbidden = findForbiddenPackagePath(actual);
     if (forbidden !== undefined) {
@@ -578,7 +584,30 @@ async function main() {
             `extra: ${extra.join(", ") || "<none>"}`
         ].join("\n"));
     }
+    const footprintCheck = checkPackageFootprint(parsed.value);
+    if (!footprintCheck.ok) {
+        return footprintCheck;
+    }
 
+    return ok(undefined);
+}
+
+/**
+ * @brief Enforce the published installation-footprint budget.
+ * @details Declaration maps are intentionally excluded from release builds;
+ * source remains available in Git while npm consumers receive declarations and
+ * executable modules only.
+ */
+function checkPackageFootprint(pack) {
+    if (pack.size > maximumPackedBytes) {
+        return err(`packed package exceeds ${String(maximumPackedBytes)} bytes: ${String(pack.size)}`);
+    }
+    if (pack.unpackedSize > maximumUnpackedBytes) {
+        return err(`unpacked package exceeds ${String(maximumUnpackedBytes)} bytes: ${String(pack.unpackedSize)}`);
+    }
+    if (pack.files.length > maximumPublishedFiles) {
+        return err(`package file count exceeds ${String(maximumPublishedFiles)}: ${String(pack.files.length)}`);
+    }
     return ok(undefined);
 }
 
@@ -708,7 +737,17 @@ function parsePackOutput(stdout) {
         }
         files.push(path);
     }
-    return ok(files);
+    const size = first["size"];
+    const unpackedSize = first["unpackedSize"];
+    if (!Number.isSafeInteger(size) || size < 0 ||
+        !Number.isSafeInteger(unpackedSize) || unpackedSize < 0) {
+        return err("npm pack output did not include valid size metadata");
+    }
+    return ok({
+        files,
+        size,
+        unpackedSize
+    });
 }
 
 /**

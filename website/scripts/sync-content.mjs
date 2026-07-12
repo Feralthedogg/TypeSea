@@ -35,6 +35,18 @@ const documents = [
     {
         slug: 'zod-compat',
         group: 'reference',
+        enPath: 'docs/zod-compatibility.md',
+        koPath: 'docs/ko/zod-compatibility.md',
+        sourcePath: 'docs/zod-compatibility.md',
+        title: { en: 'Zod compatibility', ko: 'Zod 호환성' },
+        description: {
+            en: 'Support levels, compilation boundaries, migration policy, and explicit gaps.',
+            ko: '지원 등급, 컴파일 경계, 마이그레이션 정책과 명시적인 호환성 공백을 정리합니다.'
+        }
+    },
+    {
+        slug: 'zod-corpus',
+        group: 'reference',
         enPath: 'docs/zod-real-world-compat.md',
         koPath: 'docs/ko/zod-real-world-compat.md',
         sourcePath: 'docs/zod-real-world-compat.md',
@@ -42,6 +54,18 @@ const documents = [
         description: {
             en: 'Pinned public-source API counts and replacement compilation diagnostics.',
             ko: '고정된 공개 소스의 API 사용량과 import 교체 컴파일 결과를 기록합니다.'
+        }
+    },
+    {
+        slug: 'aot',
+        group: 'tools',
+        enPath: 'docs/aot-plugin.md',
+        koPath: 'docs/ko/aot-plugin.md',
+        sourcePath: 'docs/aot-plugin.md',
+        title: { en: 'AOT bundler plugin', ko: 'AOT 번들러 플러그인' },
+        description: {
+            en: 'Vite, Rollup, and esbuild integration for build-time validator emission.',
+            ko: '빌드 시점 validator 생성을 위한 Vite, Rollup, esbuild 연동을 설명합니다.'
         }
     },
     {
@@ -66,6 +90,18 @@ const documents = [
         description: {
             en: 'Arena-backed principal joins that infer compact schemas from observed values.',
             ko: '관측값을 arena 기반 principal join으로 합쳐 작은 스키마를 추론합니다.'
+        }
+    },
+    {
+        slug: 'direction',
+        group: 'internals',
+        enPath: 'docs/project-direction.md',
+        koPath: 'docs/ko/project-direction.md',
+        sourcePath: 'docs/project-direction.md',
+        title: { en: 'Project direction', ko: '프로젝트 방향' },
+        description: {
+            en: 'Compiler-first identity, product layers, non-goals, and the release bar.',
+            ko: '컴파일러 중심 정체성, 제품 계층, 비목표와 릴리스 기준을 정리합니다.'
         }
     },
     {
@@ -164,14 +200,20 @@ function transformMarkdown(source, locale) {
     const transformed = source
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/api/', '../api/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/zod-compat/', '../zod-compat/')
+        .replaceAll('https://feralthedogg.github.io/TypeSea/ko/zod-corpus/', '../zod-corpus/')
+        .replaceAll('https://feralthedogg.github.io/TypeSea/ko/aot/', '../aot/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/seaflow/', '../seaflow/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/seabreeze/', '../seabreeze/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/engine/', '../engine/')
+        .replaceAll('https://feralthedogg.github.io/TypeSea/ko/direction/', '../direction/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/api/', '../api/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/zod-compat/', '../zod-compat/')
+        .replaceAll('https://feralthedogg.github.io/TypeSea/zod-corpus/', '../zod-corpus/')
+        .replaceAll('https://feralthedogg.github.io/TypeSea/aot/', '../aot/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/seaflow/', '../seaflow/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/seabreeze/', '../seabreeze/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/engine/', '../engine/')
+        .replaceAll('https://feralthedogg.github.io/TypeSea/direction/', '../direction/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/#api-reference', '../api/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/#engine-notes', '../engine/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/#seaflow', '../seaflow/')
@@ -190,10 +232,20 @@ function transformMarkdown(source, locale) {
         .replaceAll('docs/assets/benchmark-headline.svg', '__TYPESEA_BENCHMARK__')
         .replaceAll('(docs/api.md)', '(../api/)')
         .replaceAll('(../api.md)', '(../api/)')
-        .replaceAll('(./docs/zod-real-world-compat.md)', '(../zod-compat/)')
-        .replaceAll('(docs/zod-real-world-compat.md)', '(../zod-compat/)')
-        .replaceAll('(../zod-real-world-compat.md)', '(../zod-compat/)')
-        .replaceAll('(./zod-real-world-compat.md)', '(../zod-compat/)')
+        .replaceAll('(./docs/zod-real-world-compat.md)', '(../zod-corpus/)')
+        .replaceAll('(docs/zod-real-world-compat.md)', '(../zod-corpus/)')
+        .replaceAll('(../zod-real-world-compat.md)', '(../zod-corpus/)')
+        .replaceAll('(./zod-real-world-compat.md)', '(../zod-corpus/)')
+        .replaceAll('(./docs/zod-compatibility.md)', '(../zod-compat/)')
+        .replaceAll('(docs/zod-compatibility.md)', '(../zod-compat/)')
+        .replaceAll('(../zod-compatibility.md)', '(../zod-compat/)')
+        .replaceAll('(./zod-compatibility.md)', '(../zod-compat/)')
+        .replaceAll('(docs/aot-plugin.md)', '(../aot/)')
+        .replaceAll('(./aot-plugin.md)', '(../aot/)')
+        .replaceAll('(../aot-plugin.md)', '(../aot/)')
+        .replaceAll('(docs/project-direction.md)', '(../direction/)')
+        .replaceAll('(./project-direction.md)', '(../direction/)')
+        .replaceAll('(../project-direction.md)', '(../direction/)')
         .replaceAll('(docs/engine-notes.md)', '(../engine/)')
         .replaceAll('(../engine-notes.md)', '(../engine/)')
         .replaceAll(

@@ -90,7 +90,7 @@ test("accepted payloads do not crash the service", () => {
 | Numeric boundary | minimum, maximum, 경계 바로 밖 값, integer/float confusion, `NaN`, infinity |
 | String boundary | minimum/maximum length, empty string, format failure, SQLi/XSS probe string |
 | Object structure | required key 삭제, optional key variant, strict-object extra key, object-union hybrid |
-| Hostile input | `__proto__`, `constructor`, accessor property, sparse array, symbol/non-enumerable extra |
+| Hostile input | `__proto__`, `constructor`, accessor property, sparse array, reflection trap Proxy, revoked Proxy, symbol/non-enumerable extra |
 | Recursive schema | lazy schema는 `maxDepth`에서 멈추므로 재귀 graph도 유한하게 끝납니다 |
 
 safe strict object는 prototype을 따라가지 않고 undeclared own string, symbol,
@@ -98,6 +98,10 @@ non-enumerable key를 거부합니다. safe runtime과 compiled path는 `Reflect
 또는 이에 해당하는 own-name plus own-symbol fast path를 사용하므로, undeclared
 `__proto__`와 `constructor` data key는 prototype state가 아니라 평범한 extra key로
 취급됩니다.
+
+reflection trap이 예외를 내는 Proxy와 revoked Proxy probe는 `extreme` intensity에서만
+생성합니다. safe validator가 Proxy trap 실패를 호출자에게 흘리지 않고 false로
+닫히는지 검증합니다.
 
 ## 옵션
 
@@ -115,4 +119,3 @@ interface SeaFlowOptions {
 numeric/structural probe까지 보고 싶을 때는 `extreme`을 쓰세요. injection string과
 hostile object shape를 제외한 순수 semantic test가 필요하다면
 `includeSecurity: false`를 설정하면 됩니다.
-
