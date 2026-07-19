@@ -34,6 +34,7 @@ JSON Schema, and fuzzing behavior where those paths apply.
 3. **AOT plugin**: build-time replacement of configured runtime compilation sites.
 4. **SeaFlow**: schema-directed boundary and hostile-input generation for users and TypeSea parity tests.
 5. **SeaBreeze**: advanced arena-backed inference for tooling that needs compact principal joins.
+6. **SeaCurrent**: adapter-independent planning plus opt-in profile-guided TypeSea graph lowering and promotion gates.
 
 The layers are separate subpaths where import cost or semantic ownership differs.
 
@@ -44,6 +45,8 @@ The layers are separate subpaths where import cost or semantic ownership differs
 - weakening safe mode to improve headline benchmarks;
 - adding runtime dependencies for build or test convenience;
 - promoting research APIs ahead of core correctness and release evidence.
+- applying profile-guided transformations before full directed dependence and
+  target-resource verification.
 
 ## Release Bar
 

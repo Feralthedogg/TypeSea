@@ -65,6 +65,10 @@ async function main() {
     await writeFile(join(workspace, "seabreeze.ts"), seabreezeTypeSource());
     await writeFile(join(workspace, "plugin.mjs"), pluginRuntimeSource());
     await writeFile(join(workspace, "plugin.ts"), pluginTypeSource());
+    await writeFile(join(workspace, "codegen.mjs"), codegenRuntimeSource());
+    await writeFile(join(workspace, "codegen.ts"), codegenTypeSource());
+    await writeFile(join(workspace, "seacurrent.mjs"), seacurrentRuntimeSource());
+    await writeFile(join(workspace, "seacurrent.ts"), seacurrentTypeSource());
     await writeFile(join(workspace, "subpath.ts"), subpathTypeSource());
     await writeFile(join(workspace, "tsconfig.json"), tsconfigSource());
     for (let index = 0; index < blockedSubpaths.length; index += 1) {
@@ -108,6 +112,14 @@ async function main() {
     const pluginRuntime = await run("node", ["plugin.mjs"], workspace);
     if (!pluginRuntime.ok) {
         return pluginRuntime;
+    }
+    const codegenRuntime = await run("node", ["codegen.mjs"], workspace);
+    if (!codegenRuntime.ok) {
+        return codegenRuntime;
+    }
+    const seacurrentRuntime = await run("node", ["seacurrent.mjs"], workspace);
+    if (!seacurrentRuntime.ok) {
+        return seacurrentRuntime;
     }
     for (let index = 0; index < blockedSubpaths.length; index += 1) {
         const subpath = blockedSubpaths[index];
@@ -221,6 +233,46 @@ async function main() {
     );
     if (!pluginTypes.ok) {
         return pluginTypes;
+    }
+    const codegenTypes = await run(
+        "npx",
+        [
+            "tsc",
+            "codegen.ts",
+            "--ignoreConfig",
+            "--module",
+            "NodeNext",
+            "--moduleResolution",
+            "NodeNext",
+            "--target",
+            "ES2023",
+            "--strict",
+            "--noEmit"
+        ],
+        workspace
+    );
+    if (!codegenTypes.ok) {
+        return codegenTypes;
+    }
+    const seacurrentTypes = await run(
+        "npx",
+        [
+            "tsc",
+            "seacurrent.ts",
+            "--ignoreConfig",
+            "--module",
+            "NodeNext",
+            "--moduleResolution",
+            "NodeNext",
+            "--target",
+            "ES2023",
+            "--strict",
+            "--noEmit"
+        ],
+        workspace
+    );
+    if (!seacurrentTypes.ok) {
+        return seacurrentTypes;
     }
     return run(
         "npx",
@@ -405,6 +457,48 @@ function pluginRuntimeSource() {
     ].join("\n");
 }
 
+/** @brief Exercise the published description codegen subpath at runtime. */
+function codegenRuntimeSource() {
+    return [
+        "import { t } from 'typesea';",
+        "import { emitTypeDeclarations } from 'typesea/codegen';",
+        "const User = t.object({ id: t.string.describe('Stable id') }).describe('User');",
+        "const source = emitTypeDeclarations({",
+        "  entries: [{ name: 'User', guard: User, source: './schema.js' }]",
+        "});",
+        "if (!source.includes('Stable id') || !source.includes('export type User')) process.exit(1);",
+        "console.log('consumer codegen runtime ok');",
+        ""
+    ].join("\n");
+}
+
+/** @brief Exercise the published SeaCurrent planner subpath at runtime. */
+function seacurrentRuntimeSource() {
+    return [
+        "import * as root from 'typesea';",
+        "import { createSeaCurrent } from 'typesea/seacurrent';",
+        "import { createSeaCurrentAotBridge } from 'typesea/seacurrent/aot';",
+        "import { t } from 'typesea';",
+        "if (Object.prototype.hasOwnProperty.call(root, 'createSeaCurrent')) process.exit(1);",
+        "const User = t.strictObject({ id: t.string, age: t.number.int() });",
+        "const current = createSeaCurrent({ targetKey: 'consumer-v8', checksums: true });",
+        "const plan = current.plan(User, { frequency: 1000, uncertainty: 0.5 });",
+        "if (plan.regions.length === 0 || plan.regions[0].exactProfile.status !== 'exact') process.exit(1);",
+        "if (current.plan(User).cache.hits !== plan.regions.length) process.exit(1);",
+        "const bridge = createSeaCurrentAotBridge(current);",
+        "const profiled = bridge.compile(User);",
+        "if (!profiled.is({ id: 'u1', age: 42 })) process.exit(1);",
+        "const artifact = profiled.snapshot();",
+        "if (artifact.regions[0]?.frequency !== 1 || artifact.regions[0]?.accepted !== 1) process.exit(1);",
+        "const optimized = bridge.optimize(User, artifact);",
+        "if (!optimized.ok || !optimized.value.is({ id: 'u1', age: 42 })) process.exit(1);",
+        "if (!bridge.emit(User).ok) process.exit(1);",
+        "if (!bridge.emitOptimized(User, artifact).ok) process.exit(1);",
+        "console.log('consumer seacurrent runtime ok');",
+        ""
+    ].join("\n");
+}
+
 /**
  * @brief Run mini entry runtime source.
  */
@@ -563,6 +657,56 @@ function pluginTypeSource() {
         "const options: TypeSeaAotPluginOptions = { entries: [{ id: 'user', guard: User }] };",
         "const plugin = createTypeSeaVitePlugin(options);",
         "plugin.resolveId('typesea:aot/user');",
+        ""
+    ].join("\n");
+}
+
+/** @brief Compile the published description codegen options and emitter types. */
+function codegenTypeSource() {
+    return [
+        "import { t } from 'typesea';",
+        "import { emitTypeDeclarations, precompileSchemaDocs, type TypeSeaDeclarationOptions } from 'typesea/codegen';",
+        "const User = t.object({ id: t.string.describe('Stable id') });",
+        "const options: TypeSeaDeclarationOptions = {",
+        "  entries: [{ name: 'User', guard: User, source: './schema.js' }]",
+        "};",
+        "emitTypeDeclarations(options).toUpperCase();",
+        "precompileSchemaDocs(options).toUpperCase();",
+        ""
+    ].join("\n");
+}
+
+/** @brief Compile target-specific SeaCurrent planner and auto-tuner types. */
+function seacurrentTypeSource() {
+    return [
+        "import { t } from 'typesea';",
+        "import { createSeaCurrent, type SeaCurrentProgramPlan, type SeaCurrentRegionProfile } from 'typesea/seacurrent';",
+        "import { createSeaCurrentAotBridge, type SeaCurrentProfileArtifact } from 'typesea/seacurrent/aot';",
+        "const current = createSeaCurrent({",
+        "  targetKey: 'consumer-v8',",
+        "  adapter: { maxExpandedNodes: 1024 },",
+        "  maxCacheEntries: 16,",
+        "  checksums: true",
+        "});",
+        "const profile: SeaCurrentRegionProfile = { frequency: 1000, uncertainty: 0.5 };",
+        "const plan: SeaCurrentProgramPlan = current.plan(t.string, profile);",
+        "current.planRegions(t.string.schema, { root: profile });",
+        "current.observe({",
+        "  kind: 'benefit',",
+        "  features: { frequency: 1000, costBefore: 4, costAfter: 3, sizeIncrease: 8, semanticRisk: 0 },",
+        "  actualValue: 992,",
+        "});",
+        "current.load(current.snapshot());",
+        "const bridge = createSeaCurrentAotBridge(current);",
+        "const profiled = bridge.compile(t.string);",
+        "const candidate: unknown = 'profiled';",
+        "if (profiled.is(candidate)) candidate.toUpperCase();",
+        "const artifact: SeaCurrentProfileArtifact = profiled.snapshot();",
+        "bridge.profiles(t.string, artifact);",
+        "const optimized = bridge.optimize(t.string, artifact);",
+        "if (optimized.ok && optimized.value.is(candidate)) candidate.toUpperCase();",
+        "bridge.emitOptimized(t.string, artifact);",
+        "plan.regions[0]?.structuralHash.toUpperCase();",
         ""
     ].join("\n");
 }

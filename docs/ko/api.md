@@ -23,7 +23,9 @@ import {
 패키지는 root entry point와 `typesea/mini`, `typesea/seaflow`, `typesea/seabreeze`,
 `typesea/zod`, `typesea/v3`, `typesea/v4`, `typesea/v4-mini`,
 `typesea/v4/mini`, `typesea/locales`,
-`typesea/v4/locales`, `typesea/v4/locales/*`, `typesea/v4/core`를 공개 API로 노출합니다.
+`typesea/v4/locales`, `typesea/v4/locales/*`, `typesea/v4/core`,
+`typesea/plugin`, `typesea/codegen`, `typesea/seacurrent`,
+`typesea/seacurrent/aot`를 공개 API로 노출합니다.
 깊은 `dist/*` import는 공개 API가 아닙니다. TypeSea는 ESM-only이며
 CommonJS condition을 publish하지 않습니다. Zod에서 옮겨오는 코드는 호환
 builder namespace를 `z`로 import할 수 있습니다. 이 namespace는 TypeSea
@@ -1154,6 +1156,32 @@ diagnostic은 여전히 실패 뒤에만 수집합니다.
 `checkAsync()`와 `compileAsync().check()`는 `check()`와 같은 full diagnostic result를 반환합니다.
 cooperative boolean verdict만 필요한 hot path라면 `isAsync()`를 쓰세요.
 
+### JSDoc type declaration codegen
+
+```ts
+import { emitTypeDeclarations } from "typesea/codegen";
+
+const source = emitTypeDeclarations({
+  entries: [{
+    name: "User",
+    guard: User,
+    source: "./schema.js"
+  }]
+});
+```
+
+`emitTypeDeclarations()`는 정확한 `Infer<typeof schema>` alias를 export하면서
+각 schema `description`을 JSDoc으로 겹친 TypeScript-only module source를 반환합니다.
+최상위 description과 nested object field가 생성되고 optional key는 optional로
+유지되며, recursive path는 이미 방문한 object에서 멈춥니다. 생성된 alias가 원본
+export schema를 참조하므로 `custom<T>`와 brand처럼 runtime schema tag에서 지워지는
+type detail도 다시 추측하지 않습니다.
+
+각 entry의 `source`는 generated file 기준으로 resolve되고 `exportName` 기본값은
+`name`입니다. `typeSeaImport`로 기본 `"typesea"` module specifier를 바꿀 수 있고,
+`banner: false`는 generated-file header를 생략합니다. `precompileSchemaDocs()`는
+같은 source emitter의 alias이며, 두 API 모두 file write를 수행하지 않는 순수 함수입니다.
+
 ### AOT bundler plugin
 
 ```ts
@@ -1352,6 +1380,38 @@ regex graph node는 plain `RegExp` value만 받으며, graph가 freeze되기 전
 
 `SchemaCheck`는 `lazy`, `refine`, `superRefine`처럼 dynamic runtime schema logic을 기록합니다.
 callback-backed edge를 static primitive인 척하지 않고, runtime semantics가 필요하다는 사실을 IR에 정확히 남깁니다.
+
+### SeaCurrent 계획기 subpath
+
+`typesea/seacurrent`의 기본 TypeSea API는 편의 facade인 `createSeaCurrent()`입니다.
+장수 builder의 `plan()`은 guard를 직접 받고, `planRegions()`는 중첩 region profile
+map을 받습니다. Target별 `observe()`, `snapshot()`, cache invalidation과 상태 복원도
+builder가 소유합니다.
+
+같은 subpath에서 custom compiler 연동을 위한 `SeaCurrentPlanner`,
+`SeaCurrentAutoTuner`, `SeaCurrentIncrementalCache`, 범용 graph·target 계약과 TypeSea
+Sea-of-Nodes adapter도 공개합니다. 두 API 모두 graph를 직접 변경하지 않고 profiling
+계획과 검증된 scheduling 계획을 반환합니다. 기본 TypeSea builder는 profile 기반
+object 순서 adapter도 보관하며 `transformations: false`로 추천을 끌 수 있습니다.
+일반 root entry에서는 의도적으로 export하지 않으며 facade는 runtime validation에
+참여하지 않습니다.
+
+`typesea/seacurrent/aot`는 `createSeaCurrentAotBridge(current)`를 공개합니다.
+`compile()`은 `is()`, `snapshot()`, `reset()`을 가진 계측 JIT predicate를 반환하고,
+`emit()`은 독립 ESM source와 declaration을 반환합니다. `profiles()`와 `replan()`은
+일치하는 profile artifact를 다음 계획 세대로 전달합니다. Artifact 수용 과정은
+getter를 실행하지 않으면서 오래된 target·graph·counter·outcome·checksum,
+overflow, accessor, proxy와 잘못된 값을 거부합니다. `optimize()`는 선택된 safe-mode
+object 순서를 계측 없는 JIT predicate로 lowering하고 `emitOptimized()`는 같은 graph를
+ESM으로 만듭니다. `tune()`은 명시적인 warmup과 측정 순서 교차, median 계산을 거친
+뒤 후보를 승격합니다. 재배치는 `SchemaCheck` 장벽이나 required/optional 경계를
+넘지 않으며 unsafe와 unchecked mode에는 적용되지 않습니다. 이 Bridge는 선택
+사항이므로 일반 predicate와 승격된 predicate에는 SeaCurrent 분기나 counter table이
+들어가지 않습니다.
+
+예산,
+fallback과 adapter 불변식은
+[SeaCurrent 가이드](./seacurrent.md)를 참고하세요.
 
 ## JSON Schema
 

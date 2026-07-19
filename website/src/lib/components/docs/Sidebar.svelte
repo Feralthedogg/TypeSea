@@ -42,7 +42,8 @@
             items: [
                 { label: m.aot_plugin(), href: '/aot/', match: '/aot/' },
                 { label: 'SeaFlow', href: '/seaflow/', match: '/seaflow/' },
-                { label: 'SeaBreeze', href: '/seabreeze/', match: '/seabreeze/' }
+                { label: 'SeaBreeze', href: '/seabreeze/', match: '/seabreeze/' },
+                { label: m.seacurrent_planner(), href: '/seacurrent/', match: '/seacurrent/' }
             ]
         },
         {

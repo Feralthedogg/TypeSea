@@ -18,6 +18,10 @@ import {
     type LiteralValue,
     type Schema
 } from "../schema/index.js";
+import {
+    serializeAotLiteralArray,
+    serializeAotRegExpArray
+} from "./serialize.js";
 
 /**
  * @brief Closed reason codes for schemas that cannot be emitted as standalone AOT.
@@ -494,9 +498,9 @@ interface ModuleBundleInput {
 function emitModuleSource(bundle: ModuleBundleInput): string {
     return [
         "const l=",
-        serializeLiteralArray(bundle.literals),
+        serializeAotLiteralArray(bundle.literals),
         ";const r=",
-        serializeRegExpArray(bundle.regexps),
+        serializeAotRegExpArray(bundle.regexps),
         ";const k=",
         JSON.stringify(bundle.keysets),
         ";const u=",
@@ -545,68 +549,6 @@ function emitDeclarationSource(): string {
         "export default guard;",
         ""
     ].join("\n");
-}
-
-/**
- * @brief Serialize literal side-table entries into standalone source.
- */
-function serializeLiteralArray(values: readonly LiteralValue[]): string {
-    const parts = new Array<string>(values.length);
-    for (let index = 0; index < values.length; index += 1) {
-        const value = values[index];
-        if (value !== undefined || Object.prototype.hasOwnProperty.call(values, index)) {
-            parts[index] = serializeLiteral(value);
-        }
-    }
-    return `[${parts.join(",")}]`;
-}
-
-/**
- * @brief Serialize one literal without JSON losing non-finite and sentinel values.
- */
-function serializeLiteral(value: LiteralValue): string {
-    switch (typeof value) {
-        case "string":
-            return JSON.stringify(value);
-        case "number":
-            if (Number.isNaN(value)) {
-                return "Number.NaN";
-            }
-            if (Object.is(value, -0)) {
-                return "-0";
-            }
-            if (value === Number.POSITIVE_INFINITY) {
-                return "Number.POSITIVE_INFINITY";
-            }
-            if (value === Number.NEGATIVE_INFINITY) {
-                return "Number.NEGATIVE_INFINITY";
-            }
-            return String(value);
-        case "bigint":
-            return `${String(value)}n`;
-        case "boolean":
-            return value ? "true" : "false";
-        case "undefined":
-            return "undefined";
-        case "symbol":
-            throw new TypeError("symbol literals must be rejected before AOT serialization");
-        default:
-            return "null";
-    }
-}
-
-/**
- * @brief Serialize RegExp side-table entries with source and flags intact.
- */
-function serializeRegExpArray(values: readonly RegExp[]): string {
-    const parts = new Array<string>(values.length);
-    for (let index = 0; index < values.length; index += 1) {
-        const value = values[index];
-        if (value !== undefined) {
-            parts[index] = `new RegExp(${JSON.stringify(value.source)},${JSON.stringify(value.flags)})`;
-        }
-    }
-    return `[${parts.join(",")}]`;
 }
 
 /**

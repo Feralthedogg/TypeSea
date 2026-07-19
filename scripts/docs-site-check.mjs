@@ -8,6 +8,7 @@ const documentPairs = [
     ["docs/aot-plugin.md", "docs/ko/aot-plugin.md"],
     ["docs/seaflow.md", "docs/ko/seaflow.md"],
     ["docs/sea-breeze.md", "docs/ko/sea-breeze.md"],
+    ["docs/seacurrent.md", "docs/ko/seacurrent.md"],
     ["docs/project-direction.md", "docs/ko/project-direction.md"],
     ["docs/engine-notes.md", "docs/ko/engine-notes.md"]
 ];

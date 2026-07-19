@@ -8,6 +8,7 @@ export const documentSlugs = [
     'aot',
     'seaflow',
     'seabreeze',
+    'seacurrent',
     'direction',
     'engine'
 ] as const;

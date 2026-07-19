@@ -6,7 +6,31 @@
  */
 
 import type { Guard, Presence, RuntimeValue } from "../guard/index.js";
+import type { Graph, NodeId } from "../ir/index.js";
 import type { LiteralValue, Schema } from "../schema/index.js";
+
+/** @brief Control outcome observed by optional graph instrumentation. */
+export type GraphInstrumentationOutcome =
+    | "entry"
+    | "accept"
+    | "reject"
+    | "true"
+    | "false";
+
+/**
+ * @brief Source-statement provider for one instrumented graph region.
+ * @details Statements are generated only by trusted TypeSea bridge code and
+ * are absent from ordinary compile contexts.
+ */
+export interface GraphInstrumentationRegion {
+    branch(path: string, node: NodeId): boolean;
+    statement(path: string, outcome: GraphInstrumentationOutcome): string;
+}
+
+/** @brief Optional graph-to-region instrumentation lookup used during emission. */
+export interface GraphInstrumentation {
+    region(graph: Graph): GraphInstrumentationRegion | undefined;
+}
 
 /**
  * @brief Mutable state used while emitting one validator bundle.
@@ -19,6 +43,12 @@ export interface EmitContext {
      * @brief Property-access and defensive-read mode used by the generated code.
      */
     readonly mode: CompileMode;
+
+    /** @brief Optional build-time instrumentation resolver. */
+    readonly instrumentation: GraphInstrumentation | undefined;
+
+    /** @brief Whether object nodes use cold static scheduling or graph order. */
+    readonly objectEntryOrder: ObjectEntryOrder;
 
     /**
      * @brief Literal side table addressed by generated numeric indexes.
@@ -87,6 +117,9 @@ export interface EmitContext {
  * modes trade portions of that hostile-input defense for lower V8 overhead.
  */
 export type CompileMode = "safe" | "unsafe" | "unchecked";
+
+/** @brief Object-field order selected for graph predicate emission. */
+export type ObjectEntryOrder = "static" | "graph";
 
 /**
  * @brief Named helper body emitted into a generated validator.

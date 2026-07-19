@@ -264,6 +264,54 @@ shape를 만드는 동안에만 할당하고, 결과는 여전히 numeric node i
 `typesea/seabreeze`로 공개되며 `typesea` root에서는 다시 export하지 않으므로,
 일반 validator는 이 비용을 내지 않습니다.
 
+### SeaCurrent 적응형 프로파일링 계획기
+
+```ts
+import { createSeaCurrent } from "typesea/seacurrent";
+
+const current = createSeaCurrent({
+  targetKey: "node-v8",
+  checksums: true
+});
+
+const plan = current.plan(User, {
+  frequency: 1_000_000,
+  uncertainty: 0.3
+});
+
+// 선택 사항: 선택된 counter를 계측 JIT predicate로 lowering합니다.
+import { createSeaCurrentAotBridge } from "typesea/seacurrent/aot";
+
+const bridge = createSeaCurrentAotBridge(current);
+const profiled = bridge.compile(User, { mode: "safe" });
+profiled.is(input);
+
+const artifact = profiled.snapshot();
+const optimized = bridge.optimize(User, artifact);
+const tuned = bridge.tune(User, artifact, representativeInputs, {
+  warmupIterations: 20_000,
+  minSpeedup: 1.02
+});
+```
+
+SeaCurrent는 exact edge profiling, 제한된 CDC 중복 검증, 선택적 Ball-Larus path
+profiling과 검증된 schedule 추천을 위한 범용 계획 계층입니다. 타깃별 online
+tuning은 빌드 사이에서 비용 가중치를 학습하고, region 단위 structural cache는
+바뀐 graph만 다시 분석합니다. `createSeaCurrent()` facade는 adapter, target, tuner,
+cost model과 cache를 한 번만 만들고 유지하며, `plan()`은 guard를 직접 받습니다.
+Custom compiler IR용 저수준 planner 계약도 그대로 제공됩니다.
+`typesea/seacurrent` subpath로 격리되어 있으므로 일반 validation과 compiled guard는
+import 비용이나 핫패스 비용을 내지 않습니다. 선택형
+`typesea/seacurrent/aot` Bridge는 exact edge, region frequency, 완결된 outcome과
+CDC checksum 계측을 전용 JIT predicate 또는 독립 ESM module로 lowering합니다.
+`optimize()`는 검증된 safe-mode object field 계획을 다시 검증한 계측 없는 graph로
+lowering합니다. `tune()`은 baseline과 후보를 모두 warmup하고 측정한 뒤 승격하며,
+`emitOptimized()`는 같은 graph를 독립 ESM으로 만듭니다. Callback 기반
+`SchemaCheck` field는 순서 장벽으로 남고 unsafe·unchecked mode에는 재배치를
+적용하지 않습니다. Counter 갱신 비용은 계측 predicate를 호출할 때만 발생합니다.
+[SeaCurrent 가이드](https://feralthedogg.github.io/TypeSea/seacurrent/)에서 정확성 경계와
+fallback 조건을 확인할 수 있습니다.
+
 ### Cold start, fail-fast, 대형 payload
 
 ```ts
@@ -303,6 +351,48 @@ zero-dependency AOT plugin helper는 Rollup, Vite, esbuild compatible plugin obj
 Vite, Rollup, esbuild는 plugin config에 등록된 entry에 한해 정적 `compileCached("id", ...)` 호출을 `typesea:aot/<id>` virtual module import로 치환할 수 있습니다.
 bundler 설정에서는 `typesea/plugin` 전용 subpath를 사용해 runtime validator import가
 plugin 표면을 애플리케이션 graph에 포함하지 않도록 합니다.
+
+### Schema description codegen
+
+`typesea/codegen`은 schema의 description을 JSDoc이 붙은 TypeScript type alias로
+변환합니다. 생성된 alias는 계속 `Infer<typeof schema>`에서 정확한 값을 가져오므로
+brand, custom guard, optional property 의미와 recursive type을 runtime tag로 다시
+추측하지 않습니다.
+
+```ts
+// src/schema.ts
+export const User = t.object({
+  id: t.string.describe("안정적인 사용자 식별자"),
+  nickname: t.string.describe("공개 표시 이름").optional(),
+  address: t.object({
+    street: t.string.describe("배송에 사용할 도로명 주소")
+  }).describe("우편 주소")
+}).describe("애플리케이션 사용자 payload");
+```
+
+```ts
+// scripts/generate-schema-types.ts
+import { writeFile } from "node:fs/promises";
+import { emitTypeDeclarations } from "typesea/codegen";
+import { User } from "../src/schema.js";
+
+await writeFile(
+  "src/schema.generated.ts",
+  emitTypeDeclarations({
+    entries: [{
+      name: "User",
+      guard: User,
+      source: "./schema.js"
+    }]
+  })
+);
+```
+
+`source`는 generated file 기준으로 resolve됩니다. `schema.generated.js`에서
+`User` type을 import하면 editor hover에 최상위 schema와 각 field, nested object
+field의 description이 표시됩니다. `precompileSchemaDocs()`는 precompile 중심의
+build script에서 쓸 수 있는 같은 기능의 alias입니다. 두 함수는 source text만
+반환하므로 파일 생성과 check mode 정책은 호출자가 소유합니다.
 
 ### Unsafe FastMode
 
@@ -995,6 +1085,7 @@ npm staged publishing을 선택하세요.
 - [AOT 번들러 플러그인](https://feralthedogg.github.io/TypeSea/ko/aot/)
 - [SeaFlow 퍼저 가이드](https://feralthedogg.github.io/TypeSea/ko/seaflow/)
 - [SeaBreeze arena 추론](https://feralthedogg.github.io/TypeSea/ko/seabreeze/)
+- [SeaCurrent 적응형 프로파일링 계획기](https://feralthedogg.github.io/TypeSea/ko/seacurrent/)
 - [프로젝트 방향](https://feralthedogg.github.io/TypeSea/ko/direction/)
 - [엔진 노트](https://feralthedogg.github.io/TypeSea/ko/engine/)
 - [보안 정책](https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md)

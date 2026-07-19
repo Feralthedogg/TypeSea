@@ -4,7 +4,12 @@
  */
 
 import type { LiteralValue, Schema } from "../schema/index.js";
-import type { CompileMode, EmitContext } from "./types.js";
+import type {
+    CompileMode,
+    EmitContext,
+    GraphInstrumentation,
+    ObjectEntryOrder
+} from "./types.js";
 
 /**
  * @brief Create one mutable source-emission context.
@@ -12,9 +17,15 @@ import type { CompileMode, EmitContext } from "./types.js";
  * @returns Fresh side-table context consumed by predicate and diagnostic emitters.
  * @invariant Side tables are append-only during one bundle emission.
  */
-export function createEmitContext(mode: CompileMode): EmitContext {
+export function createEmitContext(
+    mode: CompileMode,
+    instrumentation?: GraphInstrumentation,
+    objectEntryOrder: ObjectEntryOrder = "static"
+): EmitContext {
     return {
         mode,
+        instrumentation,
+        objectEntryOrder,
         literals: [],
         regexps: [],
         keysets: [],

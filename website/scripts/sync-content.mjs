@@ -93,6 +93,18 @@ const documents = [
         }
     },
     {
+        slug: 'seacurrent',
+        group: 'tools',
+        enPath: 'docs/seacurrent.md',
+        koPath: 'docs/ko/seacurrent.md',
+        sourcePath: 'docs/seacurrent.md',
+        title: { en: 'SeaCurrent planner', ko: 'SeaCurrent 계획기' },
+        description: {
+            en: 'Adaptive edge and path profiling, verified CDC checks, scheduling, and incremental region analysis.',
+            ko: '적응형 edge·path profiling, 검증된 CDC 검사, scheduling과 증분 region 분석을 설명합니다.'
+        }
+    },
+    {
         slug: 'direction',
         group: 'internals',
         enPath: 'docs/project-direction.md',
@@ -204,6 +216,7 @@ function transformMarkdown(source, locale) {
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/aot/', '../aot/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/seaflow/', '../seaflow/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/seabreeze/', '../seabreeze/')
+        .replaceAll('https://feralthedogg.github.io/TypeSea/ko/seacurrent/', '../seacurrent/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/engine/', '../engine/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/ko/direction/', '../direction/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/api/', '../api/')
@@ -212,6 +225,7 @@ function transformMarkdown(source, locale) {
         .replaceAll('https://feralthedogg.github.io/TypeSea/aot/', '../aot/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/seaflow/', '../seaflow/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/seabreeze/', '../seabreeze/')
+        .replaceAll('https://feralthedogg.github.io/TypeSea/seacurrent/', '../seacurrent/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/engine/', '../engine/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/direction/', '../direction/')
         .replaceAll('https://feralthedogg.github.io/TypeSea/#api-reference', '../api/')
@@ -243,6 +257,9 @@ function transformMarkdown(source, locale) {
         .replaceAll('(docs/aot-plugin.md)', '(../aot/)')
         .replaceAll('(./aot-plugin.md)', '(../aot/)')
         .replaceAll('(../aot-plugin.md)', '(../aot/)')
+        .replaceAll('(docs/seacurrent.md)', '(../seacurrent/)')
+        .replaceAll('(./seacurrent.md)', '(../seacurrent/)')
+        .replaceAll('(../seacurrent.md)', '(../seacurrent/)')
         .replaceAll('(docs/project-direction.md)', '(../direction/)')
         .replaceAll('(./project-direction.md)', '(../direction/)')
         .replaceAll('(../project-direction.md)', '(../direction/)')

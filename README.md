@@ -298,6 +298,56 @@ and `compile()` emits the same direct predicate source as the low-level reader
 API. It is published as `typesea/seabreeze`, not re-exported from `typesea`, so
 normal validators do not pay for it.
 
+### SeaCurrent Adaptive Profiling Planner
+
+```ts
+import { createSeaCurrent } from "typesea/seacurrent";
+
+const current = createSeaCurrent({
+  targetKey: "node-v8",
+  checksums: true
+});
+
+const plan = current.plan(User, {
+  frequency: 1_000_000,
+  uncertainty: 0.3
+});
+
+// Optional: lower selected counters into a profiled JIT predicate.
+import { createSeaCurrentAotBridge } from "typesea/seacurrent/aot";
+
+const bridge = createSeaCurrentAotBridge(current);
+const profiled = bridge.compile(User, { mode: "safe" });
+profiled.is(input);
+
+const artifact = profiled.snapshot();
+const optimized = bridge.optimize(User, artifact);
+const tuned = bridge.tune(User, artifact, representativeInputs, {
+  warmupIterations: 20_000,
+  minSpeedup: 1.02
+});
+```
+
+SeaCurrent is an adapter-independent planning layer for exact edge profiling,
+bounded CDC redundancy checks, selective Ball-Larus path profiling, and verified
+schedule recommendations. Target-specific online tuning learns cost weights
+between builds, while a region-granular structural cache rebuilds only changed
+graphs. The `createSeaCurrent()` facade retains the adapter, target, tuner, cost
+model, and cache once; `plan()` accepts guards directly. Low-level planner
+contracts remain available for custom compiler IR. The subpath is isolated behind
+`typesea/seacurrent`, so normal validation and compiled guards pay no import or
+hot-path cost. The optional `typesea/seacurrent/aot` bridge emits exact edge,
+region-frequency, complete outcome, and CDC checksum instrumentation into a
+dedicated JIT predicate or standalone ESM module. `optimize()` lowers verified
+safe-mode object-field plans into a newly validated, uninstrumented graph.
+`tune()` warms and measures both baseline and candidate before promotion, while
+`emitOptimized()` writes the selected graph as standalone ESM. Callback-backed
+`SchemaCheck` fields remain ordering barriers, and unsafe/unchecked modes never
+apply the reordering transform. Only the profiled predicate pays counter-update
+cost; optimized JIT/AOT output still retains the ordinary hostile-input
+fail-closed boundary. See the
+[SeaCurrent guide](https://feralthedogg.github.io/TypeSea/seacurrent/).
+
 ### Cold Starts, Fail-Fast, And Large Payloads
 
 ```ts
@@ -345,6 +395,49 @@ entry is listed in the plugin config. esbuild reads source through an optional
 `readFile` hook or a dynamic `node:fs/promises` import inside `setup()`.
 Use the dedicated `typesea/plugin` subpath in bundler configuration so runtime
 validator imports do not pull the plugin surface into the application graph.
+
+### Schema Description Codegen
+
+`typesea/codegen` turns schema descriptions into JSDoc-bearing TypeScript
+aliases. The generated alias still derives from `Infer<typeof schema>`, so
+brands, custom guards, optional-property semantics, and recursive types remain
+owned by the original schema instead of being reconstructed from runtime tags.
+
+```ts
+// src/schema.ts
+export const User = t.object({
+  id: t.string.describe("Stable user identifier"),
+  nickname: t.string.describe("Public display name").optional(),
+  address: t.object({
+    street: t.string.describe("Street used for delivery")
+  }).describe("Mailing address")
+}).describe("Application user payload");
+```
+
+```ts
+// scripts/generate-schema-types.ts
+import { writeFile } from "node:fs/promises";
+import { emitTypeDeclarations } from "typesea/codegen";
+import { User } from "../src/schema.js";
+
+await writeFile(
+  "src/schema.generated.ts",
+  emitTypeDeclarations({
+    entries: [{
+      name: "User",
+      guard: User,
+      source: "./schema.js"
+    }]
+  })
+);
+```
+
+`source` is resolved from the generated file. Import `User` as a type from
+`schema.generated.js`; editors then show the schema description on the alias and
+each documented property, including documented properties of nested objects.
+`precompileSchemaDocs()` is an equivalent name for build scripts centered on
+the precompile step. Both functions return source text and leave file ownership
+to the caller, which makes check mode and generated-file policies explicit.
 
 ### Unsafe FastMode
 
@@ -1151,6 +1244,7 @@ maintainer confirms the final publication with 2FA.
 - [AOT bundler plugin](https://feralthedogg.github.io/TypeSea/aot/)
 - [SeaFlow fuzzer guide](https://feralthedogg.github.io/TypeSea/seaflow/)
 - [SeaBreeze arena inference](https://feralthedogg.github.io/TypeSea/seabreeze/)
+- [SeaCurrent adaptive profiling planner](https://feralthedogg.github.io/TypeSea/seacurrent/)
 - [Project direction](https://feralthedogg.github.io/TypeSea/direction/)
 - [Engine notes](https://feralthedogg.github.io/TypeSea/engine/)
 - [Security policy](https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md)

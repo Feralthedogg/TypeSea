@@ -19,6 +19,7 @@
     "aot_plugin": "AOT 번들러 플러그인",
     "seaflow": "SeaFlow 퍼저",
     "seabreeze": "SeaBreeze 추론",
+    "seacurrent_planner": "SeaCurrent 계획기",
     "project_direction": "프로젝트 방향",
     "engine_notes": "엔진 설계 노트",
     "search": "문서 검색",

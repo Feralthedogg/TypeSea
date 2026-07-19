@@ -33,6 +33,7 @@ JSON Schema, fuzzing 동작을 함께 정의해야 합니다.
 3. **AOT plugin**: 설정된 런타임 컴파일 호출을 빌드 시점에 치환
 4. **SeaFlow**: 사용자와 TypeSea parity test를 위한 스키마 기반 경계·적대 입력 생성
 5. **SeaBreeze**: 작은 principal join이 필요한 도구용 고급 arena 추론
+6. **SeaCurrent**: 범용 계획과 선택형 profile 기반 TypeSea graph lowering·승격 gate
 
 import 비용이나 의미의 소유권이 다르면 별도 subpath로 분리합니다.
 
@@ -43,6 +44,7 @@ import 비용이나 의미의 소유권이 다르면 별도 subpath로 분리합
 - 벤치마크 수치를 위해 safe mode 약화
 - 빌드나 테스트 편의를 위한 runtime dependency 추가
 - 핵심 정확성과 릴리스 근거보다 연구 API를 먼저 전면에 배치
+- 전체 방향성 의존성과 target resource 검증 전 profile 기반 변환 적용
 
 ## 릴리스 기준
 

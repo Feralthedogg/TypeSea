@@ -19,6 +19,7 @@
     "aot_plugin": "AOT bundler plugin",
     "seaflow": "SeaFlow fuzzer",
     "seabreeze": "SeaBreeze inference",
+    "seacurrent_planner": "SeaCurrent planner",
     "project_direction": "Project direction",
     "engine_notes": "Engine notes",
     "search": "Search documentation",
