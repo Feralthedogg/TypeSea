@@ -18,7 +18,12 @@ import {
     emitGraphRootFunction
 } from "./graph-predicate.js";
 import { safeFunctionName } from "./names.js";
-import type { CompileMode, CompiledSourceBundle } from "./types.js";
+import type {
+    CompileMode,
+    CompiledSourceBundle,
+    GraphInstrumentation,
+    ObjectEntryOrder
+} from "./types.js";
 
 /**
  * @brief Emit the full compiled guard factory body.
@@ -186,9 +191,11 @@ export function emitCompiledGraphBooleanSourceBundle(
     graph: Graph,
     name: string,
     mode: CompileMode = "safe",
-    debugSource = false
+    debugSource = false,
+    instrumentation?: GraphInstrumentation,
+    objectEntryOrder: ObjectEntryOrder = "static"
 ): CompiledSourceBundle {
-    const context = createEmitContext(mode);
+    const context = createEmitContext(mode, instrumentation, objectEntryOrder);
     const functionName = safeFunctionName(name);
     const root = emitGraphRootFunction(
         graph,

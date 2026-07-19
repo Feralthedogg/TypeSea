@@ -1,7 +1,7 @@
 {
     "name": "typesea",
-    "version": "1.2.0",
-    "description": "V8-friendly runtime narrowing for TypeScript with Sea-of-Nodes graph introspection.",
+    "version": "1.3.0",
+    "description": "Zero-dependency TypeScript validation compiler with JIT and AOT type guards.",
     "type": "module",
     "author": "feral",
     "repository": {
@@ -40,6 +40,26 @@
             "types": "./dist/seabreeze/index.d.ts",
             "import": "./dist/seabreeze/index.js",
             "default": "./dist/seabreeze/index.js"
+        },
+        "./plugin": {
+            "types": "./dist/plugin/index.d.ts",
+            "import": "./dist/plugin/index.js",
+            "default": "./dist/plugin/index.js"
+        },
+        "./codegen": {
+            "types": "./dist/codegen/index.d.ts",
+            "import": "./dist/codegen/index.js",
+            "default": "./dist/codegen/index.js"
+        },
+        "./seacurrent": {
+            "types": "./dist/seacurrent/index.d.ts",
+            "import": "./dist/seacurrent/index.js",
+            "default": "./dist/seacurrent/index.js"
+        },
+        "./seacurrent/aot": {
+            "types": "./dist/seacurrent/aot/index.d.ts",
+            "import": "./dist/seacurrent/aot/index.js",
+            "default": "./dist/seacurrent/aot/index.js"
         },
         "./zod": {
             "types": "./dist/zod.d.ts",
@@ -88,6 +108,10 @@
         "typeguard",
         "type-guard",
         "runtime-validation",
+        "validation-compiler",
+        "jit",
+        "aot",
+        "code-generation",
         "schema",
         "narrowing",
         "v8"
@@ -106,7 +130,7 @@
         "analyzer:sarif": "node tools/analyzer/cli.mjs --sarif",
         "analyzer:scan": "node tools/analyzer/cli.mjs",
         "analyzer:typescript-frontend": "node scripts/typescript-policy-bridge.mjs --compact",
-        "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json",
+        "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json && node scripts/prune-dist-file-headers.mjs",
         "bench": "vitest bench",
         "bench:compare": "node scripts/benchmark-report.mjs --compare",
         "bench:record": "node scripts/benchmark-report.mjs --record",

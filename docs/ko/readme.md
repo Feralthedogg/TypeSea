@@ -4,8 +4,13 @@
   <img src="https://raw.githubusercontent.com/Feralthedogg/TypeSea/main/docs/assets/typesea-logo.png" alt="TypeSea" width="620" />
 </p>
 
-**TypeSea**는 런타임 의존성 없이 TypeScript 값을 검증하고 타입을 좁히는 라이브러리입니다.
-불변 스키마, Sea-of-Nodes에서 영향을 받은 검증 IR, 런타임 컴파일, AOT 소스 생성을 한 흐름으로 묶는 것을 목표로 합니다.
+**TypeSea는 zero-dependency TypeScript 검증 컴파일러입니다. 스키마를 입력받아
+최적화된 type guard를 출력합니다.** 핵심은 불변 guard, Sea-of-Nodes 검증 계획,
+JIT predicate 생성, standalone AOT source입니다.
+
+TypeSea의 정체성은 컴파일러와 적대적 입력에 안전한 검증 엔진입니다.
+`typesea/v3`, `typesea/v4`와 Zod 형태의 export는 지원 범위를 명시한
+마이그레이션·생태계 facade이며 Zod 비공개 parser runtime의 복제품이 아닙니다.
 
 ## 기존 코드에서 찍어보기
 
@@ -81,7 +86,10 @@ TypeSea의 안전 모드 컴파일 검증기는 getter 실행 방지와 strict e
 
 > 목표는 "대충 유효해 보이면 통과"가 아닙니다.
 > TypeSea의 목표는 **런타임 실행, 컴파일 실행, AOT 실행이 같은 판정을 내린다는 사실을 테스트로 고정하는 검증기**입니다.
-> 사용자 코드를 실행하지 않고, 예상 가능한 실패에서 예외를 던지지 않으며, 공개 API 경계 밖으로 변경 가능한 내부 상태를 내보내지 않는 것을 기본 원칙으로 둡니다.
+> safe 구조 검증에서 입력 getter를 실행하지 않고, 예상 가능한 실패에서 예외를
+> 던지지 않으며, 공개 API 경계 밖으로 변경 가능한 내부 상태를 내보내지 않는 것을
+> 기본 원칙으로 둡니다. refinement와 transform callback은 스키마가 명시적으로
+> 요청한 경우에만 실행합니다.
 
 > [!IMPORTANT]
 > TypeSea는 **적대적인 경계 입력**을 전제로 설계했습니다.
@@ -109,7 +117,8 @@ TypeSea의 안전 모드 컴파일 검증기는 getter 실행 방지와 strict e
 
 TypeSea는 아래 원칙에 집중합니다.
 
-- 검증 중 사용자 코드 실행 금지
+- 구조 검증 중 입력에 숨겨진 코드 실행 금지
+- refinement와 transform의 명시적인 callback 경계
 - 런타임, 컴파일, AOT 실행 경로의 판정 일치를 seeded fuzzer로 검증
 - 코드 생성 시 사용자 입력을 소스 문자열에 직접 삽입하지 않기
 - `optional`과 `undefinedable`을 분리하는 명시적 key presence 규칙
@@ -255,6 +264,54 @@ shape를 만드는 동안에만 할당하고, 결과는 여전히 numeric node i
 `typesea/seabreeze`로 공개되며 `typesea` root에서는 다시 export하지 않으므로,
 일반 validator는 이 비용을 내지 않습니다.
 
+### SeaCurrent 적응형 프로파일링 계획기
+
+```ts
+import { createSeaCurrent } from "typesea/seacurrent";
+
+const current = createSeaCurrent({
+  targetKey: "node-v8",
+  checksums: true
+});
+
+const plan = current.plan(User, {
+  frequency: 1_000_000,
+  uncertainty: 0.3
+});
+
+// 선택 사항: 선택된 counter를 계측 JIT predicate로 lowering합니다.
+import { createSeaCurrentAotBridge } from "typesea/seacurrent/aot";
+
+const bridge = createSeaCurrentAotBridge(current);
+const profiled = bridge.compile(User, { mode: "safe" });
+profiled.is(input);
+
+const artifact = profiled.snapshot();
+const optimized = bridge.optimize(User, artifact);
+const tuned = bridge.tune(User, artifact, representativeInputs, {
+  warmupIterations: 20_000,
+  minSpeedup: 1.02
+});
+```
+
+SeaCurrent는 exact edge profiling, 제한된 CDC 중복 검증, 선택적 Ball-Larus path
+profiling과 검증된 schedule 추천을 위한 범용 계획 계층입니다. 타깃별 online
+tuning은 빌드 사이에서 비용 가중치를 학습하고, region 단위 structural cache는
+바뀐 graph만 다시 분석합니다. `createSeaCurrent()` facade는 adapter, target, tuner,
+cost model과 cache를 한 번만 만들고 유지하며, `plan()`은 guard를 직접 받습니다.
+Custom compiler IR용 저수준 planner 계약도 그대로 제공됩니다.
+`typesea/seacurrent` subpath로 격리되어 있으므로 일반 validation과 compiled guard는
+import 비용이나 핫패스 비용을 내지 않습니다. 선택형
+`typesea/seacurrent/aot` Bridge는 exact edge, region frequency, 완결된 outcome과
+CDC checksum 계측을 전용 JIT predicate 또는 독립 ESM module로 lowering합니다.
+`optimize()`는 검증된 safe-mode object field 계획을 다시 검증한 계측 없는 graph로
+lowering합니다. `tune()`은 baseline과 후보를 모두 warmup하고 측정한 뒤 승격하며,
+`emitOptimized()`는 같은 graph를 독립 ESM으로 만듭니다. Callback 기반
+`SchemaCheck` field는 순서 장벽으로 남고 unsafe·unchecked mode에는 재배치를
+적용하지 않습니다. Counter 갱신 비용은 계측 predicate를 호출할 때만 발생합니다.
+[SeaCurrent 가이드](https://feralthedogg.github.io/TypeSea/seacurrent/)에서 정확성 경계와
+fallback 조건을 확인할 수 있습니다.
+
 ### Cold start, fail-fast, 대형 payload
 
 ```ts
@@ -262,9 +319,9 @@ import {
   compileAsync,
   compileBoolean,
   compileCached,
-  createTypeSeaVitePlugin,
   warmup
 } from "typesea";
+import { createTypeSeaVitePlugin } from "typesea/plugin";
 
 const FastUser = compileCached("user:v1", () => User, { name: "isUser" });
 const BooleanUser = compileBoolean(User, { name: "isUserBoolean" });
@@ -292,6 +349,50 @@ true/false 판정만 필요한 hot path는 diagnostic collector를 아예 만들
 
 zero-dependency AOT plugin helper는 Rollup, Vite, esbuild compatible plugin object를 반환합니다.
 Vite, Rollup, esbuild는 plugin config에 등록된 entry에 한해 정적 `compileCached("id", ...)` 호출을 `typesea:aot/<id>` virtual module import로 치환할 수 있습니다.
+bundler 설정에서는 `typesea/plugin` 전용 subpath를 사용해 runtime validator import가
+plugin 표면을 애플리케이션 graph에 포함하지 않도록 합니다.
+
+### Schema description codegen
+
+`typesea/codegen`은 schema의 description을 JSDoc이 붙은 TypeScript type alias로
+변환합니다. 생성된 alias는 계속 `Infer<typeof schema>`에서 정확한 값을 가져오므로
+brand, custom guard, optional property 의미와 recursive type을 runtime tag로 다시
+추측하지 않습니다.
+
+```ts
+// src/schema.ts
+export const User = t.object({
+  id: t.string.describe("안정적인 사용자 식별자"),
+  nickname: t.string.describe("공개 표시 이름").optional(),
+  address: t.object({
+    street: t.string.describe("배송에 사용할 도로명 주소")
+  }).describe("우편 주소")
+}).describe("애플리케이션 사용자 payload");
+```
+
+```ts
+// scripts/generate-schema-types.ts
+import { writeFile } from "node:fs/promises";
+import { emitTypeDeclarations } from "typesea/codegen";
+import { User } from "../src/schema.js";
+
+await writeFile(
+  "src/schema.generated.ts",
+  emitTypeDeclarations({
+    entries: [{
+      name: "User",
+      guard: User,
+      source: "./schema.js"
+    }]
+  })
+);
+```
+
+`source`는 generated file 기준으로 resolve됩니다. `schema.generated.js`에서
+`User` type을 import하면 editor hover에 최상위 schema와 각 field, nested object
+field의 description이 표시됩니다. `precompileSchemaDocs()`는 precompile 중심의
+build script에서 쓸 수 있는 같은 기능의 alias입니다. 두 함수는 source text만
+반환하므로 파일 생성과 check mode 정책은 호출자가 소유합니다.
 
 ### Unsafe FastMode
 
@@ -979,9 +1080,13 @@ npm staged publishing을 선택하세요.
 
 - [문서 사이트](https://feralthedogg.github.io/TypeSea/)
 - [API 레퍼런스](https://feralthedogg.github.io/TypeSea/ko/api/)
-- [Zod 호환성 코퍼스](https://feralthedogg.github.io/TypeSea/ko/zod-compat/)
+- [Zod 호환성 표](https://feralthedogg.github.io/TypeSea/ko/zod-compat/)
+- [실사용 Zod 코퍼스](https://feralthedogg.github.io/TypeSea/ko/zod-corpus/)
+- [AOT 번들러 플러그인](https://feralthedogg.github.io/TypeSea/ko/aot/)
 - [SeaFlow 퍼저 가이드](https://feralthedogg.github.io/TypeSea/ko/seaflow/)
 - [SeaBreeze arena 추론](https://feralthedogg.github.io/TypeSea/ko/seabreeze/)
+- [SeaCurrent 적응형 프로파일링 계획기](https://feralthedogg.github.io/TypeSea/ko/seacurrent/)
+- [프로젝트 방향](https://feralthedogg.github.io/TypeSea/ko/direction/)
 - [엔진 노트](https://feralthedogg.github.io/TypeSea/ko/engine/)
 - [보안 정책](https://github.com/Feralthedogg/TypeSea/blob/main/SECURITY.md)
 

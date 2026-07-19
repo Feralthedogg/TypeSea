@@ -3,6 +3,10 @@ import { spawnSync } from "node:child_process";
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 
+const maximumPackedBytes = 600_000;
+const maximumUnpackedBytes = 2_800_000;
+const maximumPublishedFiles = 391;
+
 const runtimeDependencyFields = [
     "dependencies",
     "peerDependencies",
@@ -37,6 +41,9 @@ const expectedFiles = [
     "dist/aot/index.d.ts",
     "dist/aot/index.d.ts.map",
     "dist/aot/index.js",
+    "dist/aot/serialize.d.ts",
+    "dist/aot/serialize.d.ts.map",
+    "dist/aot/serialize.js",
     "dist/async/index.d.ts",
     "dist/async/index.d.ts.map",
     "dist/async/index.js",
@@ -94,6 +101,9 @@ const expectedFiles = [
     "dist/compile/context.d.ts",
     "dist/compile/context.d.ts.map",
     "dist/compile/context.js",
+    "dist/compile/control-path.d.ts",
+    "dist/compile/control-path.d.ts.map",
+    "dist/compile/control-path.js",
     "dist/compile/debug-source.d.ts",
     "dist/compile/debug-source.d.ts.map",
     "dist/compile/debug-source.js",
@@ -115,6 +125,9 @@ const expectedFiles = [
     "dist/compile/names.d.ts",
     "dist/compile/names.d.ts.map",
     "dist/compile/names.js",
+    "dist/compile/object-order.d.ts",
+    "dist/compile/object-order.d.ts.map",
+    "dist/compile/object-order.js",
     "dist/compile/number.d.ts",
     "dist/compile/number.d.ts.map",
     "dist/compile/number.js",
@@ -130,6 +143,9 @@ const expectedFiles = [
     "dist/compile/types.d.ts",
     "dist/compile/types.d.ts.map",
     "dist/compile/types.js",
+    "dist/codegen/index.d.ts",
+    "dist/codegen/index.d.ts.map",
+    "dist/codegen/index.js",
     "dist/config/index.d.ts",
     "dist/config/index.d.ts.map",
     "dist/config/index.js",
@@ -484,6 +500,69 @@ const expectedFiles = [
     "dist/seabreeze/serialize.d.ts",
     "dist/seabreeze/serialize.d.ts.map",
     "dist/seabreeze/serialize.js",
+    "dist/seacurrent/auto-tuner.d.ts",
+    "dist/seacurrent/auto-tuner.d.ts.map",
+    "dist/seacurrent/auto-tuner.js",
+    "dist/seacurrent/aot/bridge.d.ts",
+    "dist/seacurrent/aot/bridge.d.ts.map",
+    "dist/seacurrent/aot/bridge.js",
+    "dist/seacurrent/aot/index.d.ts",
+    "dist/seacurrent/aot/index.d.ts.map",
+    "dist/seacurrent/aot/index.js",
+    "dist/seacurrent/aot/layout.d.ts",
+    "dist/seacurrent/aot/layout.d.ts.map",
+    "dist/seacurrent/aot/layout.js",
+    "dist/seacurrent/aot/module.d.ts",
+    "dist/seacurrent/aot/module.d.ts.map",
+    "dist/seacurrent/aot/module.js",
+    "dist/seacurrent/aot/predicate.d.ts",
+    "dist/seacurrent/aot/predicate.d.ts.map",
+    "dist/seacurrent/aot/predicate.js",
+    "dist/seacurrent/aot/profile.d.ts",
+    "dist/seacurrent/aot/profile.d.ts.map",
+    "dist/seacurrent/aot/profile.js",
+    "dist/seacurrent/aot/runtime.d.ts",
+    "dist/seacurrent/aot/runtime.d.ts.map",
+    "dist/seacurrent/aot/runtime.js",
+    "dist/seacurrent/aot/types.d.ts",
+    "dist/seacurrent/aot/types.d.ts.map",
+    "dist/seacurrent/aot/types.js",
+    "dist/seacurrent/builder.d.ts",
+    "dist/seacurrent/builder.d.ts.map",
+    "dist/seacurrent/builder.js",
+    "dist/seacurrent/cache.d.ts",
+    "dist/seacurrent/cache.d.ts.map",
+    "dist/seacurrent/cache.js",
+    "dist/seacurrent/cdc.d.ts",
+    "dist/seacurrent/cdc.d.ts.map",
+    "dist/seacurrent/cdc.js",
+    "dist/seacurrent/exact-profile.d.ts",
+    "dist/seacurrent/exact-profile.d.ts.map",
+    "dist/seacurrent/exact-profile.js",
+    "dist/seacurrent/index.d.ts",
+    "dist/seacurrent/index.d.ts.map",
+    "dist/seacurrent/index.js",
+    "dist/seacurrent/path-profile.d.ts",
+    "dist/seacurrent/path-profile.d.ts.map",
+    "dist/seacurrent/path-profile.js",
+    "dist/seacurrent/planner.d.ts",
+    "dist/seacurrent/planner.d.ts.map",
+    "dist/seacurrent/planner.js",
+    "dist/seacurrent/schedule.d.ts",
+    "dist/seacurrent/schedule.d.ts.map",
+    "dist/seacurrent/schedule.js",
+    "dist/seacurrent/types.d.ts",
+    "dist/seacurrent/types.d.ts.map",
+    "dist/seacurrent/types.js",
+    "dist/seacurrent/typesea-adapter.d.ts",
+    "dist/seacurrent/typesea-adapter.d.ts.map",
+    "dist/seacurrent/typesea-adapter.js",
+    "dist/seacurrent/typesea-transform.d.ts",
+    "dist/seacurrent/typesea-transform.d.ts.map",
+    "dist/seacurrent/typesea-transform.js",
+    "dist/seacurrent/validate.d.ts",
+    "dist/seacurrent/validate.d.ts.map",
+    "dist/seacurrent/validate.js",
     "dist/schema/common.d.ts",
     "dist/schema/common.d.ts.map",
     "dist/schema/common.js",
@@ -562,8 +641,10 @@ async function main() {
         return parsed;
     }
 
-    const files = parsed.value;
-    const expected = expectedFiles.slice().sort();
+    const files = parsed.value.files;
+    const expected = expectedFiles
+        .filter((path) => !path.endsWith(".d.ts.map"))
+        .sort();
     const actual = files.slice().sort();
     const forbidden = findForbiddenPackagePath(actual);
     if (forbidden !== undefined) {
@@ -578,7 +659,30 @@ async function main() {
             `extra: ${extra.join(", ") || "<none>"}`
         ].join("\n"));
     }
+    const footprintCheck = checkPackageFootprint(parsed.value);
+    if (!footprintCheck.ok) {
+        return footprintCheck;
+    }
 
+    return ok(undefined);
+}
+
+/**
+ * @brief Enforce the published installation-footprint budget.
+ * @details Declaration maps are intentionally excluded from release builds;
+ * source remains available in Git while npm consumers receive declarations and
+ * executable modules only.
+ */
+function checkPackageFootprint(pack) {
+    if (pack.size > maximumPackedBytes) {
+        return err(`packed package exceeds ${String(maximumPackedBytes)} bytes: ${String(pack.size)}`);
+    }
+    if (pack.unpackedSize > maximumUnpackedBytes) {
+        return err(`unpacked package exceeds ${String(maximumUnpackedBytes)} bytes: ${String(pack.unpackedSize)}`);
+    }
+    if (pack.files.length > maximumPublishedFiles) {
+        return err(`package file count exceeds ${String(maximumPublishedFiles)}: ${String(pack.files.length)}`);
+    }
     return ok(undefined);
 }
 
@@ -708,7 +812,17 @@ function parsePackOutput(stdout) {
         }
         files.push(path);
     }
-    return ok(files);
+    const size = first["size"];
+    const unpackedSize = first["unpackedSize"];
+    if (!Number.isSafeInteger(size) || size < 0 ||
+        !Number.isSafeInteger(unpackedSize) || unpackedSize < 0) {
+        return err("npm pack output did not include valid size metadata");
+    }
+    return ok({
+        files,
+        size,
+        unpackedSize
+    });
 }
 
 /**

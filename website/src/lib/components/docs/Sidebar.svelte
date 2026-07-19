@@ -33,19 +33,25 @@
             items: [
                 { label: m.readme(), href: '/readme/', match: '/readme/' },
                 { label: m.api_reference(), href: '/api/', match: '/api/' },
-                { label: m.zod_compat(), href: '/zod-compat/', match: '/zod-compat/' }
+                { label: m.zod_compat(), href: '/zod-compat/', match: '/zod-compat/' },
+                { label: m.zod_corpus(), href: '/zod-corpus/', match: '/zod-corpus/' }
             ]
         },
         {
             label: m.tools(),
             items: [
+                { label: m.aot_plugin(), href: '/aot/', match: '/aot/' },
                 { label: 'SeaFlow', href: '/seaflow/', match: '/seaflow/' },
-                { label: 'SeaBreeze', href: '/seabreeze/', match: '/seabreeze/' }
+                { label: 'SeaBreeze', href: '/seabreeze/', match: '/seabreeze/' },
+                { label: m.seacurrent_planner(), href: '/seacurrent/', match: '/seacurrent/' }
             ]
         },
         {
             label: m.internals(),
-            items: [{ label: m.engine_notes(), href: '/engine/', match: '/engine/' }]
+            items: [
+                { label: m.project_direction(), href: '/direction/', match: '/direction/' },
+                { label: m.engine_notes(), href: '/engine/', match: '/engine/' }
+            ]
         }
     ]);
 

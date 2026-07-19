@@ -14,14 +14,16 @@ import type {
     ArrayEveryNode,
     DiscriminantDispatchNode,
     Graph,
-    GraphNode,
     NodeId,
-    ObjectShapeEntry,
     ObjectShapeNode,
     PresenceDispatchNode,
     PrimitiveUnionNode,
     UnionDispatchNode
 } from "../ir/index.js";
+import {
+    appendControlPath,
+    ROOT_CONTROL_PATH
+} from "./control-path.js";
 import { makeValidationPlan } from "../plan/index.js";
 import {
     type ArrayCheck,
@@ -37,7 +39,12 @@ import {
     pushSchema,
     stringRef
 } from "./context.js";
-import type { EmitContext, FunctionSource } from "./types.js";
+import { scheduleObjectShapeEntries } from "./object-order.js";
+import type {
+    EmitContext,
+    FunctionSource,
+    GraphInstrumentationRegion
+} from "./types.js";
 
 /**
  * @brief Mutable state for one graph-to-source emission pass.
@@ -53,7 +60,7 @@ interface GraphEmitState {
     readonly knownObjects: Set<string>;
     readonly knownPredicates: Set<string>;
     readonly knownTypeofs: Set<string>;
-    readonly failureLabel: string | undefined;
+    readonly failureStatement: string | undefined;
     temp: number;
 }
 
@@ -77,7 +84,7 @@ function makeGraphEmitState(): GraphEmitState {
         knownObjects: new Set<string>(),
         knownPredicates: new Set<string>(),
         knownTypeofs: new Set<string>(),
-        failureLabel: undefined,
+        failureStatement: undefined,
         temp: 0
     };
 }
@@ -98,7 +105,7 @@ function makeBranchEmitState(parent: GraphEmitState): GraphEmitState {
         knownObjects: new Set<string>(parent.knownObjects),
         knownPredicates: new Set<string>(parent.knownPredicates),
         knownTypeofs: new Set<string>(parent.knownTypeofs),
-        failureLabel: parent.failureLabel,
+        failureStatement: parent.failureStatement,
         temp: parent.temp
     };
 }
@@ -124,8 +131,56 @@ function makeFailureBranchEmitState(
         knownObjects: state.knownObjects,
         knownPredicates: state.knownPredicates,
         knownTypeofs: state.knownTypeofs,
-        failureLabel,
+        failureStatement: `break ${failureLabel};`,
         temp: state.temp
+    };
+}
+
+/**
+ * @brief Fork facts while writing into the caller's lexical source scope.
+ * @param parent Facts known before the predicate check.
+ * @param failureStatement Complete statement emitted when the check fails.
+ * @returns Success-path state sharing the caller's output vector.
+ */
+function makeFailureStatementEmitState(
+    parent: GraphEmitState,
+    failureStatement: string
+): GraphEmitState {
+    const state = makeBranchEmitState(parent);
+    return {
+        chunks: parent.chunks,
+        dataSlots: state.dataSlots,
+        dataGuards: state.dataGuards,
+        dataLiterals: state.dataLiterals,
+        knownObjects: state.knownObjects,
+        knownPredicates: state.knownPredicates,
+        knownTypeofs: state.knownTypeofs,
+        failureStatement,
+        temp: state.temp
+    };
+}
+
+/**
+ * @brief Continue with conservative parent facts after a merged branch.
+ * @param parent Facts valid before the branch.
+ * @param temp Highest temporary identifier consumed by branch emission.
+ * @returns State sharing output chunks without branch-local assumptions.
+ */
+function makeNeutralContinuationState(
+    parent: GraphEmitState,
+    temp: number
+): GraphEmitState {
+    const state = makeBranchEmitState(parent);
+    return {
+        chunks: parent.chunks,
+        dataSlots: state.dataSlots,
+        dataGuards: state.dataGuards,
+        dataLiterals: state.dataLiterals,
+        knownObjects: state.knownObjects,
+        knownPredicates: state.knownPredicates,
+        knownTypeofs: state.knownTypeofs,
+        failureStatement: parent.failureStatement,
+        temp
     };
 }
 
@@ -272,8 +327,259 @@ function emitGraphBody(
     context: EmitContext
 ): string {
     const state = makeGraphEmitState();
+    const instrumentation = context.instrumentation?.region(graph);
+    if (instrumentation !== undefined && id === graph.result) {
+        emitInstrumentedRegionReturn(
+            graph,
+            value,
+            context,
+            state,
+            instrumentation
+        );
+        return state.chunks.join("");
+    }
     emitGraphReturn(graph, id, value, context, state);
     return state.chunks.join("");
+}
+
+/**
+ * @brief Emit one instrumented region at a predicate return boundary.
+ * @details The ordinary optimized checks remain authoritative; instrumentation
+ * contributes statements only at adapter-proven control edges.
+ */
+function emitInstrumentedRegionReturn(
+    graph: Graph,
+    value: string,
+    context: EmitContext,
+    state: GraphEmitState,
+    instrumentation: GraphInstrumentationRegion
+): void {
+    state.chunks.push(instrumentation.statement(ROOT_CONTROL_PATH, "entry"));
+    const reject = combineInstrumentationStatements(
+        instrumentation.statement(ROOT_CONTROL_PATH, "reject"),
+        "return false;"
+    );
+    const success = emitInstrumentedGuard(
+        graph,
+        graph.result,
+        value,
+        context,
+        state,
+        instrumentation,
+        ROOT_CONTROL_PATH,
+        reject
+    );
+    success.chunks.push(
+        instrumentation.statement(ROOT_CONTROL_PATH, "accept"),
+        "return true;"
+    );
+    state.temp = Math.max(state.temp, success.temp);
+}
+
+/**
+ * @brief Emit an instrumented nested-region check into an existing predicate.
+ * @details Child graph facts are intentionally not propagated to the parent
+ * graph because node ids and descriptor slots are region-local.
+ */
+function emitInstrumentedRegionCheck(
+    graph: Graph,
+    value: string,
+    context: EmitContext,
+    state: GraphEmitState,
+    instrumentation: GraphInstrumentationRegion
+): void {
+    state.chunks.push(instrumentation.statement(ROOT_CONTROL_PATH, "entry"));
+    const reject = combineInstrumentationStatements(
+        instrumentation.statement(ROOT_CONTROL_PATH, "reject"),
+        failStatement(state)
+    );
+    const success = emitInstrumentedGuard(
+        graph,
+        graph.result,
+        value,
+        context,
+        state,
+        instrumentation,
+        ROOT_CONTROL_PATH,
+        reject
+    );
+    success.chunks.push(instrumentation.statement(ROOT_CONTROL_PATH, "accept"));
+    state.temp = Math.max(state.temp, success.temp);
+}
+
+/**
+ * @brief Emit a guard whose success falls through and failure executes a jump.
+ * @returns Success-path facts available to the next conjunct.
+ */
+function emitInstrumentedGuard(
+    graph: Graph,
+    id: NodeId,
+    value: string,
+    context: EmitContext,
+    state: GraphEmitState,
+    instrumentation: GraphInstrumentationRegion,
+    path: string,
+    failureStatement: string
+): GraphEmitState {
+    const node = graph.nodes[id];
+    if (instrumentation.branch(path, id)) {
+        return emitInstrumentedLeafGuard(
+            graph,
+            id,
+            value,
+            context,
+            state,
+            instrumentation,
+            path,
+            failureStatement
+        );
+    }
+    if (node === undefined) {
+        state.chunks.push(failureStatement);
+        return state;
+    }
+    if (node.tag === NodeTag.Const) {
+        if (node.value !== true) {
+            state.chunks.push(failureStatement);
+        }
+        return state;
+    }
+    if (node.tag === NodeTag.Return) {
+        return emitInstrumentedGuard(
+            graph,
+            node.value,
+            value,
+            context,
+            state,
+            instrumentation,
+            path,
+            failureStatement
+        );
+    }
+    if (node.tag === NodeTag.Not) {
+        return emitInstrumentedProbe(
+            graph,
+            node.value,
+            value,
+            context,
+            state,
+            instrumentation,
+            appendControlPath(path, "n"),
+            failureStatement
+        );
+    }
+    if (node.tag === NodeTag.And) {
+        let current = state;
+        for (let index = 0; index < node.values.length; index += 1) {
+            const child = node.values[index];
+            if (child !== undefined) {
+                current = emitInstrumentedGuard(
+                    graph,
+                    child,
+                    value,
+                    context,
+                    current,
+                    instrumentation,
+                    appendControlPath(path, "a", index),
+                    failureStatement
+                );
+            }
+        }
+        return current;
+    }
+    if (node.tag === NodeTag.Or) {
+        const successLabel = `is${String(state.temp)}`;
+        state.temp += 1;
+        state.chunks.push(`${successLabel}:{`);
+        let current = state;
+        for (let index = 0; index < node.values.length; index += 1) {
+            const child = node.values[index];
+            if (child !== undefined) {
+                current = emitInstrumentedProbe(
+                    graph,
+                    child,
+                    value,
+                    context,
+                    current,
+                    instrumentation,
+                    appendControlPath(path, "o", index),
+                    `break ${successLabel};`
+                );
+            }
+        }
+        current.chunks.push(failureStatement, "}");
+        return makeNeutralContinuationState(state, current.temp);
+    }
+    return emitInstrumentedLeafGuard(
+        graph,
+        id,
+        value,
+        context,
+        state,
+        instrumentation,
+        path,
+        failureStatement
+    );
+}
+
+/**
+ * @brief Emit a predicate whose false result falls through.
+ * @returns Conservative false-path facts after the probe block.
+ */
+function emitInstrumentedProbe(
+    graph: Graph,
+    id: NodeId,
+    value: string,
+    context: EmitContext,
+    state: GraphEmitState,
+    instrumentation: GraphInstrumentationRegion,
+    path: string,
+    successStatement: string
+): GraphEmitState {
+    const failureLabel = `if${String(state.temp)}`;
+    state.temp += 1;
+    state.chunks.push(`${failureLabel}:{`);
+    const success = emitInstrumentedGuard(
+        graph,
+        id,
+        value,
+        context,
+        state,
+        instrumentation,
+        path,
+        `break ${failureLabel};`
+    );
+    success.chunks.push(successStatement, "}");
+    return makeNeutralContinuationState(state, success.temp);
+}
+
+/**
+ * @brief Emit one adapter-identified atomic predicate edge pair.
+ * @returns Success-path facts produced by the existing optimized check emitter.
+ */
+function emitInstrumentedLeafGuard(
+    graph: Graph,
+    id: NodeId,
+    value: string,
+    context: EmitContext,
+    state: GraphEmitState,
+    instrumentation: GraphInstrumentationRegion,
+    path: string,
+    failureStatement: string
+): GraphEmitState {
+    const failure = combineInstrumentationStatements(
+        instrumentation.statement(path, "false"),
+        failureStatement
+    );
+    const success = makeFailureStatementEmitState(state, failure);
+    emitFalseCheck(graph, id, value, context, success);
+    success.chunks.push(instrumentation.statement(path, "true"));
+    return success;
+}
+
+/** @brief Join an edge action and control transfer as one generated statement. */
+function combineInstrumentationStatements(action: string, continuation: string): string {
+    return action.length === 0 ? continuation : `{${action}${continuation}}`;
 }
 
 
@@ -385,6 +691,17 @@ function emitFalseCheck(
     context: EmitContext,
     state: GraphEmitState
 ): void {
+    const instrumentation = context.instrumentation?.region(graph);
+    if (instrumentation !== undefined && id === graph.result) {
+        emitInstrumentedRegionCheck(
+            graph,
+            value,
+            context,
+            state,
+            instrumentation
+        );
+        return;
+    }
     const node = graph.nodes[id];
     if (node?.tag === NodeTag.Const) {
         if (node.value !== true) {
@@ -2269,7 +2586,9 @@ function emitObjectShapeEntries(
         emitUnsafeObjectShapeEntries(node, objectExpression, context, state);
         return;
     }
-    const entries = scheduleObjectShapeEntries(node.entries);
+    const entries = context.objectEntryOrder === "graph"
+        ? node.entries
+        : scheduleObjectShapeEntries(node.entries);
     for (let index = 0; index < entries.length; index += 1) {
         const entry = entries[index];
         if (entry === undefined) {
@@ -2312,265 +2631,6 @@ function emitObjectShapeEntries(
         }
     }
 }
-
-/**
- * @brief Schedule pure object fields for predicate-only fast failure.
- * @details SchemaCheck nodes can run user code through refine or lazy fallback,
- * so they act as barriers. Pure fields between barriers may be reordered because
- * boolean validation has no diagnostic ordering contract.
- * @param entries Object shape entries in schema order.
- * @returns Entry view ordered for V8-friendly predicate emission.
- */
-function scheduleObjectShapeEntries(
-    entries: readonly ObjectShapeEntry[]
-): readonly ObjectShapeEntry[] {
-    if (entries.length < 2) {
-        return entries;
-    }
-    const scheduled: ObjectShapeEntry[] = [];
-    let index = 0;
-    while (index < entries.length) {
-        const entry = entries[index];
-        if (entry === undefined) {
-            index += 1;
-            continue;
-        }
-        if (!isSchedulableObjectShapeEntry(entry)) {
-            scheduled.push(entry);
-            index += 1;
-            continue;
-        }
-        const run: ScheduledObjectShapeEntry[] = [];
-        while (index < entries.length) {
-            const candidate = entries[index];
-            if (candidate === undefined || !isSchedulableObjectShapeEntry(candidate)) {
-                break;
-            }
-            run.push({
-                entry: candidate,
-                order: index
-            });
-            index += 1;
-        }
-        run.sort(compareScheduledObjectShapeEntries);
-        for (let runIndex = 0; runIndex < run.length; runIndex += 1) {
-            const scheduledEntry = run[runIndex];
-            if (scheduledEntry !== undefined) {
-                scheduled.push(scheduledEntry.entry);
-            }
-        }
-    }
-    return scheduled;
-}
-
-/**
- * @brief Object entry paired with its schema-order index.
- * @details The original index is the final tie breaker so generated source stays
- * deterministic when two fields have the same estimated validation cost.
- */
-interface ScheduledObjectShapeEntry {
-    readonly entry: ObjectShapeEntry;
-    readonly order: number;
-}
-
-/**
- * @brief Compare two object entries for predicate emission.
- * @details Required fields can fail on absence and are therefore tested before
- * optional fields. Within the same presence class, cheaper child graphs run
- * first so invalid objects fail before arrays, records, or regex-heavy checks.
- * @param left Left scheduled entry.
- * @param right Right scheduled entry.
- * @returns Negative when left should be emitted before right.
- */
-function compareScheduledObjectShapeEntries(
-    left: ScheduledObjectShapeEntry,
-    right: ScheduledObjectShapeEntry
-): number {
-    const leftPresence = objectShapePresenceCost(left.entry);
-    const rightPresence = objectShapePresenceCost(right.entry);
-    if (leftPresence !== rightPresence) {
-        return leftPresence - rightPresence;
-    }
-    const leftCost = estimateGraphCost(left.entry.graph);
-    const rightCost = estimateGraphCost(right.entry.graph);
-    if (leftCost !== rightCost) {
-        return leftCost - rightCost;
-    }
-    return left.order - right.order;
-}
-
-/**
- * @brief Return whether an object entry may move within its pure run.
- * @details SchemaCheck is the IR boundary for user predicates and lazy
- * resolution. Keeping those entries fixed preserves observable user-code order.
- * @param entry Object shape entry under consideration.
- * @returns True when the entry graph has no opaque runtime callback.
- */
-function isSchedulableObjectShapeEntry(entry: ObjectShapeEntry): boolean {
-    return !graphContainsSchemaCheck(entry.graph);
-}
-
-/**
- * @brief Estimate object field presence cost.
- * @details Required fields receive the lower rank because missing required keys
- * are common fast-fail cases and optional absence usually succeeds.
- * @param entry Object shape entry.
- * @returns Numeric rank used before graph cost.
- */
-function objectShapePresenceCost(entry: ObjectShapeEntry): number {
-    return entry.presence === PresenceTag.Optional ? 1_000 : 0;
-}
-
-/**
- * @brief Estimate predicate cost for one child graph.
- * @details The values are intentionally coarse. The scheduler only needs stable
- * buckets that keep scalar checks before regexes and bounded loops.
- * @param graph Child graph emitted for one object field.
- * @returns Relative cost used by Tide scheduling.
- */
-function estimateGraphCost(graph: Graph): number {
-    let cost = 0;
-    for (let index = 0; index < graph.nodes.length; index += 1) {
-        const node = graph.nodes[index];
-        if (node !== undefined) {
-            cost += estimateNodeCost(node);
-        }
-    }
-    return cost;
-}
-
-/**
- * @brief Estimate one node's predicate cost.
- * @details Compile-time scheduling only needs relative ordering, so the weights
- * favor V8-friendly scalar branches and push bounded or dynamic loops later.
- * @param node Graph node inspected by the scheduler.
- * @returns Relative node cost.
- */
-function estimateNodeCost(node: GraphNode): number {
-    switch (node.tag) {
-        case NodeTag.Start:
-        case NodeTag.Param:
-        case NodeTag.Const:
-        case NodeTag.Return:
-            return 0;
-        case NodeTag.IsString:
-        case NodeTag.IsNumber:
-        case NodeTag.IsBoolean:
-        case NodeTag.IsBigInt:
-        case NodeTag.IsSymbol:
-        case NodeTag.IsObject:
-        case NodeTag.IsArray:
-        case NodeTag.IsUndefined:
-        case NodeTag.IsNull:
-        case NodeTag.IsInteger:
-        case NodeTag.StringMin:
-        case NodeTag.StringMax:
-        case NodeTag.Gte:
-        case NodeTag.Lte:
-        case NodeTag.Equals:
-            return 1;
-        case NodeTag.Regex:
-            return 8;
-        case NodeTag.PrimitiveUnion:
-        case NodeTag.UnionDispatch:
-        case NodeTag.DiscriminantDispatch:
-        case NodeTag.PresenceDispatch:
-        case NodeTag.ObjectShape:
-        case NodeTag.TupleItems:
-            return 16;
-        case NodeTag.ArrayEvery:
-        case NodeTag.RecordEvery:
-            return 64;
-        case NodeTag.SchemaCheck:
-            return 128;
-        default:
-            return 2;
-    }
-}
-
-/**
- * @brief Check whether a graph can enter user-controlled runtime logic.
- * @details Refine and lazy schemas lower to SchemaCheck nodes. Treating them as
- * scheduling barriers prevents pure field reordering from hiding side effects.
- * @param graph Child graph scanned for opaque checks.
- * @returns True when the graph contains a SchemaCheck node at some depth.
- */
-function graphContainsSchemaCheck(graph: Graph): boolean {
-    for (let index = 0; index < graph.nodes.length; index += 1) {
-        const node = graph.nodes[index];
-        if (node === undefined) {
-            continue;
-        }
-        if (node.tag === NodeTag.SchemaCheck) {
-            return true;
-        }
-        if (nodeContainsSchemaCheck(node)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Scan nested graphs owned by one node.
- * @details Composite IR nodes store child graphs by value, so barrier discovery
- * must recurse through those embedded validation graphs.
- * @param node Node whose embedded graphs are inspected.
- * @returns True when a nested graph contains SchemaCheck.
- */
-function nodeContainsSchemaCheck(node: GraphNode): boolean {
-    switch (node.tag) {
-        case NodeTag.ArrayEvery:
-        case NodeTag.RecordEvery:
-            return graphContainsSchemaCheck(node.itemGraph);
-        case NodeTag.TupleItems:
-            return graphArrayContainsSchemaCheck(node.itemGraphs);
-        case NodeTag.ObjectShape:
-            return objectEntriesContainSchemaCheck(node.entries);
-        case NodeTag.DiscriminantDispatch:
-        case NodeTag.PresenceDispatch:
-        case NodeTag.UnionDispatch:
-        case NodeTag.PrimitiveUnion:
-            return graphArrayContainsSchemaCheck(node.graphs);
-        default:
-            return false;
-    }
-}
-
-/**
- * @brief Scan a graph vector for SchemaCheck.
- * @details Undefined holes are ignored because they carry no executable graph.
- * @param graphs Child graph vector.
- * @returns True when a present graph contains SchemaCheck.
- */
-function graphArrayContainsSchemaCheck(graphs: readonly Graph[]): boolean {
-    for (let index = 0; index < graphs.length; index += 1) {
-        const graph = graphs[index];
-        if (graph !== undefined && graphContainsSchemaCheck(graph)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Scan object entries for SchemaCheck.
- * @details Nested object shapes may appear inside scheduled parent fields.
- * @param entries Nested object shape entries.
- * @returns True when an entry graph contains an opaque check.
- */
-function objectEntriesContainSchemaCheck(
-    entries: readonly ObjectShapeEntry[]
-): boolean {
-    for (let index = 0; index < entries.length; index += 1) {
-        const entry = entries[index];
-        if (entry !== undefined && graphContainsSchemaCheck(entry.graph)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 
 function emitUnsafeObjectShapeEntries(
     node: ObjectShapeNode,
@@ -3312,9 +3372,7 @@ function isIdentifierPart(code: number): boolean {
 
 
 function failStatement(state: GraphEmitState): string {
-    return state.failureLabel === undefined
-        ? "return false;"
-        : `break ${state.failureLabel};`;
+    return state.failureStatement ?? "return false;";
 }
 
 

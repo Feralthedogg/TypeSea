@@ -2,6 +2,65 @@
 
 All notable changes to TypeSea are recorded here.
 
+## 1.3.0 - 2026-07-20
+
+### Added
+
+- Added the isolated `typesea/codegen` declaration precompiler. It renders
+  top-level and nested schema descriptions as IDE-visible JSDoc while retaining
+  exact `Infer<typeof schema>` types for brands, custom guards, optional fields,
+  and recursive schemas.
+- Added the isolated `typesea/seacurrent` SeaCurrent planning subpath with exact
+  spanning-tree edge profiling, bounded and independently verified CDC covers,
+  selective Ball-Larus path plans, and fully revalidated schedule warm starts.
+- Added target-specific online cost-model tuning for pipeline potential,
+  profile uncertainty, size penalty, semantic risk, and denominator epsilon.
+- Added bounded incremental region caching keyed by adapter, target, structural
+  hash, and analysis budget so unchanged CFG, dependence, and shadow-graph work
+  is reused across builds.
+- Added a TypeSea Sea-of-Nodes adapter, English/Korean documentation, package
+  consumer checks, and focused rank, CDC, path, scheduling, tuning, and cache
+  regression tests.
+- Added `createSeaCurrent()`, a retained TypeSea facade with direct guard
+  planning, root and nested-region profile helpers, target-local observations,
+  tuner snapshots, and explicit cache lifecycle controls.
+- Added the opt-in `typesea/seacurrent/aot` bridge for instrumented JIT predicates,
+  standalone profiled ESM emission, hostile-safe profile artifacts, and closed-loop
+  replanning. Ordinary TypeSea predicates remain uninstrumented.
+- Added complete per-region accept/reject profiling and the TypeSea transformation
+  lowerer that reorders sampled pure object checks without crossing callback or
+  presence boundaries.
+- Added `optimize()` and `emitOptimized()` for uninstrumented JIT/AOT promotion,
+  plus `tune()` for warmed, alternating-order median benchmarks with an explicit
+  minimum-speedup gate and target-local feedback.
+
+### Fixed
+
+- Preserved existing live cost-model views when loading auto-tuner snapshots so
+  retained builders observe restored parameters without rebuilding closures.
+- Closed the planning-to-code gap: verified TypeSea transform plans now become
+  validated and frozen graph IR before source emission instead of remaining
+  recommendation-only metadata.
+
+## 1.2.1 - 2026-07-13
+
+### Added
+
+- Added the dedicated `typesea/plugin` subpath and standalone English/Korean AOT
+  plugin guides for Vite, Rollup, and esbuild configuration.
+- Added SeaFlow extreme-mode probes for reflection-throwing and revoked proxies.
+- Added canonical English/Korean Zod compatibility and project-direction guides.
+
+### Changed
+
+- Positioned the package and documentation around TypeSea's validation compiler
+  contract, with Zod-shaped exports explicitly classified as compatibility
+  facades.
+- Removed declaration maps from npm release builds and added packed size,
+  unpacked size, and file-count budgets to the package gate.
+- Pinned GitHub Actions to immutable revisions and disabled persisted checkout
+  credentials in CI and release workflows.
+
 ## 1.2.0 - 2026-07-11
 
 ### Added

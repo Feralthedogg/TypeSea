@@ -90,7 +90,7 @@ test("accepted payloads do not crash the service", () => {
 | Numeric boundaries | Minimum, maximum, just outside the boundary, integer/float confusion, `NaN`, infinities |
 | String boundaries | Minimum/maximum length, empty string, known format failures, SQLi/XSS probe strings |
 | Object structure | Required-key deletion, optional-key variants, strict-object extra keys, object-union hybrids |
-| Hostile input | `__proto__`, `constructor`, accessor properties, sparse arrays, symbol and non-enumerable extras |
+| Hostile input | `__proto__`, `constructor`, accessor properties, sparse arrays, reflection-throwing and revoked proxies, symbol and non-enumerable extras |
 | Recursive schemas | Lazy schemas stop at `maxDepth` so recursive graphs remain finite |
 
 Safe strict objects reject undeclared own string, symbol, and non-enumerable
@@ -98,6 +98,10 @@ keys without walking prototypes. The safe runtime and compiled paths use
 `Reflect.ownKeys` or equivalent own-name plus own-symbol fast paths, so
 undeclared `__proto__` and `constructor` data keys are treated as ordinary
 extra keys instead of prototype state.
+
+Reflection-throwing and revoked Proxy probes are emitted only at `extreme`
+intensity. They verify that safe validators fail closed without leaking Proxy
+trap failures to the caller.
 
 ## Options
 
@@ -115,4 +119,3 @@ Use `intensity: "low"` for narrow CI smoke tests, `high` for normal boundary
 testing, and `extreme` when you want rare numeric and structural probes. Set
 `includeSecurity: false` for pure semantic tests that should avoid injection
 strings and hostile object shapes.
-

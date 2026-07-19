@@ -4,8 +4,12 @@ export const documentSlugs = [
     'readme',
     'api',
     'zod-compat',
+    'zod-corpus',
+    'aot',
     'seaflow',
     'seabreeze',
+    'seacurrent',
+    'direction',
     'engine'
 ] as const;
 

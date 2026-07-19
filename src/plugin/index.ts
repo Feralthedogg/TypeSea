@@ -38,7 +38,7 @@ export interface TypeSeaAotPluginEntry {
      * @details These options override only this generated module and do not mutate
      * plugin-level state.
      */
-    readonly options: Partial<AotCompileOptions> | undefined;
+    readonly options?: Partial<AotCompileOptions> | undefined;
 }
 
 /**
@@ -57,7 +57,7 @@ export interface TypeSeaAotPluginOptions {
      * @details Only string-literal keys present in entries are rewritten, keeping
      * dynamic cache usage under normal runtime control.
      */
-    readonly transformCompileCached: boolean | undefined;
+    readonly transformCompileCached?: boolean | undefined;
 
     /**
      * @brief Optional source reader used by esbuild macro replacement.

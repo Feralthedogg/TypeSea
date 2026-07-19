@@ -24,7 +24,9 @@ import {
 The package exposes the root entry point plus `typesea/mini`,
 `typesea/seaflow`, `typesea/seabreeze`, `typesea/zod`, `typesea/v3`, `typesea/v4`,
 `typesea/v4-mini`, `typesea/v4/mini`, `typesea/locales`,
-`typesea/v4/locales`, `typesea/v4/locales/*`, and `typesea/v4/core`. Deep `dist/*` imports are
+`typesea/v4/locales`, `typesea/v4/locales/*`, `typesea/v4/core`,
+`typesea/plugin`, `typesea/codegen`, `typesea/seacurrent`, and
+`typesea/seacurrent/aot`. Deep `dist/*` imports are
 intentionally not part of the public API. TypeSea is ESM-only and does not
 publish a CommonJS condition. Zod migration code can import the compatibility
 builder namespace as `z`; it keeps TypeSea builders while supporting nullary
@@ -77,6 +79,10 @@ observed declaration exports. This is source-compatibility evidence for the
 pinned commits, not a full semantic-equivalence claim.
 
 ### Zod Compatibility Matrix
+
+The canonical support levels and migration policy live in the
+[Zod compatibility guide](./zod-compatibility.md). The summary below is kept
+next to the API surface for quick reference.
 
 The facade is useful when existing code already thinks in Zod-shaped builders.
 The table below describes the practical support boundary. "Compiled" means the
@@ -1238,9 +1244,38 @@ Diagnostics are still collected only after failure. `checkAsync()` and
 `compileAsync().check()` return the same full diagnostic result as `check()`;
 use `isAsync()` when the hot path needs only the cooperative boolean verdict.
 
+### Documented Type Declaration Codegen
+
+```ts
+import { emitTypeDeclarations } from "typesea/codegen";
+
+const source = emitTypeDeclarations({
+  entries: [{
+    name: "User",
+    guard: User,
+    source: "./schema.js"
+  }]
+});
+```
+
+`emitTypeDeclarations()` returns a TypeScript-only module that exports exact
+`Infer<typeof schema>` aliases and overlays JSDoc from each schema
+`description`. Top-level and nested object descriptions are emitted, optional
+keys remain optional, and recursive paths stop at an already visited object.
+The generated alias references the original exported schema, so erased details
+such as `custom<T>` and brands are not guessed from runtime schema tags.
+
+Each entry's `source` is resolved from the generated file and `exportName`
+defaults to `name`. `typeSeaImport` can replace the default `"typesea"` module
+specifier, while `banner: false` omits the generated-file header.
+`precompileSchemaDocs()` is an alias for the same source emitter. Both APIs are
+pure and perform no file writes.
+
 ### AOT Bundler Plugins
 
 ```ts
+import { createTypeSeaVitePlugin } from "typesea/plugin";
+
 export default createTypeSeaVitePlugin({
   entries: [
     {
@@ -1261,6 +1296,8 @@ They serve virtual modules such as `typesea:aot/user:v1` by running
 modules, so production bundles can drop the schema factory and runtime compiler
 for that guard. esbuild source reads use an optional `readFile` hook or a
 dynamic `node:fs/promises` import inside plugin `setup()`.
+See the [AOT plugin guide](./aot-plugin.md) for complete Vite, Rollup, and
+esbuild configurations and the conservative rewrite rules.
 
 ### Union Schema Shape
 
@@ -1452,6 +1489,38 @@ regexps, cloning extensible inputs before the graph is frozen.
 `SchemaCheck` records dynamic runtime schema logic such as `lazy`, `refine`, or
 `superRefine`. It keeps the IR truthful instead of pretending a callback-backed
 edge is a static primitive.
+
+### SeaCurrent planning subpath
+
+`typesea/seacurrent` exports the ergonomic `createSeaCurrent()` facade as its
+primary TypeSea API. A retained builder accepts guards directly through `plan()`,
+accepts nested-region profile maps through `planRegions()`, and owns target-local
+`observe()`, `snapshot()`, cache invalidation, and state restoration methods.
+
+The same subpath exports `SeaCurrentPlanner`, `SeaCurrentAutoTuner`,
+`SeaCurrentIncrementalCache`, generic graph and target contracts, and the TypeSea
+Sea-of-Nodes adapter for custom compiler integrations. Both surfaces return
+profiling and verified scheduling plans without mutating host-owned graph IR.
+The default TypeSea builder also retains a profile-guided object-order adapter;
+set `transformations: false` to disable its recommendations. The subpath is
+intentionally absent from the root entry, and neither facade participates in
+runtime validation.
+
+`typesea/seacurrent/aot` exports `createSeaCurrentAotBridge(current)`. Its
+`compile()` method returns a profiled JIT predicate with `is()`, `snapshot()`, and
+`reset()`. `emit()` returns a standalone ESM source/declaration pair, while
+`profiles()` and `replan()` admit a matching profile artifact into the next
+planning generation. Artifact admission rejects stale target, graph, counter,
+outcome, checksum, overflow, accessor, proxy, and malformed values without
+executing getters. `optimize()` lowers selected safe-mode object orders into an
+uninstrumented JIT predicate, and `emitOptimized()` emits the same graph as ESM.
+`tune()` performs explicit warmup and alternating median measurements before it
+promotes a candidate. Reordering never crosses `SchemaCheck` or required/optional
+boundaries and is not applied in unsafe or unchecked mode. The bridge is opt-in:
+ordinary and promoted predicates contain no SeaCurrent branch or counter table.
+
+See the [SeaCurrent guide](./seacurrent.md) for budgets, fallback behavior, and
+adapter invariants.
 
 ## JSON Schema
 
