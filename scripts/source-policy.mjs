@@ -6,6 +6,8 @@ const forbiddenWords = ["a" + "ny", "tr" + "y", "ca" + "tch"];
 const forbidden = new RegExp(`\\b(?:${forbiddenWords.join("|")})\\b`, "u");
 const allowedForbiddenLines = [
     "ca" + "tch: ca" + "tchValue",
+    "ca" + "tchValue as ca" + "tch,",
+    "zodFallback as ca" + "tch",
     "ca" + "tch(fallback",
     "    ca" + "tch(",
     "public ca" + "tch(",

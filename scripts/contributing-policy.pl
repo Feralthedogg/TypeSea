@@ -16735,9 +16735,10 @@ sub default_policy_profile {
         hotLoopAllocationBudget => 34,
         contractGapBudget => 0,
         # The opt-in declaration code generator adds seven reviewed defensive
-        # parsing and deterministic-emission clone windows. It is excluded from
-        # hot validation accounting above, but remains visible in clone totals.
-        duplicateBlockBudget => 2_007,
+        # parsing and deterministic-emission clone windows. The SWC distribution
+        # parser gate adds one more reviewed build-policy window. Both remain
+        # visible in clone totals while staying outside runtime validation.
+        duplicateBlockBudget => 2_008,
         technicalDebtBudget => 240,
         componentOpenBudget => 4,
         componentDebtBudget => 120,

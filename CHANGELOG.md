@@ -2,6 +2,15 @@
 
 All notable changes to TypeSea are recorded here.
 
+## 1.3.1 - 2026-09-07
+
+### Fixed
+
+- Emitted the Zod-compatible `catch` export as a plain module export name so
+  SWC-based consumers such as Next.js Turbopack can parse the `mini` and `zod`
+  entrypoints. Distribution policy now parses every generated JavaScript file
+  with SWC to prevent the reserved-word escape from returning.
+
 ## 1.3.0 - 2026-07-20
 
 ### Added

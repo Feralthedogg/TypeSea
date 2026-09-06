@@ -1,11 +1,14 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { parseSync } from "@swc/core";
 
 const root = "dist";
 const forbiddenWords = ["a" + "ny", "tr" + "y", "ca" + "tch"];
 const forbidden = new RegExp(`\\b(?:${forbiddenWords.join("|")})\\b`, "u");
 const allowedForbiddenLines = [
     "ca" + "tch: ca" + "tchValue",
+    "ca" + "tchValue as ca" + "tch,",
+    "zodFallback as ca" + "tch",
     "ca" + "tch(fallback",
     "ca" + "tchValue",
     "decoder ca" + "tch receiver",
@@ -43,6 +46,9 @@ async function scan(path) {
             continue;
         }
         const source = await readFile(child, "utf8");
+        if (entry.name.endsWith(".js")) {
+            parseSync(source);
+        }
         const lines = source.split("\n");
         for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
             const line = lines[lineIndex];
