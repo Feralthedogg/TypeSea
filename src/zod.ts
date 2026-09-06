@@ -179,7 +179,7 @@ export {
     zodInstanceof as instanceof,
     zodKeyof as keyof,
     zodTimePrecision as TimePrecision,
-    zodFallback as c\u0061tch
+    zodFallback as catch
 };
 
 export {

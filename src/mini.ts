@@ -1431,7 +1431,7 @@ export {
     base64urlToBytes,
     bytesToUtf8,
     catchValue,
-    catchValue as c\u0061tch,
+    catchValue as catch,
     codec,
     codecs,
     coerce,
