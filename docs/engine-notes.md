@@ -191,9 +191,16 @@ When `superRefine` emits custom issue paths or messages, the generated
 diagnostic fallback copies those nested issues under the current compiled path
 prefix.
 
-`checkFirst()` has a separate generated collector. It returns one frozen issue
-as soon as the first diagnostic is known, instead of running the full `check()`
-collector and truncating its issue array.
+`checkFirst()` has a bounded native collector for structural schemas. It returns
+one frozen issue as soon as the first diagnostic is known without reading later
+descriptor-backed children. Callback, lazy, and host-object-sensitive schemas
+conservatively use the legacy full-check collector before publishing its first
+issue. Compiled and AOT paths use their separate generated collector.
+
+The native failure path remains two-pass: predicate admission precedes
+diagnostic collection. A callback-backed schema can therefore run its
+refinement or custom check in both passes. Callbacks are required to be
+deterministic and independent of invocation count.
 
 ## JSON Schema Export
 

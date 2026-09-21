@@ -119,8 +119,7 @@
     "files": [
         "dist",
         "README.md",
-        "SECURITY.md",
-        "CHANGELOG.md"
+        "SECURITY.md"
     ],
     "scripts": {
         "analyzer": "node tools/analyzer/server.mjs",

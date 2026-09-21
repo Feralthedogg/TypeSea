@@ -86,17 +86,24 @@ TypeSea의 안전 모드 컴파일 검증기는 getter 실행 방지와 strict e
 
 > 목표는 "대충 유효해 보이면 통과"가 아닙니다.
 > TypeSea의 목표는 **런타임 실행, 컴파일 실행, AOT 실행이 같은 판정을 내린다는 사실을 테스트로 고정하는 검증기**입니다.
-> safe 구조 검증에서 입력 getter를 실행하지 않고, 예상 가능한 실패에서 예외를
-> 던지지 않으며, 공개 API 경계 밖으로 변경 가능한 내부 상태를 내보내지 않는 것을
-> 기본 원칙으로 둡니다. refinement와 transform callback은 스키마가 명시적으로
-> 요청한 경우에만 실행합니다.
+> safe 구조 검증에서 일반 accessor getter를 실행하지 않고, 예상 가능한 실패에서
+> 예외를 던지지 않으며, 공개 API 경계 밖으로 변경 가능한 내부 상태를 내보내지 않는
+> 것을 기본 원칙으로 둡니다. refinement와 transform callback은 스키마가
+> 명시적으로 요청한 경우에만 실행합니다.
 
 > [!IMPORTANT]
-> TypeSea는 **적대적인 경계 입력**을 전제로 설계했습니다.
-> 속성 읽기는 descriptor를 통하므로 **사용자 getter를 실행하지 않습니다**.
+> TypeSea는 **적대적인 plain-data 경계 입력**을 전제로 설계했습니다.
+> 속성 읽기는 own data descriptor를 통하므로 **일반 accessor getter를 실행하지 않습니다**.
 > `__proto__`와 `constructor` key는 null-prototype lookup으로 처리하고, 사용자 regexp는 복제한 뒤 `lastIndex`를 reset하며, 순환 입력도 유한하게 검증합니다.
 > 예상 가능한 실패는 동결된 `Result`로 반환합니다.
 > 불명확한 타입 탈출과 암묵적 예외 흐름에 기대지 않도록 코드베이스 전체에 정책 게이트를 둡니다.
+
+> [!CAUTION]
+> JavaScript reflection은 Proxy trap을 실행할 수 있습니다. 적대적 Proxy는 검증 중에는
+> data descriptor를 보고하고 이후 property read에서는 다른 값을 반환할 수 있으므로,
+> identity를 보존하는 `is()`와 `check()`는 Proxy의 검증 후 property 의미가 안정적이라고
+> 보장할 수 없습니다. Proxy 입력이 가능한 경계에서는 임의의 JavaScript object를
+> plain owned data로 정규화한 뒤 검증하세요. `JSON.parse()` 결과에는 이 Proxy 모호성이 없습니다.
 
 > [!WARNING]
 > `unsafe`와 `unchecked`는 **public boundary용 모드가 아닙니다**.
@@ -176,6 +183,8 @@ const schema = toJsonSchema(User);
 호출자가 전체 실패 이유와 path를 필요로 하면 `check()`를 씁니다.
 hot rejection path에서 기계가 읽을 첫 번째 실패만 필요하면 `checkFirst()`를 씁니다.
 스키마가 안정적이고 호출 빈도가 높다면 `compile()` 또는 `emitAotModule()`을 씁니다.
+native structural schema에서는 `checkFirst()`가 descriptor-safe traversal을 첫 issue에서 멈춥니다.
+callback, lazy, host-object-sensitive schema는 보수적으로 기존 full-check fallback과 callback 동작을 유지합니다.
 compiled/AOT `checkFirst()`는 전체 issue list를 만든 뒤 자르지 않고 전용 first-fault collector를 사용합니다.
 
 > [!CAUTION]

@@ -2263,7 +2263,7 @@ sub analyze_ci_release {
             push @out, diagnostic("error", "package.files", "package.json", "npm package files must not include '$path'");
         }
     }
-    for my $path ("dist", "README.md", "SECURITY.md", "CHANGELOG.md") {
+    for my $path ("dist", "README.md", "SECURITY.md") {
         if (!$pkg->{files_index}{$path}) {
             $bad_files += 1;
             push @out, diagnostic("error", "package.files", "package.json", "npm package files must include '$path'");

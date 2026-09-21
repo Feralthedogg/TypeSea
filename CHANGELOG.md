@@ -2,6 +2,16 @@
 
 All notable changes to TypeSea are recorded here.
 
+## Unreleased
+
+### Changed
+
+- Native structural checkFirst() bounds structural traversal; callback, lazy,
+  and host-object-sensitive schemas keep the legacy full-check fallback.
+- Removed the repository changelog from the npm tarball while keeping release
+  history in GitHub Releases and the repository, restoring package-size
+  headroom without removing runtime or declaration files.
+
 ## 1.3.1 - 2026-09-07
 
 ### Fixed

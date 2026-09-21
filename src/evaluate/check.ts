@@ -43,10 +43,13 @@ import {
 } from "./shared.js";
 import {
     enterValidation,
+    hasReachedIssueLimit,
     leaveValidation,
     makeValidationState,
     type ValidationState
 } from "./state.js";
+
+const boundedFirstCache = new WeakMap<Schema, boolean>();
 
 /**
  * @brief check schema.
@@ -57,6 +60,39 @@ import {
 export function checkSchema<TValue>(
     schema: Schema,
     value: unknown
+): CheckResult<TValue> {
+    return checkSchemaWithLimit(schema, value, undefined);
+}
+
+/**
+ * @brief Run native first-issue admission when structurally safe.
+ * @param schema Schema used to validate the input.
+ * @param value Candidate runtime value.
+ * @returns Frozen success or diagnostics; opaque schemas retain full collection
+ * for BaseGuard.checkFirst() to narrow.
+ */
+export function checkSchemaFirst<TValue>(
+    schema: Schema,
+    value: unknown
+): CheckResult<TValue> {
+    return checkSchemaWithLimit(
+        schema,
+        value,
+        schemaSupportsBoundedFirst(schema) ? 1 : undefined
+    );
+}
+
+/**
+ * @brief Run the shared native predicate and diagnostic publication path.
+ * @param schema Schema used to validate the input.
+ * @param value Candidate runtime value.
+ * @param issueLimit Optional bounded issue count for first-fault traversal.
+ * @returns Frozen success or diagnostic failure result.
+ */
+function checkSchemaWithLimit<TValue>(
+    schema: Schema,
+    value: unknown,
+    issueLimit: number | undefined
 ): CheckResult<TValue> {
     // eslint-disable-next-line no-restricted-syntax
     try {
@@ -77,9 +113,11 @@ export function checkSchema<TValue>(
      */
     const issues: Issue[] = [];
     const path: PathSegment[] = [];
+    const state = makeValidationState();
+    state.issueLimit = issueLimit;
     // eslint-disable-next-line no-restricted-syntax
     try {
-        collectIssues(schema, value, path, issues, makeValidationState());
+        collectIssues(schema, value, path, issues, state);
     } catch {
         if (isInspectableValue(value)) {
             throw new TypeError("schema diagnostics failed");
@@ -92,6 +130,9 @@ export function checkSchema<TValue>(
          * conservative fallback so callers never receive an empty failure.
          */
         pushIssue(path, issues, "expected_refinement", "matching schema", actualType(value));
+    }
+    if (issueLimit !== undefined && issues.length > issueLimit) {
+        issues.length = issueLimit;
     }
     return err(freezeIssueArray(issues));
 }
@@ -112,6 +153,9 @@ function collectIssues(
     issues: Issue[],
     state: ValidationState
 ): void {
+    if (hasReachedIssueLimit(state, issues.length)) {
+        return;
+    }
     const entered = enterValidation(schema, value, state);
     if (entered === "cycle") {
         /*
@@ -150,7 +194,7 @@ function collectIssuesInner(
     issues: Issue[],
     state: ValidationState
 ): void {
-    if (collectScalarSchemaIssues(schema, value, path, issues)) {
+    if (collectScalarSchemaIssues(schema, value, path, issues, state.issueLimit)) {
         return;
     }
     if (collectCompositeSchemaIssues(schema, value, path, issues, state)) {
@@ -171,7 +215,8 @@ function collectScalarSchemaIssues(
     schema: Schema,
     value: unknown,
     path: PathSegment[],
-    issues: Issue[]
+    issues: Issue[],
+    issueLimit: number | undefined
 ): boolean {
     switch (schema.tag) {
         case SchemaTag.Unknown:
@@ -180,16 +225,16 @@ function collectScalarSchemaIssues(
             pushIssue(path, issues, "expected_never", "never", actualType(value));
             return true;
         case SchemaTag.String:
-            collectStringIssues(schema, value, path, issues);
+            collectStringIssues(schema, value, path, issues, issueLimit);
             return true;
         case SchemaTag.Number:
-            collectNumberIssues(schema, value, path, issues);
+            collectNumberIssues(schema, value, path, issues, issueLimit);
             return true;
         case SchemaTag.Date:
             collectDateIssues(schema, value, path, issues);
             return true;
         case SchemaTag.BigInt:
-            collectBigIntIssues(schema, value, path, issues);
+            collectBigIntIssues(schema, value, path, issues, issueLimit);
             return true;
         case SchemaTag.Symbol:
             if (typeof value !== "symbol") {
@@ -297,7 +342,9 @@ function collectCompositeSchemaIssues(
              * schemas must accept the same value.
              */
             collectIssues(schema.left, value, path, issues, state);
-            collectIssues(schema.right, value, path, issues, state);
+            if (!hasReachedIssueLimit(state, issues.length)) {
+                collectIssues(schema.right, value, path, issues, state);
+            }
             return true;
         case SchemaTag.DiscriminatedUnion:
             collectDiscriminatedUnionIssues(
@@ -483,6 +530,92 @@ function collectKeyedObjectIssue(
             `${String(count)} matching keys`
         );
     }
+}
+
+/**
+ * @brief Decide whether native first-issue traversal is structurally safe.
+ * @param schema Schema candidate for bounded diagnostics.
+ * @returns True only when the schema tree has no callback, lazy, or host-object
+ * execution boundary whose legacy diagnostic order must be preserved.
+ * @details This conservative classification is cached by schema identity. An
+ * unknown or newly added tag falls back to the full checker until its ordering
+ * and callback behavior are explicitly reviewed.
+ */
+function schemaSupportsBoundedFirst(schema: Schema): boolean {
+    const cached = boundedFirstCache.get(schema);
+    if (cached !== undefined) {
+        return cached;
+    }
+    const result = schemaSupportsBoundedFirstInner(schema, new WeakSet<object>());
+    boundedFirstCache.set(schema, result);
+    return result;
+}
+
+function schemaSupportsBoundedFirstInner(
+    schema: Schema,
+    seen: WeakSet<object>
+): boolean {
+    if (seen.has(schema)) {
+        // Reused immutable child schemas are safe; lazy recursion is rejected
+        // by its own tag before it can reach this branch.
+        return true;
+    }
+    seen.add(schema);
+
+    let result: boolean;
+    switch (schema.tag) {
+        case SchemaTag.Unknown:
+        case SchemaTag.Never:
+        case SchemaTag.String:
+        case SchemaTag.Number:
+        case SchemaTag.BigInt:
+        case SchemaTag.Symbol:
+        case SchemaTag.Boolean:
+        case SchemaTag.Literal:
+            result = true;
+            break;
+        case SchemaTag.Array:
+            result = schemaSupportsBoundedFirstInner(schema.item, seen);
+            break;
+        case SchemaTag.Tuple:
+            result = schema.rest === undefined &&
+                schema.items.every((item) =>
+                    schemaSupportsBoundedFirstInner(item, seen));
+            break;
+        case SchemaTag.Record:
+            result = schemaSupportsBoundedFirstInner(schema.value, seen) &&
+                (schema.key === undefined ||
+                    schemaSupportsBoundedFirstInner(schema.key, seen));
+            break;
+        case SchemaTag.Union:
+        case SchemaTag.Xor:
+            result = schema.options.every((option) =>
+                schemaSupportsBoundedFirstInner(option, seen));
+            break;
+        case SchemaTag.Object:
+            result = schema.entries.every((entry) =>
+                schemaSupportsBoundedFirstInner(entry.schema, seen)) &&
+                (schema.catchall === undefined ||
+                    schemaSupportsBoundedFirstInner(schema.catchall, seen));
+            break;
+        case SchemaTag.Intersection:
+            result = schemaSupportsBoundedFirstInner(schema.left, seen) &&
+                schemaSupportsBoundedFirstInner(schema.right, seen);
+            break;
+        case SchemaTag.Optional:
+        case SchemaTag.Undefinedable:
+        case SchemaTag.Nullable:
+        case SchemaTag.Brand:
+        case SchemaTag.Metadata:
+        case SchemaTag.Message:
+        case SchemaTag.Readonly:
+            result = schemaSupportsBoundedFirstInner(schema.inner, seen);
+            break;
+        default:
+            result = false;
+            break;
+    }
+    return result;
 }
 
 /**
