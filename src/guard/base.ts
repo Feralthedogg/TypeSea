@@ -21,6 +21,7 @@ import {
 } from "../decoder/index.js";
 import type { PromiseAsyncDecoder } from "../async/index.js";
 import { checkSchema, isSchema } from "../evaluate/index.js";
+import { checkSchemaFirst } from "../evaluate/check.js";
 import { makeValidationPlan } from "../plan/index.js";
 import {
     registerGuardMetadata,
@@ -360,7 +361,7 @@ export class BaseGuard<
         value: unknown,
         options?: Partial<ParseOptions>
     ): CheckResult<RuntimeValue<TValue, TPresence>> {
-        const result = checkSchema<RuntimeValue<TValue, TPresence>>(
+        const result = checkSchemaFirst<RuntimeValue<TValue, TPresence>>(
             readGuardSchema(this, "guard receiver"),
             value
         );

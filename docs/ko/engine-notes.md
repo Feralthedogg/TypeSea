@@ -148,8 +148,15 @@ key는 runtime object identity와 schema identity의 pair입니다.
 compiled `lazy`, `refine`, `superRefine` fallback은 같은 IR-backed runtime path를 사용하므로 recursive behavior가 execution engine 사이에서 일관됩니다.
 `superRefine`이 custom issue path나 message를 내보내면 generated diagnostic fallback은 그 nested issue를 현재 compiled path prefix 아래로 복사합니다.
 
-`checkFirst()`는 별도의 generated collector를 사용합니다.
-첫 diagnostic이 확정되는 즉시 frozen issue 하나를 반환하며, full `check()` collector를 끝까지 실행한 뒤 issue array를 자르지 않습니다.
+`checkFirst()`는 structural schema에서 bounded native collector를 사용합니다.
+첫 diagnostic이 확정되면 뒤의 descriptor-backed child를 읽지 않고 frozen issue 하나를 반환합니다.
+callback, lazy, host-object-sensitive schema는 보수적으로 기존 full-check collector를 사용한 뒤 첫 issue를 공개합니다.
+compiled/AOT 경로는 별도의 generated collector를 사용합니다.
+
+native 실패 경로는 여전히 두 단계입니다. predicate admission 뒤에 diagnostic
+collection을 실행하므로 callback-backed schema의 refinement나 custom check가 두
+단계에서 각각 실행될 수 있습니다. callback은 결정적이어야 하며 호출 횟수에
+의존하면 안 됩니다.
 
 ## JSON Schema Export
 

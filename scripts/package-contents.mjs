@@ -31,7 +31,6 @@ const expectedFiles = [
     "LICENSE",
     "README.md",
     "SECURITY.md",
-    "CHANGELOG.md",
     "dist/adapters/index.d.ts",
     "dist/adapters/index.d.ts.map",
     "dist/adapters/index.js",

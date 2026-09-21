@@ -97,17 +97,27 @@ are separate contracts for trusted normalized data: direct field loads,
 allocation-light strict-key loops, and V8-friendly monomorphic codegen.
 
 > Goal: not "probably valid", but **parity-tested validation** that never
-> executes input getters in safe structural paths, never throws on expected
-> failures, and never leaks mutable state across a public boundary. Explicit
-> refinement and transform callbacks execute only when the schema requests them.
+> executes ordinary accessor getters in safe structural paths, never throws on
+> expected failures, and never leaks mutable state across a public boundary.
+> Explicit refinement and transform callbacks execute only when the schema
+> requests them.
 
 > [!IMPORTANT]
-> TypeSea is designed for **hostile boundary data**: property reads go through
-> descriptors so **user getters never execute**, `__proto__`/`constructor` keys
-> are handled with null-prototype lookups, user regexes are cloned and
-> `lastIndex`-reset, and cyclic inputs validate finitely. Expected failures
-> return frozen `Result` values — `any`, `try`, and `catch` are banned from the
-> entire codebase and enforced by policy gates.
+> TypeSea is designed for **hostile plain boundary data**: property reads go
+> through own data descriptors so **ordinary accessor getters do not execute**,
+> `__proto__`/`constructor` keys are handled with null-prototype lookups, user
+> regexes are cloned and `lastIndex`-reset, and cyclic inputs validate finitely.
+> Expected failures return frozen `Result` values. `any` is prohibited;
+> `try`/`catch` is restricted to audited hostile-runtime boundaries and enforced
+> by policy gates.
+
+> [!CAUTION]
+> JavaScript reflection can execute Proxy traps. A hostile Proxy can report one
+> data descriptor during validation and return a different value later, so
+> identity-preserving `is()` and `check()` calls cannot guarantee stable
+> post-validation reads for adversarial Proxy objects. Normalize arbitrary
+> JavaScript objects into plain owned data before validation when Proxy inputs
+> are possible. `JSON.parse()` results do not have this Proxy ambiguity.
 
 > [!WARNING]
 > `unsafe` and `unchecked` are **not public-boundary modes**. They are for

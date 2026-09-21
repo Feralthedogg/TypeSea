@@ -45,7 +45,10 @@ import {
     readSetValues,
     type DataPropertyDescriptor
 } from "./shared.js";
-import type { ValidationState } from "./state.js";
+import {
+    hasReachedIssueLimit,
+    type ValidationState
+} from "./state.js";
 
 const EMPTY_ISSUES: readonly Issue[] = Object.freeze([]);
 
@@ -83,6 +86,9 @@ export function collectArrayIssues(
         return;
     }
     collectArrayLengthIssues(schema, value, path, issues);
+    if (hasReachedIssueLimit(state, issues.length)) {
+        return;
+    }
     const item = schema.item;
     if (schemaCanAcceptUndefined(item)) {
         /*
@@ -112,6 +118,9 @@ export function collectArrayIssues(
             );
         }
         path.pop();
+        if (hasReachedIssueLimit(state, issues.length)) {
+            return;
+        }
     }
 }
 
@@ -207,6 +216,9 @@ function collectPresentArrayIssues(
             collectChild(item, itemProperty.value, path, issues, state);
         }
         path.pop();
+        if (hasReachedIssueLimit(state, issues.length)) {
+            return;
+        }
     }
 }
 
@@ -251,6 +263,9 @@ export function collectTupleIssues(
             `length ${String(value.length)}`
         );
     }
+    if (hasReachedIssueLimit(state, issues.length)) {
+        return;
+    }
     const count = value.length < items.length ? value.length : items.length;
     /*
      * Length mismatch is reported once, then overlapping indexes are still
@@ -275,6 +290,9 @@ export function collectTupleIssues(
             );
         }
         path.pop();
+        if (hasReachedIssueLimit(state, issues.length)) {
+            return;
+        }
     }
     if (rest !== undefined && value.length > items.length) {
         for (let index = items.length; index < value.length; index += 1) {
@@ -356,7 +374,16 @@ export function collectRecordIssues(
         return;
     }
     const keys = Object.keys(value);
-    collectMissingRecordKeyIssues(schema.requiredKeys, value, path, issues);
+    collectMissingRecordKeyIssues(
+        schema.requiredKeys,
+        value,
+        path,
+        issues,
+        state.issueLimit
+    );
+    if (hasReachedIssueLimit(state, issues.length)) {
+        return;
+    }
     /*
      * Records intentionally validate enumerable own string keys. Symbols and
      * non-enumerable slots are outside record value semantics.
@@ -375,6 +402,10 @@ export function collectRecordIssues(
                 continue;
             }
             collectChild(schema.key, keyInput, path, issues, state);
+            if (hasReachedIssueLimit(state, issues.length)) {
+                path.pop();
+                return;
+            }
         }
         if (property === undefined) {
             pushIssue(path, issues, "expected_record", "data property", "accessor or missing");
@@ -382,6 +413,9 @@ export function collectRecordIssues(
             collectChild(schema.value, property.value, path, issues, state);
         }
         path.pop();
+        if (hasReachedIssueLimit(state, issues.length)) {
+            return;
+        }
     }
 }
 
@@ -392,7 +426,8 @@ function collectMissingRecordKeyIssues(
     requiredKeys: readonly string[] | undefined,
     value: Readonly<Record<string, unknown>>,
     path: PathSegment[],
-    issues: Issue[]
+    issues: Issue[],
+    issueLimit?: number
 ): void {
     if (requiredKeys === undefined) {
         return;
@@ -409,6 +444,9 @@ function collectMissingRecordKeyIssues(
         path.push(key);
         pushIssue(path, issues, "expected_record", "enumerable data property", "missing");
         path.pop();
+        if (issueLimit !== undefined && issues.length >= issueLimit) {
+            return;
+        }
     }
 }
 
@@ -672,10 +710,19 @@ export function collectObjectIssues(
                 pushIssue(path, issues, "expected_object", "data property", "accessor");
             }
             path.pop();
+            if (hasReachedIssueLimit(state, issues.length)) {
+                return;
+            }
             continue;
         }
         collectChild(entry.schema, property.value, path, issues, state);
         path.pop();
+        if (hasReachedIssueLimit(state, issues.length)) {
+            return;
+        }
+    }
+    if (hasReachedIssueLimit(state, issues.length)) {
+        return;
     }
     if (schema.catchall !== undefined) {
         collectObjectCatchallIssues(schema, record, path, issues, state, collectChild);
@@ -692,6 +739,9 @@ export function collectObjectIssues(
                 path.push(typeof key === "string" ? key : String(key));
                 pushIssue(path, issues, "unrecognized_key", "known key", "extra key");
                 path.pop();
+                if (hasReachedIssueLimit(state, issues.length)) {
+                    return;
+                }
             }
         }
     }
@@ -734,6 +784,9 @@ function collectObjectCatchallIssues(
             collectChild(catchall, descriptor.value, path, issues, state);
         }
         path.pop();
+        if (hasReachedIssueLimit(state, issues.length)) {
+            return;
+        }
     }
 }
 

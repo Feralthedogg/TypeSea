@@ -288,10 +288,15 @@ interface ParseOptions {
 | --- | --- | --- |
 | `is` | 빠른 boolean narrowing | 성공 경로에서 진단 객체를 만들지 않습니다. |
 | `check` | 실패 이유가 필요한 검증 | 동결된 `Result<T, Issue[]>` container를 반환합니다. |
-| `checkFirst` | hot path의 단일 실패 진단 | 같은 `Result` 형태를 반환하되 실패 시 issue를 최대 하나만 담습니다. compiled/AOT guard는 전용 first-fault collector를 사용합니다. |
+| `checkFirst` | hot path의 단일 실패 진단 | 같은 `Result` 형태를 반환하되 실패 시 issue를 최대 하나만 담습니다. native structural schema는 descriptor-safe traversal을 첫 issue에서 멈추며, callback·lazy·host-object-sensitive schema는 보수적으로 기존 full-check fallback을 사용합니다. compiled/AOT guard는 전용 first-fault collector를 사용합니다. |
 | `parse` / `safeParse` / `parseAsync` / `safeParseAsync` / `spa` | Zod 스타일 parse 표면 | 예외, tagged result, promise 기반 parse 변형입니다. `spa`는 `safeParseAsync` 별칭입니다. |
 | `isOptional` / `isNullable` | schema 수용성 probe | `undefined` 또는 `null`이 일반 검증을 통과하는지 반환합니다. |
 | `assert` | 예외가 필요한 연동 지점 | 복사되고 동결된 issue를 담은 `TypeSeaAssertionError`를 던집니다. |
+
+native `check()`와 `checkFirst()`의 실패 경로는 두 단계입니다. 먼저 boolean
+admission을 실행하고, 거부된 경우 diagnostic collection을 다시 실행합니다.
+따라서 callback-backed schema의 refinement나 custom check는 각 단계에서 한 번씩
+실행될 수 있습니다. 검증 callback은 결정적이어야 하며 호출 횟수에 의존하면 안 됩니다.
 | `graph` | 검증 계획 introspection | validation plan이 보유한 validated, optimized, frozen Sea-of-Nodes graph를 반환합니다. |
 | `toJSONSchema` | Zod 스타일 JSON Schema export | lossless JSON Schema emitter를 호출하며 `toJsonSchema()`와 같은 Result 형태를 반환합니다. |
 | `metadata` / `meta` / `title` / `describe` / `example` | 문서용 annotation | 검증 의미는 바꾸지 않고, 표현 가능한 경우 JSON Schema annotation으로 전달합니다. |

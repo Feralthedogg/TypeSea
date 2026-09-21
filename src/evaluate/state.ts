@@ -43,6 +43,13 @@ export interface ValidationState {
     readonly resolving: WeakSet<object>;
 
     /**
+     * @brief Optional diagnostic issue bound.
+     * @details Only the native first-issue collector sets this field. An
+     * undefined value preserves the full diagnostic traversal used by check().
+     */
+    issueLimit?: number | undefined;
+
+    /**
    * @brief depth.
    * @details Counts active recursive validator frames owned by this state object.
    * @invariant The value is incremented only after budget admission and decremented by `leaveValidation`.
@@ -65,20 +72,55 @@ export interface ValidationState {
 }
 
 /**
+ * @brief Private state implementation with lazy tracking resources.
+ * @details Prototype getters keep accessor functions shared while the backing
+ * WeakMaps, WeakSets, and graph-frame stack are allocated only when a path
+ * actually needs them. Each validation call still owns an independent state.
+ */
+class ValidationStateCore implements ValidationState {
+    private activePairs: WeakMap<object, WeakSet<Schema>> | undefined;
+    private graphFrameStack: GraphEvaluationFrame[] | undefined;
+    private resolvingSchemas: WeakSet<object> | undefined;
+
+    public depth = 0;
+    public graphDepth = 0;
+    public issueLimit: number | undefined;
+    public readonly maxDepth = DEFAULT_MAX_VALIDATION_DEPTH;
+
+    public get active(): WeakMap<object, WeakSet<Schema>> {
+        return this.activePairs ??= new WeakMap<object, WeakSet<Schema>>();
+    }
+
+    public get graphFrames(): GraphEvaluationFrame[] {
+        return this.graphFrameStack ??= [];
+    }
+
+    public get resolving(): WeakSet<object> {
+        return this.resolvingSchemas ??= new WeakSet<object>();
+    }
+}
+
+/**
  * @brief Allocate recursion and graph-frame state for one validation run.
  * @returns Fresh validation state for one top-level validation operation.
  * @details State is allocated per call so cycle tracking cannot leak between
  * unrelated inputs.
  */
 export function makeValidationState(): ValidationState {
-    return {
-        active: new WeakMap<object, WeakSet<Schema>>(),
-        graphFrames: [],
-        resolving: new WeakSet<object>(),
-        depth: 0,
-        graphDepth: 0,
-        maxDepth: DEFAULT_MAX_VALIDATION_DEPTH
-    };
+    return new ValidationStateCore();
+}
+
+/**
+ * @brief Test whether a bounded diagnostic pass has collected enough issues.
+ * @param state Validation state owned by the current diagnostic pass.
+ * @param issueCount Number of issues currently buffered.
+ * @returns True when another schema child must not be visited.
+ */
+export function hasReachedIssueLimit(
+    state: ValidationState,
+    issueCount: number
+): boolean {
+    return state.issueLimit !== undefined && issueCount >= state.issueLimit;
 }
 
 /**

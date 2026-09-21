@@ -30,8 +30,10 @@ before opening a pull request.
 ### 1.3. Uncompromising Security (Safe Mode)
 
 - Treat validation input as hostile.
-- Safe mode must not execute getters or accept prototype-backed fields. Read own
-  property descriptors and prove a data `value` slot before loading it.
+- Safe mode must not execute ordinary accessor getters or accept
+  prototype-backed fields. Read own property descriptors and prove a data
+  `value` slot before loading it. Reflection on a Proxy may execute traps, so do
+  not describe safe mode as trap-free or post-validation Proxy reads as stable.
 - Use descriptor-safe writes for keys such as `__proto__`, `constructor`, and
   `prototype`.
 - Direct property and index access belongs only in explicit `unsafe` or
@@ -104,7 +106,8 @@ benefits from JSDoc.
 ### 3.2. Strict TypeScript & Type Inference
 
 - Use four spaces for indentation.
-- `any`, `try`, and `catch` are prohibited by source policy. Use `unknown` at
+- `any` is prohibited by source policy. `try` and `catch` are restricted to
+  audited hostile-runtime boundaries that fail closed. Use `unknown` at
   untrusted boundaries and narrow it explicitly.
 - Prefer discriminated unions and `Result` values so invalid states remain
   unrepresentable.

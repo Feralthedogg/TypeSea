@@ -46,7 +46,8 @@ export function collectStringIssues(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.String }>,
     value: unknown,
     path: PathSegment[],
-    issues: Issue[]
+    issues: Issue[],
+    issueLimit?: number
 ): void {
     if (typeof value !== "string") {
         pushIssue(path, issues, "expected_string", "string", actualType(value), schema.message);
@@ -176,6 +177,9 @@ export function collectStringIssues(
                 }
                 break;
         }
+        if (hasReachedIssueLimit(issues, issueLimit)) {
+            return;
+        }
     }
 }
 
@@ -242,7 +246,8 @@ export function collectBigIntIssues(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.BigInt }>,
     value: unknown,
     path: PathSegment[],
-    issues: Issue[]
+    issues: Issue[],
+    issueLimit?: number
 ): void {
     if (typeof value !== "bigint") {
         pushIssue(path, issues, "expected_bigint", "bigint", actualType(value), schema.message);
@@ -315,6 +320,9 @@ export function collectBigIntIssues(
                     );
                 }
                 break;
+        }
+        if (hasReachedIssueLimit(issues, issueLimit)) {
+            return;
         }
     }
 }
@@ -415,7 +423,8 @@ export function collectNumberIssues(
     schema: Extract<Schema, { readonly tag: typeof SchemaTag.Number }>,
     value: unknown,
     path: PathSegment[],
-    issues: Issue[]
+    issues: Issue[],
+    issueLimit?: number
 ): void {
     if (typeof value !== "number" || !Number.isFinite(value)) {
         pushIssue(path, issues, "expected_number", "number", actualType(value), schema.message);
@@ -498,5 +507,15 @@ export function collectNumberIssues(
                 }
                 break;
         }
+        if (hasReachedIssueLimit(issues, issueLimit)) {
+            return;
+        }
     }
+}
+
+/**
+ * @brief Test whether a scalar check vector has reached its optional bound.
+ */
+function hasReachedIssueLimit(issues: readonly Issue[], issueLimit: number | undefined): boolean {
+    return issueLimit !== undefined && issues.length >= issueLimit;
 }

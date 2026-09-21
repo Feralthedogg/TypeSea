@@ -284,10 +284,16 @@ interface ParseOptions {
 | --- | --- | --- |
 | `is` | Hot boolean narrowing | Avoids diagnostic allocation on the success path. |
 | `check` | Validation with issues | Returns frozen `Result<T, Issue[]>` containers. |
-| `checkFirst` | Hot rejection diagnostics | Returns the same frozen `Result` shape, but failure contains at most one issue. Compiled and AOT guards use a dedicated first-fault collector. |
+| `checkFirst` | Hot rejection diagnostics | Returns the same frozen `Result` shape, but failure contains at most one issue. Native structural schemas stop descriptor-safe traversal after the first issue; callback, lazy, and host-object-sensitive schemas conservatively use the legacy full-check fallback. Compiled and AOT guards use a dedicated first-fault collector. |
 | `parse` / `safeParse` / `parseAsync` / `safeParseAsync` / `spa` | Zod-style parse surfaces | Throwing, tagged-result, and promise-returning parse variants. `spa` aliases `safeParseAsync`. |
 | `isOptional` / `isNullable` | Schema capability probes | Return whether `undefined` or `null` passes normal validation. |
 | `assert` | Throwing integration boundaries | Throws `TypeSeaAssertionError` with copied, frozen issues. |
+
+Native `check()` and `checkFirst()` keep a two-pass failure path: boolean
+admission runs first, followed by diagnostic collection after rejection.
+Callback-backed schemas can therefore invoke a refinement or custom check once
+per pass. Validation callbacks must be deterministic and must not depend on
+their invocation count.
 | `graph` | Runtime plan introspection | Returns the validated, optimized, frozen Sea-of-Nodes graph held by the validation plan. |
 | `toJSONSchema` | Zod-style JSON Schema export | Calls the lossless JSON Schema emitter and returns the same Result shape as `toJsonSchema()`. |
 | `metadata` / `meta` / `title` / `describe` / `example` | Documentation annotations | Preserve validation semantics and flow into JSON Schema annotations where representable. |
